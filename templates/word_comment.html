@@ -1,0 +1,30 @@
+<div class="image">
+    <img src="{{ word_filename }}.jpg" alt="{{ data.image_prompt }}">
+</div>
+
+<div class="audio">
+    [sound:{{ word_filename }}.mp3] Listen to pronunciation
+</div>
+
+{% if data.meanings %}
+<h2>Meanings & Examples</h2>
+
+{% for meaning in data.meanings %}
+<div class="meaning">
+    <p><strong>{{ loop.index }}. {{ meaning.meaning }}</strong></p>
+    <p><em>Example:</em> {{ meaning.example.spanish_phrase }} — {{ meaning.example.english_translation }}</p>
+    <p class="comment">{{ meaning.example.comment }}</p>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if data.notes %}
+<div class="note">
+    <h2>Notes</h2>
+    <ul class="notes">
+        {% for note in data.notes %}
+        <li>{{ note }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}

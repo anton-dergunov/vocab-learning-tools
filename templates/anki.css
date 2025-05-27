@@ -1,0 +1,46 @@
+.card {
+  font-family: sans-serif;
+  font-size: 16px;
+  background: #f9f9f9;
+  color: #333;
+  padding: 1em;
+  line-height: 1.5;
+}
+.phrase {
+  font-size: 1.8em;
+  color: #5a3e85;
+  margin-bottom: 0.2em;
+}
+.translation {
+  font-size: 1.2em;
+  color: #444;
+  margin-bottom: 1em;
+}
+.meaning {
+  margin-bottom: 0.5em;
+}
+.comment {
+  font-style: italic;
+  color: #666;
+  margin-bottom: 1em;
+}
+.image {
+  text-align: center;
+  margin: 1em 0;
+}
+.image img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.note {
+  font-size: 0.9em;
+  color: #888;
+  border-top: 1px solid #ddd;
+  padding-top: 1em;
+  margin-top: 1em;
+}
+.audio {
+  display: block;
+  margin: 1em 0;
+}

@@ -1,0 +1,15 @@
+<div class="image">
+    <img src="{{ meaning_filename }}.jpg" alt="{{ meaning.image_prompt }}">
+</div>
+
+<div class="audio">
+    [sound:{{ meaning_filename }}.mp3] Listen to pronunciation
+</div>
+
+<div class="meaning"><strong>Word meaning:</strong> {{meaning.meaning}}</div>
+
+<div class="comment"><strong>Example comment:</strong> {{meaning.example.comment}}</div>
+
+<div class="note">
+Word: <strong>{{data.word}}</strong> — {{data.translation}}
+</div>
