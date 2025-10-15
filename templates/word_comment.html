@@ -13,15 +13,14 @@
 <div class="meaning">
     <p><strong>{{ loop.index }}. {{ meaning.meaning }}</strong></p>
     <p><em>Example:</em> {{ meaning.example.spanish_phrase }} — {{ meaning.example.english_translation }}</p>
-    <p class="comment">{{ meaning.example.comment }}</p>
 </div>
 {% endfor %}
 {% endif %}
 
 {% if data.notes %}
-<div class="note">
+<div class="notes-section">
     <h2>Notes</h2>
-    <ul class="notes">
+    <ul>
         {% for note in data.notes %}
         <li>{{ note }}</li>
         {% endfor %}

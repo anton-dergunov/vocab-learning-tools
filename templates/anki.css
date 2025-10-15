@@ -40,6 +40,12 @@
   padding-top: 1em;
   margin-top: 1em;
 }
+.notes-section {
+  color: #888;
+  border-top: 1px solid #ddd;
+  padding-top: 1em;
+  margin-top: 1em;
+}
 .audio {
   display: block;
   margin: 1em 0;

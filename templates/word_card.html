@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ data.word | capitalize }}</title>
+  <style>
+    body { font-family: sans-serif; padding: 1em; line-height: 1.6; background: #fff; color: #333; }
+    h1 { font-size: 2em; color: #5a3e85; }
+    h2 { color: #3b3b3b; margin-top: 1.5em; }
+    .image { text-align: center; margin: 1em 0; }
+    .image img { max-width: 100%; height: auto; border-radius: 8px; }
+    .audio { margin: 1em 0; }
+    .meaning { margin-bottom: 1.5em; }
+    .comment { font-style: italic; color: #666; }
+    ul.notes { padding-left: 1.2em; margin-top: 1em; }
+  </style>
+</head>
+<body>
+  <h1>{{ data.word | capitalize }}</h1>
+  <p><strong>Translation:</strong> {{ data.translation }}</p>
+
+  <div class="image">
+    <img src="{{ data.word }}.jpg" alt="Image representing {{ data.word }}">
+  </div>
+
+  <div class="audio">
+    🔊 <a href="{{ data.word }}.mp3">Listen to pronunciation</a>
+  </div>
+
+  <h2>Meanings & Examples</h2>
+
+  {% for meaning in data.meanings %}
+  <div class="meaning">
+    <p><strong>{{ loop.index }}. {{ meaning.meaning }}</strong></p>
+    <p><em>Example:</em> {{ meaning.example.spanish_phrase }} — {{ meaning.example.english_translation }}</p>
+    <p class="comment">{{ meaning.example.comment }}</p>
+  </div>
+  {% endfor %}
+
+  <h2>Notes</h2>
+  <ul class="notes">
+    {% for note in data.notes %}
+    <li>{{ note }}</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>

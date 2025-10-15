@@ -14,6 +14,10 @@ import sys
 import io
 
 
+# TODO Read this example and check if anything could be improved
+# https://github.com/kerrickstaley/genanki/blob/main/tests/test_genanki.py
+
+
 # Generate silence (e.g., 0.3 seconds at 24kHz)
 SILENCE_DURATION = 0.3  # seconds
 SAMPLE_RATE = 24000
@@ -45,6 +49,7 @@ def generate_image(pipe, prompt, filename):
 def generate_audio(text, filename):
     # Generate audio using Kokoro
     pipeline = KPipeline(lang_code='e')
+    # TODO Randomly use a voice from the available list (https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md)
     generator = pipeline(text, voice='ef_dora')
     _, _, audio = next(generator)
 
@@ -143,14 +148,14 @@ def main():
     template_word_comment = jinja_env.get_template('word_comment.html')
     meaning_word_comment = jinja_env.get_template('meaning_comment.html')
 
-    pipe = create_stable_diffusion_pipeline()
+    #pipe = create_stable_diffusion_pipeline()
 
     deck = AnkiDeck()
 
     # Add card for the word itself
     word_filename = generate_file_name(data['word'])
-    generate_image(pipe, data['image_prompt'], f"{word_filename}.jpg")
-    generate_audio(data['word'], f"{word_filename}.mp3")
+    # generate_image(pipe, data['image_prompt'], f"{word_filename}.jpg")
+    # generate_audio(data['word'], f"{word_filename}.mp3")
 
     deck.add_note(
         data['word'],
@@ -164,8 +169,8 @@ def main():
     for m in data['meanings']:
         example = m['example']
         meaning_filename = generate_file_name(example['spanish_phrase'])
-        generate_image(pipe, m['image_prompt'], f"{meaning_filename}.jpg")
-        generate_audio(example['spanish_phrase'], f"{meaning_filename}.mp3")
+        # generate_image(pipe, m['image_prompt'], f"{meaning_filename}.jpg")
+        # generate_audio(example['spanish_phrase'], f"{meaning_filename}.mp3")
 
         deck.add_note(
             example['spanish_phrase'],
