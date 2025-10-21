@@ -1,0 +1,13 @@
+jinja2
+genanki
+diffusers
+kokoro
+soundfile
+pydub
+torch
+accelerate
+litellm
+llama-cpp-python
+ollama
+google-genai
+pytest
