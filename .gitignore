@@ -2,3 +2,4 @@
 __old/
 .env
 *.pyc
+config/defaults.toml
