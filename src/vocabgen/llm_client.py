@@ -90,77 +90,11 @@ class RateLimiter:
         self._timestamps.append(now)
 
 
-def _extract_text_from_response(obj: Any) -> str:
-    """
-    Robust extractor for multiple SDK response shapes.
-    Tries a series of common possibilities and returns the first found assistant text.
-    """
-    # If object has .text
-    if obj is None:
-        return ""
-    if hasattr(obj, "text"):
-        try:
-            return str(obj.text)
-        except Exception:
-            pass
-
-    # If OpenAI-like: response.choices[0].message.content or response.choices[0].message['content']
-    try:
-        choices = getattr(obj, "choices", None) or (obj.get("choices") if isinstance(obj, dict) else None)
-        if choices and len(choices) > 0:
-            first = choices[0]
-            # new SDKs may provide message as attribute or dict
-            message = getattr(first, "message", None) or first.get("message") if isinstance(first, dict) else None
-            if message:
-                # message.content
-                content = getattr(message, "content", None) or (message.get("content") if isinstance(message, dict) else None)
-                if content:
-                    return str(content)
-            # older shapes: first.text or first.delta or first["text"]
-            if hasattr(first, "text"):
-                return str(first.text)
-            if isinstance(first, dict):
-                # check 'message', 'text', 'delta'
-                if "text" in first and first["text"]:
-                    return str(first["text"])
-                if "delta" in first:
-                    delta = first["delta"]
-                    if isinstance(delta, dict) and "content" in delta:
-                        return str(delta["content"])
-    except Exception:
-        pass
-
-    # If Ollama-like: maybe returns dict with 'choices'-> [{'content': '...'}] or {'content': '...'}
-    try:
-        if isinstance(obj, dict):
-            # direct content
-            if "content" in obj and obj["content"]:
-                return str(obj["content"])
-            if "result" in obj and isinstance(obj["result"], dict) and "content" in obj["result"]:
-                return str(obj["result"]["content"])
-            # choices
-            if "choices" in obj and isinstance(obj["choices"], (list, tuple)) and obj["choices"]:
-                first = obj["choices"][0]
-                if isinstance(first, dict):
-                    for key in ("content", "message", "text"):
-                        if key in first and first[key]:
-                            if isinstance(first[key], dict) and "content" in first[key]:
-                                return str(first[key]["content"])
-                            return str(first[key])
-    except Exception:
-        pass
-
-    # Fallback: try string conversion
-    try:
-        return str(obj)
-    except Exception:
-        return ""
-
-
 def _call_gemini(model: str, system_prompt: str, user_prompt: str, model_params: Optional[Dict[str, Any]] = None) -> str:
     if genai is None:
         raise ImportError("google-genai package not installed. Install with: pip install google-genai")
     client = genai.Client()
+
     # build contents as combined system+user (Gemini SDK expects `contents` or similar)
     contents = f"{system_prompt}\n\n{user_prompt}"
     # model_params mapping for gemini: the google-genai API may accept e.g. temperature, max_output_tokens etc.
@@ -169,7 +103,11 @@ def _call_gemini(model: str, system_prompt: str, user_prompt: str, model_params:
     if model_params:
         kwargs.update(model_params)
     response = client.models.generate_content(**kwargs)
-    return _extract_text_from_response(response)
+
+    try:
+        return str(response.text)
+    except AttributeError:
+        raise ValueError("Unexpected Gemini response format")
 
 
 def _call_openai(model: str, system_prompt: str, user_prompt: str, model_params: Optional[Dict[str, Any]] = None) -> str:
@@ -180,6 +118,7 @@ def _call_openai(model: str, system_prompt: str, user_prompt: str, model_params:
         )
     # The OpenAI client picks up API key from environment (OPENAI_API_KEY) if present.
     client = OpenAI()
+
     # Compose messages standard chat format
     messages = [
         {"role": "system", "content": system_prompt},
@@ -191,7 +130,11 @@ def _call_openai(model: str, system_prompt: str, user_prompt: str, model_params:
         params.update(model_params)
     # call chat completions create
     response = client.chat.completions.create(**params)
-    return _extract_text_from_response(response)
+
+    try:
+        return str(response.choices[0].message.content)
+    except (AttributeError, IndexError, KeyError):
+        raise ValueError("Unexpected OpenAI response format")
 
 
 def _call_ollama(model: str, system_prompt: str, user_prompt: str, model_params: Optional[Dict[str, Any]] = None) -> str:
@@ -202,6 +145,7 @@ def _call_ollama(model: str, system_prompt: str, user_prompt: str, model_params:
     """
     if OllamaClient is None:
         raise ImportError("ollama package not installed. Install with: pip install ollama-python")
+
     # Create client - If Ollama python client supports host/headers from env we can allow that:
     ollama_host = os.environ.get("OLLAMA_HOST", None)
     ollama_headers_raw = os.environ.get("OLLAMA_HEADERS", None)
@@ -216,6 +160,7 @@ def _call_ollama(model: str, system_prompt: str, user_prompt: str, model_params:
         client = OllamaClient(host=ollama_host, headers=headers)
     else:
         client = OllamaClient()
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
@@ -224,7 +169,11 @@ def _call_ollama(model: str, system_prompt: str, user_prompt: str, model_params:
     if model_params:
         kwargs.update(model_params)
     response = client.chat(**kwargs)
-    return _extract_text_from_response(response)
+
+    try:
+        return str(response.message.content)
+    except (TypeError, KeyError):
+        raise ValueError("Unexpected Ollama response format")
 
 
 _PROVIDER_CALLERS = {

@@ -14,8 +14,10 @@ def test_rate_limiter_allows_immediate_calls_when_unlimited():
 
 
 def test_generate_text_uses_openai_mock():
+    fake_choice = MagicMock()
+    fake_choice.message.content = "hello from openai"
     fake_response = MagicMock()
-    fake_response.text = "hello from openai"
+    fake_response.choices = [fake_choice]
 
     mock_openai = MagicMock()
     mock_openai.chat.completions.create.return_value = fake_response
@@ -50,7 +52,8 @@ def test_generate_text_uses_gemini_mock():
 
 
 def test_generate_text_uses_ollama_mock():
-    fake_resp = {"content": "hello from ollama"}
+    fake_resp = MagicMock()
+    fake_resp.message.content = "hello from ollama"
     fake_client = MagicMock()
     fake_client.chat.return_value = fake_resp
     with patch.object(llm_client, "OllamaClient", return_value=fake_client):
