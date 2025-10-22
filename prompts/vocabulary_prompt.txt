@@ -59,6 +59,7 @@ Requirements:
 - If an input is just a sentence with its translation, please identify the most unique word or phrase
   in this example and use that to create the vocabulary entry. If there several specific words or phrases
   in an example give, please produce 2 (or more) vocabulary articles, but this should be rare.
+  If you produce several vocabulary articles, then separate them in the output with the separator "---".
 - The most important thing is not to blindly just take input and copy that.
   If input is not correct or confusing - don't use that for output! Please proof-read it!
   Before producing the article, stop and think: is it a correct sentence or not? If not, correct it!
