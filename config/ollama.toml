@@ -1,0 +1,46 @@
+[vocabulary]
+# Target language for processing
+language = "Spanish"
+
+# Available categories for vocabulary classification
+topics = [
+  "Emotions", "Actions", "Nature", "Culture", "Food",
+  "Health", "Appearance", "Technology", "Travel", "Slang", "Misc"
+]
+
+[files]
+# Source file containing new vocabulary entries
+inbox = "/Users/anton/data/spanish-vocab/Vocabulary/Spanish vocab - Inbox.md"
+
+# Destination pattern for categorized vocabulary (%topic = placeholder)
+output_pattern = "/Users/anton/data/spanish-vocab/Vocabulary/Spanish vocab - %topic.md"
+
+[llm]
+# AI service provider
+# TODO List all options
+provider = "ollama"
+
+# Model version to use
+# TODO List all options
+model = "gemma3:4b'"
+
+# Custom model parameters (empty for defaults)
+# TODO List all options
+model_params = {}
+
+# Path to prompt template
+prompt = "prompts/vocabulary_prompt_template.txt"
+
+# Retry attempts on failure
+max_retries = 2
+
+# Rate limiting (requests per minute)
+# TODO Explain usage, make optional
+rate_limit_per_minute = 60
+
+[processing]
+# Items to process per batch
+batch_size = 1
+
+# Display the new vocabulary items
+show_items = true

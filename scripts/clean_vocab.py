@@ -225,9 +225,9 @@ def main(argv: Optional[List[str]] = None):
                 model=config.llm.model,
                 system_prompt=system_prompt,
                 sections=batch,
-                model_params=config.llmmodel_params,
-                max_retries=config.llmmax_retries,
-                rate_limit_per_minute=config.llmrate_limit,
+                model_params=config.llm.model_params,
+                max_retries=config.llm.max_retries,
+                rate_limit_per_minute=config.llm.rate_limit_per_minute,
             )
 
             appended, new_items, conflicts = write_articles_atomic(
