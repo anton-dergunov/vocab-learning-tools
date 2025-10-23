@@ -1,7 +1,7 @@
 from __future__ import annotations
 import re
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Union
 import logging
 import difflib
 
@@ -23,10 +23,6 @@ ALLOWED_TOPICS = [
     "Slang",
     "Misc",
 ]
-
-# Suffix used when creating topic files if no existing " - Topic.md" file exists.
-# Use this suffix for files you want to ignore in git (.gen.md recommended).
-DEFAULT_GEN_SUFFIX = ".gen.md"
 
 
 def normalize_separator_line(line: str) -> bool:
@@ -146,6 +142,7 @@ def remove_topic_line(article: str) -> str:
     return _topic_re.sub("", article).strip() + "\n"
 
 
+# TODO Unite the function with scan_topic_files_for_titles in some way
 def parse_article_title(article: str) -> Optional[str]:
     """
     Extract the word/phrase from the article header pattern, e.g.
@@ -163,34 +160,34 @@ def parse_article_title(article: str) -> Optional[str]:
     return title
 
 
-def scan_topic_files_for_titles(base_dir: Path) -> Dict[str, List[Tuple[Path, int, str]]]:
+def scan_topic_files_for_titles(files: List[Union[str | Path]]) -> Dict[str, List[Tuple[Path, int, str]]]:
     """
     Scan topic files in base_dir for titles. Returns dict: title -> list of (path, lineno, article_snippet).
     lineno is the line number where the header is found (1-based). article_snippet is first line(s) of article.
-    This reads all files matching "* - <Topic>.md" and "*.gen.md" files in base_dir.
     """
     results: Dict[str, List[Tuple[Path, int, str]]] = {}
-    # collect relevant files: any file with ' - <Topic>.md' or ending with DEFAULT_GEN_SUFFIX
-    candidates = []
-    for p in base_dir.iterdir():
-        if p.is_file():
-            # accept files that end with ' - <Topic>.md' pattern or our generated suffix
-            if re.search(r" - (?:{})\.md$".format("|".join([re.escape(t) for t in ALLOWED_TOPICS])), p.name):
-                candidates.append(p)
-            elif p.name.endswith(DEFAULT_GEN_SUFFIX):
-                candidates.append(p)
-    for path in candidates:
+
+    for path in files:
         try:
             text = read_text(path)
         except FileNotFoundError:
             continue
         lines = text.splitlines()
-        for i, ln in enumerate(lines):
-            m = _title_re.search(ln)
+        i = 0
+        while i < len(lines):
+            m = _title_re.search(lines[i])
             if m:
                 title = m.group("title").strip()
-                snippet = "\n".join(lines[i : min(i + 5, len(lines))])
-                results.setdefault(title, []).append((path, i + 1, snippet))
+                start = i
+                # Find next title or end
+                i += 1
+                while i < len(lines) and not _title_re.search(lines[i]):
+                    i += 1
+                # Get snippet and remove trailing empty lines
+                snippet = "\n".join(lines[start:i]).rstrip()
+                results.setdefault(title, []).append((path, start + 1, snippet))
+            else:
+                i += 1
     return results
 
 
@@ -204,20 +201,3 @@ def find_fuzzy_matches(title: str, existing_titles: List[str], n: int = 3, cutof
     lower_map = {t.lower(): t for t in existing_titles}
     matches = difflib.get_close_matches(title.lower(), list(lower_map.keys()), n=n, cutoff=cutoff)
     return [lower_map[m] for m in matches]
-
-
-def topic_filename_for_inbox(inbox_path: Path) -> Dict[str, Path]:
-    """
-    Map topic names to filenames in the inbox directory.
-    Prefer existing files like 'Spanish vocab - Food.md'; otherwise create '<Topic>.gen.md'.
-    """
-    inbox_dir = inbox_path.parent
-    out: Dict[str, Path] = {}
-    for t in ALLOWED_TOPICS:
-        pattern = f"* - {t}.md"
-        found = list(inbox_dir.glob(pattern))
-        if found:
-            out[t] = found[0]
-        else:
-            out[t] = inbox_dir / f"{t}{DEFAULT_GEN_SUFFIX}"
-    return out

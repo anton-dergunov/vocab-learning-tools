@@ -11,3 +11,4 @@ llama-cpp-python
 ollama
 google-genai
 pytest
+python-box

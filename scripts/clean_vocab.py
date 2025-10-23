@@ -14,9 +14,10 @@ import logging
 import signal
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union
 import tomllib
-from jinja2 import Template
+from box import Box
+from jinja2 import Environment
 from dotenv import load_dotenv
 from tqdm import tqdm
 
@@ -30,14 +31,13 @@ if str(_SRC) not in sys.path:
 # Now import local package
 from vocabgen.vocab_processor import (
     split_sections,
-    join_sections_for_batch,
-    split_llm_response_into_articles,
+    join_sections_for_batch,    # TODO should not be shared
+    split_llm_response_into_articles,   # TODO should not be shared
     extract_topic_from_article,
     remove_topic_line,
     parse_article_title,
     scan_topic_files_for_titles,
-    find_fuzzy_matches,
-    topic_filename_for_inbox,
+    find_fuzzy_matches
 )
 from vocabgen.fileops import read_text, backup_file, atomic_write, append_to_file
 from vocabgen import llm_client
@@ -45,29 +45,52 @@ from vocabgen import llm_client
 logger = logging.getLogger("vocabgen.clean_vocab")
 
 
-def render_prompt(template_path: Path, cfg: Dict[str, Any]) -> str:
-    tpl = Template(template_path.read_text())
-    # TODO Pass the config explicitly instead
-    return tpl.render(language=cfg["language"], allowed_topics=cfg["topics"]["allowed"])
+# TODO Move to fileops
+def resolve_path(path: Union[str, Path], base_dir: Path = _REPO_ROOT) -> Path:
+    """
+    Resolve a path to an absolute Path object.
+
+    Supports both absolute and relative paths. Relative paths are resolved
+    relative to the base_dir (defaults to repo root).
+
+    Args:
+        path: Path string or Path object (absolute or relative)
+        base_dir: Base directory for resolving relative paths
+
+    Returns:
+        Absolute Path object
+
+    Examples:
+        >>> resolve_path("/absolute/path/file.txt")
+        PosixPath('/absolute/path/file.txt')
+        >>> resolve_path("relative/file.txt")  # Resolved from _REPO_ROOT
+        PosixPath('/Users/anton/repo/relative/file.txt')
+        >>> resolve_path("~/Documents/file.txt")  # Expands ~
+        PosixPath('/Users/anton/Documents/file.txt')
+    """
+    path_obj = Path(path).expanduser()  # Expand ~ to home directory
+
+    if path_obj.is_absolute():
+        return path_obj.resolve()  # Resolve symlinks and .. in absolute paths
+    else:
+        return (base_dir / path_obj).resolve()  # Make relative paths absolute
 
 
-def load_config(path: Optional[Path]) -> Dict[str, Any]:
-    if not path:
-        return {}
-    if not path.exists():
-        return {}
-    with open(path, "rb") as f:
-        cfg = tomllib.load(f)
-    return cfg
+def render_prompt(template_path: Union[str, Path], config: Box) -> str:
+    env = Environment(
+        trim_blocks=True,  # removes newline *after* Jinja block
+        lstrip_blocks=True # removes leading spaces before blocks
+    )
+    tpl = env.from_string(Path(template_path).read_text())
+    return tpl.render(cfg=config)
 
 
-def default_model_params_from_str(s: Optional[str]) -> Dict[str, Any]:
-    if not s:
-        return {}
-    try:
-        return json.loads(s)
-    except Exception as e:
-        raise ValueError("model-params must be a JSON string") from e
+def load_config(path: Union[str, Path]) -> Box:
+    """Load TOML config with dot notation access."""
+    with open(path, 'rb') as f:
+        config_dict = tomllib.load(f)
+
+    return Box(config_dict)
 
 
 def process_batch_with_llm(
@@ -100,16 +123,10 @@ def process_batch_with_llm(
     return articles
 
 
-def scan_existing_titles(base_dir: Path) -> Dict[str, List[Tuple[Path, int, str]]]:
-    return scan_topic_files_for_titles(base_dir)
-
-
 def write_articles_atomic(
-    inbox_path: Path,
     topic_map: Dict[str, Path],
     articles: List[str],
-    existing_map: Dict[str, List[Tuple[Path, int, str]]],
-    show_items: bool
+    existing_map: Dict[str, List[Tuple[Path, int, str]]]
 ) -> Tuple[int, List[str], List[Tuple[str, str, List[Tuple[Path, int, str]]]]]:
     """
     Append articles to topic files while checking for duplicates.
@@ -123,34 +140,37 @@ def write_articles_atomic(
     for art in articles:
         topic = extract_topic_from_article(art) or "Misc"
         cleaned = remove_topic_line(art).strip() + "\n\n"
-        title = parse_article_title(art)
         existing_titles = list(existing_map.keys())
 
-        if title and title in existing_map:
+        title = parse_article_title(art)
+        if not title:
+            # TODO Display error if title failed to parse
+            continue
+
+        if title in existing_map:
             # exact match exists -> treat as conflict
             conflicts.append((title, cleaned, existing_map[title]))
             continue
 
-        # fuzzy match
-        fuzzy = []
-        if title:
-            fuzzy = find_fuzzy_matches(title, existing_titles, n=2, cutoff=0.85)
+        # Fuzzy match
+        # TODO make these parameters configurable
+        fuzzy = find_fuzzy_matches(title, existing_titles, n=2, cutoff=0.85)
         if fuzzy:
             # treat as potential duplicate but still append; report
             for f in fuzzy:
-                conflicts.append((title or "(no title)", cleaned, existing_map.get(f, [])))
+                conflicts.append((title, cleaned, existing_map.get(f, [])))
             # still append, but mark summary accordingly
 
         # append
         target_file = topic_map.get(topic)
         if not target_file:
             target_file = topic_map["Misc"]
+        # TODO Put a warning in this case
         append_to_file(target_file, cleaned)
         appended += 1
-        new_items.append(f"{topic}: {title or cleaned.splitlines()[0][:60]}")
+        new_items.append(f"{topic}: {title}")
         # also update existing_map so duplicates in same run are caught
-        if title:
-            existing_map.setdefault(title, []).append((target_file, -1, cleaned.splitlines()[0]))
+        existing_map.setdefault(title, []).append((target_file, -1, cleaned.splitlines()[0]))
     return appended, new_items, conflicts
 
 
@@ -159,102 +179,63 @@ def handle_interrupt(signum, frame):
     raise KeyboardInterrupt()
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Process vocabulary inbox and generate structured vocabulary articles.")
-    p.add_argument("--config", type=Path, default=_REPO_ROOT / "config/defaults.toml", help="Path to defaults TOML config")
-    p.add_argument("--inbox", type=Path, help="Inbox markdown file (overrides config)")
-    p.add_argument("--prompt", type=Path, help="Prompt file with cleaning instructions")
-    p.add_argument("--provider", type=str, help="LLM provider (gemini|openai|ollama)")
-    p.add_argument("--model", type=str, help="LLM model name")
-    p.add_argument("--batch-size", type=int, default=None, help="How many inbox sections to send per LLM call")
-    p.add_argument("--model-params", type=str, default=None, help="JSON string with model params")
-    p.add_argument("--max-retries", type=int, default=None)
-    p.add_argument("--rate-limit", type=int, default=None, help="Requests per minute")
-    p.add_argument("--show-items", action="store_true", help="Show produced items in summary")
-    p.add_argument("--no-dotenv", action="store_true", help="Do not auto-load .env")
-    return p
-
-
 def main(argv: Optional[List[str]] = None):
     signal.signal(signal.SIGINT, handle_interrupt)
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
 
-    if not args.no_dotenv:
-        # load .env from repo root if present
-        load_dotenv(Path(_REPO_ROOT / ".env"))
+    p = argparse.ArgumentParser(description="Process vocabulary inbox and generate structured vocabulary articles.")
+    p.add_argument("--config", type=Path, default=_REPO_ROOT / "config/defaults.toml", help="Path to defaults TOML config")
+    args = p.parse_args(argv)
 
-    cfg = load_config(args.config)
+    load_dotenv(Path(_REPO_ROOT / ".env"))
 
-    # resolution order: CLI arg -> config file -> hardcoded default
-    inbox_path = args.inbox or Path(cfg.get("inbox", {}).get("path")) if cfg.get("inbox") else None
-    if not inbox_path:
-        raise SystemExit("Inbox path must be provided by CLI or config file.")
-    inbox_path = Path(inbox_path)
+    config = load_config(args.config)
 
-    prompt_path = args.prompt or Path(cfg.get("processing", {}).get("prompt", "prompts/vocabulary_prompt_template.txt"))
-    provider = args.provider or cfg.get("llm", {}).get("provider", "gemini")
-    model = args.model or cfg.get("llm", {}).get("model", "gemini-2.5-pro")
-    model_params = args.model_params or cfg.get("llm", {}).get("model_params", {})
-    if isinstance(model_params, str):
-        model_params = default_model_params_from_str(model_params)
-    max_retries = args.max_retries or cfg.get("llm", {}).get("max_retries", 2)
-    rate_limit = args.rate_limit or cfg.get("llm", {}).get("rate_limit_per_minute", None)
-    batch_size = args.batch_size or cfg.get("processing", {}).get("batch_size", 1)
-    show_items = args.show_items or cfg.get("processing", {}).get("show_items", False)
+    system_prompt = render_prompt(resolve_path(config.llm.prompt_path), config)
 
-    # FIXME Next step: processing the config correctly!
-    # First, provide the defaults in the command line arguments
-    system_prompt = render_prompt(prompt_path, cfg)
-    inbox_text = read_text(inbox_path)
+    inbox_text = read_text(config.files.inbox)
     sections = split_sections(inbox_text)
     total = len(sections)
     if total == 0:
         print("No sections found in inbox.")
         return
 
-    topic_map = topic_filename_for_inbox(inbox_path)
+    topic_map = {}
+    for topic in config.vocabulary.topics:
+        topic_file = config.files.output_pattern.replace('%topic', topic)
+        topic_map[topic] = Path(topic_file)
+
     # Backup inbox
-    bak = backup_file(inbox_path)
+    bak = backup_file(config.files.inbox)
     logger.info("Backup created: %s", bak)
 
     # Pre-scan existing topic files for exact matching
-    existing_map = scan_existing_titles(inbox_path.parent)
+    existing_map = scan_topic_files_for_titles(list(topic_map.values()))
 
     pbar = tqdm(total=total, desc="Processing sections")
     i = 0
     new_items_all: List[str] = []
     summary: Dict[str, int] = {t: 0 for t in topic_map.keys()}
+    all_conflicts = []
 
     try:
         while i < total:
-            batch = sections[i : i + batch_size]
-            try:
-                articles = process_batch_with_llm(
-                    provider=provider,
-                    model=model,
-                    system_prompt=system_prompt,
-                    sections=batch,
-                    model_params=model_params,
-                    max_retries=max_retries,
-                    rate_limit_per_minute=rate_limit,
-                )
-            except KeyboardInterrupt:
-                tqdm.write("Interrupted by user before sending batch.")
-                break
-            except Exception as e:
-                tqdm.write(f"LLM request failed for batch starting at {i}: {e}")
-                pbar.update(len(batch))
-                i += batch_size
-                continue
+            batch = sections[i : i + config.processing.batch_size]
+            articles = process_batch_with_llm(
+                provider=config.llm.provider,
+                model=config.llm.model,
+                system_prompt=system_prompt,
+                sections=batch,
+                model_params=config.llmmodel_params,
+                max_retries=config.llmmax_retries,
+                rate_limit_per_minute=config.llmrate_limit,
+            )
 
             appended, new_items, conflicts = write_articles_atomic(
-                inbox_path=inbox_path,
                 topic_map=topic_map,
                 articles=articles,
-                existing_map=existing_map,
-                show_items=show_items
+                existing_map=existing_map
             )
+            all_conflicts.extend(conflicts)
             for it in new_items:
                 # increment summary based on topic prefix
                 if ":" in it:
@@ -265,29 +246,35 @@ def main(argv: Optional[List[str]] = None):
             # we remove the processed input batch from the inbox file to avoid losing
             # unprocessed ones: we remove the first i+batch_size sections.
             if appended > 0:
-                remaining = "\n\n---\n\n".join(sections[i + batch_size :])
-                atomic_write(inbox_path, remaining)
+                # TODO Should probably reuse join_sections_for_batch
+                remaining = "\n\n---\n\n".join(sections[i + config.processing.batch_size :])
+                atomic_write(config.files.inbox, remaining)
+
             pbar.update(len(batch))
-            i += batch_size
+            i += config.processing.batch_size
 
     except KeyboardInterrupt:
         tqdm.write("Interrupted by user. Partial progress preserved.")
+    except Exception as e:
+        tqdm.write(f"Encountered exception: {e}")
     finally:
         pbar.close()
 
+    # TODO Probably no sense to use tqdm.write any more, since progress bar is closed
     # Summary
     tqdm.write("Processing complete. Summary of additions:")
     for t, cnt in summary.items():
         if cnt:
             tqdm.write(f"  {t}: {cnt}")
-    if show_items and new_items_all:
+    if config.processing.show_items and new_items_all:
         tqdm.write("\nNew items produced:")
         for it in new_items_all:
             tqdm.write("  " + it)
+
     # Report conflicts
-    if conflicts:
+    if all_conflicts:
         tqdm.write("\nConflicts found (existing matches):")
-        for title, new_art, existing_entries in conflicts:
+        for title, new_art, existing_entries in all_conflicts:
             tqdm.write(f"Title: {title}")
             for p, lineno, snippet in existing_entries:
                 tqdm.write(f"  Existing in {p} at line {lineno}: {snippet[:120]}")

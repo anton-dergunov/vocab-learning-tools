@@ -6,9 +6,7 @@ from vocabgen.vocab_processor import (
     split_sections,
     split_llm_response_into_articles,
     extract_topic_from_article,
-    parse_article_title,
-    topic_filename_for_inbox,
-    DEFAULT_GEN_SUFFIX,
+    parse_article_title
 )
 
 def test_split_sections_with_separators():
@@ -34,15 +32,3 @@ def test_extract_topic():
 def test_parse_article_title():
     art = "##### **ni en pedo** 🚫\n*no way*\nTopic: Slang\n"
     assert parse_article_title(art) == "ni en pedo"
-
-def test_topic_filename_for_inbox(tmp_path):
-    # create fake inbox dir
-    base = tmp_path / "vocab"
-    base.mkdir()
-    inbox = base / "Spanish vocab - Inbox.md"
-    inbox.write_text("something")
-    # create existing topic file named like 'Spanish vocab - Food.md'
-    (base / "Spanish vocab - Food.md").write_text("existing")
-    map = topic_filename_for_inbox(inbox)
-    assert map["Food"].name.endswith("Food.md")
-    assert map["Misc"].name.endswith(DEFAULT_GEN_SUFFIX)

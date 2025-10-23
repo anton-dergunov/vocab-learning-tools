@@ -5,7 +5,6 @@ import json
 import pytest
 from unittest.mock import patch
 
-from vocabgen.vocab_processor import DEFAULT_GEN_SUFFIX
 
 # Ensure we can import the script module (it uses sys.path hack internally)
 import scripts.clean_vocab as clean_vocab_script
