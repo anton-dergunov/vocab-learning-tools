@@ -9,7 +9,7 @@ from .fileops import atomic_write, append_to_file, read_text, backup_file
 
 logger = logging.getLogger("vocabgen.vocab_processor")
 
-# Allowed topics (as in your prompt)
+# Allowed topics
 ALLOWED_TOPICS = [
     "Emotions",
     "Actions",

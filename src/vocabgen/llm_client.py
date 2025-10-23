@@ -199,7 +199,7 @@ def generate_text(
     Generate text using specified provider.
 
     Args:
-        provider: 'gemini' | 'openai' | 'ollama' (case-insensitive)
+        provider: 'gemini' | 'openai' | 'ollama'
         model: model name to use
         system_prompt: system prompt string
         user_prompt: user prompt string
@@ -217,18 +217,17 @@ def generate_text(
     """
     if not provider:
         raise ValueError("provider must be provided")
-    provider_key = provider.strip().lower()
-    if provider_key not in _PROVIDER_CALLERS:
+    if provider not in _PROVIDER_CALLERS:
         raise ValueError(f"Unknown provider: {provider}")
 
-    caller = _PROVIDER_CALLERS[provider_key]
+    caller = _PROVIDER_CALLERS[provider]
     rate_limiter = RateLimiter(rate_limit_per_minute)
     retry_exceptions = retry_exceptions or (Exception,)
 
     last_exception = None
     for attempt in range(1, max_retries + 1):
         try:
-            logger.debug("Attempt %d for provider=%s model=%s", attempt, provider_key, model)
+            logger.debug("Attempt %d for provider=%s model=%s", attempt, provider, model)
             # Respect rate limiter BEFORE making external call
             rate_limiter.acquire()
             result = caller(model=model, system_prompt=system_prompt, user_prompt=user_prompt, model_params=model_params)

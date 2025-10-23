@@ -14,17 +14,18 @@ def atomic_write(path: Path, data: str, encoding: str = "utf-8") -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     # create temp file next to destination to ensure same filesystem for rename
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name, text=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+
     try:
-        with os.fdopen(fd, "w", encoding=encoding) as f:
+        with open(tmp_path, "w", encoding=encoding) as f:
             f.write(data)
         # On POSIX, this rename is atomic.
-        os.replace(tmp, str(path))
+        os.replace(tmp_path, path)
     finally:
         # if tmp exists still, attempt cleanup
-        if os.path.exists(tmp):
+        if os.path.exists(tmp_path):
             try:
-                os.remove(tmp)
+                os.remove(tmp_path)
             except Exception:
                 pass
 
@@ -52,8 +53,7 @@ def backup_file(path: Path, keep_timestamp: bool = True) -> Path:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(path)
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S") if keep_timestamp else ""
-    bak_name = f"{path.name}.bak{('.' + timestamp) if timestamp else ''}"
-    bak_path = path.parent / bak_name
+
+    bak_path = path.with_suffix(path.suffix + ".bak")
     shutil.copy2(str(path), str(bak_path))
     return bak_path

@@ -2,34 +2,25 @@
 """
 CLI script to clean vocabulary inbox and append generated articles into topic files.
 
-Behavior highlights:
-- Adds project/src to sys.path so the script can be run without PYTHONPATH or installing package.
-- Loads .env (if python-dotenv installed) from project root.
-- Loads defaults from config/defaults.toml (optional).
-- CLI args override config values.
-- Pre-scans topic files for existing entries and does exact & fuzzy duplicate checking.
-- Processes inbox in batches; commits per batch using atomic writes and backups.
-- Safe on interrupts; partial progress preserved.
-
 Usage:
     python scripts/clean_vocab.py              # uses config/defaults.toml or CLI overrides
     python scripts/clean_vocab.py --inbox /path/to/inbox.md --batch-size 2 --show-items
 """
+
 from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import signal
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
-import tomllib  # Python 3.11+
+import tomllib
+from jinja2 import Template
 from dotenv import load_dotenv
 from tqdm import tqdm
 
 # Make sure we can import local package without installing by adding repo src to sys.path.
-# We assume this script lives in scripts/ under repository root.
 _THIS_FILE = Path(__file__).resolve()
 _REPO_ROOT = _THIS_FILE.parent.parent.resolve()
 _SRC = _REPO_ROOT / "src"
@@ -54,6 +45,12 @@ from vocabgen import llm_client
 logger = logging.getLogger("vocabgen.clean_vocab")
 
 
+def render_prompt(template_path: Path, cfg: Dict[str, Any]) -> str:
+    tpl = Template(template_path.read_text())
+    # TODO Pass the config explicitly instead
+    return tpl.render(language=cfg["language"], allowed_topics=cfg["topics"]["allowed"])
+
+
 def load_config(path: Optional[Path]) -> Dict[str, Any]:
     if not path:
         return {}
@@ -62,10 +59,6 @@ def load_config(path: Optional[Path]) -> Dict[str, Any]:
     with open(path, "rb") as f:
         cfg = tomllib.load(f)
     return cfg
-
-
-def load_prompt(prompt_path: Path) -> str:
-    return read_text(prompt_path).strip()
 
 
 def default_model_params_from_str(s: Optional[str]) -> Dict[str, Any]:
@@ -116,8 +109,7 @@ def write_articles_atomic(
     topic_map: Dict[str, Path],
     articles: List[str],
     existing_map: Dict[str, List[Tuple[Path, int, str]]],
-    show_items: bool,
-    dry_run: bool,
+    show_items: bool
 ) -> Tuple[int, List[str], List[Tuple[str, str, List[Tuple[Path, int, str]]]]]:
     """
     Append articles to topic files while checking for duplicates.
@@ -153,10 +145,7 @@ def write_articles_atomic(
         target_file = topic_map.get(topic)
         if not target_file:
             target_file = topic_map["Misc"]
-        if dry_run:
-            tqdm.write(f"[dry-run] Would append to {target_file}: {cleaned.splitlines()[0]}")
-        else:
-            append_to_file(target_file, cleaned)
+        append_to_file(target_file, cleaned)
         appended += 1
         new_items.append(f"{topic}: {title or cleaned.splitlines()[0][:60]}")
         # also update existing_map so duplicates in same run are caught
@@ -172,7 +161,7 @@ def handle_interrupt(signum, frame):
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Process vocabulary inbox and generate structured vocabulary articles.")
-    p.add_argument("--config", type=Path, default=Path("config/defaults.toml"), help="Path to defaults TOML config")
+    p.add_argument("--config", type=Path, default=_REPO_ROOT / "config/defaults.toml", help="Path to defaults TOML config")
     p.add_argument("--inbox", type=Path, help="Inbox markdown file (overrides config)")
     p.add_argument("--prompt", type=Path, help="Prompt file with cleaning instructions")
     p.add_argument("--provider", type=str, help="LLM provider (gemini|openai|ollama)")
@@ -182,7 +171,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-retries", type=int, default=None)
     p.add_argument("--rate-limit", type=int, default=None, help="Requests per minute")
     p.add_argument("--show-items", action="store_true", help="Show produced items in summary")
-    p.add_argument("--dry-run", action="store_true", help="Don't modify files; just show actions")
     p.add_argument("--no-dotenv", action="store_true", help="Do not auto-load .env")
     return p
 
@@ -204,7 +192,7 @@ def main(argv: Optional[List[str]] = None):
         raise SystemExit("Inbox path must be provided by CLI or config file.")
     inbox_path = Path(inbox_path)
 
-    prompt_path = args.prompt or Path(cfg.get("processing", {}).get("prompt", "prompts/vocabulary_prompt.txt"))
+    prompt_path = args.prompt or Path(cfg.get("processing", {}).get("prompt", "prompts/vocabulary_prompt_template.txt"))
     provider = args.provider or cfg.get("llm", {}).get("provider", "gemini")
     model = args.model or cfg.get("llm", {}).get("model", "gemini-2.5-pro")
     model_params = args.model_params or cfg.get("llm", {}).get("model_params", {})
@@ -214,9 +202,10 @@ def main(argv: Optional[List[str]] = None):
     rate_limit = args.rate_limit or cfg.get("llm", {}).get("rate_limit_per_minute", None)
     batch_size = args.batch_size or cfg.get("processing", {}).get("batch_size", 1)
     show_items = args.show_items or cfg.get("processing", {}).get("show_items", False)
-    dry_run = args.dry_run or cfg.get("processing", {}).get("dry_run", False)
 
-    system_prompt = load_prompt(prompt_path)
+    # FIXME Next step: processing the config correctly!
+    # First, provide the defaults in the command line arguments
+    system_prompt = render_prompt(prompt_path, cfg)
     inbox_text = read_text(inbox_path)
     sections = split_sections(inbox_text)
     total = len(sections)
@@ -264,8 +253,7 @@ def main(argv: Optional[List[str]] = None):
                 topic_map=topic_map,
                 articles=articles,
                 existing_map=existing_map,
-                show_items=show_items,
-                dry_run=dry_run,
+                show_items=show_items
             )
             for it in new_items:
                 # increment summary based on topic prefix
@@ -278,10 +266,7 @@ def main(argv: Optional[List[str]] = None):
             # unprocessed ones: we remove the first i+batch_size sections.
             if appended > 0:
                 remaining = "\n\n---\n\n".join(sections[i + batch_size :])
-                if dry_run:
-                    tqdm.write("[dry-run] Would update inbox to remove processed sections")
-                else:
-                    atomic_write(inbox_path, remaining)
+                atomic_write(inbox_path, remaining)
             pbar.update(len(batch))
             i += batch_size
 
