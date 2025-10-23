@@ -84,20 +84,33 @@ def join_sections_for_batch(sections: List[str], sep: str = "\n\n---\n\n") -> st
 
 def clean_llm_text_block(block: str) -> str:
     """
-    Clean a single LLM-generated block:
-    - remove code fences ```...```
-    - remove leading/trailing whitespace
-    - remove duplicated separators inside
-    - ensure it ends with a single newline
+    Clean a single LLM-generated block (simplified version):
+    - remove all backtick (`) characters
+    - remove separator lines (---)
+    - collapse multiple blank lines into a single one
+    - trim leading/trailing whitespace
+    - ensure it ends with exactly one newline
     """
-    # remove fenced code blocks
-    block = re.sub(r"```(?:[\s\S]*?)```", "", block)
-    # remove any '---' separators inside the block (we treat top-level separators only)
-    block = re.sub(r"(^|\n)\s*-{3,}\s*(\n|$)", "\n", block)
+    if not block:
+        return "\n"
+
+    # remove all backticks
+    block = block.replace("`", "")
+
+    # collapse multiple blank lines
+    block = re.sub(r"\n\s*\n+", "\n", block)
+
+    # remove separator lines (--- etc.)
+    block = re.sub(r"^\s*-{3,}\s*$", "", block, flags=re.MULTILINE)
+
+    # collapse multiple blank lines
+    block = re.sub(r"\n\s*\n+", "\n", block)
+
+    # strip leading/trailing whitespace
     block = block.strip()
-    if not block.endswith("\n"):
-        block = block + "\n"
-    return block
+
+    # ensure one trailing newline
+    return block + "\n"
 
 
 def split_llm_response_into_articles(llm_text: str) -> List[str]:

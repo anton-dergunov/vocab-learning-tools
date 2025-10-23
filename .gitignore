@@ -3,3 +3,6 @@ __old/
 .env
 *.pyc
 config/defaults.toml
+test-data/
+test-data-bkp/
+.vscode/launch.json

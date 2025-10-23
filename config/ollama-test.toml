@@ -10,10 +10,10 @@ topics = [
 
 [files]
 # Source file containing new vocabulary entries
-inbox = "/Users/anton/data/spanish-vocab/Vocabulary/Spanish vocab - Inbox.md"
+inbox = "/Users/anton/projects/anki-cards-generator/test-data/Spanish vocab - Inbox.md"
 
 # Destination pattern for categorized vocabulary (%topic = placeholder)
-output_pattern = "/Users/anton/data/spanish-vocab/Vocabulary/Spanish vocab - %topic.md"
+output_pattern = "/Users/anton/projects/anki-cards-generator/test-data/Spanish vocab - %topic.md"
 
 [llm]
 # AI service provider
@@ -22,14 +22,14 @@ provider = "ollama"
 
 # Model version to use
 # TODO List all options
-model = "gemma3:4b'"
+model = "gemma3:4b"
 
 # Custom model parameters (empty for defaults)
 # TODO List all options
 model_params = {}
 
 # Path to prompt template
-prompt = "prompts/vocabulary_prompt_template.txt"
+prompt_path = "prompts/vocabulary_prompt_template.txt"
 
 # Retry attempts on failure
 max_retries = 2
