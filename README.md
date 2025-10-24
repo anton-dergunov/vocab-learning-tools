@@ -157,5 +157,5 @@ flowchart TD
     I -->|Existing| K[Skip Images]
 
     J --> L[build_anki_deck.py]
-    L --> M[Final Anki Deck (.apkg)]
+    L --> M["Final Anki Deck (.apkg)"]
 ```
