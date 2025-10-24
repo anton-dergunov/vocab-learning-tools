@@ -9,21 +9,6 @@ from .fileops import atomic_write, append_to_file, read_text, backup_file
 
 logger = logging.getLogger("vocabgen.vocab_processor")
 
-# Allowed topics
-ALLOWED_TOPICS = [
-    "Emotions",
-    "Actions",
-    "Nature",
-    "Culture",
-    "Food",
-    "Health",
-    "Appearance",
-    "Technology",
-    "Travel",
-    "Slang",
-    "Misc",
-]
-
 
 def normalize_separator_line(line: str) -> bool:
     """
@@ -133,19 +118,12 @@ _title_re = re.compile(r"^#{1,6}\s*\*\*(?P<title>.+?)\*\*", re.IGNORECASE | re.M
 def extract_topic_from_article(article: str) -> Optional[str]:
     """
     Extract the Topic: <TopicName> line from the article.
-    If found, return normalized topic if it's in ALLOWED_TOPICS. Otherwise return 'Misc'.
     If not found, return None.
     """
     m = _topic_re.search(article)
     if not m:
         return None
-    raw = m.group("topic").strip()
-    # Normalize capitalization
-    for allowed in ALLOWED_TOPICS:
-        if raw.lower() == allowed.lower():
-            return allowed
-    # If not exact match, fallback to closest (Misc)
-    return "Misc"
+    return m.group("topic").strip()
 
 
 def remove_topic_line(article: str) -> str:

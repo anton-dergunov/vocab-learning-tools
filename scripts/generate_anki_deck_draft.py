@@ -24,7 +24,7 @@ SAMPLE_RATE = 24000
 SILENCE = np.zeros(int(SAMPLE_RATE * SILENCE_DURATION))
 
 # Consistent CSS for styling
-with open('templates/anki.css', 'r', encoding='utf-8') as css_file:
+with open('../templates/anki.css', 'r', encoding='utf-8') as css_file:
     ANKI_CSS = css_file.read()
 
 
@@ -144,18 +144,18 @@ def main():
         print(f"Error reading JSON file: {e}", file=sys.stderr)
         sys.exit(1)
 
-    jinja_env = Environment(loader=FileSystemLoader('templates'))
+    jinja_env = Environment(loader=FileSystemLoader('../templates'))
     template_word_comment = jinja_env.get_template('word_comment.html')
     meaning_word_comment = jinja_env.get_template('meaning_comment.html')
 
-    #pipe = create_stable_diffusion_pipeline()
+    pipe = create_stable_diffusion_pipeline()
 
     deck = AnkiDeck()
 
     # Add card for the word itself
     word_filename = generate_file_name(data['word'])
-    # generate_image(pipe, data['image_prompt'], f"{word_filename}.jpg")
-    # generate_audio(data['word'], f"{word_filename}.mp3")
+    generate_image(pipe, data['image_prompt'], f"{word_filename}.jpg")
+    generate_audio(data['word'], f"{word_filename}.mp3")
 
     deck.add_note(
         data['word'],
@@ -169,8 +169,8 @@ def main():
     for m in data['meanings']:
         example = m['example']
         meaning_filename = generate_file_name(example['spanish_phrase'])
-        # generate_image(pipe, m['image_prompt'], f"{meaning_filename}.jpg")
-        # generate_audio(example['spanish_phrase'], f"{meaning_filename}.mp3")
+        generate_image(pipe, m['image_prompt'], f"{meaning_filename}.jpg")
+        generate_audio(example['spanish_phrase'], f"{meaning_filename}.mp3")
 
         deck.add_note(
             example['spanish_phrase'],

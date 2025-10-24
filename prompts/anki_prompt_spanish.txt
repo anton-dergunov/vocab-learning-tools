@@ -27,36 +27,36 @@ Example:
       "example": {
         "spanish_phrase": "Añoro la libertad de mi infancia.",
         "english_translation": "I yearn for the freedom of my childhood.",
+        "image_prompt": "A child running barefoot through a field at golden hour, kite flying high, warm glow, motion blur on grass, nostalgic tone, photorealistic style with soft lens effects, evoking joyful freedom and innocence",
         "comment": "This evokes a desire for a simpler, less complicated time."
       },
-      "image_prompt": "A child running barefoot through a field at golden hour, kite flying high, warm glow, motion blur on grass, nostalgic tone, photorealistic style with soft lens effects, evoking joyful freedom and innocence"
     },
     {
       "meaning": "To miss someone deeply",
       "example": {
         "spanish_phrase": "Añoro a mis abuelos, aunque ya no están.",
         "english_translation": "I deeply miss my grandparents, even though they are no longer here.",
+        "image_prompt": "An elderly couple’s sepia-toned portrait on an old wooden nightstand beside a flickering candle, dried flowers nearby, moody lighting, rich textures, painterly realism, evoking deep emotional memory and quiet loss",
         "comment": "This expression shows a profound sadness and longing for a lost connection."
       },
-      "image_prompt": "An elderly couple’s sepia-toned portrait on an old wooden nightstand beside a flickering candle, dried flowers nearby, moody lighting, rich textures, painterly realism, evoking deep emotional memory and quiet loss"
     },
     {
       "meaning": "To long for a peaceful emotional state",
       "example": {
         "spanish_phrase": "Añoro la tranquilidad que siento cuando escucho música clásica.",
         "english_translation": "I long for the peace I feel when I listen to classical music.",
+        "image_prompt": "A woman lying on a vintage sofa surrounded by classical instruments, eyes closed, candlelight casting dancing shadows on the walls, expression serene, Baroque-style realism with soft focus and layered tones",
         "comment": "‘Añorar’ describes a strong desire for an emotional atmosphere of calm and beauty."
       },
-      "image_prompt": "A woman lying on a vintage sofa surrounded by classical instruments, eyes closed, candlelight casting dancing shadows on the walls, expression serene, Baroque-style realism with soft focus and layered tones"
     },
     {
       "meaning": "To nostalgically yearn for a past era",
       "example": {
         "spanish_phrase": "Añoraba la época dorada del cine clásico.",
         "english_translation": "I longed for the golden age of classic cinema.",
+        "image_prompt": "A 1950s-style cinema with glowing neon signs on a rainy night, reflections on the pavement, people in vintage clothing under umbrellas, film posters from a bygone era, cinematic realism with noir atmosphere",
         "comment": "This implies a romanticized longing for a bygone cultural moment.",
       },
-      "image_prompt": "A 1950s-style cinema with glowing neon signs on a rainy night, reflections on the pavement, people in vintage clothing under umbrellas, film posters from a bygone era, cinematic realism with noir atmosphere"
     }
   ],
   "notes": [
@@ -70,5 +70,3 @@ Example:
 }
 
 Now do the same for the following input:
-
-anhelar
