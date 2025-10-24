@@ -139,3 +139,23 @@ Topic: {{ topic }}
 
 4. **Check your topic files**
    Newly generated articles appear in `data/Health.md`, `data/Misc.md`, etc.
+
+
+```mermaid
+flowchart TD
+    A[Vocabulary Files] --> B[generate_vocabulary_data.py]
+    B --> C{Cache Manager}
+    C -->|Missing| D[LLM Client → Articles JSON]
+    C -->|Existing| E[Skip]
+
+    D --> F[generate_audio.py]
+    F -->|Missing Audio| G[Audio Generator]
+    F -->|Existing| H[Skip Audio]
+
+    G --> I[generate_images.py]
+    I -->|Missing Images| J[Image Generator]
+    I -->|Existing| K[Skip Images]
+
+    J --> L[build_anki_deck.py]
+    L --> M[Final Anki Deck (.apkg)]
+```
