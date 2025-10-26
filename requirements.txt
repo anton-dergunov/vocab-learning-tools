@@ -12,3 +12,4 @@ ollama
 google-genai
 pytest
 python-box
+python-slugify

@@ -43,3 +43,12 @@ def test_backup_file_creates_copy(tmp_path):
 def test_backup_file_raises_for_missing(tmp_path):
     with pytest.raises(FileNotFoundError):
         fileops.backup_file(tmp_path / "nonexistent.txt")
+
+
+def test_slugify():
+    assert fileops.slugify_filename("cómodo") == "comodo"
+    assert fileops.slugify_filename("  Qué linda sako!  ") == "que_linda_sako"
+    assert fileops.slugify_filename("你好") == "ni_hao"
+    assert fileops.slugify_filename("Привет мир") == "privet_mir"
+    assert fileops.slugify_filename("a / b \\ c") == "a_b_c"
+    assert fileops.slugify_filename("a ? b :") == "a_b"

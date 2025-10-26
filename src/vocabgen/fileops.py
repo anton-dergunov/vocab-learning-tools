@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterable
 import tempfile
 import datetime
+from slugify import slugify
 
 
 def atomic_write(path: Path, data: str, encoding: str = "utf-8") -> None:
@@ -57,3 +58,15 @@ def backup_file(path: Path, keep_timestamp: bool = True) -> Path:
     bak_path = path.with_suffix(path.suffix + ".bak")
     shutil.copy2(str(path), str(bak_path))
     return bak_path
+
+
+def slugify_filename(s: str) -> str:
+    """
+    Safer file-name slugify.
+    - Converts to lowercase
+    - Removes accents
+    - Replaces spaces with underscores
+    - Removes punctuation
+    - Keeps ASCII only
+    """
+    return slugify(s, separator="_", allow_unicode=False)
