@@ -1,0 +1,17 @@
+
+tts:
+  provider: kokoro
+  options:
+    lang_code: e
+    voice: "ef_dora"
+    #speed: 1.0
+    #device: "mps"
+
+image:
+  provider: stable_diffusion
+  options:
+    model_id: "dreamlike-art/dreamlike-photoreal-2.0"
+    width: 384
+    height: 384
+    device: "mps"
+
