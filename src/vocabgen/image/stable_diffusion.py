@@ -18,6 +18,8 @@ class StableDiffusionProvider(ImageProvider):
         self.config = config
 
     def synthesize(self, text: str, output_path: str) -> None:
+        # TODO Consider these arguments:
+        # output = pipe(prompt, height=height, width=width, num_inference_steps=num_inference_steps, guidance_scale=guidance_scale)
         image = self.pipeline(text).images[0]
 
         max_size=(self.config.get("width", DEFAULT_WIDTH), self.config.get("height", DEFAULT_HEIGHT))

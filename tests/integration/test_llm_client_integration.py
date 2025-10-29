@@ -6,14 +6,15 @@ import vocabgen.llm_client as llm_client
 load_dotenv()
 
 
+RUN_HEAVY_INTEGRATION_TESTS = os.getenv("RUN_HEAVY_INTEGRATION_TESTS", "false").lower() == "true"
+
+
 @pytest.mark.integration
+@pytest.mark.skipif(not RUN_HEAVY_INTEGRATION_TESTS,
+                    reason="Integration tests disabled (set RUN_HEAVY_INTEGRATION_TESTS=1 to enable)")
+@pytest.mark.skipif(not os.environ.get("GEMINI_API_KEY"),
+                    reason="GEMINI_API_KEY not set")
 def test_gemini_integration_quick():
-    if os.environ.get("RUN_LLM_INTEGRATION_TESTS") != "1":
-        pytest.skip("Integration tests disabled (set RUN_LLM_INTEGRATION_TESTS=1 to enable)")
-
-    if not os.environ.get("GEMINI_API_KEY"):
-        pytest.skip("GEMINI_API_KEY not set")
-
     model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
     resp = llm_client.generate_text(
         provider="gemini",
@@ -27,13 +28,11 @@ def test_gemini_integration_quick():
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(not RUN_HEAVY_INTEGRATION_TESTS,
+                    reason="Integration tests disabled (set RUN_HEAVY_INTEGRATION_TESTS=1 to enable)")
+@pytest.mark.skipif(llm_client.OllamaClient is None,
+                    reason="Ollama client not installed")
 def test_ollama_integration_quick():
-    if os.environ.get("RUN_LLM_INTEGRATION_TESTS") != "1":
-        pytest.skip("Integration tests disabled (set RUN_LLM_INTEGRATION_TESTS=1 to enable)")
-
-    if llm_client.OllamaClient is None:
-        pytest.skip("Ollama client not installed")
-
     model = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
     resp = llm_client.generate_text(
         provider="ollama",
