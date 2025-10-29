@@ -159,3 +159,7 @@ flowchart TD
     J --> L[build_anki_deck.py]
     L --> M["Final Anki Deck (.apkg)"]
 ```
+
+To run the slow integration test manually:
+PYTHONPATH=. RUN_SLOW_INTEGRATION_TESTS=True pytest -m integration
+

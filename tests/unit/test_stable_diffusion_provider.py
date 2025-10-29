@@ -2,10 +2,10 @@ import torch
 from PIL import Image
 from unittest.mock import patch, MagicMock
 
-from vocabgen.image.stable_diffusion import StableDiffusionProvider
+from vocabgen.vision.stable_diffusion import StableDiffusionProvider
 
 
-@patch("vocabgen.image.stable_diffusion.StableDiffusionPipeline")
+@patch("vocabgen.vision.stable_diffusion.StableDiffusionPipeline")
 def test_stable_diffusion_provider_synthesize(mock_sd_pipeline):
     # Setup mock pipeline
     mock_pipeline_instance = MagicMock()

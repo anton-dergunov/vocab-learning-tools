@@ -1,15 +1,15 @@
 import pytest
 import os
 import torch
-from vocabgen.image.stable_diffusion import StableDiffusionProvider
+from vocabgen.vision.stable_diffusion import StableDiffusionProvider
 
 
-RUN_HEAVY_INTEGRATION_TESTS = os.getenv("RUN_HEAVY_INTEGRATION_TESTS", "false").lower() == "true"
+RUN_SLOW_INTEGRATION_TESTS = os.getenv("RUN_SLOW_INTEGRATION_TESTS", "false").lower() == "true"
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not RUN_HEAVY_INTEGRATION_TESTS,
-                    reason="Integration tests disabled (set RUN_HEAVY_INTEGRATION_TESTS=1 to enable)")
+@pytest.mark.skipif(not RUN_SLOW_INTEGRATION_TESTS,
+                    reason="Integration tests disabled (set RUN_SLOW_INTEGRATION_TESTS=1 to enable)")
 def test_stable_diffusion_generate_image(tmp_path):
     device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
     config = {
