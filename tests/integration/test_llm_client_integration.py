@@ -6,12 +6,12 @@ import vocabgen.llm_client as llm_client
 load_dotenv()
 
 
-RUN_HEAVY_INTEGRATION_TESTS = os.getenv("RUN_HEAVY_INTEGRATION_TESTS", "false").lower() == "true"
+RUN_SLOW_INTEGRATION_TESTS = os.getenv("RUN_SLOW_INTEGRATION_TESTS", "false").lower() == "true"
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not RUN_HEAVY_INTEGRATION_TESTS,
-                    reason="Integration tests disabled (set RUN_HEAVY_INTEGRATION_TESTS=1 to enable)")
+@pytest.mark.skipif(not RUN_SLOW_INTEGRATION_TESTS,
+                    reason="Integration tests disabled (set RUN_SLOW_INTEGRATION_TESTS=1 to enable)")
 @pytest.mark.skipif(not os.environ.get("GEMINI_API_KEY"),
                     reason="GEMINI_API_KEY not set")
 def test_gemini_integration_quick():
@@ -28,8 +28,8 @@ def test_gemini_integration_quick():
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not RUN_HEAVY_INTEGRATION_TESTS,
-                    reason="Integration tests disabled (set RUN_HEAVY_INTEGRATION_TESTS=1 to enable)")
+@pytest.mark.skipif(not RUN_SLOW_INTEGRATION_TESTS,
+                    reason="Integration tests disabled (set RUN_SLOW_INTEGRATION_TESTS=1 to enable)")
 @pytest.mark.skipif(llm_client.OllamaClient is None,
                     reason="Ollama client not installed")
 def test_ollama_integration_quick():
