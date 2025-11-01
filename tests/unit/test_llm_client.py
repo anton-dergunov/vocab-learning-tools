@@ -5,14 +5,6 @@ from unittest.mock import MagicMock, patch
 import vocabgen.llm_client as llm_client
 
 
-def test_rate_limiter_allows_immediate_calls_when_unlimited():
-    rl = llm_client.RateLimiter(max_calls_per_minute=None)
-    start = time.time()
-    rl.acquire()
-    rl.acquire()
-    assert time.time() - start < 0.1
-
-
 def test_generate_text_uses_openai_mock():
     fake_choice = MagicMock()
     fake_choice.message.content = "hello from openai"

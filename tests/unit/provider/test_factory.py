@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from vocabgen.provider_factory import create_provider
+from vocabgen.provider.factory import create_provider
 
 
 @patch("importlib.import_module")

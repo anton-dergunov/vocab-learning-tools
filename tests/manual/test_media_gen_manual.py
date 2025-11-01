@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 import yaml
 
-from vocabgen.provider_factory import create_provider
+from vocabgen.provider.factory import create_provider
 
 
 def main():
