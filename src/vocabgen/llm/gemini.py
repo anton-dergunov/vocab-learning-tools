@@ -21,11 +21,11 @@ class GeminiProvider(LLMProvider):
         self.client = genai.Client()
         self.rate_limiter = RateLimiter(self.rate_limit_per_minute)
 
-    @retry(max_retries=3, max_backoff_seconds=5)
-    def generate(self, user_prompt: str) -> str:
+    @retry()
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
         self.rate_limiter.acquire()
 
-        contents = f"{self.system_prompt}\n\n{user_prompt}"
+        contents = f"{system_prompt}\n\n{user_prompt}"
         kwargs = {"model": self.model, "contents": contents}
         kwargs.update(self.model_params or {})
 

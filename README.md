@@ -162,5 +162,5 @@ flowchart TD
 ```
 
 To run the slow integration test manually:
-PYTHONPATH=. RUN_SLOW_INTEGRATION_TESTS=True pytest -m integration
+`PYTHONPATH=. RUN_SLOW_INTEGRATION_TESTS=True pytest -m integration`
 

@@ -21,12 +21,12 @@ class OpenaiProvider(LLMProvider):
         self.client = OpenAI()
         self.rate_limiter = RateLimiter(self.rate_limit_per_minute)
 
-    @retry(max_retries=3, max_backoff_seconds=5)
-    def generate(self, user_prompt: str) -> str:
+    @retry()
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
         self.rate_limiter.acquire()
 
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
         params = {"model": self.model, "messages": messages}

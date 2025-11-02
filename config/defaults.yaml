@@ -1,4 +1,33 @@
 
+vocabulary:
+  # Target language for processing
+  language: "Spanish"
+
+  # Available categories for vocabulary classification
+  topics = [
+    "Emotions", "Actions", "Nature", "Culture", "Food",
+    "Health", "Appearance", "Technology", "Travel", "Slang", "Misc"
+  ]
+
+llm:
+  # TODO List all options
+  provider: "gemini"
+
+  options:
+    # Model version to use
+    # TODO List all options
+    # https://ai.google.dev/gemini-api/docs/models
+    model: "gemini-flash-latest"
+
+    # Custom model parameters (empty for defaults)
+    # TODO List all options
+    model_params: {}
+
+    # Rate limiting (requests per minute)
+    # TODO Explain usage, make optional
+    rate_limit_per_minute: 10
+
+# Add comments for these settings
 tts:
   provider: kokoro
   options:
@@ -14,4 +43,3 @@ image:
     width: 384
     height: 384
     device: "mps"
-

@@ -16,7 +16,7 @@ def create_provider(type: str, config: dict):
     provider_name = config["provider"]
     options = config.get("options", {})
 
-    module_name = f"{type}.{provider_name}"
+    module_name = f"vocabgen.{type}.{provider_name}"
     class_name = "".join(word.capitalize() for word in provider_name.split("_")) + "Provider"
 
     module = importlib.import_module(module_name)

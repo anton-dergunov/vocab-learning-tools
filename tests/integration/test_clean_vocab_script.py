@@ -51,9 +51,10 @@ show_items = true
     return tmp_path
 
 
-def fake_generate_text(provider, model, system_prompt, user_prompt, model_params, max_retries, rate_limit_per_minute):
+def fake_generate(self, system_prompt: str, user_prompt: str) -> str:
     """
-    Fake LLM call that returns a clean, formatted vocabulary article depending on input.
+    Fake provider call that returns a clean, formatted vocabulary article
+    depending on the input prompt content.
     """
     if "saco" in user_prompt:
         return """##### **el saco** 🧥
@@ -71,9 +72,10 @@ Topic: Slang
 
 def test_clean_vocab_flow(tmp_path, monkeypatch):
     """
-    End-to-end test for CLI script using mocked LLM and temporary files.
+    End-to-end test for CLI script using mocked LLM provider and temporary files.
     """
-    with patch("vocabgen.llm_client.generate_text", side_effect=fake_generate_text):
+    # ✅ Patch the provider's `generate` method instead of `generate_text`
+    with patch("vocabgen.llm.gemini.GeminiProvider.generate", new=fake_generate):
         cfg_file = tmp_path / "config" / "defaults.toml"
         clean_vocab_script.main(argv=["--config", str(cfg_file)])
 

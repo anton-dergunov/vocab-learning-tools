@@ -39,8 +39,11 @@ from vocabgen.vocab_processor import (
     scan_topic_files_for_titles,
     find_fuzzy_matches
 )
+# TODO Lots of import above, simplify this
 from vocabgen.fileops import read_text, backup_file, atomic_write, append_to_file
-from vocabgen import llm_client
+from vocabgen.provider.factory import create_provider
+from vocabgen.llm.base import LLMProvider
+
 
 logger = logging.getLogger("vocabgen.clean_vocab")
 
@@ -115,27 +118,15 @@ def ensure_trailing_newlines(path: Path, needed: int = 2):
 
 
 def process_batch_with_llm(
-    provider: str,
-    model: str,
+    llm: LLMProvider,
     system_prompt: str,
     sections: List[str],
-    model_params: Dict[str, Any],
-    max_retries: int,
-    rate_limit_per_minute: Optional[int]
 ) -> List[str]:
     """
     Send batch to LLM and return raw text response.
     """
     user_prompt = join_sections_for_batch(sections, sep="\n\n---\n\n")
-    resp = llm_client.generate_text(
-        provider=provider,
-        model=model,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        model_params=model_params,
-        max_retries=max_retries,
-        rate_limit_per_minute=rate_limit_per_minute,
-    )
+    resp = llm.generate(system_prompt, user_prompt)
     return split_llm_response_into_articles(resp)
 
 
@@ -225,17 +216,24 @@ def main(argv: Optional[List[str]] = None):
     summary = {t: 0 for t in topic_map}
     all_conflicts, fuzzy_conflicts = [], []
 
+    # TODO Load from yaml instead
+    llm_config = {
+        "provider": config.llm.provider,
+        "options": {
+            "model": config.llm.model,
+            "model_params": config.llm.model_params,
+            "rate_limit_per_minute": config.llm.rate_limit_per_minute,
+        },
+    }
+    llm = create_provider("llm", llm_config)
+
     for i in range(0, total, config.processing.batch_size):
         batch = sections[i : i + config.processing.batch_size]
         try:
             articles = process_batch_with_llm(
-                provider=config.llm.provider,
-                model=config.llm.model,
+                llm,
                 system_prompt=system_prompt,
-                sections=batch,
-                model_params=config.llm.model_params,
-                max_retries=config.llm.max_retries,
-                rate_limit_per_minute=config.llm.rate_limit_per_minute,
+                sections=batch
             )
 
             appended, new_items, conflicts, fuzzies = write_articles_atomic(topic_map, articles, existing_map)
