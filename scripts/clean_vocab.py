@@ -3,8 +3,8 @@
 CLI script to clean vocabulary inbox and append generated articles into topic files.
 
 Usage:
-    python scripts/clean_vocab.py              # uses config/defaults.toml or CLI overrides
-    python scripts/clean_vocab.py --inbox /path/to/inbox.md --batch-size 2 --show-items
+    python scripts/clean_vocab.py              # uses config/defaults.yaml or CLI overrides
+    python scripts/clean_vocab.py --config config/custom.yaml
 """
 
 from __future__ import annotations
@@ -13,13 +13,14 @@ import logging
 import signal
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union
-import tomllib
+from typing import Dict, List, Optional, Tuple, Union
+import yaml
 from box import Box
 from jinja2 import Environment
 from dotenv import load_dotenv
 from tqdm import tqdm
 from textwrap import indent
+
 
 # Make sure we can import local package without installing by adding repo src to sys.path.
 _THIS_FILE = Path(__file__).resolve()
@@ -93,9 +94,9 @@ def render_prompt(template_path: Union[str, Path], config: Box) -> str:
 
 
 def load_config(path: Union[str, Path]) -> Box:
-    """Load TOML config with dot notation access."""
-    with open(path, 'rb') as f:
-        config_dict = tomllib.load(f)
+    """Load YAML config with dot-notation access."""
+    with open(path, "r", encoding="utf-8") as f:
+        config_dict = yaml.safe_load(f)
     return Box(config_dict)
 
 
@@ -187,7 +188,12 @@ def main(argv: Optional[List[str]] = None):
     signal.signal(signal.SIGINT, handle_interrupt)
 
     p = argparse.ArgumentParser(description="Process vocabulary inbox and append new items.")
-    p.add_argument("--config", type=Path, default=_REPO_ROOT / "config/defaults.toml", help="Path to config")
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=_REPO_ROOT / "config/defaults.yaml",
+        help="Path to YAML config"
+    )
     args = p.parse_args(argv)
 
     load_dotenv()
@@ -216,14 +222,9 @@ def main(argv: Optional[List[str]] = None):
     summary = {t: 0 for t in topic_map}
     all_conflicts, fuzzy_conflicts = [], []
 
-    # TODO Load from yaml instead
     llm_config = {
         "provider": config.llm.provider,
-        "options": {
-            "model": config.llm.model,
-            "model_params": config.llm.model_params,
-            "rate_limit_per_minute": config.llm.rate_limit_per_minute,
-        },
+        "options": config.llm.options.to_dict(),
     }
     llm = create_provider("llm", llm_config)
 

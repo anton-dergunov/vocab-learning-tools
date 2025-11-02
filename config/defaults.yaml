@@ -1,43 +1,60 @@
-
 vocabulary:
   # Target language for processing
   language: "Spanish"
 
   # Available categories for vocabulary classification
-  topics = [
-    "Emotions", "Actions", "Nature", "Culture", "Food",
-    "Health", "Appearance", "Technology", "Travel", "Slang", "Misc"
-  ]
+  topics:
+    - "Emotions"
+    - "Actions"
+    - "Nature"
+    - "Culture"
+    - "Food"
+    - "Health"
+    - "Appearance"
+    - "Technology"
+    - "Travel"
+    - "Slang"
+    - "Misc"
+
+files:
+  # Source file containing new vocabulary entries
+  inbox: "/Users/anton/Dropbox/notes/obsidian/Languages/Spanish/Vocabulary/Spanish vocab - Inbox.md"
+
+  # Destination pattern for categorized vocabulary (%topic = placeholder)
+  output_pattern: "/Users/anton/Dropbox/notes/obsidian/Languages/Spanish/Vocabulary/Spanish vocab - %topic.md"
 
 llm:
-  # TODO List all options
+  # AI service provider
   provider: "gemini"
 
+  # FIXME This would be task-specific, so move to some other place
+  prompt_path: "prompts/vocabulary_prompt_template.txt"
+
+  # Options for the LLM provider
   options:
-    # Model version to use
-    # TODO List all options
-    # https://ai.google.dev/gemini-api/docs/models
     model: "gemini-flash-latest"
-
-    # Custom model parameters (empty for defaults)
-    # TODO List all options
     model_params: {}
-
-    # Rate limiting (requests per minute)
-    # TODO Explain usage, make optional
     rate_limit_per_minute: 10
 
-# Add comments for these settings
+processing:
+  # Items to process per batch
+  batch_size: 1
+
+  # Display the new vocabulary items
+  show_items: true
+
 tts:
-  provider: kokoro
+  # Text-to-speech service
+  provider: "kokoro"
   options:
-    lang_code: e
+    lang_code: "e"
     voice: "ef_dora"
-    #speed: 1.0
-    #device: "mps"
+    # speed: 1.0
+    # device: "mps"
 
 image:
-  provider: stable_diffusion
+  # Image generation service
+  provider: "stable_diffusion"
   options:
     model_id: "dreamlike-art/dreamlike-photoreal-2.0"
     width: 384

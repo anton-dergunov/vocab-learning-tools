@@ -7,7 +7,7 @@ import scripts.clean_vocab as clean_vocab_script
 @pytest.fixture(autouse=True)
 def tmp_env(tmp_path, monkeypatch):
     """
-    Create temporary config, inbox, and prompt files matching the new schema.
+    Create a temporary YAML config, inbox, and prompt files matching the new schema.
     """
     cfg_dir = tmp_path / "config"
     cfg_dir.mkdir()
@@ -21,29 +21,40 @@ def tmp_env(tmp_path, monkeypatch):
     # Create output pattern directory (files will be created per topic)
     out_pattern = str(tmp_path / "Spanish vocab - %topic.md")
 
-    cfg_path = cfg_dir / "defaults.toml"
+    # ✅ YAML version of config
+    cfg_path = cfg_dir / "defaults.yaml"
     cfg_path.write_text(
         f"""
-[vocabulary]
-language = "Spanish"
-topics = ["Emotions", "Actions", "Nature", "Culture", "Food",
-          "Health", "Appearance", "Technology", "Travel", "Slang", "Misc"]
+vocabulary:
+  language: "Spanish"
+  topics:
+    - "Emotions"
+    - "Actions"
+    - "Nature"
+    - "Culture"
+    - "Food"
+    - "Health"
+    - "Appearance"
+    - "Technology"
+    - "Travel"
+    - "Slang"
+    - "Misc"
 
-[files]
-inbox = "{inbox_path}"
-output_pattern = "{out_pattern}"
+files:
+  inbox: "{inbox_path}"
+  output_pattern: "{out_pattern}"
 
-[llm]
-provider = "gemini"
-model = "fake-model"
-model_params = {{}}
-prompt_path = "{prompt_path}"
-max_retries = 1
-rate_limit_per_minute = 5
+llm:
+  provider: "gemini"
+  prompt_path: "{prompt_path}"
+  options:
+    model: "fake-model"
+    model_params: {{}}
+    rate_limit_per_minute: 5
 
-[processing]
-batch_size = 1
-show_items = true
+processing:
+  batch_size: 1
+  show_items: true
 """
     )
 
@@ -76,7 +87,7 @@ def test_clean_vocab_flow(tmp_path, monkeypatch):
     """
     # ✅ Patch the provider's `generate` method instead of `generate_text`
     with patch("vocabgen.llm.gemini.GeminiProvider.generate", new=fake_generate):
-        cfg_file = tmp_path / "config" / "defaults.toml"
+        cfg_file = tmp_path / "config" / "defaults.yaml"
         clean_vocab_script.main(argv=["--config", str(cfg_file)])
 
         # Verify topic files exist
