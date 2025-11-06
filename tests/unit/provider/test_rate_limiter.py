@@ -15,9 +15,8 @@ def test_rate_limiter_allows_immediate_calls_when_zero():
     """Zero or negative max_calls should disable rate limiting."""
     rl = RateLimiter(max_calls_per_minute=0)
     start = time.time()
-    rl.acquire()
-    rl.acquire()
-    rl.acquire()
+    for _ in range(100):  # Should not block
+        rl.acquire()
     assert time.time() - start < 0.1
 
 
