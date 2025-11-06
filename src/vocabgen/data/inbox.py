@@ -53,7 +53,7 @@ def split_sections(text: str) -> List[str]:
 
 class DraftInbox:
     """
-    Manage a simple single-file inbox that contains multiple draft
+    Manage a simple single-file inbox that contains multiple drafts.
     """
     SEPARATOR = "\n---\n"
 
@@ -68,11 +68,8 @@ class DraftInbox:
             return
 
         text = self.path.read_text(encoding="utf-8")
-        # Robust split: split on line consisting of 3+ dashes, allowing surrounding whitespace/newlines
-        parts = re.split(r"\n-{3,}\n", text.strip(), flags=re.MULTILINE)
-        parts = [p.strip() for p in parts if p.strip()]
         self._raw = text
-        self.entries = parts
+        self.entries = split_sections(text.strip())
 
     def __len__(self) -> int:
         return len(self.entries)
