@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from vocabgen.data.inbox import DraftInbox, normalize_separator_line, split_sections
+from vocabgen.data.draft_inbox import DraftInbox, normalize_separator_line, split_sections
 
 
 # --- Helpers ------------------------------------------------------------
