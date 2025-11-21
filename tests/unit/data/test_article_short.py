@@ -17,7 +17,7 @@ def test_parse_valid_article(sample_article_text):
     assert art.emoji == "🛶"
     assert art.translation == "raft"
     assert len(art.examples) == 2
-    assert art.examples[0].spanish_text.startswith("El río tenía")
+    assert art.examples[0].phrase.startswith("El río tenía")
     assert art.examples[0].translation == "The river had a raft."
     assert art.to_markdown().strip() == sample_article_text.strip()
 
@@ -31,7 +31,7 @@ def test_parse_article_without_emoji():
     assert art.headword == "el oso"
     assert art.emoji is None
     assert art.translation == "bear"
-    assert art.examples[0].translation is None or "cueva" in art.examples[0].spanish_text
+    assert art.examples[0].translation is None or "cueva" in art.examples[0].phrase
 
 
 def test_missing_translation_line_raises():
@@ -41,8 +41,45 @@ def test_missing_translation_line_raises():
         ArticleShort.parse_from_markdown(text)
 
 
-def test_invalid_heading_raises():
-    text = """#### **la luna**
+def test_invalid_heading_missing_hashes():
+    # Missing '#####' prefix
+    text = """**la luna** 🌙
+*moon*
+"""
+    with pytest.raises(ValueError, match="Invalid heading line"):
+        ArticleShort.parse_from_markdown(text)
+
+
+def test_invalid_heading_too_many_hashes():
+    # Wrong number of '#' characters (4 instead of 5)
+    text = """#### **la luna** 🌙
+*moon*
+"""
+    with pytest.raises(ValueError, match="Invalid heading line"):
+        ArticleShort.parse_from_markdown(text)
+
+
+def test_invalid_heading_missing_stars():
+    # Missing bold '**' around the word
+    text = """##### la luna 🌙
+*moon*
+"""
+    with pytest.raises(ValueError, match="Invalid heading line"):
+        ArticleShort.parse_from_markdown(text)
+
+
+def test_invalid_heading_no_word():
+    # Empty bold section
+    text = """##### **** 🌙
+*moon*
+"""
+    with pytest.raises(ValueError, match="Invalid heading line"):
+        ArticleShort.parse_from_markdown(text)
+
+
+def test_invalid_heading_missing_space_after_hashes():
+    # Missing space after ##### (must be "##### **word**")
+    text = """#####**la luna** 🌙
 *moon*
 """
     with pytest.raises(ValueError, match="Invalid heading line"):
@@ -72,7 +109,7 @@ def test_example_without_english_translation():
 > El **gato** duerme.
 """
     art = ArticleShort.parse_from_markdown(text)
-    assert art.examples[0].spanish_text == "El **gato** duerme."
+    assert art.examples[0].phrase == "El **gato** duerme."
     assert art.examples[0].translation is None
 
 
@@ -97,7 +134,7 @@ def test_validate_rejects_empty_fields():
     with pytest.raises(ValueError, match="Empty translation"):
         art.validate()
 
-    bad_example = ArticleShort.Example(spanish_text=" ", translation=None)
+    bad_example = ArticleShort.Example(phrase=" ", translation=None)
     art = ArticleShort(
         headword="hola",
         emoji=None,

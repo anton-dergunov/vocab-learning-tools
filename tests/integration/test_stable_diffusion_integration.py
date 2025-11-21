@@ -13,7 +13,8 @@ RUN_SLOW_INTEGRATION_TESTS = os.getenv("RUN_SLOW_INTEGRATION_TESTS", "false").lo
 def test_stable_diffusion_generate_image(tmp_path):
     device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
     config = {
-        "model_id": "stabilityai/sd-turbo", # "hf-internal-testing/tiny-stable-diffusion-torch",
+        "model_id": "hf-internal-testing/tiny-stable-diffusion-torch",
+        # "model_id": "stabilityai/sd-turbo",
         "device": device,
         "width": 100,
         "height": 100

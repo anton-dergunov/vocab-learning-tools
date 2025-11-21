@@ -24,7 +24,7 @@ class ArticleShort:
         Example:
           > El perro corre rápido. - The dog runs fast.
         """
-        spanish_text: str
+        phrase: str
         translation: Optional[str] = None
 
     headword: str
@@ -34,10 +34,7 @@ class ArticleShort:
     raw_markdown: str
 
     # Regex constants
-    HEADING_RE = re.compile(
-        r"^#####\s+\*\*(?P<headword>.+?)\*\*(?:\s+(?P<emoji>.+))?\s*$",
-        re.M,
-    )
+    HEADING_RE = re.compile(r"^#####\s+\*\*(?P<headword>.+?)\*\*(?:\s+(?P<emoji>.+))?\s*$")
     TRANSLATION_RE = re.compile(r"^\*(?P<translation>.+?)\*\s*$")
     EXAMPLE_RE = re.compile(r"^>\s*(?P<content>.+)$")
 
@@ -81,12 +78,12 @@ class ArticleShort:
                 raise ValueError(f"Invalid example line (must start with '>'): {ln!r}")
             content = m3.group("content").strip()
             if " - " in content:
-                spanish, english = content.split(" - ", 1)
+                phrase, phrase_translation = content.split(" - ", 1)
                 examples.append(
-                    cls.Example(spanish_text=spanish.strip(), translation=english.strip())
+                    cls.Example(phrase=phrase.strip(), translation=phrase_translation.strip())
                 )
             else:
-                examples.append(cls.Example(spanish_text=content, translation=None))
+                examples.append(cls.Example(phrase=content, translation=None))
 
         return cls(
             headword=headword,
@@ -106,9 +103,9 @@ class ArticleShort:
         lines.append(f"*{self.translation}*")
         for ex in self.examples:
             if ex.translation:
-                lines.append(f"> {ex.spanish_text} - {ex.translation}")
+                lines.append(f"> {ex.phrase} - {ex.translation}")
             else:
-                lines.append(f"> {ex.spanish_text}")
+                lines.append(f"> {ex.phrase}")
         return "\n".join(lines) + "\n"
 
     # --- Validation ------------------------------------------------------
@@ -123,5 +120,5 @@ class ArticleShort:
         if not self.translation.strip():
             raise ValueError("Empty translation")
         for ex in self.examples:
-            if not ex.spanish_text.strip():
+            if not ex.phrase.strip():
                 raise ValueError("Empty example text")
