@@ -1,6 +1,8 @@
 
 # 📘 Vocab-Learning-Tools
 
+[![Tests](https://github.com/adergunov/vocab-learning-tools/workflows/Tests/badge.svg)](https://github.com/adergunov/vocab-learning-tools/actions/workflows/tests.yml)
+
 **Vocab-Learning-Tools** is a set of scripts to help learning vocabulary when learning foreign languages
 
 TODO Describe all the scripts available
