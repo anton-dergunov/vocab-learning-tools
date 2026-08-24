@@ -7,6 +7,5 @@ __old/
 *.pyc
 test-data/
 test-data-bkp/
-.vscode/launch.json
 checking/
 old_prototypes/
