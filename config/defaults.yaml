@@ -68,4 +68,17 @@ image:
     model_id: "dreamlike-art/dreamlike-photoreal-2.0"
     width: 384
     height: 384
-    device: "mps"
+    # "auto" selects MPS, then CUDA, then CPU.
+    device: "auto"
+    # generation_params:
+    #   num_inference_steps: 50
+    #   guidance_scale: 7.5
+
+anki:
+  # Keep these IDs stable so rebuilding updates the same Anki model and deck.
+  model_id: 1607392319
+  deck_id: 2059400110
+  deck_name: "Spanish Vocabulary"
+  template_dir: "templates"
+  cache_dir: "cache"
+  output_dir: "output"

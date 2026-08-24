@@ -12,7 +12,7 @@ def test_kokoro_generate_audio(tmp_path):
 
     provider = KokoroProvider(config)
     output_file = tmp_path / "test.mp3"
-    provider.synthesize("Integration test: Hello, world!", str(output_file))
+    provider.synthesize("Añoro mi hogar.", str(output_file))
 
     assert output_file.exists()
     assert output_file.stat().st_size > 1000  # should not be empty

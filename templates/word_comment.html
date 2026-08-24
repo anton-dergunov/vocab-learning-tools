@@ -1,9 +1,9 @@
 <div class="image">
-    <img src="{{ word_filename }}.jpg" alt="{{ data.image_prompt }}">
+    <img src="{{ media.image_name }}" alt="{{ data.image_prompt }}">
 </div>
 
 <div class="audio">
-    [sound:{{ word_filename }}.mp3] Listen to pronunciation
+    [sound:{{ media.audio_name }}] Listen to pronunciation
 </div>
 
 {% if data.meanings %}
@@ -13,6 +13,9 @@
 <div class="meaning">
     <p><strong>{{ loop.index }}. {{ meaning.meaning }}</strong></p>
     <p><em>Example:</em> {{ meaning.example.spanish_phrase }} — {{ meaning.example.english_translation }}</p>
+    {% if meaning.example.comment %}
+    <p class="comment">{{ meaning.example.comment }}</p>
+    {% endif %}
 </div>
 {% endfor %}
 {% endif %}

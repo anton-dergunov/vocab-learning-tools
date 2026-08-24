@@ -6,6 +6,8 @@ __old/
 .env
 *.pyc
 /data/
+/cache/
+/output/
 config/local.yaml
 test-data/
 test-data-bkp/

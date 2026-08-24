@@ -1,17 +1,12 @@
-from diffusers import StableDiffusionPipeline
-import torch
-from PIL import Image
-from kokoro import KPipeline
-import soundfile as sf
-from pydub import AudioSegment
-import unicodedata
-from jinja2 import Environment, FileSystemLoader
-import genanki
-import numpy as np
+#!/usr/bin/env python3
+"""Build an Anki deck or a standalone HTML preview from ArticleExtended JSON."""
+
+from __future__ import annotations
+
 import argparse
 import sys
-import io
 from pathlib import Path
+from typing import Optional
 
 
 _THIS_FILE = Path(__file__).resolve()
@@ -20,179 +15,122 @@ _SRC = _REPO_ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from vocabgen.anki.preview import render_preview
+from vocabgen.config import load_config
 from vocabgen.data.article_extended import ArticleExtended
+from vocabgen.fileops import slugify_filename
 
 
-# TODO Read this example and check if anything could be improved
-# https://github.com/kerrickstaley/genanki/blob/main/tests/test_genanki.py
+def resolve_project_path(value: str | Path, project_root: Path = _REPO_ROOT) -> Path:
+    """Resolve configured and CLI paths consistently from the project root."""
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else project_root / path
 
 
-# Generate silence (e.g., 0.3 seconds at 24kHz)
-SILENCE_DURATION = 0.3  # seconds
-SAMPLE_RATE = 24000
-SILENCE = np.zeros(int(SAMPLE_RATE * SILENCE_DURATION))
-
-# Consistent CSS for styling
-with open('../templates/anki.css', 'r', encoding='utf-8') as css_file:
-    ANKI_CSS = css_file.read()
+def _load_settings(config_path: Optional[Path]):
+    override_path = resolve_project_path(config_path) if config_path else None
+    return load_config(_REPO_ROOT / "config" / "defaults.yaml", override_path)
 
 
-def create_stable_diffusion_pipeline():
-    # Set device: use "mps" for M1/M2, "cuda" if available, else "cpu"
-    device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
-    model_id = "dreamlike-art/dreamlike-photoreal-2.0"
-    pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
-    pipe = pipe.to(device)
-    return pipe
+def _common_paths(config):
+    anki = config.anki
+    template_dir = resolve_project_path(anki.template_dir)
+    cache_dir = resolve_project_path(anki.cache_dir)
+    output_dir = resolve_project_path(anki.output_dir)
+    return anki, template_dir, cache_dir, output_dir
 
 
-def generate_image(pipe, prompt, filename):
-    image = pipe(prompt).images[0]
-
-    max_size=(384, 384)
-    image = image.resize(max_size, Image.LANCZOS)  # LANCZOS = high-quality downsampling
-
-    image.save(filename)
+def _default_output(article: ArticleExtended, output_dir: Path, suffix: str) -> Path:
+    return output_dir / f"{slugify_filename(article.word)}{suffix}"
 
 
-def generate_audio(text, filename):
-    # Generate audio using Kokoro
-    pipeline = KPipeline(lang_code='e')
-    # TODO Randomly use a voice from the available list (https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md)
-    generator = pipeline(text, voice='ef_dora')
-    _, _, audio = next(generator)
-
-    # Concatenate silence before and after the audio
-    final_audio = np.concatenate([SILENCE, audio, SILENCE])
-
-    # Convert the final audio numpy array to an in-memory WAV file
-    wav_buffer = io.BytesIO()
-    sf.write(wav_buffer, final_audio, SAMPLE_RATE, format='WAV')
-    wav_buffer.seek(0)
-
-    # Load the WAV data from memory
-    audio = AudioSegment.from_file(wav_buffer, format='wav')
-
-    # Export as MP3
-    audio.export(filename, format='mp3')
-
-
-def generate_file_name(input_str):
-    # Normalize and remove accents/diacritics
-    nfkd_form = unicodedata.normalize('NFKD', input_str)
-    cleaned = []
-    for c in nfkd_form:
-        if c == ' ':
-            cleaned.append('_')
-        elif c.isascii() and (c.isalnum()):
-            cleaned.append(c)
-        elif not unicodedata.combining(c):
-            cleaned.append('_')
-    # Replace consecutive underscores with a single one
-    result = ''.join(cleaned)
-    while '__' in result:
-        result = result.replace('__', '_')
+def preview_command(args: argparse.Namespace) -> Path:
+    article = ArticleExtended.load_from_file(resolve_project_path(args.input))
+    config = _load_settings(args.config)
+    _, template_dir, cache_dir, output_dir = _common_paths(config)
+    output_path = (
+        resolve_project_path(args.output)
+        if args.output
+        else _default_output(article, output_dir, ".html")
+    )
+    result = render_preview(article, template_dir, cache_dir, output_path)
+    print(f"HTML preview written to {result}")
     return result
 
 
-class AnkiDeck:
-    def __init__(self):
-        # Define Anki model (custom card type)
-        # TODO Generate a unique model ID
-        model_id = 1607392319
-        self.model = genanki.Model(
-            model_id,
-            'SpanishWordExampleModel',  # TODO Rename
-            fields=[
-                {'name': 'Sentence'},
-                {'name': 'Translation'},
-                {'name': 'Comment'},
-            ],
-            templates=[
-                {
-                    'name': 'Card 1',
-                    'qfmt': '<div class="phrase">{{Sentence}}</div>',
-                    'afmt': '{{FrontSide}}<hr id="answer"><div class="translation">{{Translation}}</div>{{Comment}}',
-                },
-            ],
-            css=ANKI_CSS
-        )
+def build_command(args: argparse.Namespace) -> Path:
+    # These imports deliberately happen only for a real deck build. Previewing
+    # does not load genanki or either heavyweight media backend.
+    from vocabgen.anki.builder import build_deck, write_package
+    from vocabgen.anki.media import generate_article_media
+    from vocabgen.provider.factory import create_provider
 
-        # TODO Generate a unique deck ID
-        self.deck = genanki.Deck(2059400110, 'Spanish Vocabulary: Anhelar')
-
-        self.media_files = []
-
-    def add_note(self, sentence, translation, comment):
-        self.deck.add_note(genanki.Note(
-            model=self.model,
-            fields=[
-                sentence,
-                translation,
-                comment
-            ]
-        ))
-
-    def add_media_file(self, filename):
-        if filename not in self.media_files:
-            self.media_files.append(filename)
-
-    def save(self, filename):
-        genanki.Package(self.deck, self.media_files).write_to_file(filename)
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Read JSON input from a file.")
-    parser.add_argument('input', help='Path to JSON file')
-    args = parser.parse_args()
-
-    try:
-        article = ArticleExtended.load_from_file(args.input)
-    except Exception as e:
-        print(f"Error reading JSON file: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    jinja_env = Environment(loader=FileSystemLoader('../templates'))
-    template_word_comment = jinja_env.get_template('word_comment.html')
-    meaning_word_comment = jinja_env.get_template('meaning_comment.html')
-
-    pipe = create_stable_diffusion_pipeline()
-
-    deck = AnkiDeck()
-
-    # Add card for the word itself
-    word_filename = generate_file_name(article.word)
-    generate_image(pipe, article.image_prompt, f"{word_filename}.jpg")
-    generate_audio(article.word, f"{word_filename}.mp3")
-
-    deck.add_note(
-        article.word,
-        article.translation,
-        template_word_comment.render(data=article, word_filename=word_filename)
+    article = ArticleExtended.load_from_file(resolve_project_path(args.input))
+    config = _load_settings(args.config)
+    anki, template_dir, cache_dir, output_dir = _common_paths(config)
+    output_path = (
+        resolve_project_path(args.output)
+        if args.output
+        else _default_output(article, output_dir, ".apkg")
     )
-    deck.add_media_file(f"{word_filename}.jpg")
-    deck.add_media_file(f"{word_filename}.mp3")
 
-    # Add cards for each meaning
-    for meaning in article.meanings:
-        example = meaning.example
-        meaning_filename = generate_file_name(example.spanish_phrase)
-        generate_image(pipe, example.image_prompt, f"{meaning_filename}.jpg")
-        generate_audio(example.spanish_phrase, f"{meaning_filename}.mp3")
+    tts_provider = create_provider("tts", config.tts.to_dict())
+    image_provider = create_provider("vision", config.image.to_dict())
+    media = generate_article_media(
+        article,
+        cache_dir,
+        image_provider,
+        tts_provider,
+        force=args.force_media,
+    )
+    deck, media_files = build_deck(
+        article,
+        media,
+        template_dir,
+        model_id=int(anki.model_id),
+        deck_id=int(anki.deck_id),
+        deck_name=args.deck_name or str(anki.deck_name),
+    )
+    result = write_package(deck, media_files, output_path)
+    print(f"Anki deck written to {result}")
+    return result
 
-        deck.add_note(
-            example.spanish_phrase,
-            example.english_translation,
-            meaning_word_comment.render(
-                meaning=meaning,
-                data=article,
-                meaning_filename=meaning_filename,
-            )
-        )
-        deck.add_media_file(f"{meaning_filename}.jpg")
-        deck.add_media_file(f"{meaning_filename}.mp3")
 
-    deck.save("anhelar.apkg")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Build Anki study material from validated extended-article JSON."
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    preview = commands.add_parser(
+        "preview",
+        help="Render standalone HTML without generating media or loading Anki.",
+    )
+    preview.add_argument("input", type=Path, help="ArticleExtended JSON file")
+    preview.add_argument("--config", type=Path, help="Optional local YAML overlay")
+    preview.add_argument("--output", type=Path, help="HTML output path")
+    preview.set_defaults(handler=preview_command)
+
+    build = commands.add_parser(
+        "build",
+        help="Generate/reuse media and build an Anki package.",
+    )
+    build.add_argument("input", type=Path, help="ArticleExtended JSON file")
+    build.add_argument("--config", type=Path, help="Optional local YAML overlay")
+    build.add_argument("--output", type=Path, help=".apkg output path")
+    build.add_argument("--deck-name", help="Override the configured Anki deck name")
+    build.add_argument(
+        "--force-media",
+        action="store_true",
+        help="Regenerate media even when deterministic cache files already exist.",
+    )
+    build.set_defaults(handler=build_command)
+    return parser
+
+
+def main(argv: Optional[list[str]] = None) -> Path:
+    args = build_parser().parse_args(argv)
+    return args.handler(args)
 
 
 if __name__ == "__main__":

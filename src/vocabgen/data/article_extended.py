@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from pathlib import Path
 from typing import Annotated, Iterator, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+    model_validator,
+)
 
 from ..fileops import atomic_write, slugify_filename
 
@@ -46,6 +54,23 @@ class ArticleExtended(BaseModel):
     image_prompt: NonEmptyString
     meanings: List[ArticleMeaning] = Field(min_length=1)
     notes: List[NonEmptyString] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_unique_example_phrases(self) -> ArticleExtended:
+        identities = [
+            " ".join(
+                unicodedata.normalize("NFKC", meaning.example.spanish_phrase)
+                .casefold()
+                .split()
+            )
+            for meaning in self.meanings
+        ]
+        if len(identities) != len(set(identities)):
+            raise ValueError(
+                "Each meaning must have a unique Spanish example phrase for "
+                "stable Anki note identity"
+            )
+        return self
 
     @classmethod
     def from_json(cls, value: str | bytes) -> ArticleExtended:

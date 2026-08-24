@@ -190,24 +190,38 @@ Topic: {{ topic }}
 4. **Check your topic files**
    Newly generated articles appear in `data/Health.md`, `data/Misc.md`, etc.
 
+## Anki deck and HTML preview
+
+Validate an extended JSON article and render a standalone HTML preview. This
+does not load Kokoro, Stable Diffusion, or Anki, and it displays cached media
+when those files already exist:
+
+```bash
+python scripts/generate_anki_deck_draft.py preview input.json
+```
+
+Generate missing media through the configured providers and build the deck:
+
+```bash
+python scripts/generate_anki_deck_draft.py build input.json --config config/local.yaml
+```
+
+Relative paths are resolved from the repository root. By default, regenerable
+media is cached under `cache/images` and `cache/audio`; HTML and `.apkg` output
+is written under `output`. Use `--force-media` to regenerate cached media, or
+`--output` to select a different result path.
+
 
 ```mermaid
 flowchart TD
-    A[Vocabulary Files] --> B[generate_vocabulary_data.py]
-    B --> C{Cache Manager}
-    C -->|Missing| D[LLM Client → Articles JSON]
-    C -->|Existing| E[Skip]
-
-    D --> F[generate_audio.py]
-    F -->|Missing Audio| G[Audio Generator]
-    F -->|Existing| H[Skip Audio]
-
-    G --> I[generate_images.py]
-    I -->|Missing Images| J[Image Generator]
-    I -->|Existing| K[Skip Images]
-
-    J --> L[build_anki_deck.py]
-    L --> M["Final Anki Deck (.apkg)"]
+    A[ArticleExtended JSON] --> B{Command}
+    B -->|preview| C[Standalone HTML]
+    B -->|build| D{Media cache}
+    D -->|missing| E[TTS and image providers]
+    D -->|present| F[Reuse media]
+    E --> G[Deterministic Anki notes]
+    F --> G
+    G --> H["Anki package (.apkg)"]
 ```
 
 To run the slow integration test manually:

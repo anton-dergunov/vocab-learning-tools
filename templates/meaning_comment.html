@@ -1,12 +1,16 @@
 <div class="image">
-    <img src="{{ meaning_filename }}.jpg" alt="{{ meaning.example.image_prompt }}">
+    <img src="{{ media.image_name }}" alt="{{ meaning.example.image_prompt }}">
 </div>
 
 <div class="audio">
-    [sound:{{ meaning_filename }}.mp3] Listen to pronunciation
+    [sound:{{ media.audio_name }}] Listen to pronunciation
 </div>
 
 <div class="comment"><strong>Word meaning:</strong> {{meaning.meaning}}</div>
+
+{% if meaning.example.comment %}
+<div class="comment">{{ meaning.example.comment }}</div>
+{% endif %}
 
 <div class="note">
 Word: <strong>{{data.word}}</strong> — {{data.translation}}

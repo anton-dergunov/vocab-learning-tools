@@ -71,6 +71,21 @@ def test_rejects_meaning_level_image_prompt(article_data):
         ArticleExtended.model_validate(article_data)
 
 
+def test_rejects_duplicate_example_phrases(article_data):
+    article_data["meanings"].append(
+        {
+            "meaning": "A second meaning",
+            "example": {
+                **article_data["meanings"][0]["example"],
+                "spanish_phrase": "  AÑORO   MI HOGAR. ",
+            },
+        }
+    )
+
+    with pytest.raises(ValidationError, match="unique Spanish example phrase"):
+        ArticleExtended.model_validate(article_data)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

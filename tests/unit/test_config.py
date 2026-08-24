@@ -1,8 +1,13 @@
+from pathlib import Path
+
 from box import Box
 
 import pytest
 
 from vocabgen.config import deep_merge, load_config, select_llm_provider
+
+
+REPOSITORY_ROOT = Path(__file__).parents[2]
 
 
 def test_deep_merge_preserves_nested_defaults():
@@ -103,3 +108,15 @@ def test_select_llm_provider_rejects_unknown_provider():
 
     with pytest.raises(ValueError, match="Unknown LLM provider 'missing'"):
         select_llm_provider(config, "missing")
+
+
+def test_default_media_and_anki_settings_preserve_prototype_decisions():
+    config = load_config(REPOSITORY_ROOT / "config" / "defaults.yaml")
+
+    assert config.tts.options.lang_code == "e"
+    assert config.tts.options.voice == "ef_dora"
+    assert config.image.options.width == 384
+    assert config.image.options.height == 384
+    assert config.anki.model_id == 1607392319
+    assert config.anki.deck_id == 2059400110
+    assert config.anki.template_dir == "templates"

@@ -23,8 +23,8 @@ def main():
     parser.add_argument(
         "--type",
         required=True,
-        choices=["tts", "vision"],
-        help="Type of provider to use: 'tts' for text-to-speech or 'vision' for image generation.",
+        choices=["tts", "image"],
+        help="Configured media type: 'tts' for audio or 'image' for images.",
     )
     parser.add_argument(
         "--config",
@@ -49,7 +49,8 @@ def main():
     config = all_config[args.type].to_dict()
 
     # Create provider
-    provider = create_provider(args.type, config)
+    provider_family = "vision" if args.type == "image" else "tts"
+    provider = create_provider(provider_family, config)
 
     # Determine output path
     if args.output:
