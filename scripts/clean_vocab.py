@@ -118,11 +118,20 @@ def process_batch_with_llm(
     sections: List[str],
 ) -> List[str]:
     """
-    Send batch to LLM and return raw text response.
+    Send a batch to the LLM and return one generated article per inbox section.
+
+    A cardinality mismatch fails the batch so its inbox sections remain available
+    for a later run.
     """
     user_prompt = join_sections_for_batch(sections, sep="\n\n---\n\n")
     resp = llm.generate(system_prompt, user_prompt)
-    return split_llm_response_into_articles(resp)
+    articles = split_llm_response_into_articles(resp)
+    if len(articles) != len(sections):
+        raise ValueError(
+            "Incomplete LLM batch: "
+            f"expected {len(sections)} articles, got {len(articles)}"
+        )
+    return articles
 
 
 def write_articles_atomic(

@@ -111,6 +111,15 @@ Topic: Appearance
 """
 
 
+class IncompleteBatchProvider:
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        return """##### **el saco** 🧥
+*coat; jacket*
+> ¡Qué **saco** tan lindo! - What a nice **jacket**!
+Topic: Appearance
+"""
+
+
 class OneSuccessThenFailureProvider:
     def __init__(self):
         self.calls = 0
@@ -245,6 +254,26 @@ def test_malformed_article_body_leaves_inbox_unchanged(tmp_path):
     assert not list(tmp_path.glob("Spanish vocab - *.md"))
 
 
+def test_incomplete_batch_leaves_entire_batch_in_inbox(tmp_path):
+    inbox = tmp_path / "inbox.md"
+    original = inbox.read_text()
+    config = tmp_path / "config" / "defaults.yaml"
+    config.write_text(config.read_text().replace("batch_size: 1", "batch_size: 2"))
+
+    with patch(
+        "scripts.clean_vocab.create_provider",
+        return_value=IncompleteBatchProvider(),
+    ):
+        with pytest.raises(
+            ValueError,
+            match=r"Incomplete LLM batch: expected 2 articles, got 1",
+        ):
+            clean_vocab_script.main(argv=["--config", str(config)])
+
+    assert inbox.read_text() == original
+    assert not list(tmp_path.glob("Spanish vocab - *.md"))
+
+
 def test_entire_llm_response_is_validated_before_any_article_is_written(tmp_path):
     target = tmp_path / "Spanish vocab - Misc.md"
     articles = [
@@ -300,3 +329,16 @@ def test_only_successful_batches_are_removed_from_inbox(tmp_path):
     assert "el saco" not in remaining
     assert remaining == "ni en pedo - no way\n"
     assert "el saco" in (tmp_path / "Spanish vocab - Appearance.md").read_text()
+
+    # A new run resumes from the retained entry rather than repeating the
+    # successfully acknowledged first batch.
+    with patch(
+        "scripts.clean_vocab.create_provider",
+        return_value=FakeLLMProvider(),
+    ):
+        clean_vocab_script.main(
+            argv=["--config", str(tmp_path / "config" / "defaults.yaml")]
+        )
+
+    assert inbox.read_text() == ""
+    assert "ni en pedo" in (tmp_path / "Spanish vocab - Slang.md").read_text()
