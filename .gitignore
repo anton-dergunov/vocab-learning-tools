@@ -5,6 +5,8 @@ __pycache__/
 __old/
 .env
 *.pyc
+/data/
+config/local.yaml
 test-data/
 test-data-bkp/
 checking/

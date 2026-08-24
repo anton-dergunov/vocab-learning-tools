@@ -18,10 +18,10 @@ vocabulary:
 
 files:
   # Source file containing new vocabulary entries
-  inbox: "/Users/anton/Dropbox/notes/obsidian/Languages/Spanish/Vocabulary/Spanish vocab - Inbox.md"
+  inbox: "data/Spanish vocab - Inbox.md"
 
   # Destination pattern for categorized vocabulary (%topic = placeholder)
-  output_pattern: "/Users/anton/Dropbox/notes/obsidian/Languages/Spanish/Vocabulary/Spanish vocab - %topic.md"
+  output_pattern: "data/Spanish vocab - %topic.md"
 
 llm:
   # AI service provider
