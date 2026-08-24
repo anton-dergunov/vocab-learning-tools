@@ -1,0 +1,34 @@
+vocabulary:
+  # Target language for processing
+  language: "Spanish"
+
+  # Available categories for vocabulary classification
+  topics:
+    - "Emotions"
+    - "Actions"
+    - "Nature"
+    - "Culture"
+    - "Food"
+    - "Health"
+    - "Appearance"
+    - "Technology"
+    - "Travel"
+    - "Slang"
+    - "Misc"
+
+files:
+  # Local data used for manually testing the Ollama provider
+  inbox: "test-data/Spanish vocab - Inbox.md"
+  output_pattern: "test-data/Spanish vocab - %topic.md"
+
+llm:
+  provider: "ollama"
+  prompt_path: "prompts/vocabulary_prompt_template.txt"
+  options:
+    model: "gemma3:4b"
+    model_params: {}
+    rate_limit_per_minute: 60
+
+processing:
+  batch_size: 1
+  show_items: true
