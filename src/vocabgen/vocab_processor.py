@@ -6,56 +6,10 @@ import logging
 import difflib
 
 from .fileops import atomic_write, append_to_file, read_text, backup_file
+from .sections import normalize_separator_line, split_sections
+from .data.article_short import ArticleShort
 
 logger = logging.getLogger("vocabgen.vocab_processor")
-
-
-def normalize_separator_line(line: str) -> bool:
-    """
-    Return True if this line should be treated as a section separator.
-    Accepts:
-      - lines of two or more hyphens: '---', '-----'
-      - lines of two or more em-dashes: '———' (iPhone converts)
-      - lines with only asterisks '***'
-      - lines with only '___'
-    """
-    if not line:
-        return False
-    s = line.strip()
-    if re.fullmatch(r"[-—]{2,}", s):
-        return True
-    if re.fullmatch(r"\*{3,}", s):
-        return True
-    if re.fullmatch(r"_{3,}", s):
-        return True
-    return False
-
-
-def split_sections(text: str) -> List[str]:
-    """
-    Split the inbox text into sections. We use separator lines as primary delimiter.
-    If no separators found, fallback to splitting by 2+ consecutive blank lines.
-    Strips leading/trailing whitespace from each section.
-    """
-    lines = text.splitlines()
-    separators = [i for i, ln in enumerate(lines) if normalize_separator_line(ln)]
-    if separators:
-        sections = []
-        start = 0
-        for idx in separators:
-            # create chunk from start..idx
-            chunk = "\n".join(lines[start:idx]).strip()
-            if chunk:
-                sections.append(chunk)
-            start = idx + 1
-        # final chunk
-        last = "\n".join(lines[start:]).strip()
-        if last:
-            sections.append(last)
-        return sections
-    # fallback: split by 2+ blank lines
-    parts = re.split(r"\n\s*\n\s*\n+", text)
-    return [p.strip() for p in parts if p.strip()]
 
 
 def join_sections_for_batch(sections: List[str], sep: str = "\n\n---\n\n") -> str:
@@ -112,7 +66,6 @@ def split_llm_response_into_articles(llm_text: str) -> List[str]:
 
 
 _topic_re = re.compile(r"^Topic:\s*(?P<topic>.+)\s*$", re.IGNORECASE | re.MULTILINE)
-_title_re = re.compile(r"^#{1,6}\s*\*\*(?P<title>.+?)\*\*", re.IGNORECASE | re.MULTILINE)
 
 
 def extract_topic_from_article(article: str) -> Optional[str]:
@@ -133,52 +86,75 @@ def remove_topic_line(article: str) -> str:
     return _topic_re.sub("", article).strip() + "\n"
 
 
-# TODO Unite the function with scan_topic_files_for_titles in some way
 def parse_article_title(article: str) -> Optional[str]:
     """
-    Extract the word/phrase from the article header pattern, e.g.
+    Parse an article and return its word/phrase, e.g.
     "##### **ni en pedo** 🚫" -> "ni en pedo"
-    Returns normalized title string or None if not found.
+    Returns None if the complete article is malformed.
     """
-    m = _title_re.search(article)
-    if not m:
+    try:
+        return ArticleShort.parse_from_markdown(remove_topic_line(article)).headword
+    except ValueError:
         return None
-    title = m.group("title").strip()
-    # remove trailing emoji tokens if present (keep punctuation inside)
-    # e.g. "ni en pedo** 🚫" shouldn't be present because regex stops before emoji,
-    # but trim any trailing non-word chars
-    title = title.strip()
-    return title
 
 
-def scan_topic_files_for_titles(files: List[Union[str | Path]]) -> Dict[str, List[Tuple[Path, int, str]]]:
+def _split_topic_file_articles(text: str) -> List[Tuple[int, str]]:
+    """Return ``(line_number, article_markdown)`` blocks from a topic file."""
+    lines = text.splitlines()
+    starts = [index for index, line in enumerate(lines) if line.lstrip().startswith("#")]
+
+    if not starts:
+        if text.strip():
+            raise ValueError("no Markdown article headings found")
+        return []
+
+    if any(line.strip() for line in lines[:starts[0]]):
+        first_content_line = next(
+            index + 1 for index, line in enumerate(lines[:starts[0]]) if line.strip()
+        )
+        raise ValueError(f"unexpected content before the first article at line {first_content_line}")
+
+    blocks: List[Tuple[int, str]] = []
+    for position, start in enumerate(starts):
+        end = starts[position + 1] if position + 1 < len(starts) else len(lines)
+        blocks.append((start + 1, "\n".join(lines[start:end]).strip()))
+    return blocks
+
+
+def scan_topic_files_for_titles(
+    files: List[Union[str, Path]],
+) -> Dict[str, List[Tuple[Path, int, str]]]:
     """
-    Scan topic files in base_dir for titles. Returns dict: title -> list of (path, lineno, article_snippet).
-    lineno is the line number where the header is found (1-based). article_snippet is first line(s) of article.
+    Parse topic files and index articles by headword.
+
+    Returns ``headword -> [(path, line_number, canonical_markdown)]``. A malformed
+    existing article is reported with its file and starting line rather than being
+    silently omitted from duplicate detection.
     """
     results: Dict[str, List[Tuple[Path, int, str]]] = {}
 
-    for path in files:
+    for file in files:
+        path = Path(file)
         try:
             text = read_text(path)
         except FileNotFoundError:
             continue
-        lines = text.splitlines()
-        i = 0
-        while i < len(lines):
-            m = _title_re.search(lines[i])
-            if m:
-                title = m.group("title").strip()
-                start = i
-                # Find next title or end
-                i += 1
-                while i < len(lines) and not _title_re.search(lines[i]):
-                    i += 1
-                # Get snippet and remove trailing empty lines
-                snippet = "\n".join(lines[start:i]).rstrip()
-                results.setdefault(title, []).append((path, start + 1, snippet))
-            else:
-                i += 1
+
+        try:
+            blocks = _split_topic_file_articles(text)
+        except ValueError as exc:
+            raise ValueError(f"Failed to parse topic file {path}: {exc}") from exc
+
+        for line_number, markdown in blocks:
+            try:
+                article = ArticleShort.parse_from_markdown(markdown)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Failed to parse article in {path} at line {line_number}: {exc}"
+                ) from exc
+            results.setdefault(article.headword, []).append(
+                (path, line_number, article.to_markdown().rstrip())
+            )
     return results
 
 

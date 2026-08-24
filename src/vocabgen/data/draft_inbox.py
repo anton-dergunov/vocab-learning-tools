@@ -1,56 +1,8 @@
 from pathlib import Path
-import re
 from typing import Iterable, List
 
 from ..fileops import atomic_write
-
-
-def normalize_separator_line(line: str) -> bool:
-    """
-    Return True if this line should be treated as a section separator.
-    Accepts:
-      - lines of two or more hyphens: '---', '-----'
-      - lines of two or more em-dashes: '———' (iPhone converts)
-      - lines with only asterisks '***'
-      - lines with only '___'
-    """
-    if not line:
-        return False
-    s = line.strip()
-    if re.fullmatch(r"[-—]{2,}", s):
-        return True
-    if re.fullmatch(r"\*{3,}", s):
-        return True
-    if re.fullmatch(r"_{3,}", s):
-        return True
-    return False
-
-
-def split_sections(text: str) -> List[str]:
-    """
-    Split the inbox text into sections. We use separator lines as primary delimiter.
-    If no separators found, fallback to splitting by 2+ consecutive blank lines.
-    Strips leading/trailing whitespace from each section.
-    """
-    lines = text.splitlines()
-    separators = [i for i, ln in enumerate(lines) if normalize_separator_line(ln)]
-    if separators:
-        sections = []
-        start = 0
-        for idx in separators:
-            # create chunk from start..idx
-            chunk = "\n".join(lines[start:idx]).strip()
-            if chunk:
-                sections.append(chunk)
-            start = idx + 1
-        # final chunk
-        last = "\n".join(lines[start:]).strip()
-        if last:
-            sections.append(last)
-        return sections
-    # fallback: split by 2+ blank lines
-    parts = re.split(r"\n\s*\n\s*\n+", text)
-    return [p.strip() for p in parts if p.strip()]
+from ..sections import normalize_separator_line, split_sections
 
 
 class DraftInbox:

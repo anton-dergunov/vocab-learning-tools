@@ -85,13 +85,15 @@ class ArticleShort:
             else:
                 examples.append(cls.Example(phrase=content, translation=None))
 
-        return cls(
+        article = cls(
             headword=headword,
             emoji=emoji,
             translation=translation,
             examples=examples,
             raw_markdown=original.strip(),
         )
+        article.validate()
+        return article
 
     # --- Serialization ---------------------------------------------------
 
@@ -99,6 +101,7 @@ class ArticleShort:
         """
         Convert back to the standardized markdown format.
         """
+        self.validate()
         lines = [f"##### **{self.headword}**" + (f" {self.emoji}" if self.emoji else "")]
         lines.append(f"*{self.translation}*")
         for ex in self.examples:

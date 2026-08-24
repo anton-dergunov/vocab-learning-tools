@@ -35,7 +35,6 @@ from vocabgen.vocab_processor import (
     split_llm_response_into_articles,   # TODO should not be shared
     extract_topic_from_article,
     remove_topic_line,
-    parse_article_title,
     scan_topic_files_for_titles,
     find_fuzzy_matches
 )
@@ -44,6 +43,7 @@ from vocabgen.fileops import backup_file, append_to_file
 from vocabgen.provider.factory import create_provider
 from vocabgen.llm.base import LLMProvider
 from vocabgen.config import load_config, select_llm_provider
+from vocabgen.data.article_short import ArticleShort
 from vocabgen.data.draft_inbox import DraftInbox
 
 
@@ -139,22 +139,22 @@ def write_articles_atomic(
         raise ValueError("LLM returned no vocabulary articles")
 
     parsed_articles = []
-    for index, article in enumerate(articles, start=1):
-        title = parse_article_title(article)
-        if not title:
-            raise ValueError(
-                f"Malformed LLM article #{index}: missing a valid Markdown title"
-            )
-        parsed_articles.append((article, title))
+    for index, markdown in enumerate(articles, start=1):
+        topic = extract_topic_from_article(markdown) or "Misc"
+        try:
+            article = ArticleShort.parse_from_markdown(remove_topic_line(markdown))
+        except ValueError as exc:
+            raise ValueError(f"Malformed LLM article #{index}: {exc}") from exc
+        parsed_articles.append((article, topic))
 
     appended = 0
     new_items = []
     conflicts = []
     fuzzy_conflicts = []
 
-    for art, title in parsed_articles:
-        topic = extract_topic_from_article(art) or "Misc"
-        cleaned = remove_topic_line(art).strip() + "\n\n"
+    for article, topic in parsed_articles:
+        title = article.headword
+        cleaned = article.to_markdown().rstrip() + "\n\n"
 
         existing_titles = list(existing_map.keys())
 

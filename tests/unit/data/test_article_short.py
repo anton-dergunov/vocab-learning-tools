@@ -94,6 +94,14 @@ moon
         ArticleShort.parse_from_markdown(text)
 
 
+def test_blank_translation_raises_during_parsing():
+    text = """##### **la luna** 🌕
+* *
+"""
+    with pytest.raises(ValueError, match="Empty translation"):
+        ArticleShort.parse_from_markdown(text)
+
+
 def test_invalid_example_line_raises():
     text = """##### **la luna** 🌕
 *moon*
@@ -144,3 +152,16 @@ def test_validate_rejects_empty_fields():
     )
     with pytest.raises(ValueError, match="Empty example text"):
         art.validate()
+
+
+def test_to_markdown_validates_manually_constructed_article():
+    art = ArticleShort(
+        headword="hola",
+        emoji=None,
+        translation=" ",
+        examples=[],
+        raw_markdown="",
+    )
+
+    with pytest.raises(ValueError, match="Empty translation"):
+        art.to_markdown()

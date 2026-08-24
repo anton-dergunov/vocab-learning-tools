@@ -7,7 +7,8 @@ from vocabgen.vocab_processor import (
     clean_llm_text_block,
     split_llm_response_into_articles,
     extract_topic_from_article,
-    parse_article_title
+    parse_article_title,
+    scan_topic_files_for_titles,
 )
 
 
@@ -106,3 +107,45 @@ def test_extract_topic():
 def test_parse_article_title():
     art = "##### **ni en pedo** 🚫\n*no way*\nTopic: Slang\n"
     assert parse_article_title(art) == "ni en pedo"
+
+
+def test_parse_article_title_rejects_malformed_article_body():
+    art = "##### **ni en pedo** 🚫\nno way\nTopic: Slang\n"
+    assert parse_article_title(art) is None
+
+
+def test_scan_topic_files_parses_complete_articles(tmp_path):
+    topic_file = tmp_path / "Spanish vocab - Nature.md"
+    topic_file.write_text(
+        """##### **la luna** 🌕
+*moon*
+> La **luna** brilla. - The **moon** shines.
+
+##### **el sol** ☀️
+*sun*
+> El **sol** calienta. - The **sun** warms us.
+"""
+    )
+
+    titles = scan_topic_files_for_titles([topic_file])
+
+    assert set(titles) == {"la luna", "el sol"}
+    assert titles["la luna"][0][0:2] == (topic_file, 1)
+    assert titles["el sol"][0][0:2] == (topic_file, 5)
+    assert titles["la luna"][0][2].startswith("##### **la luna**")
+
+
+def test_scan_topic_files_reports_malformed_article_with_context(tmp_path):
+    topic_file = tmp_path / "Spanish vocab - Nature.md"
+    topic_file.write_text("##### **la luna** 🌕\nmoon\n")
+
+    with pytest.raises(ValueError, match=r"Nature\.md at line 1.*Invalid translation"):
+        scan_topic_files_for_titles([topic_file])
+
+
+def test_scan_topic_files_rejects_content_before_first_article(tmp_path):
+    topic_file = tmp_path / "Spanish vocab - Nature.md"
+    topic_file.write_text("orphaned note\n\n##### **la luna** 🌕\n*moon*\n")
+
+    with pytest.raises(ValueError, match="unexpected content before the first article"):
+        scan_topic_files_for_titles([topic_file])

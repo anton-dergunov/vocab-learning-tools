@@ -103,6 +103,14 @@ class MalformedLLMProvider:
         return "This is not a vocabulary article."
 
 
+class MalformedArticleBodyProvider:
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        return """##### **el saco** 🧥
+coat without Markdown emphasis
+Topic: Appearance
+"""
+
+
 class OneSuccessThenFailureProvider:
     def __init__(self):
         self.calls = 0
@@ -218,6 +226,40 @@ def test_malformed_llm_output_leaves_inbox_unchanged(tmp_path):
 
     assert inbox.read_text() == original
     assert not list(tmp_path.glob("Spanish vocab - *.md"))
+
+
+def test_malformed_article_body_leaves_inbox_unchanged(tmp_path):
+    inbox = tmp_path / "inbox.md"
+    original = inbox.read_text()
+
+    with patch(
+        "scripts.clean_vocab.create_provider",
+        return_value=MalformedArticleBodyProvider(),
+    ):
+        with pytest.raises(ValueError, match="Invalid translation line"):
+            clean_vocab_script.main(
+                argv=["--config", str(tmp_path / "config" / "defaults.yaml")]
+            )
+
+    assert inbox.read_text() == original
+    assert not list(tmp_path.glob("Spanish vocab - *.md"))
+
+
+def test_entire_llm_response_is_validated_before_any_article_is_written(tmp_path):
+    target = tmp_path / "Spanish vocab - Misc.md"
+    articles = [
+        "##### **válido** ✅\n*valid*\nTopic: Misc\n",
+        "##### **inválido** ❌\ntranslation without emphasis\nTopic: Misc\n",
+    ]
+
+    with pytest.raises(ValueError, match=r"Malformed LLM article #2"):
+        clean_vocab_script.write_articles_atomic(
+            {"Misc": target},
+            articles,
+            {},
+        )
+
+    assert not target.exists()
 
 
 def test_output_write_failure_leaves_inbox_unchanged(tmp_path):
