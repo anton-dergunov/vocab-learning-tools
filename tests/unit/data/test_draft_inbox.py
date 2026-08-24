@@ -1,5 +1,7 @@
 import pytest
 from pathlib import Path
+from unittest.mock import patch
+
 from vocabgen.data.draft_inbox import DraftInbox, normalize_separator_line, split_sections
 
 
@@ -92,6 +94,32 @@ def test_remove_slice_all_entries_clears_file(inbox_file):
     inbox.remove_slice(0, 2)
     assert inbox.entries == []
     assert inbox_file.read_text() == ""
+
+
+def test_remove_slice_uses_atomic_write(inbox_file):
+    inbox_file.write_text("a\n---\nb\n---\nc\n")
+    inbox = DraftInbox(inbox_file)
+
+    with patch("vocabgen.data.draft_inbox.atomic_write") as atomic_write:
+        inbox.remove_slice(1, 1)
+
+    atomic_write.assert_called_once_with(inbox_file, "a\n---\nc\n")
+
+
+def test_remove_slice_keeps_memory_and_file_when_atomic_write_fails(inbox_file):
+    original = "a\n---\nb\n---\nc\n"
+    inbox_file.write_text(original)
+    inbox = DraftInbox(inbox_file)
+
+    with patch(
+        "vocabgen.data.draft_inbox.atomic_write",
+        side_effect=OSError("disk full"),
+    ):
+        with pytest.raises(OSError, match="disk full"):
+            inbox.remove_slice(0, 1)
+
+    assert inbox.entries == ["a", "b", "c"]
+    assert inbox_file.read_text() == original
 
 
 def test_write_preserves_final_newline(inbox_file):

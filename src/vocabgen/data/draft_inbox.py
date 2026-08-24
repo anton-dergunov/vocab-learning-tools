@@ -2,6 +2,8 @@ from pathlib import Path
 import re
 from typing import Iterable, List
 
+from ..fileops import atomic_write
+
 
 def normalize_separator_line(line: str) -> bool:
     """
@@ -82,17 +84,20 @@ class DraftInbox:
         return self.entries[start:start + n]
 
     def remove_slice(self, start: int, n: int) -> None:
-        """Remove entries from start (inclusive) to start+n (exclusive) and write the file immediately."""
-        del self.entries[start:start + n]
-        self._write()
+        """Atomically persist removal, then update the in-memory entries."""
+        remaining = self.entries[:start] + self.entries[start + n:]
+        content = self._serialize(remaining)
+        atomic_write(self.path, content)
+        self.entries = remaining
+        self._raw = content
 
     def _write(self):
-        if not self.entries:
-            # clear file
-            self.path.write_text("", encoding="utf-8")
-            return
+        content = self._serialize(self.entries)
+        atomic_write(self.path, content)
+        self._raw = content
 
-        joined = self.SEPARATOR.join(entry.strip() for entry in self.entries)
-        # keep one leading/trailing newline consistent with examples
-        content = joined.strip() + "\n"
-        self.path.write_text(content, encoding="utf-8")
+    def _serialize(self, entries: List[str]) -> str:
+        if not entries:
+            return ""
+        joined = self.SEPARATOR.join(entry.strip() for entry in entries)
+        return joined.strip() + "\n"

@@ -40,6 +40,19 @@ def test_backup_file_creates_copy(tmp_path):
     assert bkp.name.endswith(".bak")
 
 
+def test_backup_file_keeps_timestamped_snapshots(tmp_path):
+    orig = tmp_path / "sample.txt"
+    orig.write_text("first")
+    first_backup = fileops.backup_file(orig)
+
+    orig.write_text("second")
+    second_backup = fileops.backup_file(orig)
+
+    assert first_backup != second_backup
+    assert first_backup.read_text() == "first"
+    assert second_backup.read_text() == "second"
+
+
 def test_backup_file_raises_for_missing(tmp_path):
     with pytest.raises(FileNotFoundError):
         fileops.backup_file(tmp_path / "nonexistent.txt")

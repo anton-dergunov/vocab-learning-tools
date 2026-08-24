@@ -55,7 +55,11 @@ def backup_file(path: Path, keep_timestamp: bool = True) -> Path:
     if not path.exists():
         raise FileNotFoundError(path)
 
-    bak_path = path.with_suffix(path.suffix + ".bak")
+    if keep_timestamp:
+        timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S%f")
+        bak_path = path.with_name(f"{path.name}.{timestamp}.bak")
+    else:
+        bak_path = path.with_suffix(path.suffix + ".bak")
     shutil.copy2(str(path), str(bak_path))
     return bak_path
 

@@ -31,7 +31,6 @@ if str(_SRC) not in sys.path:
 
 # Now import local package
 from vocabgen.vocab_processor import (
-    split_sections,
     join_sections_for_batch,    # TODO should not be shared
     split_llm_response_into_articles,   # TODO should not be shared
     extract_topic_from_article,
@@ -41,10 +40,11 @@ from vocabgen.vocab_processor import (
     find_fuzzy_matches
 )
 # TODO Lots of import above, simplify this
-from vocabgen.fileops import read_text, backup_file, atomic_write, append_to_file
+from vocabgen.fileops import backup_file, append_to_file
 from vocabgen.provider.factory import create_provider
 from vocabgen.llm.base import LLMProvider
 from vocabgen.config import load_config, select_llm_provider
+from vocabgen.data.draft_inbox import DraftInbox
 
 
 logger = logging.getLogger("vocabgen.clean_vocab")
@@ -135,17 +135,26 @@ def write_articles_atomic(
     Returns (num_appended, new_item_summaries, conflicts)
     conflicts: list of tuples (title, new_article, existing_entries)
     """
+    if not articles:
+        raise ValueError("LLM returned no vocabulary articles")
+
+    parsed_articles = []
+    for index, article in enumerate(articles, start=1):
+        title = parse_article_title(article)
+        if not title:
+            raise ValueError(
+                f"Malformed LLM article #{index}: missing a valid Markdown title"
+            )
+        parsed_articles.append((article, title))
+
     appended = 0
     new_items = []
     conflicts = []
     fuzzy_conflicts = []
 
-    for art in articles:
+    for art, title in parsed_articles:
         topic = extract_topic_from_article(art) or "Misc"
         cleaned = remove_topic_line(art).strip() + "\n\n"
-        title = parse_article_title(art)
-        if not title:
-            continue
 
         existing_titles = list(existing_map.keys())
 
@@ -202,9 +211,8 @@ def main(argv: Optional[List[str]] = None):
 
     system_prompt = render_prompt(resolve_path(prompt_path), config)
 
-    inbox_text = read_text(config.files.inbox)
-    sections = split_sections(inbox_text)
-    total = len(sections)
+    inbox = DraftInbox(Path(config.files.inbox))
+    total = len(inbox)
     if total == 0:
         print("Inbox empty — nothing to process.")
         return
@@ -218,7 +226,6 @@ def main(argv: Optional[List[str]] = None):
     # Pre-scan existing topic files for exact matching
     existing_map = scan_topic_files_for_titles(list(topic_map.values()))
 
-    pbar = tqdm(total=total, desc="Processing sections")
     new_items_all = []
     summary = {t: 0 for t in topic_map}
     all_conflicts, fuzzy_conflicts = [], []
@@ -226,9 +233,13 @@ def main(argv: Optional[List[str]] = None):
     llm = create_provider("llm", llm_config)
     logger.info("Using LLM provider: %s", provider_name)
 
-    for i in range(0, total, config.processing.batch_size):
-        batch = sections[i : i + config.processing.batch_size]
-        try:
+    batch_size = config.processing.batch_size
+    if batch_size <= 0:
+        raise ValueError("processing.batch_size must be greater than zero")
+
+    with tqdm(total=total, desc="Processing sections") as pbar:
+        while len(inbox):
+            batch = inbox.get_slice(0, batch_size)
             articles = process_batch_with_llm(
                 llm,
                 system_prompt=system_prompt,
@@ -243,13 +254,9 @@ def main(argv: Optional[List[str]] = None):
                 summary[topic] += 1
             new_items_all.extend(new_items)
 
-        finally:
-            # Always remove processed section regardless of appended count
-            remaining = "\n\n---\n\n".join(sections[i + config.processing.batch_size :])
-            atomic_write(config.files.inbox, remaining)
+            # Acknowledge drafts only after validation and all article writes succeed.
+            inbox.remove_slice(0, len(batch))
             pbar.update(len(batch))
-
-    pbar.close()
 
     # ────────────────────────────────
     # Final summary

@@ -93,6 +93,27 @@ class FakeLLMProvider:
         return fake_generate(self, system_prompt, user_prompt)
 
 
+class FailingLLMProvider:
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        raise RuntimeError("LLM unavailable")
+
+
+class MalformedLLMProvider:
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        return "This is not a vocabulary article."
+
+
+class OneSuccessThenFailureProvider:
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return fake_generate(self, system_prompt, user_prompt)
+        raise RuntimeError("second batch failed")
+
+
 def test_clean_vocab_flow(tmp_path, monkeypatch):
     """
     End-to-end test for CLI script using mocked LLM provider and temporary files.
@@ -164,3 +185,76 @@ def test_clean_vocab_allows_llm_provider_override(tmp_path):
                 },
             },
         )
+
+
+def test_llm_failure_leaves_inbox_unchanged(tmp_path):
+    inbox = tmp_path / "inbox.md"
+    original = inbox.read_text()
+
+    with patch(
+        "scripts.clean_vocab.create_provider",
+        return_value=FailingLLMProvider(),
+    ):
+        with pytest.raises(RuntimeError, match="LLM unavailable"):
+            clean_vocab_script.main(
+                argv=["--config", str(tmp_path / "config" / "defaults.yaml")]
+            )
+
+    assert inbox.read_text() == original
+
+
+def test_malformed_llm_output_leaves_inbox_unchanged(tmp_path):
+    inbox = tmp_path / "inbox.md"
+    original = inbox.read_text()
+
+    with patch(
+        "scripts.clean_vocab.create_provider",
+        return_value=MalformedLLMProvider(),
+    ):
+        with pytest.raises(ValueError, match="Malformed LLM article"):
+            clean_vocab_script.main(
+                argv=["--config", str(tmp_path / "config" / "defaults.yaml")]
+            )
+
+    assert inbox.read_text() == original
+    assert not list(tmp_path.glob("Spanish vocab - *.md"))
+
+
+def test_output_write_failure_leaves_inbox_unchanged(tmp_path):
+    inbox = tmp_path / "inbox.md"
+    original = inbox.read_text()
+
+    with (
+        patch(
+            "scripts.clean_vocab.create_provider",
+            return_value=FakeLLMProvider(),
+        ),
+        patch(
+            "scripts.clean_vocab.append_to_file",
+            side_effect=OSError("disk full"),
+        ),
+    ):
+        with pytest.raises(OSError, match="disk full"):
+            clean_vocab_script.main(
+                argv=["--config", str(tmp_path / "config" / "defaults.yaml")]
+            )
+
+    assert inbox.read_text() == original
+
+
+def test_only_successful_batches_are_removed_from_inbox(tmp_path):
+    inbox = tmp_path / "inbox.md"
+
+    with patch(
+        "scripts.clean_vocab.create_provider",
+        return_value=OneSuccessThenFailureProvider(),
+    ):
+        with pytest.raises(RuntimeError, match="second batch failed"):
+            clean_vocab_script.main(
+                argv=["--config", str(tmp_path / "config" / "defaults.yaml")]
+            )
+
+    remaining = inbox.read_text()
+    assert "el saco" not in remaining
+    assert remaining == "ni en pedo - no way\n"
+    assert "el saco" in (tmp_path / "Spanish vocab - Appearance.md").read_text()
