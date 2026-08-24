@@ -8,36 +8,36 @@
       "example": {
         "spanish_phrase": "Anhelo alcanzar las estrellas.",
         "english_translation": "I yearn to reach for the stars.",
+        "image_prompt": "A young astronaut standing on a desolate planet, looking up at a distant, shimmering nebula, reflective visor, vast expanse of space, dramatic lighting, photorealistic rendering with a sense of isolation and boundless ambition",
         "comment": "This illustrates a profound aspiration, often exceeding practical possibility."
-      },
-      "image_prompt": "A young astronaut standing on a desolate planet, looking up at a distant, shimmering nebula, reflective visor, vast expanse of space, dramatic lighting, photorealistic rendering with a sense of isolation and boundless ambition"
+      }
     },
     {
       "meaning": "To deeply desire a particular outcome or state of being",
       "example": {
         "spanish_phrase": "Anhelo la paz en el mundo.",
         "english_translation": "I yearn for peace in the world.",
+        "image_prompt": "A global projection map with interconnected threads of light representing interconnectedness and potential for harmony, ethereal glow, calming color palette, digital art style, conveying a vision of global unity and hope",
         "comment": "This reflects a heartfelt wish for a fundamental change, often involving humanitarian concerns."
-      },
-      "image_prompt": "A global projection map with interconnected threads of light representing interconnectedness and potential for harmony, ethereal glow, calming color palette, digital art style, conveying a vision of global unity and hope"
+      }
     },
     {
       "meaning": "To long for a romantic or idealistic vision",
       "example": {
         "spanish_phrase": "Anhelo el amor verdadero.",
         "english_translation": "I yearn for true love.",
+        "image_prompt": "A couple sharing a tender embrace under a moonlit balcony overlooking a charming European town, soft lighting, warm color tones, romantic realism, evoking a feeling of timeless love and cherished connection",
         "comment": "This expression embodies a classic, often romantic, aspiration."
-      },
-      "image_prompt": "A couple sharing a tender embrace under a moonlit balcony overlooking a charming European town, soft lighting, warm color tones, romantic realism, evoking a feeling of timeless love and cherished connection"
+      }
     },
     {
       "meaning": "To desire a return to a past state of happiness or innocence",
       "example": {
         "spanish_phrase": "Anhelo los días de mi infancia.",
         "english_translation": "I yearn for the days of my childhood.",
+        "image_prompt": "A child’s worn teddy bear sitting on a dusty attic floor surrounded by forgotten toys, soft, muted light, nostalgic tone, painterly realism with a sense of quiet reminiscence and faded memories",
         "comment": "Often linked with nostalgia, it's a longing for simpler times."
-      },
-      "image_prompt": "A child’s worn teddy bear sitting on a dusty attic floor surrounded by forgotten toys, soft, muted light, nostalgic tone, painterly realism with a sense of quiet reminiscence and faded memories"
+      }
     }
   ],
   "notes": [

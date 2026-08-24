@@ -23,7 +23,7 @@ Developed as part of a personal vocabulary-building workflow using LLM-generated
 ## ✨ Example workflow
 
 ```
-$ python scripts/clean_vocab.py --config config/defaults.toml
+$ python scripts/clean_vocab.py --config config/local.yaml
 ```
 
 Example output:
@@ -69,28 +69,74 @@ Status: SKIPPED (title conflict)
 
 ---
 
-## ⚙️ Configuration (`config.toml`)
+## ⚙️ Configuration (`config.yaml`)
 
-All paths and LLM settings are defined in a TOML configuration file, for example:
+All paths and LLM settings are defined in a YAML configuration file, for example:
 
-```toml
-[files]
-inbox = "inbox.md"
-output_pattern = "data/%topic.md"
+```yaml
+files:
+  inbox: "inbox.md"
+  output_pattern: "data/%topic.md"
 
-[vocabulary]
-topics = ["Health", "Travel", "Food", "Misc"]
+vocabulary:
+  language: "Spanish"
+  topics:
+    - "Health"
+    - "Travel"
+    - "Food"
+    - "Misc"
 
-[llm]
-provider = "openai"
-model = "gpt-4o-mini"
-prompt_path = "prompts/vocabulary_prompt_template.txt"
-max_retries = 2
-rate_limit_per_minute = 30
+llm:
+  default_provider: "gemini"
+  prompt_path: "prompts/vocabulary_prompt_template.txt"
+  providers:
+    gemini:
+      options:
+        model: "gemini-flash-latest"
+        model_params: {}
+        rate_limit_per_minute: 10
+    ollama:
+      options:
+        model: "gemma3:4b"
+        model_params: {}
+        rate_limit_per_minute: 60
 
-[processing]
-batch_size = 3
+processing:
+  batch_size: 3
+  show_items: true
 ```
+
+`config/defaults.yaml` is the tracked source of shared settings. It contains the
+topics, processing settings, media providers, and all available LLM providers.
+Gemini is selected by `llm.default_provider`. Select Ollama for one run with:
+
+```bash
+python scripts/clean_vocab.py --config config/local.yaml --llm-provider ollama
+```
+
+The shared `llm.prompt_path` is used by every provider unless that provider defines
+its own `prompt_path`. For example:
+
+```yaml
+llm:
+  providers:
+    ollama:
+      prompt_path: "prompts/vocabulary_prompt_ollama.txt"
+      options:
+        model: "gemma3:4b"
+```
+
+`config/local.yaml` is an ignored overlay containing only settings that differ on
+this machine. For example:
+
+```yaml
+files:
+  inbox: "/path/to/Spanish vocab - Inbox.md"
+  output_pattern: "/path/to/Spanish vocab - %topic.md"
+```
+
+Nested values from this file are merged over `config/defaults.yaml`; it does not
+need to repeat topics, providers, processing, TTS, or image settings.
 
 ---
 
@@ -120,8 +166,9 @@ Topic: {{ topic }}
 ✅ **Automatic duplicate & fuzzy-match detection**
 ✅ **Graceful interrupt handling** (`Ctrl+C` safe)
 ✅ **Readable CLI summaries & conflict reports**
-✅ **Automatic inbox cleanup & backup**
+✅ **Failure-safe inbox cleanup: incomplete or failed batches remain retryable**
 ✅ **Configurable LLM provider and model**
+✅ **Validated extended-article JSON and media cache collections**
 
 ---
 
@@ -137,7 +184,7 @@ Topic: {{ topic }}
 
 3. **Run the script**
    ```bash
-   python scripts/clean_vocab.py --config config/defaults.toml
+   python scripts/clean_vocab.py --config config/local.yaml
    ```
 
 4. **Check your topic files**
@@ -165,4 +212,3 @@ flowchart TD
 
 To run the slow integration test manually:
 `PYTHONPATH=. RUN_SLOW_INTEGRATION_TESTS=True pytest -m integration`
-

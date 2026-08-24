@@ -9,9 +9,18 @@ from jinja2 import Environment, FileSystemLoader
 import genanki
 import numpy as np
 import argparse
-import json
 import sys
 import io
+from pathlib import Path
+
+
+_THIS_FILE = Path(__file__).resolve()
+_REPO_ROOT = _THIS_FILE.parent.parent.resolve()
+_SRC = _REPO_ROOT / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from vocabgen.data.article_extended import ArticleExtended
 
 
 # TODO Read this example and check if anything could be improved
@@ -138,8 +147,7 @@ def main():
     args = parser.parse_args()
 
     try:
-        with open(args.input, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        article = ArticleExtended.load_from_file(args.input)
     except Exception as e:
         print(f"Error reading JSON file: {e}", file=sys.stderr)
         sys.exit(1)
@@ -153,29 +161,33 @@ def main():
     deck = AnkiDeck()
 
     # Add card for the word itself
-    word_filename = generate_file_name(data['word'])
-    generate_image(pipe, data['image_prompt'], f"{word_filename}.jpg")
-    generate_audio(data['word'], f"{word_filename}.mp3")
+    word_filename = generate_file_name(article.word)
+    generate_image(pipe, article.image_prompt, f"{word_filename}.jpg")
+    generate_audio(article.word, f"{word_filename}.mp3")
 
     deck.add_note(
-        data['word'],
-        data['translation'],
-        template_word_comment.render(data=data, word_filename=word_filename)
+        article.word,
+        article.translation,
+        template_word_comment.render(data=article, word_filename=word_filename)
     )
     deck.add_media_file(f"{word_filename}.jpg")
     deck.add_media_file(f"{word_filename}.mp3")
 
     # Add cards for each meaning
-    for m in data['meanings']:
-        example = m['example']
-        meaning_filename = generate_file_name(example['spanish_phrase'])
-        generate_image(pipe, m['image_prompt'], f"{meaning_filename}.jpg")
-        generate_audio(example['spanish_phrase'], f"{meaning_filename}.mp3")
+    for meaning in article.meanings:
+        example = meaning.example
+        meaning_filename = generate_file_name(example.spanish_phrase)
+        generate_image(pipe, example.image_prompt, f"{meaning_filename}.jpg")
+        generate_audio(example.spanish_phrase, f"{meaning_filename}.mp3")
 
         deck.add_note(
-            example['spanish_phrase'],
-            example['english_translation'],
-            meaning_word_comment.render(meaning=m, data=data, meaning_filename=meaning_filename)
+            example.spanish_phrase,
+            example.english_translation,
+            meaning_word_comment.render(
+                meaning=meaning,
+                data=article,
+                meaning_filename=meaning_filename,
+            )
         )
         deck.add_media_file(f"{meaning_filename}.jpg")
         deck.add_media_file(f"{meaning_filename}.mp3")
@@ -185,4 +197,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
