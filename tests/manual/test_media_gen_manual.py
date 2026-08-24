@@ -10,9 +10,12 @@ Usage:
 import argparse
 import tempfile
 from pathlib import Path
-import yaml
 
+from vocabgen.config import load_config
 from vocabgen.provider.factory import create_provider
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def main():
@@ -25,8 +28,7 @@ def main():
     )
     parser.add_argument(
         "--config",
-        default="config/defaults.yaml",
-        help="Path to YAML config file (default: config/defaults.yaml).",
+        help="Optional YAML file merged over config/defaults.yaml.",
     )
     parser.add_argument(
         "--text",
@@ -41,12 +43,10 @@ def main():
 
     args = parser.parse_args()
 
-    # Load provider config section
-    with open(args.config, "r") as f:
-        all_config = yaml.safe_load(f)
-        if args.type not in all_config:
-            raise KeyError(f"Config file does not contain section '{args.type}'.")
-        config = all_config[args.type]
+    all_config = load_config(_REPO_ROOT / "config/defaults.yaml", args.config)
+    if args.type not in all_config:
+        raise KeyError(f"Config file does not contain section '{args.type}'.")
+    config = all_config[args.type].to_dict()
 
     # Create provider
     provider = create_provider(args.type, config)

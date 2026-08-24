@@ -24,17 +24,26 @@ files:
   output_pattern: "data/Spanish vocab - %topic.md"
 
 llm:
-  # AI service provider
-  provider: "gemini"
+  # Provider used unless --llm-provider is passed.
+  default_provider: "gemini"
 
-  # FIXME This would be task-specific, so move to some other place
+  # Shared prompt. A provider may override this with its own prompt_path.
   prompt_path: "prompts/vocabulary_prompt_template.txt"
 
-  # Options for the LLM provider
-  options:
-    model: "gemini-flash-latest"
-    model_params: {}
-    rate_limit_per_minute: 10
+  providers:
+    gemini:
+      options:
+        model: "gemini-flash-latest"
+        model_params: {}
+        rate_limit_per_minute: 10
+
+    ollama:
+      # Add prompt_path here if the local model needs a different prompt.
+      # prompt_path: "prompts/vocabulary_prompt_ollama.txt"
+      options:
+        model: "gemma3:4b"
+        model_params: {}
+        rate_limit_per_minute: 60
 
 processing:
   # Items to process per batch

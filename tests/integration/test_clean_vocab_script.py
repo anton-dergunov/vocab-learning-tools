@@ -45,12 +45,19 @@ files:
   output_pattern: "{out_pattern}"
 
 llm:
-  provider: "gemini"
+  default_provider: "gemini"
   prompt_path: "{prompt_path}"
-  options:
-    model: "fake-model"
-    model_params: {{}}
-    rate_limit_per_minute: 5
+  providers:
+    gemini:
+      options:
+        model: "fake-model"
+        model_params: {{}}
+        rate_limit_per_minute: 5
+    ollama:
+      options:
+        model: "gemma3:4b"
+        model_params: {{}}
+        rate_limit_per_minute: 60
 
 processing:
   batch_size: 1
@@ -81,14 +88,33 @@ Topic: Slang
 """
 
 
+class FakeLLMProvider:
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        return fake_generate(self, system_prompt, user_prompt)
+
+
 def test_clean_vocab_flow(tmp_path, monkeypatch):
     """
     End-to-end test for CLI script using mocked LLM provider and temporary files.
     """
-    # ✅ Patch the provider's `generate` method instead of `generate_text`
-    with patch("vocabgen.llm.gemini.GeminiProvider.generate", new=fake_generate):
+    with patch(
+        "scripts.clean_vocab.create_provider",
+        return_value=FakeLLMProvider(),
+    ) as create_provider:
         cfg_file = tmp_path / "config" / "defaults.yaml"
         clean_vocab_script.main(argv=["--config", str(cfg_file)])
+
+        create_provider.assert_called_once_with(
+            "llm",
+            {
+                "provider": "gemini",
+                "options": {
+                    "model": "fake-model",
+                    "model_params": {},
+                    "rate_limit_per_minute": 5,
+                },
+            },
+        )
 
         # Verify topic files exist
         appearance_file = tmp_path / "Spanish vocab - Appearance.md"
@@ -110,3 +136,31 @@ def test_clean_vocab_flow(tmp_path, monkeypatch):
         # Sanity check: both contain Topic lines stripped from articles
         assert not any("Topic:" in line for line in appearance_text.splitlines())
         assert not any("Topic:" in line for line in slang_text.splitlines())
+
+
+def test_clean_vocab_allows_llm_provider_override(tmp_path):
+    with patch(
+        "scripts.clean_vocab.create_provider",
+        return_value=FakeLLMProvider(),
+    ) as create_provider:
+        cfg_file = tmp_path / "config" / "defaults.yaml"
+        clean_vocab_script.main(
+            argv=[
+                "--config",
+                str(cfg_file),
+                "--llm-provider",
+                "ollama",
+            ]
+        )
+
+        create_provider.assert_called_once_with(
+            "llm",
+            {
+                "provider": "ollama",
+                "options": {
+                    "model": "gemma3:4b",
+                    "model_params": {},
+                    "rate_limit_per_minute": 60,
+                },
+            },
+        )

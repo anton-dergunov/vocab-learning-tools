@@ -3,8 +3,9 @@
 CLI script to clean vocabulary inbox and append generated articles into topic files.
 
 Usage:
-    python scripts/clean_vocab.py              # uses config/defaults.yaml or CLI overrides
-    python scripts/clean_vocab.py --config config/custom.yaml
+    python scripts/clean_vocab.py
+    python scripts/clean_vocab.py --config config/local.yaml
+    python scripts/clean_vocab.py --config config/local.yaml --llm-provider ollama
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ import signal
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
-import yaml
 from box import Box
 from jinja2 import Environment
 from dotenv import load_dotenv
@@ -44,6 +44,7 @@ from vocabgen.vocab_processor import (
 from vocabgen.fileops import read_text, backup_file, atomic_write, append_to_file
 from vocabgen.provider.factory import create_provider
 from vocabgen.llm.base import LLMProvider
+from vocabgen.config import load_config, select_llm_provider
 
 
 logger = logging.getLogger("vocabgen.clean_vocab")
@@ -91,13 +92,6 @@ def render_prompt(template_path: Union[str, Path], config: Box) -> str:
     )
     tpl = env.from_string(Path(template_path).read_text())
     return tpl.render(cfg=config)
-
-
-def load_config(path: Union[str, Path]) -> Box:
-    """Load YAML config with dot-notation access."""
-    with open(path, "r", encoding="utf-8") as f:
-        config_dict = yaml.safe_load(f)
-    return Box(config_dict)
 
 
 # ────────────────────────────────
@@ -191,15 +185,22 @@ def main(argv: Optional[List[str]] = None):
     p.add_argument(
         "--config",
         type=Path,
-        default=_REPO_ROOT / "config/defaults.yaml",
-        help="Path to YAML config"
+        help="Optional YAML file merged over config/defaults.yaml"
+    )
+    p.add_argument(
+        "--llm-provider",
+        help="LLM provider configured under llm.providers (defaults to llm.default_provider)"
     )
     args = p.parse_args(argv)
 
     load_dotenv()
-    config = load_config(args.config)
+    config = load_config(_REPO_ROOT / "config/defaults.yaml", args.config)
+    provider_name, prompt_path, llm_config = select_llm_provider(
+        config,
+        args.llm_provider,
+    )
 
-    system_prompt = render_prompt(resolve_path(config.llm.prompt_path), config)
+    system_prompt = render_prompt(resolve_path(prompt_path), config)
 
     inbox_text = read_text(config.files.inbox)
     sections = split_sections(inbox_text)
@@ -222,11 +223,8 @@ def main(argv: Optional[List[str]] = None):
     summary = {t: 0 for t in topic_map}
     all_conflicts, fuzzy_conflicts = [], []
 
-    llm_config = {
-        "provider": config.llm.provider,
-        "options": config.llm.options.to_dict(),
-    }
     llm = create_provider("llm", llm_config)
+    logger.info("Using LLM provider: %s", provider_name)
 
     for i in range(0, total, config.processing.batch_size):
         batch = sections[i : i + config.processing.batch_size]
