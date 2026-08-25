@@ -50,6 +50,24 @@ uv run python scripts/benchmark_image_models.py prepare \
   --models mflux_flux2_klein_q4 sdxl_turbo
 ```
 
+The practical Z-Image profile for a 16 GB Apple Silicon machine uses the
+pre-quantized 5.91 GB MFLUX checkpoint, not the roughly 33 GB reconstructed
+Diffusers checkpoint:
+
+```bash
+uv run python scripts/benchmark_image_models.py prepare \
+  --models mflux_z_image_turbo_q4
+
+uv run python scripts/benchmark_image_models.py resume \
+  --stage smoke \
+  --models mflux_z_image_turbo_q4
+```
+
+It generates at 512×512 using nine steps, then follows the same 384px WebP
+normalization path as every other candidate. It is a memory-tight comparison,
+not the provisional default; avoid other memory-heavy applications while its
+smoke run is active.
+
 `uv` creates isolated environments and may install the requested Python on
 first use. Weights remain in the normal Hugging Face cache. Individual models
 can consume roughly 1–14 GB; preparing much of the catalog can exceed 30–50 GB.
@@ -68,6 +86,10 @@ Its model directory normally follows the Draw Things application. Override
 
 Remote jobs require both `--execute-remote` and `--max-cost-usd`. The harness
 checks the configured paid list-price projection before starting any runner:
+
+Credential creation, safe shell configuration, verification, and
+troubleshooting are documented in
+[Cloudflare Workers AI setup](cloudflare-workers-ai.md).
 
 ```bash
 export CLOUDFLARE_ACCOUNT_ID="..."

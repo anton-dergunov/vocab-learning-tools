@@ -316,6 +316,42 @@ def run_mflux(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def run_mflux_z_image(request: dict[str, Any]) -> dict[str, Any]:
+    from mflux.models.common.config.model_config import ModelConfig
+    from mflux.models.z_image import ZImageTurbo
+
+    output = _output_path(request)
+    settings = _settings(request)
+    model_id = request["candidate"]["model"]
+    configured_revision = request["candidate"].get("revision") or settings.get("revision")
+    quantize = settings.get("quantize")
+    model = ZImageTurbo(
+        quantize=int(quantize) if quantize is not None else None,
+        model_path=model_id,
+        model_config=ModelConfig.z_image_turbo(),
+    )
+    image = model.generate_image(
+        seed=int(request["job"]["seed"]),
+        prompt=request["job"]["prompt"],
+        num_inference_steps=int(settings.get("steps", 9)),
+        height=int(settings.get("height", 512)),
+        width=int(settings.get("width", 512)),
+        guidance=float(settings.get("guidance", 0.0)),
+    )
+    _save_image(image, output)
+    return {
+        "runtime_versions": _runtime_versions("mflux", "mlx"),
+        "provenance": {
+            "kind": "generation",
+            "device": "mlx",
+            "model": model_id,
+            "configured_revision": configured_revision,
+            "prequantized": quantize is None,
+            "quantize": quantize,
+        },
+    }
+
+
 def run_drawthings(request: dict[str, Any]) -> dict[str, Any]:
     output = _output_path(request)
     settings = _settings(request)
@@ -353,19 +389,30 @@ def run_cloudflare(request: dict[str, Any]) -> dict[str, Any]:
     account_id = os.environ[str(settings.get("account_id_env", "CLOUDFLARE_ACCOUNT_ID"))]
     token = os.environ[str(settings.get("token_env", "CLOUDFLARE_API_TOKEN"))]
     model = request["candidate"]["model"]
+    endpoint = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
+    # Cloudflare's FLUX.2 partner models require multipart/form-data even for
+    # text-only requests. The (None, value) tuples force requests to include a
+    # multipart boundary without representing scalar fields as uploaded files.
+    fields = {
+        "prompt": (None, request["job"]["prompt"]),
+        "width": (None, str(int(settings.get("width", 512)))),
+        "height": (None, str(int(settings.get("height", 512)))),
+        "seed": (None, str(int(request["job"]["seed"]))),
+        "guidance": (None, str(float(settings.get("guidance", 1.0)))),
+    }
     response = requests.post(
-        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}",
+        endpoint,
         headers={"Authorization": f"Bearer {token}"},
-        json={
-            "prompt": request["job"]["prompt"],
-            "width": int(settings.get("width", 512)),
-            "height": int(settings.get("height", 512)),
-            "seed": int(request["job"]["seed"]),
-            "guidance": float(settings.get("guidance", 1.0)),
-        },
+        files=fields,
         timeout=float(settings.get("request_timeout_seconds", 180)),
     )
-    response.raise_for_status()
+    if not response.ok:
+        try:
+            detail = json.dumps(response.json(), ensure_ascii=False)
+        except (ValueError, TypeError):
+            detail = response.text
+        detail = detail.strip()[:2000] or "empty response body"
+        raise RuntimeError(f"Cloudflare HTTP {response.status_code}: {detail}")
     content_type = response.headers.get("content-type", "")
     if content_type.startswith("image/"):
         data = response.content
@@ -381,7 +428,15 @@ def run_cloudflare(request: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError("Cloudflare response did not contain image data")
         data = base64.b64decode(encoded.split(",", 1)[-1])
     _save_image_bytes(data, output)
-    return {"runtime_versions": _runtime_versions("requests"), "provenance": {"kind": "generation", "service": "Cloudflare Workers AI", "model": model}}
+    return {
+        "runtime_versions": _runtime_versions("requests"),
+        "provenance": {
+            "kind": "generation",
+            "service": "Cloudflare Workers AI",
+            "model": model,
+            "request_format": "multipart/form-data",
+        },
+    }
 
 
 def run_bfl(request: dict[str, Any]) -> dict[str, Any]:
@@ -511,6 +566,7 @@ BACKENDS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "openverse": run_openverse,
     "diffusers": run_diffusers,
     "mflux": run_mflux,
+    "mflux-z-image": run_mflux_z_image,
     "drawthings": run_drawthings,
     "cloudflare": run_cloudflare,
     "bfl": run_bfl,

@@ -52,7 +52,8 @@ caches materially change them.
 | TinySD | 20-step compact baseline | 1–2 GB | Compact; quality may be too weak |
 | Segmind Vega | Distilled 0.7B SDXL alternative | 3–6 GB | Worth a smoke test |
 | Sana Sprint 0.6B | Modern 1–4-step model | 2–5 GB | MPS path is experimental |
-| Z-Image Turbo | Modern quality comparison | 12 GB or more | Probably too heavy for this goal |
+| Z-Image Turbo / Diffusers | Full checkpoint; 9 steps, 512px | 18 GB download / about 33 GB reconstructed | Not viable on the 16 GB M1 |
+| Z-Image Turbo / MFLUX Q4 | Pre-quantized 4-bit; 9 steps, 512px | 5.91 GB | Memory-tight smoke candidate, not a default |
 | StarVector 1B | Experimental text-to-SVG | Several GB | Upstream text path is fragile |
 
 FLUX.2 Klein 4B is a four-step distilled Apache-2.0 model whose official
@@ -75,7 +76,17 @@ Other primary model sources:
 - [TinySD](https://huggingface.co/segmind/tiny-sd)
 - [Segmind Vega](https://huggingface.co/segmind/Segmind-Vega)
 - [Sana Sprint](https://github.com/NVlabs/Sana)
+- [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)
+- [MFLUX Z-Image Turbo 4-bit](https://huggingface.co/filipstrand/Z-Image-Turbo-mflux-4bit)
 - [StarVector 1B](https://huggingface.co/starvector/starvector-1b-im2svg)
+
+The pre-quantized Z-Image checkpoint is a reasonable one-time smoke test. It is
+a 6B, nine-step model and therefore heavier than four-step FLUX.2 Klein 4B.
+Community reports put normal MFLUX generation around 9–10 GB with a potentially
+larger decode-time spike, so a 16 GB Mac may still encounter memory pressure.
+Its potential quality gain is unlikely to justify making it the unattended
+default for 384px vocabulary anchors unless blind review scores it materially
+higher than Klein.
 
 StarVector is intentionally experimental. Its 1B checkpoint is named `im2svg`;
 the model card claims text-to-SVG, while upstream examples focus on image-to-SVG

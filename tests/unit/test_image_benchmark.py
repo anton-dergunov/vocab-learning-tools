@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import io
 import sys
@@ -41,6 +42,8 @@ def test_tracked_config_has_expected_matrix():
     assert len(expand_jobs(config, "smoke", ["icon_scene"])) == 6
     assert len(expand_jobs(config, "finalist", ["icon_scene"])) == 48
     assert config.candidates["mflux_flux2_klein_q4"].settings["quantize"] == 4
+    assert config.candidates["mflux_z_image_turbo_q4"].model.endswith("mflux-4bit")
+    assert config.candidates["mflux_z_image_turbo_q4"].settings["quantize"] is None
     assert config.candidates["cloudflare_flux2_klein"].remote is True
 
 
@@ -328,3 +331,135 @@ def test_openverse_retrieval_path_records_license_provenance(tmp_path, monkeypat
     assert output.is_file()
     assert result["provenance"]["license"] == "cc0"
     assert result["provenance"]["license_verification_required"] is True
+
+
+def test_cloudflare_uses_multipart_and_decodes_base64_result(tmp_path, monkeypatch):
+    media = io.BytesIO()
+    Image.new("RGB", (24, 24), "orange").save(media, format="PNG")
+    captured = {}
+
+    class Response:
+        ok = True
+        status_code = 200
+        headers = {"content-type": "application/json"}
+        content = b""
+        text = ""
+
+        def json(self):
+            return {
+                "success": True,
+                "result": {"image": base64.b64encode(media.getvalue()).decode("ascii")},
+            }
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(post=fake_post))
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-fixture")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "token-fixture")
+    output = tmp_path / "cloudflare.png"
+    request = {
+        "job": {"prompt": "an orange square", "seed": 17},
+        "candidate": {
+            "model": "@cf/black-forest-labs/flux-2-klein-4b",
+            "settings": {"width": 512, "height": 512, "guidance": 1.0},
+        },
+        "output": {"native_path": str(output)},
+    }
+
+    result = image_benchmark_runner.run_cloudflare(request)
+
+    assert output.is_file()
+    assert "json" not in captured
+    assert captured["files"]["prompt"] == (None, "an orange square")
+    assert captured["files"]["width"] == (None, "512")
+    assert result["provenance"]["request_format"] == "multipart/form-data"
+
+
+def test_cloudflare_error_includes_response_body(tmp_path, monkeypatch):
+    class Response:
+        ok = False
+        status_code = 400
+        headers = {"content-type": "application/json"}
+        text = ""
+
+        def json(self):
+            return {"success": False, "errors": [{"code": 5006, "message": "bad multipart"}]}
+
+    monkeypatch.setitem(
+        sys.modules,
+        "requests",
+        types.SimpleNamespace(post=lambda *args, **kwargs: Response()),
+    )
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-fixture")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "token-fixture")
+    request = {
+        "job": {"prompt": "fixture", "seed": 17},
+        "candidate": {
+            "model": "@cf/black-forest-labs/flux-2-klein-4b",
+            "settings": {},
+        },
+        "output": {"native_path": str(tmp_path / "unused.png")},
+    }
+
+    with pytest.raises(RuntimeError, match="5006.*bad multipart"):
+        image_benchmark_runner.run_cloudflare(request)
+
+
+def test_mflux_z_image_uses_prequantized_checkpoint(tmp_path, monkeypatch):
+    captured = {}
+
+    class FakeModelConfig:
+        @staticmethod
+        def z_image_turbo():
+            return "z-image-turbo-config"
+
+    class FakeZImageTurbo:
+        def __init__(self, **kwargs):
+            captured["init"] = kwargs
+
+        def generate_image(self, **kwargs):
+            captured["generate"] = kwargs
+            return Image.new("RGB", (32, 32), "purple")
+
+    modules = {
+        "mflux": types.ModuleType("mflux"),
+        "mflux.models": types.ModuleType("mflux.models"),
+        "mflux.models.common": types.ModuleType("mflux.models.common"),
+        "mflux.models.common.config": types.ModuleType("mflux.models.common.config"),
+        "mflux.models.common.config.model_config": types.ModuleType(
+            "mflux.models.common.config.model_config"
+        ),
+        "mflux.models.z_image": types.ModuleType("mflux.models.z_image"),
+    }
+    modules["mflux.models.common.config.model_config"].ModelConfig = FakeModelConfig
+    modules["mflux.models.z_image"].ZImageTurbo = FakeZImageTurbo
+    for name, module in modules.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+    output = tmp_path / "z-image.png"
+    request = {
+        "job": {"prompt": "a purple square", "seed": 17},
+        "candidate": {
+            "model": "filipstrand/Z-Image-Turbo-mflux-4bit",
+            "revision": None,
+            "settings": {
+                "width": 512,
+                "height": 512,
+                "steps": 9,
+                "guidance": 0.0,
+                "quantize": None,
+            },
+        },
+        "output": {"native_path": str(output)},
+    }
+
+    result = image_benchmark_runner.run_mflux_z_image(request)
+
+    assert output.is_file()
+    assert captured["init"]["quantize"] is None
+    assert captured["init"]["model_path"].endswith("mflux-4bit")
+    assert captured["generate"]["num_inference_steps"] == 9
+    assert result["provenance"]["prequantized"] is True

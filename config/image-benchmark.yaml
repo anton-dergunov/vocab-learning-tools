@@ -319,7 +319,7 @@ candidates:
       timeout_seconds: 3600
 
   z_image_turbo:
-    label: Z-Image Turbo
+    label: Z-Image Turbo, full Diffusers checkpoint
     provider: diffusers
     model: Tongyi-MAI/Z-Image-Turbo
     enabled: false
@@ -332,6 +332,57 @@ candidates:
       guidance: 0.0
       device: auto
       timeout_seconds: 3600
+    notes: >-
+      Full checkpoint reconstructs to roughly 33 GB and is not recommended on
+      the 16 GB M1. Retained only to preserve the original research baseline.
+
+  mflux_z_image_turbo_q4:
+    label: Z-Image Turbo, MFLUX pre-quantized 4-bit
+    provider: mflux
+    model: filipstrand/Z-Image-Turbo-mflux-4bit
+    enabled: false
+    output_extension: png
+    command:
+      - uv
+      - run
+      - --no-project
+      - --python
+      - "3.12"
+      - --with
+      - "mflux==0.18.0"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - mflux-z-image
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    prepare_command:
+      - uv
+      - run
+      - --no-project
+      - --python
+      - "3.12"
+      - --with
+      - "huggingface-hub>=0.30,<2"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - prepare
+      - --model-id
+      - filipstrand/Z-Image-Turbo-mflux-4bit
+    settings:
+      width: 512
+      height: 512
+      steps: 9
+      guidance: 0.0
+      quantize: null
+      prequantized_bits: 4
+      timeout_seconds: 7200
+    notes: >-
+      5.91 GB pre-quantized checkpoint. A plausible but memory-tight smoke
+      comparison on the 16 GB M1; one image per child process releases memory.
 
   mflux_flux2_klein_q4:
     label: FLUX.2 Klein 4B, MFLUX 4-bit

@@ -3,7 +3,9 @@
 
 Image-provider research and the reproducible card-sized benchmark are described
 in [`docs/image-generation-research.md`](docs/image-generation-research.md) and
-[`docs/image-benchmark.md`](docs/image-benchmark.md).
+[`docs/image-benchmark.md`](docs/image-benchmark.md). Reusable credential and
+troubleshooting steps for the hosted candidate are in
+[`docs/cloudflare-workers-ai.md`](docs/cloudflare-workers-ai.md).
 
 [![Tests](https://github.com/adergunov/vocab-learning-tools/workflows/Tests/badge.svg)](https://github.com/adergunov/vocab-learning-tools/actions/workflows/tests.yml)
 
