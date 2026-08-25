@@ -1,0 +1,6 @@
+# Image benchmark orchestration and safe SVG normalization. Heavy runner
+# dependencies are installed into isolated uv environments on demand.
+-r core.txt
+
+CairoSVG
+pillow

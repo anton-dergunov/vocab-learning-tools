@@ -1,0 +1,583 @@
+# Research-only image benchmark. This file is not consumed by Anki generation.
+output:
+  directory: output/image-benchmark
+  normalized:
+    width: 384
+    height: 384
+    format: webp
+    quality: 88
+
+review:
+  blind_salt: vocabgen-image-benchmark-v1
+
+styles:
+  editorial_mnemonic:
+    suffix: >-
+      Clean editorial visual mnemonic, simple shapes, plain uncluttered
+      background, one immediately readable focal concept, no words, letters,
+      captions, logos, or watermarks.
+  warm_compact_scene:
+    suffix: >-
+      Warm visually pleasing compact illustration, limited detail, a clear
+      subject and action that remain readable at 192 pixels, no words,
+      letters, captions, logos, or watermarks.
+
+stages:
+  smoke:
+    prompt_stage: smoke
+    styles: [editorial_mnemonic]
+    seeds: [17]
+  finalist:
+    prompt_stage: finalist
+    styles: [editorial_mnemonic, warm_compact_scene]
+    seeds: [17, 43]
+
+prompts:
+  - id: spoon
+    term: la cuchara
+    gloss: spoon
+    stages: [smoke, finalist]
+    brief: A single metal spoon viewed clearly from above, unmistakable and centered
+    scene:
+      icons: [spoon]
+      background: "#f5efe0"
+      accent: "#5d7480"
+  - id: try_on
+    term: probarse
+    gloss: to try on
+    stages: [smoke, finalist]
+    brief: A person trying on a shirt in front of a mirror, evaluating whether it fits
+    scene:
+      icons: [person, shirt]
+      relation: arrow
+      background: "#f8ecdf"
+      accent: "#41727b"
+      secondary: "#d36d55"
+  - id: long_for
+    term: anhelar
+    gloss: to long for
+    stages: [smoke, finalist]
+    brief: A solitary person reaching toward a distant glowing heart-shaped light, conveying deep yearning
+    scene:
+      icons: [person, heart]
+      relation: arrow
+      background: "#e9e7f5"
+      accent: "#425b8e"
+      secondary: "#d75d73"
+  - id: service_down
+    term: caído
+    gloss: down or unavailable, for a website
+    stages: [smoke, finalist]
+    brief: A computer server visibly unavailable, with its status light off and a broken connection
+    scene:
+      icons: [server]
+      background: "#eeeef0"
+      accent: "#59616a"
+  - id: informal_you
+    term: tutear
+    gloss: to address someone with the informal tú
+    stages: [smoke, finalist]
+    brief: Two friendly people speaking informally as equals, relaxed and familiar rather than formal
+    scene:
+      icons: [people]
+      background: "#edf4e8"
+      accent: "#42705b"
+  - id: corrala
+    term: la corrala
+    gloss: traditional Spanish courtyard apartment building
+    stages: [smoke, finalist]
+    brief: A traditional Madrid residential courtyard surrounded by several floors of open wooden balconies
+    scene:
+      icons: [building, people]
+      background: "#f4e6d8"
+      accent: "#9b5b45"
+      secondary: "#3f6c67"
+  - id: buckwheat
+    term: el alforfón
+    gloss: buckwheat
+    stages: [finalist]
+    brief: A small bowl of triangular buckwheat grains beside a flowering buckwheat stem
+    scene:
+      icons: [grain]
+      background: "#f2edda"
+      accent: "#a4773f"
+  - id: shave_head
+    term: afeitarse la cabeza
+    gloss: to shave one's head
+    stages: [finalist]
+    brief: A person carefully shaving their own head with an electric razor, clearly showing the action
+    scene:
+      icons: [person, razor]
+      relation: arrow
+      background: "#e8f0f2"
+      accent: "#52737d"
+      secondary: "#c96c50"
+  - id: too_small
+    term: quedar chico
+    gloss: to fit too small
+    stages: [finalist]
+    brief: A person wearing a shirt that is obviously too small and tight at the sleeves and waist
+    scene:
+      icons: [person, shirt]
+      background: "#f6eae6"
+      accent: "#566b78"
+      secondary: "#c55750"
+  - id: need_size
+    term: ¿Qué talla necesitas?
+    gloss: What size do you need?
+    stages: [finalist]
+    brief: A shop assistant helping a customer choose between differently sized shirts using a measuring tape
+    scene:
+      icons: [people, shirt, ruler]
+      background: "#e9f1ed"
+      accent: "#447166"
+      secondary: "#d1854f"
+  - id: play_song
+    term: poner un tema
+    gloss: to put on a song
+    stages: [finalist]
+    brief: A hand starting a song on a music player while two musical notes emerge, emphasizing the action of putting music on
+    scene:
+      icons: [music]
+      background: "#eee9f7"
+      accent: "#675590"
+  - id: bachelor_party
+    term: la despedida de soltero
+    gloss: bachelor party
+    stages: [finalist]
+    brief: A cheerful group of adult friends celebrating a groom before his wedding, festive but tasteful
+    scene:
+      icons: [people, heart]
+      background: "#f8eadf"
+      accent: "#4c6f78"
+      secondary: "#d46268"
+
+# Only the zero-download deterministic scene renderer is enabled by default.
+# Select every heavyweight or remote model explicitly with --models.
+candidates:
+  icon_scene:
+    label: Deterministic icon scene
+    provider: local-svg
+    model: vocabgen-original-primitives-v1
+    enabled: true
+    output_extension: svg
+    command:
+      - "{python}"
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - icon-scene
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    settings:
+      width: 512
+      height: 512
+      timeout_seconds: 30
+    notes: Offline deterministic midpoint between one emoji and diffusion.
+
+  dreamlike_baseline:
+    label: Dreamlike Photoreal 2.0 (current baseline)
+    provider: diffusers
+    model: dreamlike-art/dreamlike-photoreal-2.0
+    enabled: false
+    output_extension: png
+    command: &diffusers_command
+      - uv
+      - run
+      - --python
+      - "3.12"
+      - --with
+      - "torch>=2.4,<3"
+      - --with
+      - "diffusers>=0.35,<0.38"
+      - --with
+      - "transformers>=4.45,<6"
+      - --with
+      - "accelerate>=1,<2"
+      - --with
+      - "pillow>=11,<13"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - diffusers
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    prepare_command: &dreamlike_prepare
+      - uv
+      - run
+      - --python
+      - "3.12"
+      - --with
+      - "huggingface-hub>=0.30,<2"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - prepare
+      - --model-id
+      - dreamlike-art/dreamlike-photoreal-2.0
+    settings:
+      width: 512
+      height: 512
+      steps: 30
+      guidance: 7.5
+      device: auto
+      timeout_seconds: 3600
+      negative_prompt: text, caption, logo, watermark, unreadable, distorted
+
+  sdxl_turbo:
+    label: SDXL Turbo
+    provider: diffusers
+    model: stabilityai/sdxl-turbo
+    enabled: false
+    output_extension: png
+    command: *diffusers_command
+    prepare_command:
+      - uv
+      - run
+      - --python
+      - "3.12"
+      - --with
+      - "huggingface-hub>=0.30,<2"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - prepare
+      - --model-id
+      - stabilityai/sdxl-turbo
+    settings:
+      width: 512
+      height: 512
+      steps: 1
+      guidance: 0.0
+      device: auto
+      timeout_seconds: 3600
+
+  lcm_dreamshaper:
+    label: LCM DreamShaper v7
+    provider: diffusers
+    model: SimianLuo/LCM_Dreamshaper_v7
+    enabled: false
+    output_extension: png
+    command: *diffusers_command
+    settings:
+      width: 512
+      height: 512
+      steps: 4
+      guidance: 1.0
+      device: auto
+      timeout_seconds: 3600
+
+  tiny_sd:
+    label: TinySD
+    provider: diffusers
+    model: segmind/tiny-sd
+    enabled: false
+    output_extension: png
+    command: *diffusers_command
+    settings:
+      width: 512
+      height: 512
+      steps: 20
+      guidance: 7.5
+      device: auto
+      timeout_seconds: 3600
+
+  segmind_vega:
+    label: Segmind Vega
+    provider: diffusers
+    model: segmind/Segmind-Vega
+    enabled: false
+    output_extension: png
+    command: *diffusers_command
+    settings:
+      width: 512
+      height: 512
+      steps: 20
+      guidance: 7.5
+      device: auto
+      timeout_seconds: 3600
+
+  sana_sprint_06b:
+    label: Sana Sprint 0.6B (experimental MPS)
+    provider: diffusers
+    model: Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers
+    enabled: false
+    output_extension: png
+    command: *diffusers_command
+    settings:
+      width: 512
+      height: 512
+      steps: 2
+      guidance: 1.0
+      device: auto
+      timeout_seconds: 3600
+
+  z_image_turbo:
+    label: Z-Image Turbo
+    provider: diffusers
+    model: Tongyi-MAI/Z-Image-Turbo
+    enabled: false
+    output_extension: png
+    command: *diffusers_command
+    settings:
+      width: 512
+      height: 512
+      steps: 9
+      guidance: 0.0
+      device: auto
+      timeout_seconds: 3600
+
+  mflux_flux2_klein_q4:
+    label: FLUX.2 Klein 4B, MFLUX 4-bit
+    provider: mflux
+    model: black-forest-labs/FLUX.2-klein-4B
+    enabled: false
+    output_extension: png
+    command:
+      - uv
+      - run
+      - --python
+      - "3.12"
+      - --with
+      - "mflux==0.18.0"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - mflux
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    prepare_command:
+      - uv
+      - run
+      - --python
+      - "3.12"
+      - --with
+      - "huggingface-hub>=0.30,<2"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - prepare
+      - --model-id
+      - black-forest-labs/FLUX.2-klein-4B
+    settings:
+      width: 512
+      height: 512
+      steps: 4
+      guidance: 1.0
+      quantize: 4
+      timeout_seconds: 7200
+    notes: Provisional preferred local profile for the 16 GB M1.
+
+  drawthings_flux2_klein_q6p:
+    label: FLUX.2 Klein 4B, Draw Things Q6P
+    provider: draw-things-cli
+    model: flux_2_klein_4b_q6p.ckpt
+    enabled: false
+    output_extension: png
+    command:
+      - "{python}"
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - drawthings
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    settings:
+      width: 512
+      height: 512
+      steps: 4
+      guidance: 1.0
+      checkpoint: flux_2_klein_4b_q6p.ckpt
+      offline: false
+      timeout_seconds: 7200
+
+  openverse_clip:
+    label: Openverse CC0/PDM with local CLIP ranking
+    provider: openverse
+    model: openai/clip-vit-base-patch32
+    enabled: false
+    output_extension: png
+    command:
+      - uv
+      - run
+      - --python
+      - "3.12"
+      - --with
+      - "requests>=2.32,<3"
+      - --with
+      - "pillow>=11,<13"
+      - --with
+      - "torch>=2.4,<3"
+      - --with
+      - "transformers>=4.45,<6"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - openverse
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    settings:
+      top_k: 12
+      clip_model: openai/clip-vit-base-patch32
+      timeout_seconds: 1800
+    notes: Metadata remains subject to manual license verification.
+
+  starvector_1b:
+    label: StarVector 1B text-to-SVG experiment
+    provider: transformers
+    model: starvector/starvector-1b-im2svg
+    enabled: false
+    output_extension: svg
+    command:
+      - uv
+      - run
+      - --python
+      - "3.11"
+      - --with
+      - "torch>=2.4,<3"
+      - --with
+      - "transformers>=4.45,<5"
+      - --with
+      - "accelerate>=1,<2"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - starvector
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    settings:
+      device: auto
+      max_length: 2048
+      temperature: 0.4
+      timeout_seconds: 3600
+    notes: Expected to fail cleanly if the published checkpoint lacks text-to-SVG on MPS.
+
+  cloudflare_flux2_klein:
+    label: Cloudflare FLUX.2 Klein 4B
+    provider: cloudflare-workers-ai
+    model: "@cf/black-forest-labs/flux-2-klein-4b"
+    enabled: false
+    remote: true
+    estimated_cost_usd: 0.000287
+    output_extension: png
+    command: &requests_runner
+      - uv
+      - run
+      - --python
+      - "3.12"
+      - --with
+      - "requests>=2.32,<3"
+      - --with
+      - "pillow>=11,<13"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - cloudflare
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    settings:
+      width: 512
+      height: 512
+      guidance: 1.0
+      account_id_env: CLOUDFLARE_ACCOUNT_ID
+      token_env: CLOUDFLARE_API_TOKEN
+      timeout_seconds: 300
+
+  bfl_flux2_klein:
+    label: BFL API FLUX.2 Klein 4B
+    provider: bfl-api
+    model: flux-2-klein-4b
+    enabled: false
+    remote: true
+    estimated_cost_usd: 0.014
+    output_extension: png
+    command:
+      - uv
+      - run
+      - --python
+      - "3.12"
+      - --with
+      - "requests>=2.32,<3"
+      - --with
+      - "pillow>=11,<13"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - bfl
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    settings:
+      width: 512
+      height: 512
+      api_key_env: BFL_API_KEY
+      timeout_seconds: 360
+
+  gemini_flash_lite_image:
+    label: Gemini 3.1 Flash Lite Image
+    provider: vertex-ai
+    model: gemini-3.1-flash-lite-image
+    enabled: false
+    remote: true
+    estimated_cost_usd: 0.0336
+    output_extension: png
+    command: &gemini_runner
+      - uv
+      - run
+      - --python
+      - "3.12"
+      - --with
+      - "google-genai>=1,<2"
+      - --with
+      - "pillow>=11,<13"
+      - python
+      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - run
+      - --backend
+      - gemini
+      - --request
+      - "{request}"
+      - --result
+      - "{result}"
+    settings:
+      width: 1024
+      height: 1024
+      vertexai: true
+      project_env: GOOGLE_CLOUD_PROJECT
+      location_env: GOOGLE_CLOUD_LOCATION
+      timeout_seconds: 600
+
+  gemini_flash_image:
+    label: Gemini 3.1 Flash Image
+    provider: vertex-ai
+    model: gemini-3.1-flash-image
+    enabled: false
+    remote: true
+    estimated_cost_usd: 0.067
+    output_extension: png
+    command: *gemini_runner
+    settings:
+      width: 1024
+      height: 1024
+      vertexai: true
+      project_env: GOOGLE_CLOUD_PROJECT
+      location_env: GOOGLE_CLOUD_LOCATION
+      timeout_seconds: 600

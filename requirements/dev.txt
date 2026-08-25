@@ -1,4 +1,5 @@
 # Complete runtime plus automated-test dependencies.
 -r media.txt
+-r benchmark.txt
 
 pytest

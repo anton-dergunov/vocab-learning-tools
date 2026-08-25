@@ -1,6 +1,10 @@
 
 # 📘 Vocab-Learning-Tools
 
+Image-provider research and the reproducible card-sized benchmark are described
+in [`docs/image-generation-research.md`](docs/image-generation-research.md) and
+[`docs/image-benchmark.md`](docs/image-benchmark.md).
+
 [![Tests](https://github.com/adergunov/vocab-learning-tools/workflows/Tests/badge.svg)](https://github.com/adergunov/vocab-learning-tools/actions/workflows/tests.yml)
 
 **Vocab-Learning-Tools** is a set of scripts to help learning vocabulary when learning foreign languages
