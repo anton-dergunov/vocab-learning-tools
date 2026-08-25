@@ -114,6 +114,22 @@ export GOOGLE_CLOUD_LOCATION="global"
 
 Then select `gemini_flash_lite_image` or `gemini_flash_image`. The CLI ceiling
 is not a provider billing budget; verify quotas and billing independently.
+Vertex pay-as-you-go uses shared capacity, so a valid request can still receive
+HTTP 429. The Gemini profiles make at most three attempts with bounded
+exponential backoff. `resume` preserves completed images and retries only jobs
+without a complete success manifest:
+
+```bash
+uv run python scripts/benchmark_image_models.py resume \
+  --stage smoke \
+  --models gemini_flash_image \
+  --execute-remote \
+  --max-cost-usd 0.45
+```
+
+The printed `$0.402` is the conservative configured projection for all six
+jobs, including successful jobs that `resume` will skip. It is not a statement
+of actual billed cost.
 
 ## Result contract
 

@@ -489,12 +489,31 @@ def run_gemini(request: dict[str, Any]) -> dict[str, Any]:
 
     output = _output_path(request)
     settings = _settings(request)
+    retry_policy = {
+        "attempts": int(settings.get("retry_attempts", 3)),
+        "initial_delay": float(settings.get("retry_initial_delay_seconds", 10.0)),
+        "max_delay": float(settings.get("retry_max_delay_seconds", 30.0)),
+        "exp_base": float(settings.get("retry_exponential_base", 2.0)),
+        "jitter": float(settings.get("retry_jitter_seconds", 1.0)),
+        "http_status_codes": [408, 429, 500, 502, 503, 504],
+    }
+    http_options = types.HttpOptions(
+        retry_options=types.HttpRetryOptions(**retry_policy)
+    )
     if settings.get("vertexai", True):
         project = os.environ[str(settings.get("project_env", "GOOGLE_CLOUD_PROJECT"))]
         location = os.environ.get(str(settings.get("location_env", "GOOGLE_CLOUD_LOCATION")), "global")
-        client = genai.Client(vertexai=True, project=project, location=location)
+        client = genai.Client(
+            vertexai=True,
+            project=project,
+            location=location,
+            http_options=http_options,
+        )
     else:
-        client = genai.Client(api_key=os.environ[str(settings.get("api_key_env", "GEMINI_API_KEY"))])
+        client = genai.Client(
+            api_key=os.environ[str(settings.get("api_key_env", "GEMINI_API_KEY"))],
+            http_options=http_options,
+        )
     response = client.models.generate_content(
         model=request["candidate"]["model"],
         contents=request["job"]["prompt"],
@@ -504,7 +523,16 @@ def run_gemini(request: dict[str, Any]) -> dict[str, Any]:
         for part in candidate.content.parts or []:
             if getattr(part, "inline_data", None) and part.inline_data.data:
                 _save_image_bytes(part.inline_data.data, output)
-                return {"runtime_versions": _runtime_versions("google-genai"), "provenance": {"kind": "generation", "service": "Google GenAI", "model": request["candidate"]["model"], "vertexai": bool(settings.get("vertexai", True))}}
+                return {
+                    "runtime_versions": _runtime_versions("google-genai"),
+                    "provenance": {
+                        "kind": "generation",
+                        "service": "Google GenAI",
+                        "model": request["candidate"]["model"],
+                        "vertexai": bool(settings.get("vertexai", True)),
+                        "retry_policy": retry_policy,
+                    },
+                }
     raise RuntimeError("Gemini response contained no image")
 
 

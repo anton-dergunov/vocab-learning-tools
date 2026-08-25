@@ -408,6 +408,80 @@ def test_cloudflare_error_includes_response_body(tmp_path, monkeypatch):
         image_benchmark_runner.run_cloudflare(request)
 
 
+def test_gemini_configures_bounded_retry_for_429(tmp_path, monkeypatch):
+    media = io.BytesIO()
+    Image.new("RGB", (24, 24), "blue").save(media, format="PNG")
+    captured = {}
+
+    class FakeHttpRetryOptions:
+        def __init__(self, **kwargs):
+            self.values = kwargs
+
+    class FakeHttpOptions:
+        def __init__(self, **kwargs):
+            self.retry_options = kwargs["retry_options"]
+
+    class FakeGenerateContentConfig:
+        def __init__(self, **kwargs):
+            captured["generate_config"] = kwargs
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured["client"] = kwargs
+            self.models = self
+
+        def generate_content(self, **kwargs):
+            captured["generate"] = kwargs
+            part = types.SimpleNamespace(
+                inline_data=types.SimpleNamespace(data=media.getvalue())
+            )
+            content = types.SimpleNamespace(parts=[part])
+            return types.SimpleNamespace(
+                candidates=[types.SimpleNamespace(content=content)]
+            )
+
+    fake_types = types.SimpleNamespace(
+        GenerateContentConfig=FakeGenerateContentConfig,
+        HttpOptions=FakeHttpOptions,
+        HttpRetryOptions=FakeHttpRetryOptions,
+    )
+    fake_genai = types.ModuleType("google.genai")
+    fake_genai.Client = FakeClient
+    fake_genai.types = fake_types
+    fake_google = types.ModuleType("google")
+    fake_google.genai = fake_genai
+    monkeypatch.setitem(sys.modules, "google", fake_google)
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "project-fixture")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "global")
+
+    output = tmp_path / "gemini.png"
+    request = {
+        "job": {"prompt": "a blue square", "seed": 17},
+        "candidate": {
+            "model": "gemini-3.1-flash-image",
+            "settings": {
+                "vertexai": True,
+                "retry_attempts": 3,
+                "retry_initial_delay_seconds": 10,
+                "retry_max_delay_seconds": 30,
+            },
+        },
+        "output": {"native_path": str(output)},
+    }
+
+    result = image_benchmark_runner.run_gemini(request)
+
+    retry = captured["client"]["http_options"].retry_options.values
+    assert output.is_file()
+    assert captured["client"]["location"] == "global"
+    assert retry["attempts"] == 3
+    assert retry["initial_delay"] == 10
+    assert retry["max_delay"] == 30
+    assert retry["http_status_codes"] == [408, 429, 500, 502, 503, 504]
+    assert result["provenance"]["retry_policy"] == retry
+
+
 def test_mflux_z_image_uses_prequantized_checkpoint(tmp_path, monkeypatch):
     captured = {}
 

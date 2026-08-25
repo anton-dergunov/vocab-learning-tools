@@ -624,6 +624,11 @@ candidates:
       vertexai: true
       project_env: GOOGLE_CLOUD_PROJECT
       location_env: GOOGLE_CLOUD_LOCATION
+      retry_attempts: 3
+      retry_initial_delay_seconds: 10
+      retry_max_delay_seconds: 30
+      retry_exponential_base: 2
+      retry_jitter_seconds: 1
       timeout_seconds: 600
 
   gemini_flash_image:
@@ -641,4 +646,9 @@ candidates:
       vertexai: true
       project_env: GOOGLE_CLOUD_PROJECT
       location_env: GOOGLE_CLOUD_LOCATION
+      retry_attempts: 3
+      retry_initial_delay_seconds: 10
+      retry_max_delay_seconds: 30
+      retry_exponential_base: 2
+      retry_jitter_seconds: 1
       timeout_seconds: 600
