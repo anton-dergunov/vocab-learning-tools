@@ -422,7 +422,7 @@ def test_mflux_z_image_uses_prequantized_checkpoint(tmp_path, monkeypatch):
 
         def generate_image(self, **kwargs):
             captured["generate"] = kwargs
-            return Image.new("RGB", (32, 32), "purple")
+            return types.SimpleNamespace(image=Image.new("RGB", (32, 32), "purple"))
 
     modules = {
         "mflux": types.ModuleType("mflux"),

@@ -330,7 +330,7 @@ def run_mflux_z_image(request: dict[str, Any]) -> dict[str, Any]:
         model_path=model_id,
         model_config=ModelConfig.z_image_turbo(),
     )
-    image = model.generate_image(
+    generated = model.generate_image(
         seed=int(request["job"]["seed"]),
         prompt=request["job"]["prompt"],
         num_inference_steps=int(settings.get("steps", 9)),
@@ -338,7 +338,10 @@ def run_mflux_z_image(request: dict[str, Any]) -> dict[str, Any]:
         width=int(settings.get("width", 512)),
         guidance=float(settings.get("guidance", 0.0)),
     )
-    _save_image(image, output)
+    # MFLUX annotates this as Pillow Image but returns GeneratedImage, whose
+    # ``image`` member is the actual Pillow object (and whose own ``save``
+    # method also embeds generation metadata).
+    _save_image(getattr(generated, "image", generated), output)
     return {
         "runtime_versions": _runtime_versions("mflux", "mlx"),
         "provenance": {
