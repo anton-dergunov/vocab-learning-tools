@@ -186,6 +186,7 @@ candidates:
     command: &diffusers_command
       - uv
       - run
+      - --no-project
       - --python
       - "3.12"
       - --with
@@ -210,6 +211,7 @@ candidates:
     prepare_command: &dreamlike_prepare
       - uv
       - run
+      - --no-project
       - --python
       - "3.12"
       - --with
@@ -238,6 +240,7 @@ candidates:
     prepare_command:
       - uv
       - run
+      - --no-project
       - --python
       - "3.12"
       - --with
@@ -339,6 +342,7 @@ candidates:
     command:
       - uv
       - run
+      - --no-project
       - --python
       - "3.12"
       - --with
@@ -355,6 +359,7 @@ candidates:
     prepare_command:
       - uv
       - run
+      - --no-project
       - --python
       - "3.12"
       - --with
@@ -407,6 +412,7 @@ candidates:
     command:
       - uv
       - run
+      - --no-project
       - --python
       - "3.12"
       - --with
@@ -441,6 +447,7 @@ candidates:
     command:
       - uv
       - run
+      - --no-project
       - --python
       - "3.11"
       - --with
@@ -476,6 +483,7 @@ candidates:
     command: &requests_runner
       - uv
       - run
+      - --no-project
       - --python
       - "3.12"
       - --with
@@ -510,6 +518,7 @@ candidates:
     command:
       - uv
       - run
+      - --no-project
       - --python
       - "3.12"
       - --with
@@ -542,6 +551,7 @@ candidates:
     command: &gemini_runner
       - uv
       - run
+      - --no-project
       - --python
       - "3.12"
       - --with

@@ -6,9 +6,14 @@ or media cache.
 ## Install and inspect
 
 ```bash
-pip install -r requirements/benchmark.txt
-python scripts/benchmark_image_models.py list
+uv sync
+uv run python --version
+uv run python scripts/benchmark_image_models.py list
 ```
+
+The repository pins Python 3.12 in `.python-version` and constrains the uv
+project to `>=3.12,<3.13`. Use `uv run` for benchmark commands so a newer
+Homebrew `python` cannot accidentally select an incompatible environment.
 
 Only `icon_scene` is enabled by default because it has no model download or
 network call. Every heavyweight and remote candidate must be named explicitly.
@@ -16,11 +21,11 @@ network call. Every heavyweight and remote candidate must be named explicitly.
 ## Offline smoke path
 
 ```bash
-python scripts/benchmark_image_models.py run \
+uv run python scripts/benchmark_image_models.py run \
   --stage smoke \
   --models icon_scene
 
-python scripts/benchmark_image_models.py render-review --stage smoke
+uv run python scripts/benchmark_image_models.py render-review --stage smoke
 ```
 
 Open `output/image-benchmark/smoke/review.html`. The self-contained gallery
@@ -31,7 +36,7 @@ Use `resume` to skip jobs whose manifest and native/normalized output are
 complete:
 
 ```bash
-python scripts/benchmark_image_models.py resume \
+uv run python scripts/benchmark_image_models.py resume \
   --stage finalist \
   --models icon_scene mflux_flux2_klein_q4
 ```
@@ -41,7 +46,7 @@ python scripts/benchmark_image_models.py resume \
 Preparation is explicit and downloads only named candidates:
 
 ```bash
-python scripts/benchmark_image_models.py prepare \
+uv run python scripts/benchmark_image_models.py prepare \
   --models mflux_flux2_klein_q4 sdxl_turbo
 ```
 
@@ -67,7 +72,7 @@ checks the configured paid list-price projection before starting any runner:
 ```bash
 export CLOUDFLARE_ACCOUNT_ID="..."
 export CLOUDFLARE_API_TOKEN="..."
-python scripts/benchmark_image_models.py run \
+uv run python scripts/benchmark_image_models.py run \
   --stage smoke \
   --models cloudflare_flux2_klein \
   --execute-remote \
@@ -78,8 +83,10 @@ For Vertex AI Gemini, reuse Application Default Credentials:
 
 ```bash
 gcloud auth application-default login
-gcloud services enable aiplatform.googleapis.com
-export GOOGLE_CLOUD_PROJECT="your-project-id"
+gcloud config set project "your-project-id"
+gcloud auth application-default set-quota-project "your-project-id"
+gcloud services enable aiplatform.googleapis.com --project="your-project-id"
+export GOOGLE_CLOUD_PROJECT="$(gcloud config get-value project)"
 export GOOGLE_CLOUD_LOCATION="global"
 ```
 

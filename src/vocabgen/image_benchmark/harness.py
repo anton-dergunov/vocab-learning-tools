@@ -345,6 +345,7 @@ def prepare_candidates(
             prepare_command = (
                 "uv",
                 "run",
+                "--no-project",
                 "--python",
                 "3.12",
                 "--with",
