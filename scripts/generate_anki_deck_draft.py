@@ -61,9 +61,15 @@ def preview_command(args: argparse.Namespace) -> Path:
 def build_command(args: argparse.Namespace) -> Path:
     # These imports deliberately happen only for a real deck build. Previewing
     # does not load genanki or either heavyweight media backend.
-    from vocabgen.anki.builder import build_deck, write_package
-    from vocabgen.anki.media import generate_article_media
-    from vocabgen.provider.factory import create_provider
+    try:
+        from vocabgen.anki.builder import build_deck, write_package
+        from vocabgen.anki.media import generate_article_media
+        from vocabgen.provider.factory import create_provider
+    except ImportError as exc:
+        raise RuntimeError(
+            "Anki/media dependencies are missing. Install them with "
+            "'pip install -r requirements/media.txt'."
+        ) from exc
 
     article = ArticleExtended.load_from_file(resolve_project_path(args.input))
     config = _load_settings(args.config)

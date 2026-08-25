@@ -1,18 +1,2 @@
-jinja2
-PyYAML
-genanki
-diffusers
-kokoro
-soundfile
-pydub
-torch
-accelerate
-litellm
-llama-cpp-python
-ollama
-google-genai
-pytest
-python-box
-python-slugify
-pydantic>=2,<3
-pillow
+# Default installation: inbox cleaning, configuration, schemas, and HTML preview.
+-r requirements/core.txt

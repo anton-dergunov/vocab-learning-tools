@@ -1,0 +1,17 @@
+# Optional Anki packaging, text-to-speech, and image generation.
+-r core.txt
+
+# Anki deck generation
+genanki
+
+# Kokoro TTS and MP3 conversion
+kokoro
+numpy
+pydub
+soundfile
+
+# Stable Diffusion image generation
+accelerate
+diffusers
+pillow
+torch

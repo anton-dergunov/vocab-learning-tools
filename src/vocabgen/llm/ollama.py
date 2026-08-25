@@ -17,7 +17,7 @@ class OllamaProvider(LLMProvider):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         if OllamaClient is None:
-            raise ImportError("ollama-python not installed. pip install ollama-python")
+            raise ImportError("Ollama client missing. Install with: pip install ollama")
 
         host = os.environ.get("OLLAMA_HOST")
         self.client = OllamaClient(host=host) if host else OllamaClient()

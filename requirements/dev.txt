@@ -1,0 +1,4 @@
+# Complete runtime plus automated-test dependencies.
+-r media.txt
+
+pytest

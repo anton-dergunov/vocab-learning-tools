@@ -20,6 +20,31 @@ Developed as part of a personal vocabulary-building workflow using LLM-generated
 
 ---
 
+## Installation
+
+Install the core cleaner, schemas, LLM providers, and HTML preview support:
+
+```bash
+pip install -r requirements.txt
+```
+
+Install optional Anki, TTS, and image-generation support:
+
+```bash
+pip install -r requirements/media.txt
+```
+
+Install the complete runtime and test suite for development:
+
+```bash
+pip install -r requirements/dev.txt
+```
+
+Kokoro and Stable Diffusion bring large model/runtime dependencies. MP3 export
+through pydub also requires `ffmpeg` to be available on the system path.
+
+---
+
 ## ✨ Example workflow
 
 ```
@@ -203,6 +228,7 @@ python scripts/generate_anki_deck_draft.py preview input.json
 Generate missing media through the configured providers and build the deck:
 
 ```bash
+pip install -r requirements/media.txt
 python scripts/generate_anki_deck_draft.py build input.json --config config/local.yaml
 ```
 
@@ -224,5 +250,19 @@ flowchart TD
     G --> H["Anki package (.apkg)"]
 ```
 
-To run the slow integration test manually:
-`PYTHONPATH=. RUN_SLOW_INTEGRATION_TESTS=True pytest -m integration`
+## Tests and realistic vocabulary corpus
+
+`test-data/` is a tracked integration corpus containing the real normalized
+topic collection and a small raw inbox. Offline integration tests copy the
+entire directory to a temporary location before modifying anything:
+
+```bash
+pytest -m integration
+```
+
+Real-provider tests remain opt-in and skip unless their credential or local
+model is also available:
+
+```bash
+RUN_SLOW_INTEGRATION_TESTS=True pytest -m integration
+```

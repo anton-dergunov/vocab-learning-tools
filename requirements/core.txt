@@ -1,0 +1,11 @@
+# Maintained core application and all supported LLM clients.
+Jinja2
+PyYAML
+google-genai
+ollama
+openai
+pydantic>=2,<3
+python-box
+python-dotenv
+python-slugify
+tqdm
