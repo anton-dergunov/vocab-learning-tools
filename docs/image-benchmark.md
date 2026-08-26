@@ -31,6 +31,29 @@ uv run python scripts/benchmark_image_models.py render-review --stage smoke
 Open `output/image-benchmark/smoke/review.html`. The self-contained gallery
 stores in-progress ratings in browser local storage and downloads portable
 JSON. Identities remain blind until **Reveal model identities** is used.
+Checkbox flags such as `irrelevant` and `unwanted-text` can be clicked directly;
+flag changes are stored immediately alongside scores and rejection state.
+
+Aggregate one or more downloaded ratings exports into a standalone interactive
+report:
+
+```bash
+uv run python scripts/benchmark_image_models.py aggregate-ratings \
+  ~/Downloads/image-benchmark-smoke-ratings.json
+```
+
+By default this writes HTML and machine-readable JSON under
+`output/image-benchmark/ratings/`. The HTML shows every metric, permits changing
+their relative weights, permits disabling the rejection-as-zero penalty, and
+can sort by composite or individual metrics. Default weights are mnemonic
+relevance 45%, visual appeal 30%, artifact freedom 20%, and small-size
+legibility 5%.
+
+Repeated runs for the same candidate/prompt/style/seed are averaged within that
+evaluation cell before candidate means are calculated. This prevents stale or
+repeated jobs from giving one model extra weight. Re-rendering the review gallery
+keeps only the newest successful manifest for each evaluation cell, including
+when operational configuration changes produced a new deterministic job ID.
 
 Use `resume` to skip jobs whose manifest and native/normalized output are
 complete:

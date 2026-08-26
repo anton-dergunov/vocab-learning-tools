@@ -17,6 +17,7 @@ if str(_SRC) not in sys.path:
 from vocabgen.image_benchmark.config import BenchmarkConfigError, load_benchmark_config
 from vocabgen.image_benchmark.harness import prepare_candidates, run_benchmark
 from vocabgen.image_benchmark.jobs import expand_jobs
+from vocabgen.image_benchmark.ratings import RatingsError, write_ratings_report
 from vocabgen.image_benchmark.review import render_review
 
 
@@ -93,6 +94,37 @@ def review_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def aggregate_ratings_command(args: argparse.Namespace) -> int:
+    config = _config(args)
+    default_name = f"{args.ratings[0].stem}-aggregate.html"
+    output = args.output or config.output_dir / "ratings" / default_name
+    report, html_path, json_path = write_ratings_report(
+        args.ratings,
+        html_path=output,
+        json_path=args.json_output,
+        candidate_labels={
+            candidate_id: candidate.label
+            for candidate_id, candidate in config.candidates.items()
+        },
+    )
+    def score(value):
+        return f"{value:.2f}" if value is not None else "—"
+
+    print("Rank  Usable  Relevance  Appeal  Artifacts  Legibility  Coverage  Model")
+    for candidate in report["candidates"]:
+        metrics = candidate["metrics"]
+        print(
+            f"{candidate['rank']:>4}  {score(candidate['usable_score']):>6}  "
+            f"{score(metrics['relevance']):>9}  {score(metrics['appeal']):>6}  "
+            f"{score(metrics['artifacts']):>9}  {score(metrics['legibility']):>10}  "
+            f"{candidate['coverage']:>3}/{candidate['expected_coverage']:<3}  "
+            f"{candidate['candidate_id']}"
+        )
+    print(f"HTML report written to {html_path}")
+    print(f"Aggregate JSON written to {json_path}")
+    return 0
+
+
 def _add_run_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--stage", choices=("smoke", "finalist"), required=True)
     parser.add_argument(
@@ -138,6 +170,17 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--stage", choices=("smoke", "finalist"), required=True)
     review.add_argument("--output", type=Path)
     review.set_defaults(handler=review_command)
+
+    aggregate = commands.add_parser(
+        "aggregate-ratings",
+        help="Aggregate exported ratings into interactive HTML and JSON reports",
+    )
+    aggregate.add_argument("ratings", nargs="+", type=Path)
+    aggregate.add_argument("--output", type=Path, help="HTML report destination")
+    aggregate.add_argument(
+        "--json-output", type=Path, help="Aggregate JSON destination"
+    )
+    aggregate.set_defaults(handler=aggregate_ratings_command)
     return parser
 
 
@@ -145,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return int(args.handler(args))
-    except (BenchmarkConfigError, ValueError) as exc:
+    except (BenchmarkConfigError, RatingsError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

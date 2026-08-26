@@ -22,6 +22,11 @@ from vocabgen.image_benchmark.harness import (
 )
 from vocabgen.image_benchmark.jobs import expand_jobs
 from vocabgen.image_benchmark.media import UnsafeSVGError, normalize_image, sanitize_svg_text
+from vocabgen.image_benchmark.ratings import (
+    aggregate_ratings,
+    load_rating_exports,
+    write_ratings_report,
+)
 from vocabgen.image_benchmark.review import render_review
 from scripts import image_benchmark_runner
 
@@ -186,6 +191,8 @@ def test_mock_runner_manifest_resume_and_review(tmp_path):
     assert "Download ratings JSON" in body
     assert "fixture-v1" not in body  # Model identity is not embedded in the card label.
     assert "data:image/webp;base64" in body
+    assert "e.target.closest('label,input,button,a')" in body
+    assert "box.onclick=e=>e.stopPropagation()" in body
 
 
 def test_mock_remote_runner_executes_with_explicit_budget(tmp_path):
@@ -208,6 +215,95 @@ def test_mock_remote_runner_executes_with_explicit_budget(tmp_path):
 
     assert summary.succeeded == 1
     assert summary.projected_cost_usd == pytest.approx(0.002)
+
+
+def test_review_collapses_repeated_success_manifests_by_evaluation_cell(tmp_path):
+    config = _mock_config(tmp_path)
+    summary = run_benchmark(
+        config, repo_root=REPO_ROOT, stage="smoke", candidate_ids=["mock"]
+    )
+    manifest = json.loads(summary.manifests[0].read_text(encoding="utf-8"))
+    manifest["job"]["id"] = "stale-job-from-an-older-configuration"
+    stale = config.output_dir / "smoke" / "stale" / "manifest.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text(json.dumps(manifest), encoding="utf-8")
+
+    review = render_review(config, "smoke", tmp_path / "review.html")
+
+    assert review.read_text(encoding="utf-8").count("data:image/webp;base64") == 1
+
+
+def test_ratings_aggregate_balances_replicates_and_penalizes_rejection(tmp_path):
+    def item(job_id, candidate, prompt, score, *, rejected=False, flags=None):
+        return {
+            "job_id": job_id,
+            "candidate_id": candidate,
+            "blind_label": "Model X",
+            "prompt_id": prompt,
+            "term": prompt,
+            "gloss": prompt,
+            "style": "editorial_mnemonic",
+            "seed": 17,
+            "rating": {
+                "scores": {
+                    "relevance": score,
+                    "legibility": score,
+                    "appeal": score,
+                    "artifacts": score,
+                },
+                "flags": flags or [],
+                "rejected": rejected,
+            },
+        }
+
+    ratings = tmp_path / "ratings.json"
+    ratings.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "stage": "smoke",
+                "items": [
+                    item("a-p1-first", "a", "p1", 5),
+                    item(
+                        "a-p1-repeat",
+                        "a",
+                        "p1",
+                        1,
+                        rejected=True,
+                        flags=["unwanted-text"],
+                    ),
+                    item("a-p2", "a", "p2", 4),
+                    item("b-p1", "b", "p1", 4),
+                    item("b-p2", "b", "p2", 3),
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = aggregate_ratings(
+        load_rating_exports([ratings]), candidate_labels={"a": "Model A", "b": "Model B"}
+    )
+    by_id = {candidate["candidate_id"]: candidate for candidate in report["candidates"]}
+
+    assert by_id["a"]["quality_score"] == pytest.approx(3.5)
+    assert by_id["a"]["usable_score"] == pytest.approx(3.25)
+    assert by_id["a"]["duplicate_items"] == 1
+    assert by_id["a"]["flags"] == {"unwanted-text": 1}
+    assert by_id["b"]["rank"] == 1
+    assert report["summary"]["duplicate_evaluation_items"] == 1
+
+    html_path = tmp_path / "aggregate.html"
+    rendered, html_result, json_result = write_ratings_report(
+        [ratings],
+        html_path=html_path,
+        candidate_labels={"a": "Model A", "b": "Model B"},
+    )
+    body = html_result.read_text(encoding="utf-8")
+    assert rendered["candidates"][0]["candidate_id"] == "b"
+    assert "Count rejected images as zero" in body
+    assert "Model A" in body
+    assert json_result.is_file()
 
 
 def test_failed_runner_is_recorded_without_raising(tmp_path):

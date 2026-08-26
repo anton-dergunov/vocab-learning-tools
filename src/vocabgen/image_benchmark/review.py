@@ -26,14 +26,30 @@ def _blind_labels(candidate_ids: Iterable[str], salt: str) -> dict[str, str]:
 
 
 def collect_review_items(config: BenchmarkConfig, stage: str) -> list[dict[str, Any]]:
-    manifests: list[dict[str, Any]] = []
+    newest_by_cell: dict[tuple[str, str, str, int], dict[str, Any]] = {}
     for path in (config.output_dir / stage).glob("*/manifest.json"):
         try:
             manifest = read_json(path)
         except (OSError, ValueError, json.JSONDecodeError):
             continue
-        if manifest.get("status") == "success":
-            manifests.append(manifest)
+        if manifest.get("status") != "success":
+            continue
+        job = manifest.get("job", {})
+        try:
+            cell = (
+                str(job["candidate_id"]),
+                str(job["prompt_id"]),
+                str(job["style_id"]),
+                int(job["seed"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        previous = newest_by_cell.get(cell)
+        if previous is None or float(manifest.get("started_at_unix", 0)) >= float(
+            previous.get("started_at_unix", 0)
+        ):
+            newest_by_cell[cell] = manifest
+    manifests = list(newest_by_cell.values())
     labels = _blind_labels(
         (item["job"]["candidate_id"] for item in manifests), config.review_blind_salt
     )
@@ -110,8 +126,8 @@ function render(){{const root=document.querySelector('#cards'); root.innerHTML='
 items.forEach((item,i)=>{{const value=rating(item.job_id); const card=document.createElement('article'); card.className='card'+(i===selected?' selected':'')+(value.rejected?' rejected':'');
 const metricHtml=Object.entries(metrics).map(([key,label])=>`<span class="metric ${{key===metric?'active':''}}">${{label}}</span><strong>${{value.scores[key]||'—'}}/5</strong>`).join('');
 card.innerHTML=`<div class="image-wrap"><img src="${{item.image}}" alt="benchmark output"></div><h2>${{esc(item.term)}} — ${{esc(item.gloss)}}</h2><div class="meta">${{esc(revealed?item.candidate_id:item.blind_label)}} · ${{esc(item.style)}} · seed ${{item.seed}}</div><div class="metrics">${{metricHtml}}</div><div class="flags">${{['irrelevant','unwanted-text','unsafe','broken-anatomy'].map(flag=>`<label><input type="checkbox" data-flag="${{flag}}" ${{value.flags.includes(flag)?'checked':''}}>${{flag}}</label>`).join('')}}</div>`;
-card.onclick=()=>{{selected=i;render();}}; card.querySelectorAll('[data-flag]').forEach(box=>box.onchange=e=>{{e.stopPropagation(); const f=e.target.dataset.flag; value.flags=e.target.checked?[...new Set([...value.flags,f])]:value.flags.filter(x=>x!==f);save();}}); root.appendChild(card);}});
-const rated=Object.values(ratings).filter(x=>Object.keys(x.scores||{{}}).length||x.rejected).length; document.querySelector('#progress').textContent=`${{rated}} / ${{items.length}} reviewed`;}}
+card.onclick=e=>{{if(e.target.closest('label,input,button,a'))return;selected=i;render();}}; card.querySelectorAll('[data-flag]').forEach(box=>{{box.onclick=e=>e.stopPropagation();box.onchange=e=>{{e.stopPropagation();const f=e.target.dataset.flag;value.flags=e.target.checked?[...new Set([...value.flags,f])]:value.flags.filter(x=>x!==f);save();}};}}); root.appendChild(card);}});
+const rated=items.filter(item=>{{const x=ratings[item.job_id];return x&&(Object.keys(x.scores||{{}}).length||x.rejected||(x.flags||[]).length);}}).length; document.querySelector('#progress').textContent=`${{rated}} / ${{items.length}} reviewed`;}}
 document.addEventListener('keydown',e=>{{if(!items.length)return; if(e.key==='ArrowRight')selected=Math.min(items.length-1,selected+1); else if(e.key==='ArrowLeft')selected=Math.max(0,selected-1); else if('rla f'.replace(/ /g,'').includes(e.key.toLowerCase())){{const map={{r:'relevance',l:'legibility',a:'appeal',f:'artifacts'}};metric=map[e.key.toLowerCase()]||metric;}} else if(/^[1-5]$/.test(e.key)){{rating(items[selected].job_id).scores[metric]=Number(e.key);save();return;}} else if(e.key.toLowerCase()==='x'){{const v=rating(items[selected].job_id);v.rejected=!v.rejected;save();return;}} render();}});
 document.querySelector('#reveal').onclick=()=>{{revealed=!revealed;render();}};
 document.querySelector('#download').onclick=()=>{{const exportData={{schema_version:1,stage:{json.dumps(stage)},exported_at:new Date().toISOString(),items:items.map(i=>({{...i,image:undefined,rating:ratings[i.job_id]||null}}))}}; const blob=new Blob([JSON.stringify(exportData,null,2)],{{type:'application/json'}}); const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`image-benchmark-${{exportData.stage}}-ratings.json`;a.click();URL.revokeObjectURL(a.href);}}; render();</script>
