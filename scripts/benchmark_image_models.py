@@ -43,9 +43,14 @@ def list_command(args: argparse.Namespace) -> int:
         if candidate.notes:
             print(f"    {candidate.notes}")
     print("\nStages")
-    for stage in config.stages:
-        jobs = expand_jobs(config, stage)
-        print(f"  {stage:12} {len(jobs)} jobs with enabled candidates")
+    for stage_id, stage in config.stages.items():
+        jobs = expand_jobs(config, stage_id)
+        selection = (
+            f"{len(stage.candidates)} configured candidates"
+            if stage.candidates
+            else "enabled candidates"
+        )
+        print(f"  {stage_id:18} {len(jobs)} jobs with {selection}")
     print(f"\nOutput: {config.output_dir}")
     return 0
 

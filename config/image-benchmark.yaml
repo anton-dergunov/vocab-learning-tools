@@ -40,6 +40,15 @@ stages:
     prompt_stage: finalist
     styles: [warm_compact_scene]
     seeds: [17]
+    candidates:
+      - gemini_pro_image
+      - gemini_flash_image
+      - gemini_flash_lite_image
+      - cloudflare_flux2_klein
+      - lcm_dreamshaper
+      - mflux_flux2_klein_q4
+      - sana_sprint_06b
+      - drawthings_flux2_klein_q6p
 
 prompts:
   - id: spoon

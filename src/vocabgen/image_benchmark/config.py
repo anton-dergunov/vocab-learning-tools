@@ -35,6 +35,7 @@ class StageConfig:
     prompt_stage: str
     styles: tuple[str, ...]
     seeds: tuple[int, ...]
+    candidates: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -166,6 +167,9 @@ def load_benchmark_config(path: str | Path, *, repo_root: str | Path) -> Benchma
             prompt_stage=str(stage.get("prompt_stage", stage_id)),
             styles=style_ids,
             seeds=tuple(seeds_raw),
+            candidates=_strings(
+                stage.get("candidates", []), f"stage {stage_id}.candidates"
+            ),
         )
 
     candidates: dict[str, CandidateConfig] = {}
@@ -203,6 +207,14 @@ def load_benchmark_config(path: str | Path, *, repo_root: str | Path) -> Benchma
             settings=_mapping(candidate.get("settings", {}), f"candidate {candidate_id}.settings"),
             notes=str(candidate.get("notes", "")),
         )
+
+    for stage in stages.values():
+        missing_candidates = set(stage.candidates) - set(candidates)
+        if missing_candidates:
+            raise BenchmarkConfigError(
+                f"Stage {stage.id!r} references unknown candidates: "
+                f"{sorted(missing_candidates)}"
+            )
 
     if not prompts or not styles or not stages or not candidates:
         raise BenchmarkConfigError("prompts, styles, stages, and candidates cannot be empty")

@@ -47,6 +47,17 @@ def test_tracked_config_has_expected_matrix():
     assert len(expand_jobs(config, "smoke", ["icon_scene"])) == 6
     assert len(expand_jobs(config, "finalist", ["icon_scene"])) == 48
     assert len(expand_jobs(config, "finalist_efficient", ["icon_scene"])) == 12
+    assert config.stages["finalist_efficient"].candidates == (
+        "gemini_pro_image",
+        "gemini_flash_image",
+        "gemini_flash_lite_image",
+        "cloudflare_flux2_klein",
+        "lcm_dreamshaper",
+        "mflux_flux2_klein_q4",
+        "sana_sprint_06b",
+        "drawthings_flux2_klein_q6p",
+    )
+    assert len(expand_jobs(config, "finalist_efficient")) == 96
     assert config.candidates["mflux_flux2_klein_q4"].settings["quantize"] == 4
     assert config.candidates["mflux_z_image_turbo_q4"].model.endswith("mflux-4bit")
     assert config.candidates["mflux_z_image_turbo_q4"].settings["quantize"] is None

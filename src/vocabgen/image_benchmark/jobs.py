@@ -75,7 +75,8 @@ def expand_jobs(
     if stage_id not in config.stages:
         raise ValueError(f"Unknown stage {stage_id!r}")
     stage = config.stages[stage_id]
-    candidates = select_candidates(config, candidate_ids)
+    selected_ids = stage.candidates if candidate_ids is None and stage.candidates else candidate_ids
+    candidates = select_candidates(config, selected_ids)
     prompts = tuple(
         prompt for prompt in config.prompts.values() if stage.prompt_stage in prompt.stages
     )

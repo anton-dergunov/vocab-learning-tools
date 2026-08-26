@@ -66,12 +66,29 @@ when operational configuration changes produced a new deterministic job ID.
 
 For the next comparison, `finalist_efficient` uses all twelve terms with one
 art-directed mnemonic style and seed 17: twelve jobs per candidate instead of
-the full finalist stage's forty-eight. Run the seven practical finalists one at
-a time so local system pressure remains attributable:
+the full finalist stage's forty-eight. It now selects eight finalists by
+default, including Gemini Pro Image. Run all 96 jobs with one resumable command:
+
+```bash
+uv run python scripts/benchmark_image_models.py resume \
+  --stage finalist_efficient \
+  --execute-remote \
+  --max-cost-usd 2.85
+```
+
+The configured remote projection is $2.818644: $1.608 for Gemini Pro Image,
+$0.804 for Gemini Flash Image, $0.4032 for Flash Lite Image, and $0.003444 for
+Cloudflare. The four local candidates have no marginal API cost. The harness
+runs jobs sequentially, and `resume` skips completed outputs if the run is
+interrupted.
+
+To keep local system pressure attributable, the same eight finalists can still
+be run one at a time:
 
 ```bash
 uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models lcm_dreamshaper
 uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models mflux_flux2_klein_q4
+uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models sana_sprint_06b
 uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models drawthings_flux2_klein_q6p
 
 uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models cloudflare_flux2_klein --execute-remote --max-cost-usd 0.01
