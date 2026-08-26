@@ -45,15 +45,43 @@ uv run python scripts/benchmark_image_models.py aggregate-ratings \
 By default this writes HTML and machine-readable JSON under
 `output/image-benchmark/ratings/`. The HTML shows every metric, permits changing
 their relative weights, permits disabling the rejection-as-zero penalty, and
-can sort by composite or individual metrics. Default weights are mnemonic
-relevance 45%, visual appeal 30%, artifact freedom 20%, and small-size
-legibility 5%.
+can sort by composite or individual metrics. It initially shows the top seven,
+has a local-only filter, and overlays mean/max runtime, peak process RSS,
+backend-native accelerator memory when available, and configured marginal
+cost. Default weights are mnemonic relevance 45%, visual appeal 30%, artifact
+freedom 20%, and small-size legibility 5%.
+
+Historical local runs have wall time and `/usr/bin/time -l` process RSS. That
+RSS is useful but can understate pressure from PyTorch MPS and Apple's unified
+GPU memory. New runs additionally record MLX peak allocated memory or PyTorch
+MPS post-generation driver allocation in `runner.resource_usage`; these are
+labelled separately rather than mixed with process RSS. Hosted client-process
+memory is hidden because it says nothing about provider-side resource use.
 
 Repeated runs for the same candidate/prompt/style/seed are averaged within that
 evaluation cell before candidate means are calculated. This prevents stale or
 repeated jobs from giving one model extra weight. Re-rendering the review gallery
 keeps only the newest successful manifest for each evaluation cell, including
 when operational configuration changes produced a new deterministic job ID.
+
+For the next comparison, `finalist_efficient` uses all twelve terms with one
+art-directed mnemonic style and seed 17: twelve jobs per candidate instead of
+the full finalist stage's forty-eight. Run the seven practical finalists one at
+a time so local system pressure remains attributable:
+
+```bash
+uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models lcm_dreamshaper
+uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models mflux_flux2_klein_q4
+uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models drawthings_flux2_klein_q6p
+
+uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models cloudflare_flux2_klein --execute-remote --max-cost-usd 0.01
+uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models gemini_flash_lite_image --execute-remote --max-cost-usd 0.41
+uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models gemini_flash_image --execute-remote --max-cost-usd 0.81
+uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models gemini_pro_image --execute-remote --max-cost-usd 1.61
+```
+
+These ceilings cover the configuration's twelve-image projections. They remain
+authorization ceilings rather than billing budgets.
 
 Use `resume` to skip jobs whose manifest and native/normalized output are
 complete:
@@ -153,6 +181,24 @@ uv run python scripts/benchmark_image_models.py resume \
 The printed `$0.402` is the conservative configured projection for all six
 jobs, including successful jobs that `resume` will skip. It is not a statement
 of actual billed cost.
+
+The premium comparison uses Gemini 3 Pro Image, also called Nano Banana Pro.
+Its configured six-image smoke projection is `$0.804` at 1K square output:
+
+```bash
+uv run python scripts/benchmark_image_models.py resume \
+  --stage smoke \
+  --models gemini_pro_image \
+  --execute-remote \
+  --max-cost-usd 0.85
+```
+
+Gemini 3.1 Flash Image is already Nano Banana 2. Nano Banana Pro is the intended
+next quality test; the older Gemini 2.5 Flash Image branding is not a quality
+upgrade. Lite and Flash request 1K square PNG. Pro requests 2K square PNG to
+mirror the successful Vim Mastery workflow; Google's current Pro pricing lists
+the same image-output charge for 1K and 2K. Every result still follows the common
+384px normalization path.
 
 ## Result contract
 

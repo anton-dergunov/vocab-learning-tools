@@ -102,21 +102,39 @@ def aggregate_ratings_command(args: argparse.Namespace) -> int:
         args.ratings,
         html_path=output,
         json_path=args.json_output,
-        candidate_labels={
-            candidate_id: candidate.label
+        candidate_metadata={
+            candidate_id: {
+                "label": candidate.label,
+                "provider": candidate.provider,
+                "model": candidate.model,
+                "remote": candidate.remote,
+                "estimated_cost_usd": candidate.estimated_cost_usd,
+            }
             for candidate_id, candidate in config.candidates.items()
         },
+        benchmark_output_dir=config.output_dir,
     )
+
     def score(value):
         return f"{value:.2f}" if value is not None else "—"
 
-    print("Rank  Usable  Relevance  Appeal  Artifacts  Legibility  Coverage  Model")
-    for candidate in report["candidates"]:
-        metrics = candidate["metrics"]
+    def duration(value):
+        return f"{value:.1f}s" if value is not None else "—"
+
+    def memory(value):
+        return f"{value / 2**30:.2f}G" if value is not None else "—"
+
+    print("Rank  Usable  Runtime  RSS/process  Cost/image  Coverage  Model")
+    for candidate in report["candidates"][:7]:
+        resources = candidate["resources"]
+        rss = "hosted" if candidate["remote"] else memory(
+            resources["mean_peak_process_rss_bytes"]
+        )
+        cost = f"${candidate['estimated_cost_usd']:.6f}"
         print(
             f"{candidate['rank']:>4}  {score(candidate['usable_score']):>6}  "
-            f"{score(metrics['relevance']):>9}  {score(metrics['appeal']):>6}  "
-            f"{score(metrics['artifacts']):>9}  {score(metrics['legibility']):>10}  "
+            f"{duration(resources['mean_duration_seconds']):>7}  {rss:>11}  "
+            f"{cost:>10}  "
             f"{candidate['coverage']:>3}/{candidate['expected_coverage']:<3}  "
             f"{candidate['candidate_id']}"
         )
@@ -126,7 +144,7 @@ def aggregate_ratings_command(args: argparse.Namespace) -> int:
 
 
 def _add_run_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--stage", choices=("smoke", "finalist"), required=True)
+    parser.add_argument("--stage", required=True, help="Stage id from the benchmark YAML")
     parser.add_argument(
         "--models",
         nargs="+",
@@ -167,7 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
     resume.set_defaults(handler=resume_command)
 
     review = commands.add_parser("render-review", help="Build a self-contained blind review gallery")
-    review.add_argument("--stage", choices=("smoke", "finalist"), required=True)
+    review.add_argument("--stage", required=True, help="Stage id from the benchmark YAML")
     review.add_argument("--output", type=Path)
     review.set_defaults(handler=review_command)
 

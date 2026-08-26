@@ -18,9 +18,14 @@ styles:
       captions, logos, or watermarks.
   warm_compact_scene:
     suffix: >-
-      Warm visually pleasing compact illustration, limited detail, a clear
-      subject and action that remain readable at 192 pixels, no words,
-      letters, captions, logos, or watermarks.
+      Use case: an automatic visual memory anchor for an adult language learner.
+      Create one warm, emotionally distinctive, compact 1:1 illustration whose
+      concrete action, relationship, or contrast makes the intended meaning
+      immediately inferable. Use expressive but natural body language, a clear
+      focal hierarchy, limited background detail, and silhouettes that remain
+      readable after reduction to 192 pixels. Do not show the vocabulary term
+      or any other words, letters, captions, labels, signage, logos, pseudo-text,
+      or watermarks.
 
 stages:
   smoke:
@@ -31,6 +36,10 @@ stages:
     prompt_stage: finalist
     styles: [editorial_mnemonic, warm_compact_scene]
     seeds: [17, 43]
+  finalist_efficient:
+    prompt_stage: finalist
+    styles: [warm_compact_scene]
+    seeds: [17]
 
 prompts:
   - id: spoon
@@ -592,7 +601,7 @@ candidates:
       timeout_seconds: 360
 
   gemini_flash_lite_image:
-    label: Gemini 3.1 Flash Lite Image
+    label: Gemini 3.1 Flash Lite Image (Nano Banana 2 Lite)
     provider: vertex-ai
     model: gemini-3.1-flash-lite-image
     enabled: false
@@ -621,6 +630,9 @@ candidates:
     settings:
       width: 1024
       height: 1024
+      aspect_ratio: "1:1"
+      image_size: 1K
+      output_mime_type: image/png
       vertexai: true
       project_env: GOOGLE_CLOUD_PROJECT
       location_env: GOOGLE_CLOUD_LOCATION
@@ -632,7 +644,7 @@ candidates:
       timeout_seconds: 600
 
   gemini_flash_image:
-    label: Gemini 3.1 Flash Image
+    label: Gemini 3.1 Flash Image (Nano Banana 2)
     provider: vertex-ai
     model: gemini-3.1-flash-image
     enabled: false
@@ -643,6 +655,9 @@ candidates:
     settings:
       width: 1024
       height: 1024
+      aspect_ratio: "1:1"
+      image_size: 1K
+      output_mime_type: image/png
       vertexai: true
       project_env: GOOGLE_CLOUD_PROJECT
       location_env: GOOGLE_CLOUD_LOCATION
@@ -652,3 +667,33 @@ candidates:
       retry_exponential_base: 2
       retry_jitter_seconds: 1
       timeout_seconds: 600
+
+  gemini_pro_image:
+    label: Gemini 3 Pro Image (Nano Banana Pro)
+    provider: vertex-ai
+    model: gemini-3-pro-image
+    enabled: false
+    remote: true
+    estimated_cost_usd: 0.134
+    output_extension: png
+    command: *gemini_runner
+    settings:
+      width: 2048
+      height: 2048
+      aspect_ratio: "1:1"
+      image_size: 2K
+      output_mime_type: image/png
+      vertexai: true
+      project_env: GOOGLE_CLOUD_PROJECT
+      location_env: GOOGLE_CLOUD_LOCATION
+      retry_attempts: 3
+      retry_initial_delay_seconds: 10
+      retry_max_delay_seconds: 30
+      retry_exponential_base: 2
+      retry_jitter_seconds: 1
+      timeout_seconds: 900
+    notes: >-
+      Highest-quality Gemini image profile. Use for the credit-backed bulk run
+      and difficult abstract meanings. The 2K profile mirrors the successful
+      Vim Mastery workflow and currently has the same listed image-output charge
+      as Pro 1K before 384px normalization.

@@ -101,6 +101,7 @@ this as one model failure rather than aborting the benchmark.
 | BFL direct FLUX.2 Klein | From $14 | Good | Simple paid fallback |
 | Gemini 3.1 Flash Lite Image | About $33.60 standard; lower in batch | Good while credits last | Temporary bulk route |
 | Gemini 3.1 Flash Image | About $67 standard | Good while credits last | Use only if Lite is insufficient |
+| Gemini 3 Pro Image (Nano Banana Pro) | About $134 standard for 1K/2K | Best credit-backed quality candidate | Difficult meanings and premium bulk run |
 | Hugging Face ZeroGPU free | Time allocation, not a stable image quota | Poor | Demo/experiment only |
 | Modal Starter | Potentially covered by monthly credit | Viable | More deployment work |
 
@@ -120,6 +121,14 @@ research date, published standard 1024px output prices are approximately
 $0.0336 for Gemini 3.1 Flash Lite Image and $0.067 for Gemini 3.1 Flash Image;
 batch pricing is lower. [Gemini image generation](https://ai.google.dev/gemini-api/docs/image-generation)
 and [pricing](https://ai.google.dev/gemini-api/docs/pricing)
+
+Gemini 3.1 Flash Image is the model currently branded Nano Banana 2. Gemini 3
+Pro Image is Nano Banana Pro and is Google's highest-quality option for complex
+image generation and editing. The premium benchmark requests 2K because Pro's
+current listed output charge is the same for 1K and 2K and the successful Vim
+Mastery workflow used 2K. The final Anki artifact is still normalized to 384px;
+the main expected gain comes from Pro's reasoning plus a concrete art-directed
+mnemonic brief, not from retaining a larger final file.
 
 Hugging Face ZeroGPU gives a free account five GPU minutes daily and uses
 shared scheduled capacity. Inference Providers give free users only a small

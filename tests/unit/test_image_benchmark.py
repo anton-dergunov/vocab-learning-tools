@@ -46,10 +46,14 @@ def test_tracked_config_has_expected_matrix():
     assert len(config.prompts) == 12
     assert len(expand_jobs(config, "smoke", ["icon_scene"])) == 6
     assert len(expand_jobs(config, "finalist", ["icon_scene"])) == 48
+    assert len(expand_jobs(config, "finalist_efficient", ["icon_scene"])) == 12
     assert config.candidates["mflux_flux2_klein_q4"].settings["quantize"] == 4
     assert config.candidates["mflux_z_image_turbo_q4"].model.endswith("mflux-4bit")
     assert config.candidates["mflux_z_image_turbo_q4"].settings["quantize"] is None
     assert config.candidates["cloudflare_flux2_klein"].remote is True
+    assert config.candidates["gemini_pro_image"].model == "gemini-3-pro-image"
+    assert config.candidates["gemini_pro_image"].estimated_cost_usd == pytest.approx(0.134)
+    assert config.candidates["gemini_pro_image"].settings["image_size"] == "2K"
 
 
 def test_job_ids_are_deterministic_and_settings_sensitive():
@@ -175,6 +179,7 @@ def test_mock_runner_manifest_resume_and_review(tmp_path):
     manifest = json.loads(first.manifests[0].read_text(encoding="utf-8"))
     assert manifest["status"] == "success"
     assert manifest["native"]["generation_width"] == 64
+    assert manifest["runner"]["resource_usage"]["process_peak_rss_bytes"] > 0
     assert Path(manifest["normalized"]["path"]).is_file()
 
     resumed = run_benchmark(
@@ -293,16 +298,60 @@ def test_ratings_aggregate_balances_replicates_and_penalizes_rejection(tmp_path)
     assert by_id["b"]["rank"] == 1
     assert report["summary"]["duplicate_evaluation_items"] == 1
 
+    manifest = tmp_path / "benchmark" / "smoke" / "a-p1-first" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "status": "success",
+                "duration_seconds": 12.5,
+                "peak_process_rss_bytes": 2 * 2**30,
+                "estimated_cost_usd": 0,
+                "native": {"bytes": 12345},
+                "runner": {
+                    "resource_usage": {
+                        "accelerator": "mlx-unified-memory",
+                        "peak_allocated_bytes": 3 * 2**30,
+                        "measurement": "MLX framework peak",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     html_path = tmp_path / "aggregate.html"
     rendered, html_result, json_result = write_ratings_report(
         [ratings],
         html_path=html_path,
-        candidate_labels={"a": "Model A", "b": "Model B"},
+        candidate_metadata={
+            "a": {
+                "label": "Model A",
+                "provider": "mflux",
+                "model": "fixture-a",
+                "remote": False,
+                "estimated_cost_usd": 0,
+            },
+            "b": {
+                "label": "Model B",
+                "provider": "remote",
+                "model": "fixture-b",
+                "remote": True,
+                "estimated_cost_usd": 0.01,
+            },
+        },
+        benchmark_output_dir=tmp_path / "benchmark",
     )
     body = html_result.read_text(encoding="utf-8")
     assert rendered["candidates"][0]["candidate_id"] == "b"
     assert "Count rejected images as zero" in body
+    assert "Top 7" in body
+    assert "Mean runtime" in body
     assert "Model A" in body
+    rendered_by_id = {
+        candidate["candidate_id"]: candidate for candidate in rendered["candidates"]
+    }
+    assert rendered_by_id["a"]["resources"]["mean_duration_seconds"] == 12.5
+    assert rendered_by_id["a"]["resources"]["mean_accelerator_bytes"] == 3 * 2**30
     assert json_result.is_file()
 
 
@@ -521,6 +570,10 @@ def test_gemini_configures_bounded_retry_for_429(tmp_path, monkeypatch):
         def __init__(self, **kwargs):
             captured["generate_config"] = kwargs
 
+    class FakeImageConfig:
+        def __init__(self, **kwargs):
+            captured["image_config"] = kwargs
+
     class FakeClient:
         def __init__(self, **kwargs):
             captured["client"] = kwargs
@@ -538,6 +591,7 @@ def test_gemini_configures_bounded_retry_for_429(tmp_path, monkeypatch):
 
     fake_types = types.SimpleNamespace(
         GenerateContentConfig=FakeGenerateContentConfig,
+        ImageConfig=FakeImageConfig,
         HttpOptions=FakeHttpOptions,
         HttpRetryOptions=FakeHttpRetryOptions,
     )
@@ -575,6 +629,11 @@ def test_gemini_configures_bounded_retry_for_429(tmp_path, monkeypatch):
     assert retry["initial_delay"] == 10
     assert retry["max_delay"] == 30
     assert retry["http_status_codes"] == [408, 429, 500, 502, 503, 504]
+    assert captured["image_config"] == {
+        "aspect_ratio": "1:1",
+        "image_size": "1K",
+        "output_mime_type": "image/png",
+    }
     assert result["provenance"]["retry_policy"] == retry
 
 

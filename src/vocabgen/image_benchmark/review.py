@@ -26,6 +26,8 @@ def _blind_labels(candidate_ids: Iterable[str], salt: str) -> dict[str, str]:
 
 
 def collect_review_items(config: BenchmarkConfig, stage: str) -> list[dict[str, Any]]:
+    if stage not in config.stages:
+        raise ValueError(f"Unknown stage {stage!r}")
     newest_by_cell: dict[tuple[str, str, str, int], dict[str, Any]] = {}
     for path in (config.output_dir / stage).glob("*/manifest.json"):
         try:

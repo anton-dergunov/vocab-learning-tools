@@ -133,6 +133,44 @@ def load_rating_exports(paths: Iterable[str | Path]) -> dict[str, Any]:
     }
 
 
+def load_job_resources(
+    loaded: Mapping[str, Any], benchmark_output_dir: str | Path | None
+) -> dict[str, dict[str, Any]]:
+    if benchmark_output_dir is None:
+        return {}
+    root = Path(benchmark_output_dir).expanduser().resolve() / str(loaded["stage"])
+    resources: dict[str, dict[str, Any]] = {}
+    for item in loaded["items"]:
+        manifest_path = root / item["job_id"] / "manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(manifest, Mapping) or manifest.get("status") != "success":
+            continue
+        runner_usage = manifest.get("runner", {}).get("resource_usage", {})
+        if not isinstance(runner_usage, Mapping):
+            runner_usage = {}
+        accelerator_bytes = runner_usage.get("peak_allocated_bytes")
+        accelerator_measurement = runner_usage.get("measurement")
+        if accelerator_bytes is None:
+            accelerator_bytes = runner_usage.get(
+                "driver_allocated_bytes_after_generation"
+            )
+        resources[item["job_id"]] = {
+            "duration_seconds": manifest.get("duration_seconds"),
+            "peak_process_rss_bytes": manifest.get("peak_process_rss_bytes")
+            or runner_usage.get("process_peak_rss_bytes"),
+            "accelerator_bytes": accelerator_bytes,
+            "accelerator": runner_usage.get("accelerator"),
+            "accelerator_measurement": accelerator_measurement,
+            "native_bytes": manifest.get("native", {}).get("bytes"),
+            "estimated_cost_usd": manifest.get("estimated_cost_usd"),
+            "manifest_path": str(manifest_path),
+        }
+    return resources
+
+
 def _weighted_score(scores: Mapping[str, float], weights: Mapping[str, float]) -> float | None:
     available = [(scores[metric], weight) for metric, weight in weights.items() if metric in scores and weight > 0]
     total_weight = sum(weight for _, weight in available)
@@ -145,9 +183,13 @@ def aggregate_ratings(
     loaded: Mapping[str, Any],
     *,
     candidate_labels: Mapping[str, str] | None = None,
+    candidate_metadata: Mapping[str, Mapping[str, Any]] | None = None,
+    job_resources: Mapping[str, Mapping[str, Any]] | None = None,
     weights: Mapping[str, float] = DEFAULT_WEIGHTS,
 ) -> dict[str, Any]:
     labels = candidate_labels or {}
+    metadata = candidate_metadata or {}
+    resources = job_resources or {}
     rated_items = [item for item in loaded["items"] if item["rating"] is not None]
     grouped: dict[str, dict[tuple[str, str, int], list[dict[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
@@ -165,6 +207,15 @@ def aggregate_ratings(
         flags: Counter[str] = Counter()
         rejected_count = 0
         item_count = 0
+        duration_cell_means: list[float] = []
+        rss_cell_means: list[float] = []
+        accelerator_cell_means: list[float] = []
+        native_size_cell_means: list[float] = []
+        all_durations: list[float] = []
+        all_rss: list[float] = []
+        all_accelerator: list[float] = []
+        accelerator_labels: set[str] = set()
+        resource_samples = 0
         for (prompt_id, style, seed), entries in sorted(cell_map.items()):
             ratings = [entry["rating"] for entry in entries]
             for metric in METRIC_LABELS:
@@ -178,6 +229,10 @@ def aggregate_ratings(
             quality_values: list[float] = []
             usable_values: list[float] = []
             cell_ratings: list[dict[str, Any]] = []
+            cell_durations: list[float] = []
+            cell_rss: list[float] = []
+            cell_accelerator: list[float] = []
+            cell_native_sizes: list[float] = []
             for entry, rating in zip(entries, ratings):
                 quality = _weighted_score(rating["scores"], weights)
                 if quality is not None:
@@ -186,12 +241,32 @@ def aggregate_ratings(
                 flags.update(rating["flags"])
                 rejected_count += int(rating["rejected"])
                 item_count += 1
+                resource_data = resources.get(entry["job_id"], {})
+                duration = resource_data.get("duration_seconds")
+                rss = resource_data.get("peak_process_rss_bytes")
+                accelerator = resource_data.get("accelerator_bytes")
+                native_size = resource_data.get("native_bytes")
+                if isinstance(duration, (int, float)):
+                    cell_durations.append(float(duration))
+                    all_durations.append(float(duration))
+                    resource_samples += 1
+                if isinstance(rss, (int, float)):
+                    cell_rss.append(float(rss))
+                    all_rss.append(float(rss))
+                if isinstance(accelerator, (int, float)):
+                    cell_accelerator.append(float(accelerator))
+                    all_accelerator.append(float(accelerator))
+                if isinstance(native_size, (int, float)):
+                    cell_native_sizes.append(float(native_size))
+                if resource_data.get("accelerator"):
+                    accelerator_labels.add(str(resource_data["accelerator"]))
                 cell_ratings.append(
                     {
                         "job_id": entry["job_id"],
                         "scores": rating["scores"],
                         "flags": rating["flags"],
                         "rejected": rating["rejected"],
+                        "resource": resource_data or None,
                     }
                 )
             quality_mean = _mean(quality_values)
@@ -200,6 +275,15 @@ def aggregate_ratings(
                 cell_quality.append(quality_mean)
             if usable_mean is not None:
                 cell_usable.append(usable_mean)
+            for values, destination in (
+                (cell_durations, duration_cell_means),
+                (cell_rss, rss_cell_means),
+                (cell_accelerator, accelerator_cell_means),
+                (cell_native_sizes, native_size_cell_means),
+            ):
+                cell_mean = _mean(values)
+                if cell_mean is not None:
+                    destination.append(cell_mean)
             cells.append(
                 {
                     "prompt_id": prompt_id,
@@ -209,10 +293,29 @@ def aggregate_ratings(
                     "ratings": cell_ratings,
                 }
             )
+        candidate_meta = metadata.get(candidate_id, {})
+        configured_cost = candidate_meta.get("estimated_cost_usd")
+        if configured_cost is None:
+            measured_costs = [
+                resources[entry["job_id"]].get("estimated_cost_usd")
+                for entries in cell_map.values()
+                for entry in entries
+                if entry["job_id"] in resources
+            ]
+            configured_cost = next(
+                (cost for cost in measured_costs if isinstance(cost, (int, float))),
+                0.0,
+            )
         candidates.append(
             {
                 "candidate_id": candidate_id,
-                "label": labels.get(candidate_id, candidate_id),
+                "label": candidate_meta.get(
+                    "label", labels.get(candidate_id, candidate_id)
+                ),
+                "provider": candidate_meta.get("provider", "unknown"),
+                "model": candidate_meta.get("model", "unknown"),
+                "remote": bool(candidate_meta.get("remote", False)),
+                "estimated_cost_usd": float(configured_cost),
                 "items": item_count,
                 "coverage": len(cell_map),
                 "expected_coverage": expected_coverage,
@@ -226,6 +329,21 @@ def aggregate_ratings(
                 },
                 "quality_score": _mean(cell_quality),
                 "usable_score": _mean(cell_usable),
+                "resources": {
+                    "samples": resource_samples,
+                    "mean_duration_seconds": _mean(duration_cell_means),
+                    "max_duration_seconds": max(all_durations)
+                    if all_durations
+                    else None,
+                    "mean_peak_process_rss_bytes": _mean(rss_cell_means),
+                    "max_peak_process_rss_bytes": max(all_rss) if all_rss else None,
+                    "mean_accelerator_bytes": _mean(accelerator_cell_means),
+                    "max_accelerator_bytes": max(all_accelerator)
+                    if all_accelerator
+                    else None,
+                    "accelerator": ", ".join(sorted(accelerator_labels)) or None,
+                    "mean_native_bytes": _mean(native_size_cell_means),
+                },
                 "cells": cells,
             }
         )
@@ -296,7 +414,7 @@ h1 {{ margin-bottom:6px; }} .subtle {{ color:#68635b; }}
 .panel {{ background:white; border-radius:12px; padding:16px 18px; box-shadow:0 2px 12px #0001; margin:18px 0; }}
 .controls {{ display:flex; flex-wrap:wrap; gap:12px 20px; align-items:end; }}
 .weight {{ display:grid; gap:4px; font-size:.85rem; }}
-.weight input {{ width:78px; padding:6px; }}
+.weight input,.weight select {{ width:90px; padding:6px; }}
 label.toggle {{ display:flex; gap:7px; align-items:center; padding-bottom:7px; }}
 .champions {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }}
 .champion {{ background:#edf3ff; border-radius:9px; padding:10px; }}
@@ -312,28 +430,35 @@ code {{ white-space:normal; }}
 </style></head><body>
 <h1>{title}</h1>
 <p class="subtle">Scores are balanced by prompt/style/seed: repeat runs in the same evaluation cell are averaged before model means are calculated.</p>
+<p class="subtle">Runtime and process RSS come from the saved manifests. Hosted-process memory is intentionally hidden. Accelerator memory appears only for runs made after backend-native telemetry was added; process RSS alone can understate Apple unified-memory and GPU pressure.</p>
 <section class="panel"><div id="summary"></div></section>
 <section class="panel"><h2>Priorities</h2><div class="controls" id="weights"></div></section>
 <section class="panel"><h2>Metric leaders</h2><div class="champions" id="champions"></div></section>
 <section class="table-wrap"><table><thead><tr>
 <th>#</th><th>Model</th><th><button data-sort="usable">Usable weighted</button></th><th><button data-sort="quality">Quality weighted</button></th>
 <th><button data-sort="relevance">Relevance</button></th><th><button data-sort="appeal">Appeal</button></th><th><button data-sort="artifacts">Artifact freedom</button></th><th><button data-sort="legibility">Legibility</button></th>
+<th>Execution</th><th><button data-sort="duration">Mean runtime</button></th><th><button data-sort="rss">Peak process RSS</button></th><th><button data-sort="accelerator">Accelerator memory</button></th><th><button data-sort="cost">Cost/image</button></th>
 <th>Coverage</th><th>Rejected</th><th>Flags</th></tr></thead><tbody id="rows"></tbody></table></section>
 <script>const report={payload};
 const metricOrder=['relevance','legibility','appeal','artifacts'];
-let weights={{...report.weights}};let rejectAsZero=true;let sortKey='usable';
+let weights={{...report.weights}};let rejectAsZero=true;let sortKey='usable';let rowLimit=7;let localOnly=false;
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
 const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
 function weighted(scores){{const pairs=metricOrder.filter(m=>scores[m]!=null&&weights[m]>0).map(m=>[scores[m],weights[m]]);const total=pairs.reduce((s,x)=>s+x[1],0);return total?pairs.reduce((s,x)=>s+x[0]*x[1],0)/total:null;}}
 function dynamicScore(candidate,usable){{const cells=candidate.cells.map(cell=>mean(cell.ratings.map(r=>{{const q=weighted(r.scores);return usable&&rejectAsZero&&r.rejected?0:q;}}).filter(x=>x!=null))).filter(x=>x!=null);return mean(cells);}}
 const fmt=v=>v==null?'—':v.toFixed(2);
-function value(candidate,key){{if(key==='usable')return dynamicScore(candidate,true);if(key==='quality')return dynamicScore(candidate,false);return candidate.metrics[key];}}
-function render(){{const candidates=[...report.candidates].sort((a,b)=>(value(b,sortKey)??-1)-(value(a,sortKey)??-1)||b.coverage-a.coverage);
-document.querySelector('#rows').innerHTML=candidates.map((c,i)=>`<tr><td>${{i+1}}</td><td><strong>${{esc(c.label)}}</strong><br><code>${{esc(c.candidate_id)}}</code></td><td>${{fmt(dynamicScore(c,true))}}</td><td>${{fmt(dynamicScore(c,false))}}</td><td>${{fmt(c.metrics.relevance)}}</td><td>${{fmt(c.metrics.appeal)}}</td><td>${{fmt(c.metrics.artifacts)}}</td><td>${{fmt(c.metrics.legibility)}}</td><td class="${{c.coverage<c.expected_coverage?'coverage-low':''}}">${{c.coverage}}/${{c.expected_coverage}} (${{c.items}} images${{c.duplicate_items?`, ${{c.duplicate_items}} repeat`:''}})</td><td>${{c.rejected}} (${{(100*c.reject_rate).toFixed(0)}}%)</td><td>${{esc(Object.entries(c.flags).map(([k,v])=>`${{k}}:${{v}}`).join(', ')||'—')}}</td></tr>`).join('');
-const best=candidates[0];document.querySelector('#summary').innerHTML=`<strong>${{esc(best?.label||'No rated model')}}</strong> currently leads the selected ranking at <strong>${{fmt(best?value(best,sortKey):null)}}/5</strong>. ${{report.summary.rated_items}} rated images, ${{report.summary.rejected_items}} rejected, ${{report.summary.flagged_items}} flagged, and ${{report.summary.duplicate_evaluation_items}} repeated evaluation images.`;}}
-document.querySelector('#weights').innerHTML=metricOrder.map(m=>`<label class="weight">${{esc(report.metric_labels[m])}}<input type="number" min="0" step="5" data-weight="${{m}}" value="${{weights[m]}}"></label>`).join('')+`<label class="toggle"><input id="reject-zero" type="checkbox" checked> Count rejected images as zero</label>`;
+const seconds=v=>v==null?'—':v<10?`${{v.toFixed(1)}}s`:`${{v.toFixed(0)}}s`;
+const memory=v=>v==null?'—':`${{(v/1073741824).toFixed(2)}} GiB`;
+const cost=v=>v===0?'$0 local':v<0.001?`$${{v.toFixed(6)}}`:`$${{v.toFixed(4)}}`;
+function value(candidate,key){{if(key==='usable')return dynamicScore(candidate,true);if(key==='quality')return dynamicScore(candidate,false);if(key==='duration')return candidate.resources.mean_duration_seconds;if(key==='rss')return candidate.resources.mean_peak_process_rss_bytes;if(key==='accelerator')return candidate.resources.mean_accelerator_bytes;if(key==='cost')return candidate.estimated_cost_usd;return candidate.metrics[key];}}
+function render(){{const ascending=['duration','rss','accelerator','cost'].includes(sortKey);let candidates=report.candidates.filter(c=>!localOnly||!c.remote).sort((a,b)=>{{const av=value(a,sortKey),bv=value(b,sortKey);if(av==null&&bv==null)return b.coverage-a.coverage;if(av==null)return 1;if(bv==null)return -1;return (ascending?av-bv:bv-av)||b.coverage-a.coverage;}});if(rowLimit)candidates=candidates.slice(0,rowLimit);
+document.querySelector('#rows').innerHTML=candidates.map((c,i)=>`<tr><td>${{i+1}}</td><td><strong>${{esc(c.label)}}</strong><br><code>${{esc(c.candidate_id)}}</code></td><td>${{fmt(dynamicScore(c,true))}}</td><td>${{fmt(dynamicScore(c,false))}}</td><td>${{fmt(c.metrics.relevance)}}</td><td>${{fmt(c.metrics.appeal)}}</td><td>${{fmt(c.metrics.artifacts)}}</td><td>${{fmt(c.metrics.legibility)}}</td><td>${{c.remote?'Hosted':`Local · ${{esc(c.provider)}}`}}</td><td>${{seconds(c.resources.mean_duration_seconds)}}${{c.resources.max_duration_seconds!=null?` (max ${{seconds(c.resources.max_duration_seconds)}})`:''}}</td><td>${{c.remote?'hosted':memory(c.resources.mean_peak_process_rss_bytes)}}</td><td>${{c.remote?'hosted':memory(c.resources.mean_accelerator_bytes)}}${{c.resources.accelerator?`<br><small>${{esc(c.resources.accelerator)}}</small>`:''}}</td><td>${{cost(c.estimated_cost_usd)}}</td><td class="${{c.coverage<c.expected_coverage?'coverage-low':''}}">${{c.coverage}}/${{c.expected_coverage}} (${{c.items}} images${{c.duplicate_items?`, ${{c.duplicate_items}} repeat`:''}})</td><td>${{c.rejected}} (${{(100*c.reject_rate).toFixed(0)}}%)</td><td>${{esc(Object.entries(c.flags).map(([k,v])=>`${{k}}:${{v}}`).join(', ')||'—')}}</td></tr>`).join('');
+const best=candidates[0];const scored=['usable','quality','relevance','legibility','appeal','artifacts'].includes(sortKey);document.querySelector('#summary').innerHTML=`<strong>${{esc(best?.label||'No rated model')}}</strong> currently leads the selected ranking at <strong>${{fmt(best?value(best,sortKey):null)}}${{scored?'/5':''}}</strong>. ${{report.summary.rated_items}} rated images, ${{report.summary.rejected_items}} rejected, ${{report.summary.flagged_items}} flagged, and ${{report.summary.duplicate_evaluation_items}} repeated evaluation images.`;}}
+document.querySelector('#weights').innerHTML=metricOrder.map(m=>`<label class="weight">${{esc(report.metric_labels[m])}}<input type="number" min="0" step="5" data-weight="${{m}}" value="${{weights[m]}}"></label>`).join('')+`<label class="weight">Rows<select id="row-limit"><option value="7" selected>Top 7</option><option value="10">Top 10</option><option value="0">All</option></select></label><label class="toggle"><input id="local-only" type="checkbox"> Local models only</label><label class="toggle"><input id="reject-zero" type="checkbox" checked> Count rejected images as zero</label>`;
 document.querySelectorAll('[data-weight]').forEach(input=>input.oninput=e=>{{weights[e.target.dataset.weight]=Math.max(0,Number(e.target.value)||0);render();}});
 document.querySelector('#reject-zero').onchange=e=>{{rejectAsZero=e.target.checked;render();}};
+document.querySelector('#row-limit').onchange=e=>{{rowLimit=Number(e.target.value);render();}};
+document.querySelector('#local-only').onchange=e=>{{localOnly=e.target.checked;render();}};
 document.querySelectorAll('[data-sort]').forEach(button=>button.onclick=()=>{{sortKey=button.dataset.sort;render();}});
 document.querySelector('#champions').innerHTML=metricOrder.map(metric=>{{const best=Math.max(...report.candidates.map(c=>c.metrics[metric]).filter(v=>v!=null));const names=report.candidates.filter(c=>c.metrics[metric]===best).map(c=>c.label).join(', ');return `<div class="champion"><strong>${{esc(report.metric_labels[metric])}}</strong><br>${{esc(names)}} — ${{fmt(best)}}/5</div>`;}}).join('');render();</script>
 </body></html>"""
@@ -345,9 +470,16 @@ def write_ratings_report(
     html_path: str | Path,
     json_path: str | Path | None = None,
     candidate_labels: Mapping[str, str] | None = None,
+    candidate_metadata: Mapping[str, Mapping[str, Any]] | None = None,
+    benchmark_output_dir: str | Path | None = None,
 ) -> tuple[dict[str, Any], Path, Path]:
     loaded = load_rating_exports(ratings_paths)
-    report = aggregate_ratings(loaded, candidate_labels=candidate_labels)
+    report = aggregate_ratings(
+        loaded,
+        candidate_labels=candidate_labels,
+        candidate_metadata=candidate_metadata,
+        job_resources=load_job_resources(loaded, benchmark_output_dir),
+    )
     destination = Path(html_path).expanduser().resolve()
     json_destination = (
         Path(json_path).expanduser().resolve()

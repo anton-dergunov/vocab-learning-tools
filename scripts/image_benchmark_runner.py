@@ -15,6 +15,7 @@ import importlib.metadata
 import io
 import json
 import os
+import resource
 import subprocess
 import sys
 import time
@@ -76,6 +77,58 @@ def _save_image_bytes(data: bytes, output: Path) -> None:
 
     with Image.open(io.BytesIO(data)) as image:
         _save_image(image, output)
+
+
+def _process_resource_usage() -> dict[str, Any]:
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    peak_rss = int(usage.ru_maxrss)
+    if sys.platform != "darwin":
+        peak_rss *= 1024  # Linux reports KiB; macOS reports bytes.
+    return {
+        "process_peak_rss_bytes": peak_rss,
+        "user_cpu_seconds": float(usage.ru_utime),
+        "system_cpu_seconds": float(usage.ru_stime),
+    }
+
+
+def _torch_accelerator_usage(torch: Any, device: str) -> dict[str, Any]:
+    try:
+        if device == "mps":
+            return {
+                "accelerator": "torch-mps",
+                "allocated_bytes_after_generation": int(
+                    torch.mps.current_allocated_memory()
+                ),
+                "driver_allocated_bytes_after_generation": int(
+                    torch.mps.driver_allocated_memory()
+                ),
+                "measurement": "post-generation allocation; not a peak",
+            }
+        if device == "cuda":
+            return {
+                "accelerator": "torch-cuda",
+                "peak_allocated_bytes": int(torch.cuda.max_memory_allocated()),
+                "peak_reserved_bytes": int(torch.cuda.max_memory_reserved()),
+                "measurement": "framework peak",
+            }
+    except (AttributeError, RuntimeError):
+        pass
+    return {}
+
+
+def _mlx_accelerator_usage() -> dict[str, Any]:
+    try:
+        import mlx.core as mx
+
+        return {
+            "accelerator": "mlx-unified-memory",
+            "peak_allocated_bytes": int(mx.get_peak_memory()),
+            "active_bytes_after_generation": int(mx.get_active_memory()),
+            "cache_bytes_after_generation": int(mx.get_cache_memory()),
+            "measurement": "MLX framework peak in Apple unified memory",
+        }
+    except (ImportError, AttributeError, RuntimeError):
+        return {}
 
 
 def run_mock(request: dict[str, Any]) -> dict[str, Any]:
@@ -270,6 +323,7 @@ def run_diffusers(request: dict[str, Any]) -> dict[str, Any]:
     _save_image(image, output)
     return {
         "runtime_versions": _runtime_versions("torch", "diffusers", "transformers", "accelerate"),
+        "resource_usage": _torch_accelerator_usage(torch, device),
         "provenance": {
             "kind": "generation",
             "device": device,
@@ -307,6 +361,7 @@ def run_mflux(request: dict[str, Any]) -> dict[str, Any]:
     generated.image.save(output)
     return {
         "runtime_versions": _runtime_versions("mflux", "mlx"),
+        "resource_usage": _mlx_accelerator_usage(),
         "provenance": {
             "kind": "generation",
             "device": "mlx",
@@ -344,6 +399,7 @@ def run_mflux_z_image(request: dict[str, Any]) -> dict[str, Any]:
     _save_image(getattr(generated, "image", generated), output)
     return {
         "runtime_versions": _runtime_versions("mflux", "mlx"),
+        "resource_usage": _mlx_accelerator_usage(),
         "provenance": {
             "kind": "generation",
             "device": "mlx",
@@ -514,10 +570,17 @@ def run_gemini(request: dict[str, Any]) -> dict[str, Any]:
             api_key=os.environ[str(settings.get("api_key_env", "GEMINI_API_KEY"))],
             http_options=http_options,
         )
+    image_config = types.ImageConfig(
+        aspect_ratio=str(settings.get("aspect_ratio", "1:1")),
+        image_size=str(settings.get("image_size", "1K")),
+        output_mime_type=str(settings.get("output_mime_type", "image/png")),
+    )
     response = client.models.generate_content(
         model=request["candidate"]["model"],
         contents=request["job"]["prompt"],
-        config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+        config=types.GenerateContentConfig(
+            response_modalities=["IMAGE"], image_config=image_config
+        ),
     )
     for candidate in response.candidates or []:
         for part in candidate.content.parts or []:
@@ -611,6 +674,9 @@ def run_command(args: argparse.Namespace) -> int:
     started = time.perf_counter()
     try:
         details = BACKENDS[args.backend](request)
+        resource_usage = _process_resource_usage()
+        resource_usage.update(details.get("resource_usage", {}))
+        details["resource_usage"] = resource_usage
         result = {"contract_version": 1, "status": "success", "backend": args.backend, "backend_duration_seconds": time.perf_counter() - started, **details}
         _write_json(args.result, result)
         return 0
