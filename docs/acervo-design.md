@@ -1,6 +1,6 @@
 # Acervo
 
-**Design document · Rev. C · 27 Aug 2026 · V1 scope agreed**
+**Design document · Rev. D · 27 Aug 2026 · V1 scope agreed**
 
 > *acervo* — *m.* — the body of words a person actually holds — *working name, rename freely*
 
@@ -812,14 +812,15 @@ image:
 
 Two things fall out of broadening it this far.
 
-**The Mac needs two work pools, not one.** Image generation and AnkiConnect both require the laptop
-awake, but their admission rules differ — image generation must wait until you are *away*, while an
-Anki sync takes seconds and can run whenever Anki is open.
+**The Mac needs exactly one work pool.** Earlier revisions gave it two, the second for AnkiConnect —
+that is gone now that §08 runs Anki on the NAS.
 
 | Pool | Gate | Runs |
 |---|---|---|
 | `mac-idle` | `HIDIdleTime` > threshold, on AC, no thermal pressure | MFLUX image generation, local models |
-| `mac-available` | worker up, Anki reachable | AnkiConnect push and FSRS pull |
+
+Only one, because §08 moves Anki onto the NAS entirely. The Mac does exactly one job, and only while
+you are away from it.
 
 > ### FLOWS ARE SWEEPS, NOT EVENT CONSUMERS
 > If Prefect owns everything asynchronous, its availability starts to matter. The fix is to derive
@@ -846,6 +847,84 @@ topic files.
 ---
 
 ## §08 · Anki loop
+
+### The desktop is not in this loop
+
+Study happens on an 11" tablet, essentially always. That is a health constraint rather than a
+preference — so a mechanism that requires Anki Desktop running is the wrong primary, however
+convenient it looks.
+
+> ### DECISION
+> **Self-host the Anki sync server on the NAS. Update the collection with a headless robot client.
+> AnkiConnect is a fallback, not the design.**
+>
+> Anki has shipped a built-in sync server since **2.1.57** (Python) with a Rust implementation from
+> **2.1.66+**, and maintained Docker images exist. Default port 27701; the media sync URL is the same
+> base URL with `/msync` appended. AnkiDroid points at it under Settings → Advanced → Custom sync
+> server, AnkiMobile under Settings → Synchronization → Custom Sync Server. The email field at login
+> is cosmetic — for a self-hosted server it is simply the username you configured.
+
+This solves both open problems at once. **Media quota disappears** — it is your disk, and the real
+limit becomes tablet storage, where 300 MB is nothing. **The desktop leaves the loop entirely.**
+
+### The robot client
+
+Do not write into the sync server's collection file — that fights the server for the same SQLite.
+Run a headless collection on the NAS that behaves as **just another sync client**:
+
+```text
+Prefect flow (NAS)
+  ├─ open local collection        anki.collection.Collection(path)
+  ├─ sync DOWN from your server   col.sync_collection(auth)
+  ├─ add / update notes           col.add_note(), col.update_note()
+  ├─ read back FSRS state         revlog + card data → studyState
+  └─ sync UP                      col.sync_collection(auth)
+```
+
+No locking hacks and no stopping services, because from the server's perspective this is
+indistinguishable from the iPad syncing. Conflict resolution is Anki's own. `anki` pylib exposes
+what is needed: `sync_login()` for a `SyncAuth`, then `sync_collection()`.
+
+| Machine | Role |
+|---|---|
+| **NAS** | Sync server, robot client, everything else. Always on. |
+| **Tablet** | Study. The only device touched. |
+| **Mac** | Image generation only, idle-gated. |
+
+This collapses §07's Mac pools to one: `mac-available` disappears, because Anki no longer needs the
+laptop at all.
+
+**Four risks to build for:**
+
+1. **Sync protocol is version-locked.** pylib and the sync server must match. Both live on the NAS —
+   pin them together and upgrade as a pair. This is the thing most likely to break silently on an
+   unattended update.
+2. **"Requires full sync" is dangerous for a robot.** A schema or deck-config change forces a full
+   upload or download, and a robot that auto-resolves could push a stale collection over real
+   progress on the tablet. **Fail the flow loudly instead** and decide by hand.
+3. **Always sync down before mutating; never force-upload.** Mid-review edits merge correctly only if
+   the robot behaves as a client rather than an authority.
+4. **Reachability.** The tablet needs the NAS from outside the house. Tailscale already covers this
+   for Calorie Logger; the sync server belongs behind it rather than exposed.
+
+One bonus: the collection now lives on the NAS, so it falls under §15 like everything else. **Review
+history is as irreplaceable as the vocabulary** — years of FSRS state cannot be regenerated.
+
+### Decks
+
+One deck per language is the default. Topic becomes a **tag**, not a deck, because per-topic decks
+multiply scheduling configuration — each deck carries its own daily limits, which fragments the queue
+for no benefit. The config supports splitting anyway, reusing the existing `%topic` convention:
+
+```yaml
+anki_deck: "Spanish::Vocabulary"   # default
+anki_deck: "Spanish::%topic"       # split, same placeholder as output_pattern
+```
+
+> **SPLITTING DECKS DOES NOT REDUCE MEDIA SIZE.** Every deck in one collection shares a single
+> `collection.media` folder; the deck is only a scheduling container. Ten decks or one, the media
+> total is identical. What reduces it: smaller images, fewer images per note, or self-hosting so the
+> quota question never arises — which §08 now does.
 
 ### Let FSRS tell you what's hard; don't rely on discipline
 
@@ -877,9 +956,11 @@ for free, with no marking discipline required.
 > or fix a typo, your mapping breaks — quietly, and after the fact. An explicit id survives every
 > edit, template change, and re-import.
 
-Move off `.apkg` generation to `addNotes` / `updateNoteFields` for the steady state, as you planned.
-Keep `.apkg` export for bootstrapping a new device and as a disaster-recovery path — it costs you
-nothing to keep and it is the only export that works when AnkiConnect isn't running.
+The same fields are readable from the robot client without AnkiConnect: `.anki2` is SQLite, and the
+revlog and per-card FSRS state can be read directly once the collection has synced down.
+
+Keep `.apkg` export for bootstrapping and as a disaster-recovery path — it costs nothing and it is
+the only export that works when nothing else does.
 
 ---
 
@@ -1052,10 +1133,15 @@ more cards; lexeme-level is fewer reviews and blurs polysemy. Affects the study-
 **Does WebP render everywhere you review?**
 Fine on desktop and AnkiDroid; verify AnkiMobile before committing several thousand files (§07).
 
-**One deck per language, or one deck with language tags?**
-Separate decks give per-language scheduling and daily limits; one deck with tags gives a single
-session across everything you are learning. Affects the §08 mapping and is easier to decide now
-than after 900 notes exist.
+**How large should images actually be?**
+Deferred pending measurement. Per-sense images stay — senses genuinely diverge, especially in
+English, and one image per lexeme would misrepresent them. The open part is only the resolution and
+the resulting media total, and self-hosting (§08) removes the quota pressure that made it urgent.
+
+**Which git remote holds the export?**
+A private repository somewhere you do not also host — the point of §15's second layer is that it
+survives your own infrastructure. Worth deciding before the exporter is written, since the answer
+affects whether it pushes over SSH or HTTPS.
 
 ---
 
@@ -1111,7 +1197,7 @@ illustrates the sentence rather than the meaning.
 `ArticleExtended` changes substantially. This is the whole mapping, so there is no ambiguity about
 where anything went:
 
-| `ArticleExtended` today | Rev. C | Note |
+| `ArticleExtended` today | Acervo schema | Note |
 |---|---|---|
 | `word` | `lexeme.headword` | Already covers words *and* phrases — §03 makes that explicit. |
 | `translation` | `lexeme.shortGloss` | The article-level translation **is** the short form. |
@@ -1136,4 +1222,98 @@ conceptual change in this document, and everything else in §03 follows from it.
 
 ---
 
-*Acervo · design document · Rev. C · Multilingual from v1 · corpus index in v1*
+## §15 · Durability
+
+### The threat is not disk failure
+
+Losing a day of Calorie Logger costs nothing — you re-add the meal. Losing this costs years of
+curation that cannot be reconstructed by any amount of compute. So the backup design has to take the
+threat model seriously, and the real threat is not a dead disk. It is **logical corruption that
+replicates**: a bad migration or a mis-tap removes 200 words, and by the time you notice, every
+device has faithfully agreed.
+
+> ### THE TRAP SPECIFIC TO THIS ARCHITECTURE
+> **Restoring the server does not undo a deletion.** The devices still hold the tombstones, and a
+> tombstone wins on `editedAt` like any other edit. Restore an old snapshot and the devices will
+> re-delete everything the moment they sync.
+>
+> Undoing a logical delete is a **data edit**, not a restore: write a *new* un-delete with a current
+> timestamp so it beats the tombstone. Two entirely different procedures for two failure modes that
+> feel identical from the outside.
+
+Which yields a design rule: **never garbage-collect tombstones.** Calorie Logger might eventually;
+this must not. A deleted word remains *in* the database, so accidental deletion is recoverable by
+flipping a flag. At 10,000 lexemes the storage cost is nil and it buys an undo that survives
+everything.
+
+### The layers
+
+**0 · The replicas themselves.** Every device already holds a complete copy — N-way redundancy
+against server loss, for free. A device that has not synced recently holds an accidental
+*point-in-time* copy. Build a deliberate **"rebuild the server from this device"** path: it is the
+fastest recovery available and needs no backup at all.
+
+**1 · SQLite snapshots on the NAS.** Hourly keep 24, daily keep 30, monthly keep 12. The database is
+~50 MB, so this is nearly free.
+
+> **Use `sqlite3 .backup` or PocketBase's own backup — never `cp`.** Copying a live WAL-mode database
+> is the classic route to a backup that looks fine until the day you need it.
+
+**2 · Git-backed semantic export.** Not because git suits SQLite — it does not — but because it is a
+*different representation*: it survives a schema bug that corrupts the database, it is offsite and
+versioned by a third party, and it restores without any of this software working.
+
+Format matters. **One JSON file per lexeme**, in a tree by language:
+
+```text
+es/desmayarse.json
+es/que-se-mejoren.json
+en/turmoil.json
+```
+
+One file per word rather than one blob, because then `git log -- es/desmayarse.json` gives the
+**complete edit history of a single word** — which no database backup provides — and
+`git diff HEAD~1` after the daily commit is a readable review of what changed. The day 200 words
+vanish, you see it in a diff rather than discovering it in November.
+
+Export the Obsidian markdown (§10) into the same repository, and both machine-readable and
+human-readable forms live together.
+
+Cadence: debounced after any sync that changed something, **plus a daily commit even when nothing
+changed**. The heartbeat is what proves the exporter is alive — a silently dead exporter is the real
+risk, not a missed commit. The export must carry a schema version, so a 2028 restore of a 2026 export
+still parses.
+
+**3 · Media and the Anki collection, separately.** Media is 2–10 GB, so git is the wrong tool.
+Regenerable in principle (§01), but regenerating ~2,700 images costs real money and time — so restic
+or rclone to another disk or cheap object storage, content-addressed by hash so dedup is free. The
+Anki collection now lives on the NAS too (§08) and joins this tier: **review history is as
+irreplaceable as the vocabulary**, because years of FSRS state cannot be regenerated at any price.
+
+**4 · Restore drills.** The layer everyone skips, and the only one that proves the others work. A
+monthly Prefect flow that pulls the latest backup into a scratch container, imports it, counts
+lexemes and compares against production. This is what catches *"the backup has been silently empty
+for six months."*
+
+### Restoring
+
+> **A restore must mint a new `datasetId`.** The revision sequence restarts, so every client holding
+> an old cursor is asking for revisions the restored database has not reached. It pulls nothing,
+> pushes nothing, and reports itself perfectly in sync while showing a collection no other device can
+> see. A new `datasetId` forces every client to reset its cursor and re-push everything it holds.
+>
+> This is the trap `docs/sync.md` already names, arriving through a door that was not yet labelled.
+
+The happy consequence of the same mechanism: **server backup plus N device replicas recovers almost
+the whole delta.** Restoring a week-old snapshot and letting the devices re-push loses far less than
+the snapshot's age suggests, because each device is itself a full replica of everything it knew.
+
+### What is not backed up
+
+The corpus (§06), by definition — it is regenerable, and that is the invariant that earns it a
+separate database in the first place. **But the harvest list** — which channels, which video ids —
+**goes in git.** It is tiny and it encodes curation decisions that would be painful to reconstruct.
+
+---
+
+*Acervo · design document · Rev. D · Multilingual from v1 · corpus index in v1*
