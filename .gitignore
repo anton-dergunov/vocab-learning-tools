@@ -12,3 +12,7 @@ config/local.yaml
 test-data-bkp/
 checking/
 old_prototypes/
+
+# Local AI-generated visual explorations and diagnostic previews.
+# Selected, app-ready assets belong under assets/ and remain tracked.
+/design/generated/

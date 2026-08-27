@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" role="img" aria-label="Acervo">
+  <!-- Optical-size favicon: simplified from the full warm-red book icon. -->
+  <rect width="16" height="16" rx="3" fill="#071a38"/>
+
+  <!-- Burgundy cover, deliberately heavier than the page shapes at 16 px. -->
+  <path
+    d="M1 5.7 4.5 7 8 11.4 11.5 7 15 5.7v7.1L9.1 15H6.9L1 12.8Z"
+    fill="#8f1f2e"
+  />
+
+  <!-- A single page on each side; no page lines at this optical size. -->
+  <path d="M2.2 5.4 7.6 7.1v5.8L2.7 10.8Z" fill="#fff0cf"/>
+  <path d="M13.8 5.4 8.4 7.1v5.8l4.9-2.1Z" fill="#fff0cf"/>
+
+  <!-- One collected vocabulary tile replaces the two-tile full-size detail. -->
+  <path
+    d="M4 2.1c0-.6.5-1.1 1.1-1.1h5.8c.6 0 1.1.5 1.1 1.1v6.5L8 12 4 8.6Z"
+    fill="#f4ad27"
+  />
+
+  <!-- Path-based A: no font dependency and intentionally broad at 16 px. -->
+  <path
+    fill="#071a38"
+    fill-rule="evenodd"
+    d="M8 2.7 11.1 9.4H9.35l-.47-1.25H7.12l-.47 1.25H4.9Zm0 2.1-.46 1.72h.92Z"
+  />
+
+  <rect x="7" y="13" width="2" height="2" rx=".7" fill="#6f1724"/>
+</svg>
