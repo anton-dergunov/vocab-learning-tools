@@ -1,0 +1,49 @@
+services:
+  anki-sync-server:
+    build:
+      context: ../..
+      dockerfile: deploy/acervo/Dockerfile
+      args:
+        ANKI_VERSION: "${ACERVO_ANKI_VERSION:-26.8.1}"
+    restart: unless-stopped
+    user: "${ACERVO_UID:-1000}:${ACERVO_GID:-1000}"
+    command: ["python", "-m", "anki.syncserver"]
+    environment:
+      SYNC_USER1: "${ACERVO_ANKI_SYNC_USERNAME:?Set ACERVO_ANKI_SYNC_USERNAME}:${ACERVO_ANKI_SYNC_PASSWORD:?Set ACERVO_ANKI_SYNC_PASSWORD}"
+      SYNC_BASE: /var/lib/acervo/anki-server
+      SYNC_HOST: 0.0.0.0
+      SYNC_PORT: "8080"
+      RUST_LOG: "${ACERVO_ANKI_LOG_LEVEL:-anki=info}"
+    ports:
+      - "${ACERVO_BIND_ADDRESS:-127.0.0.1}:${ACERVO_ANKI_PORT:-27701}:8080"
+    volumes:
+      - "${ACERVO_ANKI_SERVER_DATA:?Set ACERVO_ANKI_SERVER_DATA}:/var/lib/acervo/anki-server"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  anki-robot:
+    build:
+      context: ../..
+      dockerfile: deploy/acervo/Dockerfile
+      args:
+        ANKI_VERSION: "${ACERVO_ANKI_VERSION:-26.8.1}"
+    profiles: ["tools"]
+    user: "${ACERVO_UID:-1000}:${ACERVO_GID:-1000}"
+    entrypoint: ["python", "/app/scripts/anki_robot.py"]
+    environment:
+      ACERVO_ANKI_SYNC_ENDPOINT: "http://anki-sync-server:8080/"
+      ACERVO_ANKI_SYNC_USERNAME: "${ACERVO_ANKI_SYNC_USERNAME:?Set ACERVO_ANKI_SYNC_USERNAME}"
+      ACERVO_ANKI_SYNC_PASSWORD: "${ACERVO_ANKI_SYNC_PASSWORD:?Set ACERVO_ANKI_SYNC_PASSWORD}"
+      ACERVO_ANKI_COLLECTION: /var/lib/acervo/anki-robot/collection.anki2
+      ACERVO_ANKI_BACKUP_DIR: /var/lib/acervo/anki-robot/backups
+      ACERVO_ANKI_TEMPLATE_DIR: /app/templates
+    volumes:
+      - "${ACERVO_ANKI_ROBOT_DATA:?Set ACERVO_ANKI_ROBOT_DATA}:/var/lib/acervo/anki-robot"
+      - "${ACERVO_INPUT_PATH:?Set ACERVO_INPUT_PATH}:/input:ro"
+    depends_on:
+      anki-sync-server:
+        condition: service_healthy

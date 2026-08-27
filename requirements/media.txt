@@ -1,5 +1,5 @@
-# Optional Anki packaging, text-to-speech, and image generation.
--r core.txt
+# Optional Anki packaging, synchronization, text-to-speech, and image generation.
+-r anki-sync.txt
 
 # Anki deck generation
 genanki

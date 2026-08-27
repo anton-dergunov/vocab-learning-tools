@@ -201,8 +201,10 @@ def aggregate_ratings(
     candidates: list[dict[str, Any]] = []
     for candidate_id, cell_map in sorted(grouped.items()):
         metric_cell_means: dict[str, list[float]] = defaultdict(list)
+        accepted_metric_cell_means: dict[str, list[float]] = defaultdict(list)
         cell_quality: list[float] = []
         cell_usable: list[float] = []
+        cell_accepted_quality: list[float] = []
         cells: list[dict[str, Any]] = []
         flags: Counter[str] = Counter()
         rejected_count = 0
@@ -216,8 +218,12 @@ def aggregate_ratings(
         all_accelerator: list[float] = []
         accelerator_labels: set[str] = set()
         resource_samples = 0
+        accepted_coverage = 0
         for (prompt_id, style, seed), entries in sorted(cell_map.items()):
             ratings = [entry["rating"] for entry in entries]
+            accepted_ratings = [
+                rating for rating in ratings if not rating["rejected"]
+            ]
             for metric in METRIC_LABELS:
                 metric_mean = _mean(
                     rating["scores"][metric]
@@ -226,8 +232,16 @@ def aggregate_ratings(
                 )
                 if metric_mean is not None:
                     metric_cell_means[metric].append(metric_mean)
+                accepted_metric_mean = _mean(
+                    rating["scores"][metric]
+                    for rating in accepted_ratings
+                    if metric in rating["scores"]
+                )
+                if accepted_metric_mean is not None:
+                    accepted_metric_cell_means[metric].append(accepted_metric_mean)
             quality_values: list[float] = []
             usable_values: list[float] = []
+            accepted_quality_values: list[float] = []
             cell_ratings: list[dict[str, Any]] = []
             cell_durations: list[float] = []
             cell_rss: list[float] = []
@@ -238,6 +252,8 @@ def aggregate_ratings(
                 if quality is not None:
                     quality_values.append(quality)
                     usable_values.append(0.0 if rating["rejected"] else quality)
+                    if not rating["rejected"]:
+                        accepted_quality_values.append(quality)
                 flags.update(rating["flags"])
                 rejected_count += int(rating["rejected"])
                 item_count += 1
@@ -271,10 +287,14 @@ def aggregate_ratings(
                 )
             quality_mean = _mean(quality_values)
             usable_mean = _mean(usable_values)
+            accepted_quality_mean = _mean(accepted_quality_values)
             if quality_mean is not None:
                 cell_quality.append(quality_mean)
             if usable_mean is not None:
                 cell_usable.append(usable_mean)
+            if accepted_quality_mean is not None:
+                cell_accepted_quality.append(accepted_quality_mean)
+                accepted_coverage += 1
             for values, destination in (
                 (cell_durations, duration_cell_means),
                 (cell_rss, rss_cell_means),
@@ -317,7 +337,9 @@ def aggregate_ratings(
                 "remote": bool(candidate_meta.get("remote", False)),
                 "estimated_cost_usd": float(configured_cost),
                 "items": item_count,
+                "accepted_items": item_count - rejected_count,
                 "coverage": len(cell_map),
+                "accepted_coverage": accepted_coverage,
                 "expected_coverage": expected_coverage,
                 "duplicate_items": item_count - len(cell_map),
                 "rejected": rejected_count,
@@ -327,8 +349,13 @@ def aggregate_ratings(
                     metric: _mean(metric_cell_means.get(metric, []))
                     for metric in METRIC_LABELS
                 },
+                "accepted_metrics": {
+                    metric: _mean(accepted_metric_cell_means.get(metric, []))
+                    for metric in METRIC_LABELS
+                },
                 "quality_score": _mean(cell_quality),
                 "usable_score": _mean(cell_usable),
+                "accepted_quality_score": _mean(cell_accepted_quality),
                 "resources": {
                     "samples": resource_samples,
                     "mean_duration_seconds": _mean(duration_cell_means),
@@ -359,7 +386,20 @@ def aggregate_ratings(
     for rank, candidate in enumerate(candidates, 1):
         candidate["rank"] = rank
 
+    accepted_ranking = sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate["accepted_quality_score"] is not None,
+            candidate["accepted_quality_score"] or 0.0,
+            candidate["accepted_coverage"],
+        ),
+        reverse=True,
+    )
+    for rank, candidate in enumerate(accepted_ranking, 1):
+        candidate["accepted_rank"] = rank
+
     winners: dict[str, list[str]] = {}
+    accepted_winners: dict[str, list[str]] = {}
     for metric in METRIC_LABELS:
         values = [candidate["metrics"][metric] for candidate in candidates]
         available = [value for value in values if value is not None]
@@ -368,6 +408,19 @@ def aggregate_ratings(
             candidate["candidate_id"]
             for candidate in candidates
             if best is not None and candidate["metrics"][metric] == best
+        ]
+        accepted_values = [
+            candidate["accepted_metrics"][metric] for candidate in candidates
+        ]
+        accepted_available = [
+            value for value in accepted_values if value is not None
+        ]
+        accepted_best = max(accepted_available) if accepted_available else None
+        accepted_winners[metric] = [
+            candidate["candidate_id"]
+            for candidate in candidates
+            if accepted_best is not None
+            and candidate["accepted_metrics"][metric] == accepted_best
         ]
 
     unique_cells = {
@@ -396,6 +449,7 @@ def aggregate_ratings(
             "expected_coverage": expected_coverage,
         },
         "winners": winners,
+        "accepted_winners": accepted_winners,
         "candidates": candidates,
     }
 
@@ -429,38 +483,37 @@ tr:first-child td {{ background:#f3f8ed; }}
 code {{ white-space:normal; }}
 </style></head><body>
 <h1>{title}</h1>
-<p class="subtle">Scores are balanced by prompt/style/seed: repeat runs in the same evaluation cell are averaged before model means are calculated.</p>
+<p class="subtle">Scores are balanced by prompt/style/seed: repeat runs in the same evaluation cell are averaged before model means are calculated. “Usable” counts rejected outputs as zero; “Accepted-only” excludes them from the average while retaining rejection counts and rates.</p>
 <p class="subtle">Runtime and process RSS come from the saved manifests. Hosted-process memory is intentionally hidden. Accelerator memory appears only for runs made after backend-native telemetry was added; process RSS alone can understate Apple unified-memory and GPU pressure.</p>
 <section class="panel"><div id="summary"></div></section>
 <section class="panel"><h2>Priorities</h2><div class="controls" id="weights"></div></section>
 <section class="panel"><h2>Metric leaders</h2><div class="champions" id="champions"></div></section>
 <section class="table-wrap"><table><thead><tr>
-<th>#</th><th>Model</th><th><button data-sort="usable">Usable weighted</button></th><th><button data-sort="quality">Quality weighted</button></th>
-<th><button data-sort="relevance">Relevance</button></th><th><button data-sort="appeal">Appeal</button></th><th><button data-sort="artifacts">Artifact freedom</button></th><th><button data-sort="legibility">Legibility</button></th>
+<th>#</th><th>Model</th><th><button data-sort="usable">Usable weighted<br><small>reject = 0</small></button></th><th><button data-sort="accepted">Accepted-only weighted</button></th><th><button data-sort="quality">Raw weighted</button></th>
+<th><button data-sort="relevance">Accepted relevance</button></th><th><button data-sort="appeal">Accepted appeal</button></th><th><button data-sort="artifacts">Accepted artifact freedom</button></th><th><button data-sort="legibility">Accepted legibility</button></th>
 <th>Execution</th><th><button data-sort="duration">Mean runtime</button></th><th><button data-sort="rss">Peak process RSS</button></th><th><button data-sort="accelerator">Accelerator memory</button></th><th><button data-sort="cost">Cost/image</button></th>
 <th>Coverage</th><th>Rejected</th><th>Flags</th></tr></thead><tbody id="rows"></tbody></table></section>
 <script>const report={payload};
 const metricOrder=['relevance','legibility','appeal','artifacts'];
-let weights={{...report.weights}};let rejectAsZero=true;let sortKey='usable';let rowLimit=7;let localOnly=false;
+let weights={{...report.weights}};let sortKey='accepted';let rowLimit=0;let localOnly=false;
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
 const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
 function weighted(scores){{const pairs=metricOrder.filter(m=>scores[m]!=null&&weights[m]>0).map(m=>[scores[m],weights[m]]);const total=pairs.reduce((s,x)=>s+x[1],0);return total?pairs.reduce((s,x)=>s+x[0]*x[1],0)/total:null;}}
-function dynamicScore(candidate,usable){{const cells=candidate.cells.map(cell=>mean(cell.ratings.map(r=>{{const q=weighted(r.scores);return usable&&rejectAsZero&&r.rejected?0:q;}}).filter(x=>x!=null))).filter(x=>x!=null);return mean(cells);}}
+function dynamicScore(candidate,mode){{const cells=candidate.cells.map(cell=>mean(cell.ratings.map(r=>{{const q=weighted(r.scores);if(mode==='zero'&&r.rejected)return 0;if(mode==='accepted'&&r.rejected)return null;return q;}}).filter(x=>x!=null))).filter(x=>x!=null);return mean(cells);}}
 const fmt=v=>v==null?'—':v.toFixed(2);
 const seconds=v=>v==null?'—':v<10?`${{v.toFixed(1)}}s`:`${{v.toFixed(0)}}s`;
 const memory=v=>v==null?'—':`${{(v/1073741824).toFixed(2)}} GiB`;
 const cost=v=>v===0?'$0 local':v<0.001?`$${{v.toFixed(6)}}`:`$${{v.toFixed(4)}}`;
-function value(candidate,key){{if(key==='usable')return dynamicScore(candidate,true);if(key==='quality')return dynamicScore(candidate,false);if(key==='duration')return candidate.resources.mean_duration_seconds;if(key==='rss')return candidate.resources.mean_peak_process_rss_bytes;if(key==='accelerator')return candidate.resources.mean_accelerator_bytes;if(key==='cost')return candidate.estimated_cost_usd;return candidate.metrics[key];}}
+function value(candidate,key){{if(key==='usable')return dynamicScore(candidate,'zero');if(key==='accepted')return dynamicScore(candidate,'accepted');if(key==='quality')return dynamicScore(candidate,'raw');if(key==='duration')return candidate.resources.mean_duration_seconds;if(key==='rss')return candidate.resources.mean_peak_process_rss_bytes;if(key==='accelerator')return candidate.resources.mean_accelerator_bytes;if(key==='cost')return candidate.estimated_cost_usd;return candidate.accepted_metrics[key];}}
 function render(){{const ascending=['duration','rss','accelerator','cost'].includes(sortKey);let candidates=report.candidates.filter(c=>!localOnly||!c.remote).sort((a,b)=>{{const av=value(a,sortKey),bv=value(b,sortKey);if(av==null&&bv==null)return b.coverage-a.coverage;if(av==null)return 1;if(bv==null)return -1;return (ascending?av-bv:bv-av)||b.coverage-a.coverage;}});if(rowLimit)candidates=candidates.slice(0,rowLimit);
-document.querySelector('#rows').innerHTML=candidates.map((c,i)=>`<tr><td>${{i+1}}</td><td><strong>${{esc(c.label)}}</strong><br><code>${{esc(c.candidate_id)}}</code></td><td>${{fmt(dynamicScore(c,true))}}</td><td>${{fmt(dynamicScore(c,false))}}</td><td>${{fmt(c.metrics.relevance)}}</td><td>${{fmt(c.metrics.appeal)}}</td><td>${{fmt(c.metrics.artifacts)}}</td><td>${{fmt(c.metrics.legibility)}}</td><td>${{c.remote?'Hosted':`Local · ${{esc(c.provider)}}`}}</td><td>${{seconds(c.resources.mean_duration_seconds)}}${{c.resources.max_duration_seconds!=null?` (max ${{seconds(c.resources.max_duration_seconds)}})`:''}}</td><td>${{c.remote?'hosted':memory(c.resources.mean_peak_process_rss_bytes)}}</td><td>${{c.remote?'hosted':memory(c.resources.mean_accelerator_bytes)}}${{c.resources.accelerator?`<br><small>${{esc(c.resources.accelerator)}}</small>`:''}}</td><td>${{cost(c.estimated_cost_usd)}}</td><td class="${{c.coverage<c.expected_coverage?'coverage-low':''}}">${{c.coverage}}/${{c.expected_coverage}} (${{c.items}} images${{c.duplicate_items?`, ${{c.duplicate_items}} repeat`:''}})</td><td>${{c.rejected}} (${{(100*c.reject_rate).toFixed(0)}}%)</td><td>${{esc(Object.entries(c.flags).map(([k,v])=>`${{k}}:${{v}}`).join(', ')||'—')}}</td></tr>`).join('');
-const best=candidates[0];const scored=['usable','quality','relevance','legibility','appeal','artifacts'].includes(sortKey);document.querySelector('#summary').innerHTML=`<strong>${{esc(best?.label||'No rated model')}}</strong> currently leads the selected ranking at <strong>${{fmt(best?value(best,sortKey):null)}}${{scored?'/5':''}}</strong>. ${{report.summary.rated_items}} rated images, ${{report.summary.rejected_items}} rejected, ${{report.summary.flagged_items}} flagged, and ${{report.summary.duplicate_evaluation_items}} repeated evaluation images.`;}}
-document.querySelector('#weights').innerHTML=metricOrder.map(m=>`<label class="weight">${{esc(report.metric_labels[m])}}<input type="number" min="0" step="5" data-weight="${{m}}" value="${{weights[m]}}"></label>`).join('')+`<label class="weight">Rows<select id="row-limit"><option value="7" selected>Top 7</option><option value="10">Top 10</option><option value="0">All</option></select></label><label class="toggle"><input id="local-only" type="checkbox"> Local models only</label><label class="toggle"><input id="reject-zero" type="checkbox" checked> Count rejected images as zero</label>`;
+document.querySelector('#rows').innerHTML=candidates.map((c,i)=>`<tr><td>${{i+1}}</td><td><strong>${{esc(c.label)}}</strong><br><code>${{esc(c.candidate_id)}}</code></td><td>${{fmt(dynamicScore(c,'zero'))}}</td><td>${{fmt(dynamicScore(c,'accepted'))}}</td><td>${{fmt(dynamicScore(c,'raw'))}}</td><td>${{fmt(c.accepted_metrics.relevance)}}</td><td>${{fmt(c.accepted_metrics.appeal)}}</td><td>${{fmt(c.accepted_metrics.artifacts)}}</td><td>${{fmt(c.accepted_metrics.legibility)}}</td><td>${{c.remote?'Hosted':`Local · ${{esc(c.provider)}}`}}</td><td>${{seconds(c.resources.mean_duration_seconds)}}${{c.resources.max_duration_seconds!=null?` (max ${{seconds(c.resources.max_duration_seconds)}})`:''}}</td><td>${{c.remote?'hosted':memory(c.resources.mean_peak_process_rss_bytes)}}</td><td>${{c.remote?'hosted':memory(c.resources.mean_accelerator_bytes)}}${{c.resources.accelerator?`<br><small>${{esc(c.resources.accelerator)}}</small>`:''}}</td><td>${{cost(c.estimated_cost_usd)}}</td><td class="${{c.coverage<c.expected_coverage?'coverage-low':''}}">${{c.accepted_coverage}}/${{c.expected_coverage}} accepted (${{c.items}} generated${{c.duplicate_items?`, ${{c.duplicate_items}} repeat`:''}})</td><td>${{c.rejected}} (${{(100*c.reject_rate).toFixed(0)}}%)</td><td>${{esc(Object.entries(c.flags).map(([k,v])=>`${{k}}:${{v}}`).join(', ')||'—')}}</td></tr>`).join('');
+const best=candidates[0];const scored=['usable','accepted','quality','relevance','legibility','appeal','artifacts'].includes(sortKey);document.querySelector('#summary').innerHTML=`<strong>${{esc(best?.label||'No rated model')}}</strong> currently leads the selected ranking at <strong>${{fmt(best?value(best,sortKey):null)}}${{scored?'/5':''}}</strong>. ${{report.summary.rated_items}} rated images, ${{report.summary.rejected_items}} rejected, ${{report.summary.flagged_items}} flagged, and ${{report.summary.duplicate_evaluation_items}} repeated evaluation images.`;}}
+document.querySelector('#weights').innerHTML=metricOrder.map(m=>`<label class="weight">${{esc(report.metric_labels[m])}}<input type="number" min="0" step="5" data-weight="${{m}}" value="${{weights[m]}}"></label>`).join('')+`<label class="weight">Rows<select id="row-limit"><option value="0" selected>All</option><option value="8">Top 8</option><option value="5">Top 5</option></select></label><label class="toggle"><input id="local-only" type="checkbox"> Local models only</label>`;
 document.querySelectorAll('[data-weight]').forEach(input=>input.oninput=e=>{{weights[e.target.dataset.weight]=Math.max(0,Number(e.target.value)||0);render();}});
-document.querySelector('#reject-zero').onchange=e=>{{rejectAsZero=e.target.checked;render();}};
 document.querySelector('#row-limit').onchange=e=>{{rowLimit=Number(e.target.value);render();}};
 document.querySelector('#local-only').onchange=e=>{{localOnly=e.target.checked;render();}};
 document.querySelectorAll('[data-sort]').forEach(button=>button.onclick=()=>{{sortKey=button.dataset.sort;render();}});
-document.querySelector('#champions').innerHTML=metricOrder.map(metric=>{{const best=Math.max(...report.candidates.map(c=>c.metrics[metric]).filter(v=>v!=null));const names=report.candidates.filter(c=>c.metrics[metric]===best).map(c=>c.label).join(', ');return `<div class="champion"><strong>${{esc(report.metric_labels[metric])}}</strong><br>${{esc(names)}} — ${{fmt(best)}}/5</div>`;}}).join('');render();</script>
+document.querySelector('#champions').innerHTML=metricOrder.map(metric=>{{const best=Math.max(...report.candidates.map(c=>c.accepted_metrics[metric]).filter(v=>v!=null));const names=report.candidates.filter(c=>c.accepted_metrics[metric]===best).map(c=>c.label).join(', ');return `<div class="champion"><strong>Accepted ${{esc(report.metric_labels[metric])}}</strong><br>${{esc(names)}} — ${{fmt(best)}}/5</div>`;}}).join('');render();</script>
 </body></html>"""
 
 

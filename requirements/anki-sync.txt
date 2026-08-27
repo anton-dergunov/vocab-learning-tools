@@ -1,0 +1,5 @@
+# Headless Acervo/Anki synchronization. Keep this version identical to the
+# Docker build argument in deploy/acervo/Dockerfile.
+-r core.txt
+
+anki==26.8.1

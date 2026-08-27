@@ -1,21 +1,24 @@
 # Image generation for vocabulary cards
 
-Research snapshot: 2026-08-25. Prices, quotas, availability, and licenses can
+Research snapshot: 2026-08-27. Prices, quotas, availability, and licenses can
 change; verify the linked primary source before a large run.
 
 ## Recommendation
 
-Do not replace the production provider until the card-sized benchmark has been
-scored. The most promising hierarchy to test is:
+The scored finalist benchmark now supports this operating hierarchy:
 
 1. The existing emoji as the zero-cost guaranteed fallback.
 2. A deterministic icon scene: an LLM selects a few pinned icons, colors, and
    relationships; a low-power machine renders a safe 384px asset.
-3. Cloudflare FLUX.2 Klein 4B as the hosted/free candidate.
-4. MFLUX FLUX.2 Klein 4B at 4-bit as the local M1 candidate, generating at
-   512×512 and normalizing to 384×384 WebP.
-5. Gemini image generation for the initial bulk import while temporary Vertex
-   credit/access remains available.
+3. Cloudflare FLUX.2 Klein 4B for low-cost steady-state generation.
+4. Gemini 3.1 Flash Lite Image for the initial bulk import while temporary
+   Vertex credit/access remains available.
+5. No local diffusion default yet. DreamShaper is the most interesting artistic
+   option if low-information failures can later be detected and retried.
+
+The full scores, rejection-aware and accepted-only rankings, measured resource
+pressure, and current Cloudflare alternatives are recorded in
+[the finalist benchmark report](image-benchmark-finalist-results.md).
 
 The target is not photographic fidelity. It is an attractive, unambiguous
 visual anchor that survives unattended generation and remains legible at

@@ -40,6 +40,12 @@ Install optional Anki, TTS, and image-generation support:
 pip install -r requirements/media.txt
 ```
 
+Install only the official headless Anki runtime and Acervo sync robot support:
+
+```bash
+pip install -r requirements/anki-sync.txt
+```
+
 Install the complete runtime and test suite for development:
 
 ```bash
@@ -237,6 +243,20 @@ Generate missing media through the configured providers and build the deck:
 pip install -r requirements/media.txt
 python scripts/generate_anki_deck_draft.py build input.json --config config/local.yaml
 ```
+
+## Acervo self-hosted Anki synchronization
+
+The Acervo deployment runs the official Anki sync server plus a separate
+headless robot; it does not require Anki Desktop. Start a local Docker Desktop
+deployment with:
+
+```bash
+./deploy.sh --local --configure-credentials
+```
+
+The versioned manifest, robot commands, remote Synology/Linux deployment,
+backups, security model, and mobile acceptance steps are documented in
+[`docs/acervo-anki-sync.md`](docs/acervo-anki-sync.md).
 
 Relative paths are resolved from the repository root. By default, regenerable
 media is cached under `cache/images` and `cache/audio`; HTML and `.apkg` output

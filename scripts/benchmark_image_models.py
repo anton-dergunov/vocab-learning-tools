@@ -129,8 +129,9 @@ def aggregate_ratings_command(args: argparse.Namespace) -> int:
     def memory(value):
         return f"{value / 2**30:.2f}G" if value is not None else "—"
 
-    print("Rank  Usable  Runtime  RSS/process  Cost/image  Coverage  Model")
-    for candidate in report["candidates"][:7]:
+    print("Rejected-as-zero ranking")
+    print("Rank  Usable  Rejects  Runtime  RSS/process  Cost/image  Coverage  Model")
+    for candidate in report["candidates"]:
         resources = candidate["resources"]
         rss = "hosted" if candidate["remote"] else memory(
             resources["mean_peak_process_rss_bytes"]
@@ -138,9 +139,23 @@ def aggregate_ratings_command(args: argparse.Namespace) -> int:
         cost = f"${candidate['estimated_cost_usd']:.6f}"
         print(
             f"{candidate['rank']:>4}  {score(candidate['usable_score']):>6}  "
+            f"{candidate['rejected']:>3}/{candidate['items']:<3}  "
             f"{duration(resources['mean_duration_seconds']):>7}  {rss:>11}  "
             f"{cost:>10}  "
             f"{candidate['coverage']:>3}/{candidate['expected_coverage']:<3}  "
+            f"{candidate['candidate_id']}"
+        )
+    print("\nAccepted-only ranking (rejected outputs excluded from averages)")
+    print("Rank  Score   Accepted  Rejects  Model")
+    accepted_candidates = sorted(
+        report["candidates"], key=lambda item: item["accepted_rank"]
+    )
+    for candidate in accepted_candidates:
+        print(
+            f"{candidate['accepted_rank']:>4}  "
+            f"{score(candidate['accepted_quality_score']):>6}  "
+            f"{candidate['accepted_items']:>3}/{candidate['items']:<3}     "
+            f"{candidate['rejected']:>3}/{candidate['items']:<3}  "
             f"{candidate['candidate_id']}"
         )
     print(f"HTML report written to {html_path}")

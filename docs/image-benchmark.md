@@ -43,13 +43,14 @@ uv run python scripts/benchmark_image_models.py aggregate-ratings \
 ```
 
 By default this writes HTML and machine-readable JSON under
-`output/image-benchmark/ratings/`. The HTML shows every metric, permits changing
-their relative weights, permits disabling the rejection-as-zero penalty, and
-can sort by composite or individual metrics. It initially shows the top seven,
-has a local-only filter, and overlays mean/max runtime, peak process RSS,
-backend-native accelerator memory when available, and configured marginal
-cost. Default weights are mnemonic relevance 45%, visual appeal 30%, artifact
-freedom 20%, and small-size legibility 5%.
+`output/image-benchmark/ratings/`. The HTML shows rejected-as-zero, accepted-only,
+and raw weighted scores. Accepted-only metric averages exclude rejected images
+while the rejection count and rate remain visible. It permits changing metric
+weights, sorting by composite or individual metrics, and filtering to local
+models. It initially shows all candidates and overlays mean/max runtime, peak
+process RSS, backend-native accelerator memory when available, and configured
+marginal cost. Default weights are mnemonic relevance 45%, visual appeal 30%,
+artifact freedom 20%, and small-size legibility 5%.
 
 Historical local runs have wall time and `/usr/bin/time -l` process RSS. That
 RSS is useful but can understate pressure from PyTorch MPS and Apple's unified

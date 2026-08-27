@@ -304,6 +304,11 @@ def test_ratings_aggregate_balances_replicates_and_penalizes_rejection(tmp_path)
 
     assert by_id["a"]["quality_score"] == pytest.approx(3.5)
     assert by_id["a"]["usable_score"] == pytest.approx(3.25)
+    assert by_id["a"]["accepted_quality_score"] == pytest.approx(4.5)
+    assert by_id["a"]["accepted_metrics"]["relevance"] == pytest.approx(4.5)
+    assert by_id["a"]["accepted_items"] == 2
+    assert by_id["a"]["accepted_coverage"] == 2
+    assert by_id["a"]["accepted_rank"] == 1
     assert by_id["a"]["duplicate_items"] == 1
     assert by_id["a"]["flags"] == {"unwanted-text": 1}
     assert by_id["b"]["rank"] == 1
@@ -354,8 +359,9 @@ def test_ratings_aggregate_balances_replicates_and_penalizes_rejection(tmp_path)
     )
     body = html_result.read_text(encoding="utf-8")
     assert rendered["candidates"][0]["candidate_id"] == "b"
-    assert "Count rejected images as zero" in body
-    assert "Top 7" in body
+    assert "Accepted-only weighted" in body
+    assert "Accepted-only” excludes them from the average" in body
+    assert '<option value="0" selected>All</option>' in body
     assert "Mean runtime" in body
     assert "Model A" in body
     rendered_by_id = {
