@@ -1,6 +1,6 @@
 # Acervo
 
-**Design document · Rev. A · 26 Aug 2026 · V1 scope agreed**
+**Design document · Rev. C · 27 Aug 2026 · V1 scope agreed**
 
 > *acervo* — *m.* — the body of words a person actually holds — *working name, rename freely*
 
@@ -60,6 +60,9 @@ Solid arrows: content out, statistics back. Dashed: the corpus is consulted, nev
   server-side query, no sync scoping. This is a design constraint, not just a happy fact — see §04.
 - **Every generated row carries its provenance and the model that made it.** That is what lets you
   mass-regenerate in two years without touching a word you wrote yourself.
+- **A lexeme with no image and no audio is complete.** Media is an enhancement with its own
+  lifecycle, never a blocker on a word being usable, reviewable or exportable. This is what makes
+  best-effort, opportunistic generation (§07) safe.
 
 ---
 
@@ -116,6 +119,8 @@ different lifetimes.
 | `emoji` | string? | Keep it — it's genuinely good recall scaffolding and it's already in your data. |
 | `topics` | string[] | Was your filename. Now many-per-word, which fixes the 387-entry *Misc* file. |
 | `status` | enum | inbox → active → learned → retired, plus **suppressed**. |
+| `shortGloss` | string? | **Derived, with override.** The one-line form — see below. Null unless curated. |
+| `notes` | string[] | Usage, register, synonyms, contrasts. Carried over from `ArticleExtended`. |
 | `addedAt` / `deviceId` | ts / string | Sync metadata, per §04. |
 
 > **WHY "SUPPRESSED" EARNS ITS PLACE**
@@ -128,17 +133,29 @@ different lifetimes.
 | Field | Type | Notes |
 |---|---|---|
 | `lexemeId` | uuid | |
-| `glossLang` | BCP-47 | **Not a constant.** See the note below — this is the field your data forced. |
-| `gloss` | string[] | `["column", "spine"]` — your `la columna` is already two senses pretending to be one. |
-| `definitionL2` | string? | Monolingual definition. Optional, and increasingly the one you should be reading. |
+| `definition` | string | In the **target** language. Longman/COBUILD style — pins the sense precisely. |
+| `definitionLang` | BCP-47 | Usually equals the lexeme's language; a field, not an assumption. |
+| `glosses[]` | `{lang, terms[]}[]` | **An array, not one language.** `[{en:["column","spine"]},{ru:["колонна"]}]`. |
 | `domain` | string? | medicine · law · cooking. Comes free from Wiktextract. |
 | `order` | int | Sense ordering is information — put the common one first. |
 
-> **CAUGHT WHILE READING YOUR NOTES**
-> Your Spanish is glossed in English — but your English vocabulary is glossed in **Russian**
-> (`turmoil — суматоха`, `hoax — мистификация`). A single global "L1" would have silently mangled
-> half your data on import. `glossLang` lives on the sense, and a lexeme may carry senses glossed in
-> more than one language.
+Both halves are kept, and neither is privileged. They do different jobs: the target-language
+definition pins sense boundaries and is itself extra L2 input; the native gloss is the *click* of
+recognition. `turmoil → суматоха` is the case where the native word maps cleanly and the English
+definition is a longer road to the same place — and `sobremesa` is the case where no gloss exists
+and only the definition works. You need both because your words are split between those two cases.
+
+`glosses` being an array (rather than one `glossLang`) is what lets one lexeme carry an English
+gloss *and* a Russian one without a migration.
+
+> **NO FIELD IS EVER NAMED `l1` OR `l2`**
+> L1 means native language, L2 a language being learned — and the shorthand assumes one of each,
+> which is exactly what breaks here. Russian is L1; **English is simultaneously a target language
+> and the pivot you gloss Spanish in**; Spanish is L2; Chinese is prospective. Your Spanish is
+> glossed in English, your English in Russian (`turmoil — суматоха`, `hoax — мистификация`).
+>
+> So every language-bearing field names *which* language, never a role. Rev. A had this bug in
+> `example` (`l2 · l1`); it is fixed below.
 
 **`attestation` — where you actually met the word**
 
@@ -164,9 +181,11 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
 
 **`example`, `studyState`, `captureQueue`**
 
-- `example` — `senseId · l2 · l1 · origin(llm|tatoeba|subtitle|wiktionary|manual) · modelId ·
+- `example` — `senseId · text · textLang · translation · translationLang ·
+  origin(attestation|llm|tatoeba|subtitle|wiktionary|manual) · sourceAttestationId · modelId ·
   videoRef · imageRef · audioRef · approved`. `origin` plus `modelId` on every row is what makes
-  bulk regeneration safe.
+  bulk regeneration safe; **`sourceAttestationId`** is what lets an example be cleaned up and still
+  point at the messy original you actually captured.
 - `studyState` — one row per *(lexeme, system)*: `system · noteId · cardIds[] · reps · lapses ·
   stability · difficulty · retrievability · lastReview · syncedAt`. Keyed by system so a second
   learning tool never collides with Anki.
@@ -176,6 +195,41 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
 Multi-word entries fall out for free: `ponerse malo`, `que se mejoren` and `para entonces` are
 lexemes whose headword contains spaces and whose `pos` is `phrase`. Your data already has dozens, so
 make it a first-class case rather than an afterthought.
+
+### The short form is a projection, not a second record
+
+`ArticleShort` — the concise one-liner kept in Obsidian — survives as a **rendering** of
+`headword + emoji + primary gloss`, which is precisely the markdown shape already in use:
+
+```
+##### **la balsa** 🛶
+*raft*
+```
+
+So `ArticleShort` stops being a storage class and becomes the **export renderer**: the thing that
+writes topic files for Obsidian (§10) and the thing the app's list view uses before you tap through
+to the full entry. One source, two presentations, no drift — which is the whole point of §01's first
+invariant applied inside the core.
+
+The one wrinkle: "first gloss of the first sense" is right most of the time and misleading for a
+word with five senses, where choosing the best one-liner is a judgement call. Hence `shortGloss`
+being **derived by default and overridable** — null normally, populated only when you edit it or the
+generator judges derivation inadequate.
+
+### `imagePrompt` — its own row, its own stage
+
+Prompts come off the article entirely (§07 explains why) and become first-class regenerable
+artifacts:
+
+| Field | Type | Notes |
+|---|---|---|
+| `lexemeId` | uuid | |
+| `senseId` | uuid? | Null for the lexeme-level card image; set for a per-sense example image. |
+| `prompt` | string | |
+| `styleId` | string | From `image.styles` in config. |
+| `seed` | int | Derived from `lexemeId` — the same word keeps its look across regenerations. |
+| `modelId` | string | Which model wrote the prompt, not which drew the image. |
+| `promptVersion` | string | Checksum of the prompt template, so a template change is detectable. |
 
 **Specimen — one entry, fully rendered**
 
@@ -192,6 +246,144 @@ fastest way to learn whether the corpus is big enough.
 
 ---
 
+
+### Worked rows
+
+The case that justifies phrases being first-class — isolating a word here would be nonsense:
+
+```jsonc
+// lexeme
+{
+  "id": "01J8F2K9…",
+  "language": "es",
+  "headword": "que se mejoren",
+  "lemma": "que se mejoren",
+  "reading": null,
+  "pos": "expression",
+  "gender": null,
+  "register": "neutral",
+  "emoji": "💖",
+  "topics": ["health", "social"],
+  "status": "active",
+  "addedAt": "2026-01-30T09:14:22.418Z",
+  "editedBy": "ipad-a3f1"
+}
+
+// sense — one row, no per-word breakdown, because there isn't one
+{
+  "lexemeId": "01J8F2K9…",
+  "order": 0,
+  "definition": "Fórmula para desear a alguien una pronta recuperación.",
+  "definitionLang": "es",
+  "glosses": [
+    { "lang": "en", "terms": ["get better", "feel better soon"] },
+    { "lang": "ru", "terms": ["выздоравливайте"] }
+  ]
+}
+```
+
+Raw versus cleaned — both kept, lineage explicit:
+
+```jsonc
+// attestation — verbatim, mistakes and all, never rewritten
+{
+  "lexemeId": "01J8F2K9…",
+  "text": "espero que se mejoren pronto un abrazo a toda la familia",
+  "sourceKind": "conversation",
+  "sourceTitle": "WhatsApp — grupo del curso",
+  "capturedAt": "2026-01-30T09:14:22.418Z"
+}
+
+// example — cleaned and lightly expanded, pointing back at its source
+{
+  "senseId": "01J8F2M1…",
+  "text": "Espero que se mejoren pronto. Un abrazo a toda la familia.",
+  "textLang": "es",
+  "translation": "I hope you get better soon. A hug to the whole family.",
+  "translationLang": "en",
+  "origin": "attestation",
+  "sourceAttestationId": "01J8F2L7…",
+  "modelId": "gemini-3-flash",
+  "imageRef": null,
+  "audioRef": "sha256:9c1e…",
+  "approved": true
+}
+```
+
+The entry still displays as **yours**, shows the corrected sentence, and the original is one hop
+away. Punctuation and capitalisation are repaired; wording is not invented.
+
+Your English case, with both glossing halves earning their place:
+
+```jsonc
+{ "language": "en", "headword": "turmoil", "pos": "noun", "topics": ["emotions"] }
+{
+  "definition": "A state of great confusion, disturbance or uncertainty.",
+  "definitionLang": "en",
+  "glosses": [{ "lang": "ru", "terms": ["суматоха", "смятение", "потрясения"] }]
+}
+```
+
+And `studyState`, pulled back from Anki (§08):
+
+```jsonc
+{
+  "lexemeId": "01J8F2K9…",
+  "system": "anki",
+  "noteId": 1738291045123,
+  "cardIds": [1738291045124, 1738291045125],
+  "reps": 14, "lapses": 3,
+  "stability": 41.7, "difficulty": 7.9, "retrievability": 0.86,
+  "lastReview": "2026-08-19T07:02:11Z",
+  "syncedAt": "2026-08-26T06:30:00Z"
+}
+```
+
+Difficulty 7.9/10 with 3 lapses is the gate in §08: *this* is a word that earns a custom image.
+
+### Glossing and reveal order are configuration
+
+Not code branches, and not a global setting — one block per language in `config/defaults.yaml`,
+overlaid by `config/local.yaml` as everything else already is:
+
+```yaml
+languages:
+  es:
+    display_name: "Spanish"
+    definition_lang: es           # Longman-style, in the target language
+    gloss_langs: [en]             # the pivot you actually think in for Spanish
+    reveal: definition_first      # definition_first | gloss_first | both
+    reading: none
+    tokenizer: whitespace
+    lemmatizer: "spacy:es_core_news_sm"
+    tts: { provider: kokoro, lang_code: e, voice: ef_dora }
+    anki_deck: "Spanish::Vocabulary"
+
+  en:
+    display_name: "English"
+    definition_lang: en           # the Longman habit you already have, made structural
+    gloss_langs: [ru]             # native — the click
+    reveal: definition_first
+    reading: none
+    tokenizer: whitespace
+    lemmatizer: "spacy:en_core_web_sm"
+    anki_deck: "English::Vocabulary"
+
+  zh-Hans:
+    display_name: "Chinese (Simplified)"
+    definition_lang: en
+    gloss_langs: [ru, en]
+    reveal: gloss_first           # no shared background — the gloss has to land first
+    reading: pinyin_numbered      # stored numbered (ma1), rendered with diacritics
+    tokenizer: jieba
+    lemmatizer: none
+    anki_deck: "Chinese::Vocabulary"
+```
+
+`reveal: definition_first` shows the target-language definition with the native gloss one tap
+behind — forcing L2 processing while keeping the safety net in reach. On an Anki card the same
+setting splits front and back. Chinese inverts it for the reason you gave: with no shared
+etymological background, withholding the gloss buys nothing.
 ## §04 · Storage & sync
 
 ### A second PocketBase, and the sync engine you already wrote
@@ -245,30 +437,97 @@ plane; the illustrations do not, and shouldn't pretend to.
 
 ## §05 · Capture
 
-### Three seconds, or you will stop doing it
+### One endpoint, several thin transports
 
-You buried this in the middle of describing the system, but it is the make-or-break. If capturing a
-word from a page you're reading takes longer than a few seconds, you stop, and every other feature
-here is moot.
+Capture is make-or-break: past a few seconds you stop doing it, and every other feature here is
+moot. But the shape follows from one observation — **review is non-negotiable, so every route ends
+in the app anyway.** The only real question is whether capture also routes through a *third* app
+first.
 
-**Capture path per platform**
+> ### DECISION
+> **Build one ingest endpoint. Every capture path is a thin client against it.**
+>
+> **Because** the transports have wildly different lifespans and platform constraints, while what
+> they submit is identical: some text, optionally a surrounding sentence, optionally a URL and
+> title. Putting the intelligence in the endpoint means adding a transport is an afternoon, and
+> losing one costs nothing.
 
-| Where | Mechanism | Reality |
+| Order | Transport | Platform | Why here |
+|---|---|---|---|
+| 1 | **Manual add, in-app** | all | Must exist regardless — a word you *heard* has no source to share from. The floor. |
+| 2 | **Browser extension** | macOS desktop | The highest-quality capture available anywhere, and the only one with no selection dilemma. |
+| 3 | **iOS Shortcut** → POST → open app | iPhone, iPad | One gesture from the share sheet that *ends in the review screen*. |
+| 4 | **Web Share Target** | Android phone, Android tablet | Direct, native-feeling, cheap once the endpoint exists. |
+| 5 | info-triage `lang` route | anywhere | **Optional backfill.** Useful where Acervo isn't installed. Not the path. |
+
+### Why info-triage is demoted
+
+Rev. B made the `lang` route the primary path on the grounds that it already existed. That was the
+wrong instinct: reuse is a virtue only when the shapes match, and they don't.
+
+info-triage is asynchronous **by necessity** — deciding where information belongs requires context
+you lack at capture time. Vocabulary's decision is immediate. Routing an immediate thing through
+infrastructure built for deferral adds a hop that buys nothing at the end of it: you still switch to
+Acervo to review, and now two systems can fail between you and a word you wanted to keep.
+
+The specific correction: **an iOS Shortcut beats the Telegram route on its own ground.** A Shortcut
+can POST *and then open a URL*, so it is one gesture from the same share sheet that lands you on the
+review screen. Same reach, one hop instead of two.
+
+The route still earns a place as a backfill source, and whatever has already accumulated in
+`data/inbox/lang/` is real captured data worth a one-time importer.
+
+### The selection dilemma, and the one transport that dissolves it
+
+A share sheet carries one selection: the word *or* the sentence, never both.
+
+**The browser extension has no such limit.** It reads the DOM *around* your selection, so one click
+yields the word, its surrounding sentence, the URL and the page title — nothing to work around. That
+is why it ranks above the mobile transports despite covering only the desktop.
+
+For the share-sheet transports, the rule is: **share the sentence, pick the word in the app.** The
+review screen renders the captured sentence with every token tappable; one tap sets the headword,
+tap-drag across tokens captures a multi-word expression. That tap *is* the approve gesture, so it
+costs nothing extra.
+
+| Situation | Share | Then |
 |---|---|---|
-| **Android** | PWA **Web Share Target** | Select text → Share → Acervo appears in the sheet. Works properly. Best case. |
-| **iPad / iPhone** | **iOS Shortcut** that POSTs | Safari does not support share targets. A Shortcut on the share sheet is the real answer, works inside any app, one-time setup. |
-| **Desktop browser** | Bookmarklet | Grabs selection + URL + title in one click. |
-| **Anywhere** | Paste into the app | The floor. Must never be the only option. |
+| Just want the word | the word | Nothing to pick. No attestation, and that is fine. |
+| Word **and** context | the sentence | Tap the word. Attestation free. |
+| Cannot select — WhatsApp, an image, a subtitle | **a screenshot** | A vision model reads it and proposes the sentence plus candidate words. You tap. |
 
-- **Always capture the surrounding sentence, the URL and the page title**, not just the selected
-  word. Free `attestation` rows, and it costs the user nothing.
-- **Everything lands in `captureQueue` raw.** No processing at capture time — it must work offline
-  and finish instantly.
-- **Processing is a separate, reviewable batch:** language detection, lemmatization, sense
-  splitting, dedup against existing lexemes, article generation. This is what `clean_vocab.py`
-  already does; it becomes a worker against the API instead of against markdown files.
-- **An inbox review screen is v1, not a nicety.** Batch-approve, edit, merge into an existing
-  lexeme, or suppress.
+On the URL: you would rarely click it, but `sourceTitle` is what makes an attestation memorable years
+later — *"the Cortázar story"*, *"that Reuters piece"*. The extension gets both free; a
+clipboard-and-hotkey route gets neither. Clipboard is a fine floor, not the plan.
+
+**Voice** stays unbuilt for now. Phone and tablet dictation is mediocre but free, and building for it
+before knowing you need it is speculative.
+
+### Immediate processing, deferred approval
+
+The transport may be fire-and-forget; the **processing is not**. Senses, glosses and an example are
+fully determined by the word plus the sentence, and nothing you learn next week changes what the
+entry should say — so there is no reason to defer it.
+
+```
+captured → processing → unapproved → active
+                            │
+                            └── suppressed
+```
+
+By the time you open the app the article is built and waiting. Review is a fast approve/edit pass,
+not a triage session. Add **"regenerate with a note"** — a free-text nudge that re-runs generation in
+seconds. Small feature, large effect on whether you trust the automatic path.
+
+> **WHY "GIVE AN LLM AN ARTICLE AND ASK FOR THE INTERESTING WORDS" FAILED**
+> The model is estimating *the average learner's* gaps, and you are not average — a Russian native
+> with strong English and idiosyncratic holes from an unusual reading diet. No prompt fixes this; the
+> missing information is not in the article.
+>
+> It is also the one feature only this app can eventually have. Once the core holds a couple of
+> thousand of your lexemes, plus what you suppressed, plus FSRS difficulty, "which words here are new
+> to me" becomes a set difference against your own store rather than a guess. **v2, not v1** — but it
+> is the payoff that makes a curated store worth keeping.
 
 ---
 
@@ -357,53 +616,232 @@ This settles every worry you raised at once:
 > sorting is a per-language function rather than a global one. Retrofitting any of those later is
 > genuinely painful, which is why they belong in v1 even though Spanish is 90% of your usage today.
 
+### Chinese: the schema, not the subsystem
+
+The hesitation is right, and the line falls between *the language existing* and *modelling how the
+language works*.
+
+Three things about Chinese genuinely break the assumptions above:
+
+1. **The unit of learning is not the word.** It is component ↔ character ↔ word — three levels. 妈妈
+   is a word made of a character made of components. Spanish has one level. Modelling this properly
+   needs a lexeme→lexeme composition relation.
+2. **Tone is not decoration.** mā / má / mǎ / mà are four different words. Store numbered (`ma1`),
+   render with diacritics.
+3. **Traditional and Simplified** are a variant axis, not a dialect.
+
+> ### DECISION
+> **v1 ships the Chinese schema — `language`, `reading`, its config block — and none of the Chinese
+> subsystem.** No composition relation, no component modelling, no measure words, no corpus harvest.
+>
+> **Because** the first group costs nothing now and is painful to retrofit, while character
+> decomposition is not a column, it is a subsystem. Building it speculatively for a language you have
+> not started is the scope creep that kills a v1 — and by the time you start, you will have opinions
+> from using the thing.
+
+> **ON THE HORSE THAT MEANS MOTHER**
+> 妈 (mā, mother) = 女 (woman) + 马 (mǎ, horse). The horse is not there for meaning — it is there for
+> **sound**. 女 gives the semantic category, 马 gives the pronunciation. This is a *phono-semantic
+> compound*, and roughly **80%+ of Chinese characters are built this way**.
+>
+> The "no shared background" feeling is partly an artifact of learning characters as atomic
+> pictures. They are not atomic. The anchor you get free in European languages — shared Latin and
+> Greek roots — has a real analogue in Chinese; it just lives *inside* the character rather than
+> across languages. Worth knowing before deciding the language is unlearnable by your usual method.
+
 ---
 
-## §07 · Generation
+## §07 · Generation & orchestration
 
 ### Ground the model, and it stops being a knowledge source
 
 You asked whether anyone has benchmarked LLM-written vocabulary entries against human ones. Not
 directly, as far as I can find — no study compares generated bilingual dictionary entries to
-lexicographer-written ones. What the adjacent literature does say is more useful than a benchmark
-would have been:
+lexicographer-written ones. What the adjacent literature says is more useful than a benchmark would
+have been:
 
 - In educational content generation, GPT-4-class models produce material of comparable quality to
   human experts, while weaker models are measurably worse — consistent with your own experience.
 - Flashcard *authorship* barely affects retention: self-made and other-made cards both beat
-  rereading, and don't differ much from each other. "A model wrote my cards" is not, by itself, a
+  rereading, and do not differ much from each other. "A model wrote my cards" is not, by itself, a
   learning problem.
 - But LLM text uses a **measurably narrower vocabulary and simpler syntax** than human writing —
   humans use roughly twice as many distinct lexical entries.
 
 Which points somewhere precise: **the glosses are fine; the example sentences are the weak link.**
-They will be grammatical, correct, and bland — textbook Spanish with safe collocations, not how
-anyone actually speaks. That is exactly the gap the corpus fills, and it is why §06 is in v1 rather
-than deferred.
+They will be grammatical, correct and bland — textbook Spanish with safe collocations, not how
+anyone actually speaks. That is exactly the gap the corpus fills, and it is why §06 is in v1.
 
-> ### THE HIGHEST-LEVERAGE CHANGE TO YOUR EXISTING PIPELINE
+> ### THE HIGHEST-LEVERAGE CHANGE TO THE EXISTING PIPELINE
 > **Pass the Wiktextract sense inventory and 2–3 real attestations into the generation prompt as
 > grounding.**
 >
 > That demotes the model from *knowledge source* to *selector and formatter*, where hallucination
-> risk on this kind of task is close to zero. It also fixes the failure you can't currently see: a
+> risk on this kind of task is close to zero. It also fixes the failure you cannot currently see: a
 > model hands you the two obvious meanings of `picar` and silently drops five others. Wiktionary has
 > them all.
 
-### Where generation runs
+### Image prompts are their own stage
+
+Prompts come off `ArticleExtended` and get their own LLM call against the *finished* article.
 
 > ### DECISION
-> **Media and article generation run on the Mac. The server only stores and serves the results.**
+> **Generate the article first. Generate its image prompts second, from the validated article.**
 >
-> **Because** your Mac has MFLUX/MLX and you have already built image-provider benchmarking and
-> ranking in this repo. A NAS or small VPS should never be asked to run diffusion. This keeps
-> `src/vocabgen/` as a local worker that talks to the API — not a service you deploy — and keeps the
-> deployed server to one small PocketBase container plus the corpus service.
+> **Because** the two calls have competing objectives: article generation optimises for lexical
+> accuracy, prompt generation for visual specificity, and today they share one prompt and one output
+> budget — so the visual half loses. Splitting also means you can regenerate every prompt with a
+> better model **without touching a single gloss**, which today is impossible: changing visual style
+> means re-running article generation and risking drift in the part you actually care about.
+
+**Batch within an article, never across articles.** One call covering all meanings gives the model
+cross-meaning context so it can deliberately *differentiate* the images — which is the entire point
+of per-meaning images. Batching across articles loses that and makes retries coarse-grained.
+
+**Style variety is pedagogical, not decorative.** Visual sameness across 900 cards destroys
+distinctiveness, and distinctiveness is the only reason the images aid recall at all.
+
+```yaml
+image:
+  prompt_model: gemini-flash-latest
+  styles:
+    - { id: flat-vector,    weight: 3, brief: "flat vector, bold shapes, limited palette, no text" }
+    - { id: storybook,      weight: 2, brief: "soft storybook gouache, warm light, no text" }
+    - { id: retro-futurist, weight: 1, brief: "1970s sci-fi paperback, muted print palette, no text" }
+    - { id: cartoon-robots, weight: 1, brief: "friendly retro robots acting the scene, no text" }
+  selection: weighted_random
+  seed_from: lexeme_id        # same word keeps its look across regenerations
+```
+
+Seeding from the lexeme id matters: the deck does not visually reshuffle every time you regenerate.
+
+### Resolution
+
+The 192–384 px figure in `docs/image-generation-research.md` reads as though the image were a small
+inline anchor. For a card illustration on the devices actually used it is about a quarter of what is
+needed:
+
+| Device | Logical width | Scale | Image at ~90% width |
+|---|---|---|---|
+| 11" tablet | ~834 pt | 2× | **~1400 device px** |
+| ~7" phone | ~412 pt | 2.6–3.5× | **~960–1300 device px** |
+
+> ### DECISION
+> **Master at 1024×1024 WebP; cap the display width at ~512 pt.**
+>
+> 1024 is the native output of FLUX and Gemini image models, so nothing is upscaled and nothing
+> generated is thrown away. Capping the layout is what makes 1024 *sufficient* rather than merely
+> better — pixel-exact at 2× on the tablet, and ~2.8× on a phone where the layout limits width to
+> ~370 pt anyway. Letting the image go full-bleed on an 11" tablet would demand ~1536 and upscaling.
+
+Consequences:
+
+- **The current settings actively hurt quality.** `config/defaults.yaml` sets `width: 384,
+  height: 384` and `src/vocabgen/vision/stable_diffusion.py` hardcodes the same, on top of an SD1.5
+  checkpoint trained at 512. Generating near or below native and then discarding the rest is the
+  worst of both. Moving off SD1.5 is already the research doc's recommendation; this is one more
+  reason.
+- **Derive variants from one master**, never generate twice: 1024 for the app, 768 (~70 KB) embedded
+  in Anki if deck size bites, 256 for list thumbnails.
+- **Deck size is the real tradeoff.** ~110 KB per 1024 WebP × ~2700 images ≈ 300 MB of media. Fine
+  over AnkiConnect on your own machine; check it against AnkiWeb's media quota before relying on
+  sync. Verify WebP renders on AnkiMobile before committing several thousand files to it.
+
+### Where the work runs
+
+> ### DECISION
+> **Everything runs on the NAS except image generation, which is dispatched to an opportunistic Mac
+> worker.**
+>
+> The NAS handles LLM calls (plain HTTP), Kokoro TTS (82M parameters, fine on CPU), OCR, corpus
+> harvest and indexing, and the whole capture→article path. Diffusion is the only thing it cannot do.
+
+```
+                    Prefect control plane + Acervo API
+                          Synology NAS, always on
+                                    │
+                 ┌──────────────────┴──────────────────┐
+                 │                                     │
+      CPU / API / network work                  MPS image work
+      - capture → article                       - MFLUX / local models
+      - LLM calls, TTS, OCR                     - MacBook, when idle
+      - corpus harvest + index                  - worker runs only while
+      - Anki sync                                 you are away from it
+```
+
+The Mac worker is not always on and is not supposed to be. A launchd agent starts it when
+`ioreg -c IOHIDSystem` reports idle beyond a threshold — plus on-AC-power and no thermal pressure —
+and stops it on input. Jobs it abandons are requeued by the orchestrator, which is safe because
+generation is content-hash keyed and therefore idempotent. Two priority bands are enough: the word
+captured ten minutes ago must jump ahead of a 900-entry backfill.
+
+### Provider chain
+
+Per job, from configuration, tried in order:
+
+```yaml
+image:
+  chain:
+    - provider: gemini          # burn the expiring Vertex credits on the bulk backfill
+      priority_bands: [backfill]
+    - provider: cloudflare      # free daily quota carries the steady state
+    - provider: mflux           # local M1 fallback, idle-gated
+    - provider: none            # ← a success, not a failure
+```
+
+> **`none` IS A SUCCESSFUL OUTCOME.** A lexeme with no image is complete (§01). This is what makes
+> the whole dispatch safe to be lazy about: if images were required, the queue becomes a critical
+> path and your MacBook becomes a hard dependency of your vocabulary. The emoji already carries a
+> visual anchor at zero cost.
+
+### Prefect
+
+> ### DECISION
+> **Synchronous means making the entry exist and be correct. Everything that enriches it afterwards
+> is asynchronous, and Prefect owns all of it.**
+>
+> **Synchronous, Prefect never involved:** capture → cleaned article → review / edit / approve; the
+> sync API; regenerate-with-a-note; corpus *lookups* when displaying a word.
+>
+> **Asynchronous, all Prefect:** image-prompt generation, image generation, TTS, YouTube harvest and
+> subtitle indexing, Wiktextract ingest, story and comic generation, Anki push and FSRS pull,
+> Obsidian export, and the sweeps — dedup, re-topicking, mass regeneration when a better model lands.
+>
+> **The line to hold:** capture → article → review must work with the orchestrator down, and the sync
+> API must not know Prefect exists. If Prefect is down you lose enrichment, not your vocabulary.
+
+Two things fall out of broadening it this far.
+
+**The Mac needs two work pools, not one.** Image generation and AnkiConnect both require the laptop
+awake, but their admission rules differ — image generation must wait until you are *away*, while an
+Anki sync takes seconds and can run whenever Anki is open.
+
+| Pool | Gate | Runs |
+|---|---|---|
+| `mac-idle` | `HIDIdleTime` > threshold, on AC, no thermal pressure | MFLUX image generation, local models |
+| `mac-available` | worker up, Anki reachable | AnkiConnect push and FSRS pull |
+
+> ### FLOWS ARE SWEEPS, NOT EVENT CONSUMERS
+> If Prefect owns everything asynchronous, its availability starts to matter. The fix is to derive
+> work from the data rather than from a queue: **"which lexemes lack an image" is a query against the
+> core**, not a queue entry.
+>
+> Then a lost enqueue cannot lose work, Prefect being down for a week costs latency and nothing else,
+> and every flow is idempotent by construction rather than by discipline. Never let the queue be the
+> only record that work is needed.
+
+Two cautions carried forward from that document, both still right:
+
+- **Phase 1 discipline.** Ordinary Python stages first, Prefect as an optional wrapper over the same
+  functions. The risk was never Prefect; it is Prefect becoming load-bearing before the stages are
+  idempotent.
+- **Footprint.** A Prefect server plus SQLite is a few hundred megabytes resident, queueing behind
+  PocketBase, the corpus service and info-triage on the same Synology. Measure before committing —
+  and if the box gets tight, that is an argument for SQLite FTS5 over Meilisearch in §06.
 
 The existing provider-factory pattern survives intact. What changes is only the edges: input comes
 from `captureQueue` instead of a markdown inbox, and output is written to the API instead of to
-topic files. Caching moves from directory-keyed to content-hash-keyed rows, which you are most of
-the way to already.
+topic files.
 
 ---
 
@@ -525,9 +963,16 @@ from the first migration. Until the data is in, everything else is speculation.
 Ported from Calorie Logger — tombstones, revision cursor, `datasetId` guard, schema-version refusal.
 Re-derive only the merge order.
 
-**3 · Capture and inbox review**
-Share target, iOS Shortcut, bookmarklet; `clean_vocab.py` as the worker behind it. **The system earns
-its keep here**, before a single flashcard exists.
+**3a · Manual add and inbox review**
+The floor, and it must exist regardless — a word you *heard* has no source to share from.
+`clean_vocab.py` becomes the worker behind it. **The system earns its keep here**, before a single
+flashcard exists.
+
+**3b · Ingest endpoint and transports**
+One endpoint, then thin clients against it in order of leverage: browser extension (macOS), iOS
+Shortcut (iPhone and iPad), Web Share Target (Android phone and tablet). The tap-to-pick-the-word
+review screen lands here. Sequenced *after* 3a deliberately: a fortnight of manual use tells you
+which capture friction is real. info-triage `lang` import is a one-off backfill whenever convenient.
 
 **4 · Anki via AnkiConnect**
 Content out, FSRS state in. Hidden UUID field. One deck per language.
@@ -553,8 +998,10 @@ actually miss.
   Calorie Logger.
 - **A reader.** Lute already does reading-based acquisition well. Capture from wherever you already
   read instead.
-- **Chinese corpus channels.** The Chinese *schema* lands in v1; the harvest can wait until you're
-  actually studying it.
+- **The Chinese subsystem.** The schema lands in v1 (§06); composition, components, measure words
+  and the corpus harvest wait until you actually start.
+- **Voice capture.** Phone and tablet dictation is free and adequate. Revisit only if it annoys you.
+- **"Extract the interesting words from this article."** Needs a populated core to work at all — v2.
 
 ---
 
@@ -583,8 +1030,8 @@ actually miss.
 ### Still open
 
 **Meilisearch or SQLite FTS5?**
-Genuinely a preference at your scale (§06). One container and real search-ops experience, versus zero
-operational surface and one fewer backup.
+Genuinely a preference at your scale (§06) — but now leaning FTS5, because Prefect and the corpus
+service are competing for the same Synology memory (§07). Measure the box first.
 
 **Does the corpus service live in the same repo?**
 Argument for: one deploy script, as with Calorie Logger. Argument against: it has a wholly different
@@ -599,9 +1046,94 @@ Anki is a better scheduler; a web UI is a better place for LLM grading and clip 
 — but which one owns the daily session should be decided before you build either.
 
 **Sense-level or lexeme-level cards?**
-Your `ArticleExtended` already generates one Anki note per meaning. Sense-level is more correct and
+The current `ArticleExtended` generates one Anki note per meaning. Sense-level is more correct and
 more cards; lexeme-level is fewer reviews and blurs polysemy. Affects the study-state join.
+
+**Does WebP render everywhere you review?**
+Fine on desktop and AnkiDroid; verify AnkiMobile before committing several thousand files (§07).
+
+**One deck per language, or one deck with language tags?**
+Separate decks give per-language scheduling and daily limits; one deck with tags gives a single
+session across everything you are learning. Affects the §08 mapping and is easier to decide now
+than after 900 notes exist.
 
 ---
 
-*Acervo · design document · Rev. A · Multilingual from v1 · corpus index in v1*
+## §14 · Current implementation
+
+Facts about the code as it stands today, absorbed from `docs/anki_design.txt` and
+`docs/article_design.txt` when those were retired. They describe the pipeline this document
+supersedes, and remain true until each section lands.
+
+**The canonical article shape** (`ArticleExtended`, Pydantic, rejects unknown fields so prompt and
+model drift is caught immediately):
+
+```json
+{
+  "word": "añorar",
+  "translation": "to yearn for",
+  "image_prompt": "Prompt for the word card, with no text",
+  "meanings": [
+    {
+      "meaning": "To miss something deeply",
+      "example": {
+        "spanish_phrase": "Añoro mi hogar.",
+        "english_translation": "I miss my home.",
+        "image_prompt": "Prompt illustrating the example, with no text",
+        "comment": "Optional usage nuance"
+      }
+    }
+  ],
+  "notes": ["Usage, register, synonyms, and contrasts."]
+}
+```
+
+`word` is the canonical key for a word *or* a phrase — the phrase-as-first-class decision in §03 is
+already half-made here. Each meaning's `image_prompt` lives on the example, because that image
+illustrates the sentence rather than the meaning.
+
+**Media and Anki, as currently implemented:**
+
+- TTS and images go through the provider factory, never through inline backends in the Anki script.
+- Kokoro's Spanish defaults: language code `e`, voice `ef_dora`, 24 kHz, 0.3 s of silence at both
+  ends, MP3 out.
+- Generated media uses deterministic, collision-resistant names under the ignored `cache/audio` and
+  `cache/images` directories.
+- Anki model and deck IDs stay stable; word and meaning notes use deterministic namespaced GUIDs so
+  rebuilding updates existing notes rather than duplicating them. **§08 replaces this join with an
+  explicit hidden UUID field** — the GUID scheme is what breaks when a template changes.
+- One word note plus one note per meaning; every note references its cached image and audio.
+- `preview` renders `templates/word_card.html` with no media or Anki backends; `build` generates or
+  reuses media and writes the `.apkg`.
+
+### Field-by-field migration
+
+`ArticleExtended` changes substantially. This is the whole mapping, so there is no ambiguity about
+where anything went:
+
+| `ArticleExtended` today | Rev. C | Note |
+|---|---|---|
+| `word` | `lexeme.headword` | Already covers words *and* phrases — §03 makes that explicit. |
+| `translation` | `lexeme.shortGloss` | The article-level translation **is** the short form. |
+| `image_prompt` | `imagePrompt` row, `senseId = null` | Own row, own generation stage (§07). |
+| `meanings[].meaning` | `sense.definition` + `sense.glosses[]` | Split: definition in the target language, glosses per language. |
+| `meanings[].example.spanish_phrase` | `example.text` + `example.textLang` | No language is implied by a field name any more. |
+| `meanings[].example.english_translation` | `example.translation` + `example.translationLang` | |
+| `meanings[].example.image_prompt` | `imagePrompt` row, `senseId` set | Own row. |
+| `meanings[].example.comment` | `example.note` | Usage nuance stays with the example. |
+| `notes[]` | `lexeme.notes[]` | Unchanged in spirit. |
+| *(topic, from the filename)* | `lexeme.topics[]` | Many-per-word, which fixes the 387-entry *Misc* file. |
+| *(none)* | `attestation` | New, and the most valuable table (§03). |
+| *(none)* | `studyState` | New — the Anki feedback loop (§08). |
+
+**`ArticleShort` changes role rather than shape.** It stops being a parser for storage and becomes
+the export renderer: the topic files it writes for Obsidian (§10) are the same markdown format
+already in use, and the app's list view renders the same projection. The importer uses its parser
+once, on the way in, and never again.
+
+**The markdown topic files stop being the store** and become an output. That is the single largest
+conceptual change in this document, and everything else in §03 follows from it.
+
+---
+
+*Acervo · design document · Rev. C · Multilingual from v1 · corpus index in v1*
