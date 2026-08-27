@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "notes": [
+    {
+      "note_id": "813c6a14-d3ec-4f62-9ce6-e90cae322f70",
+      "lexeme_id": "5eca9c9c-ae4e-44dc-b26c-27efeaeb7387",
+      "deck": "Acervo::Connection Test",
+      "sentence": "La sincronización funciona.",
+      "translation": "Synchronization works.",
+      "comment_html": "<p>This card confirms that the Acervo sync route is working.</p>",
+      "tags": ["acervo::test::connection"]
+    }
+  ]
+}

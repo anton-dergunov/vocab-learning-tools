@@ -257,12 +257,6 @@ def test_local_deploy_wrapper_preserves_temporary_dot_acervo(tmp_path: Path) -> 
     database = robot_data / "collection.anki2"
     database.write_bytes(b"deployment-backup-probe")
     secrets = acervo_root / "secrets.env"
-    secrets.write_text(
-        "ACERVO_ANKI_SYNC_USERNAME=deploy-test\n"
-        "ACERVO_ANKI_SYNC_PASSWORD=deploy-password\n",
-        encoding="utf-8",
-    )
-    secrets.chmod(0o600)
 
     project = f"acervo-deploy-test-{uuid.uuid4().hex[:10]}"
     env = os.environ.copy()
@@ -273,20 +267,22 @@ def test_local_deploy_wrapper_preserves_temporary_dot_acervo(tmp_path: Path) -> 
             "ACERVO_ANKI_PORT": str(free_port()),
         }
     )
-    command = [str(REPO_ROOT / "deploy.sh"), "--local"]
-
-    def deploy() -> subprocess.CompletedProcess[str]:
+    def deploy(*arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            command,
+            [str(REPO_ROOT / "deploy.sh"), "--local", *arguments],
             cwd=REPO_ROOT,
             env=env,
+            input=stdin,
             text=True,
             capture_output=True,
             check=False,
         )
 
     try:
-        first = deploy()
+        first = deploy(
+            "--configure-credentials",
+            stdin="deploy-test\ndeploy-password\n",
+        )
         assert first.returncode == 0, first.stderr
         second = deploy()
         assert second.returncode == 0, second.stderr

@@ -1,24 +1,41 @@
 #!/bin/sh
 set -eu
 
+# Synology Container Manager installs Docker outside the restricted sudo PATH.
+# These additions are harmless on ordinary Linux hosts.
+PATH="$PATH:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
+export PATH
+
 usage() {
-  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin] [--reset-data]" >&2
+  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--reset-data]" >&2
   exit 2
 }
 
 acervo_root=
 archive=
 credentials_stdin=false
+credentials_file=
 reset_data=false
+requested_bind_address=
+requested_anki_port=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
     --archive) [ "$#" -ge 2 ] || usage; archive=$2; shift 2 ;;
     --credentials-stdin) credentials_stdin=true; shift ;;
+    --credentials-file) [ "$#" -ge 2 ] || usage; credentials_file=$2; shift 2 ;;
+    --bind-address) [ "$#" -ge 2 ] || usage; requested_bind_address=$2; shift 2 ;;
+    --port) [ "$#" -ge 2 ] || usage; requested_anki_port=$2; shift 2 ;;
     --reset-data) reset_data=true; shift ;;
     *) usage ;;
   esac
 done
+[ "$credentials_stdin" = false ] || [ -z "$credentials_file" ] || usage
+case "$requested_bind_address" in *[!A-Za-z0-9:._-]*) usage ;; esac
+case "$requested_anki_port" in ""|*[!0-9]*) [ -z "$requested_anki_port" ] || usage ;; esac
+if [ -n "$requested_anki_port" ] && { [ "$requested_anki_port" -lt 1 ] || [ "$requested_anki_port" -gt 65535 ]; }; then
+  usage
+fi
 
 if [ -z "$acervo_root" ]; then
   if [ -f /etc/acervo-root ]; then
@@ -29,6 +46,16 @@ if [ -z "$acervo_root" ]; then
     acervo_root=/opt/acervo
   fi
 fi
+
+if docker compose version >/dev/null 2>&1; then
+  compose() { docker compose "$@"; }
+elif command -v docker-compose >/dev/null 2>&1; then
+  compose() { docker-compose "$@"; }
+else
+  echo "Docker Compose is unavailable; install or update Synology Container Manager" >&2
+  exit 1
+fi
+
 case "$acervo_root" in
   /*) ;;
   *) echo "Acervo root must be an absolute path" >&2; exit 2 ;;
@@ -42,17 +69,26 @@ mkdir -p \
   "$acervo_root/backups" \
   "$acervo_root/releases"
 
-if [ "$credentials_stdin" = true ]; then
+if [ "$credentials_stdin" = true ] || [ -n "$credentials_file" ]; then
   credentials_tmp="$acervo_root/secrets.env.tmp.$$"
   trap 'rm -f "$credentials_tmp"' EXIT HUP INT TERM
-  IFS= read -r username || { echo "Missing sync username" >&2; exit 2; }
-  IFS= read -r password || { echo "Missing sync password" >&2; exit 2; }
+  if [ -n "$credentials_file" ]; then
+    [ -f "$credentials_file" ] || { echo "Missing credentials file" >&2; exit 2; }
+    exec 3<"$credentials_file"
+  else
+    exec 3<&0
+  fi
+  IFS= read -r username <&3 || { echo "Missing sync username" >&2; exit 2; }
+  IFS= read -r password <&3 || { echo "Missing sync password" >&2; exit 2; }
+  exec 3<&-
   case "$username$password" in
     *:*) echo "Anki sync credentials may not contain a colon" >&2; exit 2 ;;
   esac
+  username_env=$(printf '%s' "$username" | sed "s/'/\\\\'/g")
+  password_env=$(printf '%s' "$password" | sed "s/'/\\\\'/g")
   {
-    printf 'ACERVO_ANKI_SYNC_USERNAME=%s\n' "$username"
-    printf 'ACERVO_ANKI_SYNC_PASSWORD=%s\n' "$password"
+    printf "ACERVO_ANKI_SYNC_USERNAME='%s'\n" "$username_env"
+    printf "ACERVO_ANKI_SYNC_PASSWORD='%s'\n" "$password_env"
   } >"$credentials_tmp"
   chmod 600 "$credentials_tmp"
   mv "$credentials_tmp" "$acervo_root/secrets.env"
@@ -102,8 +138,8 @@ fi
 uid=$(id -u)
 gid=$(id -g)
 compose_project=${ACERVO_COMPOSE_PROJECT:-acervo}
-bind_address=${ACERVO_BIND_ADDRESS:-127.0.0.1}
-anki_port=${ACERVO_ANKI_PORT:-27701}
+bind_address=${requested_bind_address:-${ACERVO_BIND_ADDRESS:-127.0.0.1}}
+anki_port=${requested_anki_port:-${ACERVO_ANKI_PORT:-27701}}
 cat >"$acervo_root/deployment.env" <<EOF
 ACERVO_UID=$uid
 ACERVO_GID=$gid
@@ -116,16 +152,16 @@ EOF
 chmod 600 "$acervo_root/deployment.env"
 
 compose_file="$release_dir/deploy/acervo/compose.yaml"
-docker compose -p "$compose_project" \
+compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
   --env-file "$acervo_root/secrets.env" \
   -f "$compose_file" up -d --build anki-sync-server
 
 attempt=0
-until [ "$(docker compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" ps --format json anki-sync-server 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
+until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" ps --format json anki-sync-server 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
-    docker compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" logs anki-sync-server >&2
+    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" logs anki-sync-server >&2
     exit 1
   fi
   sleep 2

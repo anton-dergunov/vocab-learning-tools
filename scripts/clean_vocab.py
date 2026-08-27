@@ -72,10 +72,8 @@ def resolve_path(path: Union[str, Path], base_dir: Path = _REPO_ROOT) -> Path:
     Examples:
         >>> resolve_path("/absolute/path/file.txt")
         PosixPath('/absolute/path/file.txt')
-        >>> resolve_path("relative/file.txt")  # Resolved from _REPO_ROOT
-        PosixPath('/Users/anton/repo/relative/file.txt')
-        >>> resolve_path("~/Documents/file.txt")  # Expands ~
-        PosixPath('/Users/anton/Documents/file.txt')
+        >>> resolve_path("relative/file.txt", Path("/srv/acervo"))
+        PosixPath('/srv/acervo/relative/file.txt')
     """
     path_obj = Path(path).expanduser()  # Expand ~ to home directory
 

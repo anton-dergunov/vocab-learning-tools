@@ -18,3 +18,5 @@ old_prototypes/
 /design/generated/
 /build/
 .acervo-deploy
+*.swp
+*.swo
