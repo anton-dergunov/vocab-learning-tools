@@ -1,15 +1,19 @@
 # Acervo responsive icon family
 
-The selected identity is the warm-red book treasury with `A` and `Ñ`. It uses
-three optical sizes rather than shrinking one detailed bitmap everywhere:
+The original warm-red open-book treasury with `A` and `Ñ` remains the
+authoritative application artwork. It is preserved without alteration at larger
+sizes. Only the smallest browser and menu-bar marks use a separate closed-book
+optical size, because the full open-book silhouette does not survive at 16–32 px.
 
 | Display size | Artwork | Reason |
 |---|---|---|
-| 16–24 px | `source/favicon-micro.svg` / one `A` tile | One glyph and broad shapes survive browser-tab rasterization. |
-| 32–96 px | `source/icon-small.png` / schematic `A` and `Ñ` | Preserves both letter tiles without page lines or texture. |
-| 128 px and above | `source/icon-full.png` | Preserves the chosen detailed artwork. |
+| 16–32 px | `source/favicon-micro.svg` / closed burgundy book and `A` | Broad shapes survive browser-tab rasterization. |
+| 48–96 px | `source/icon-small.png` / schematic open-book artwork | Retains the existing approved intermediate artwork. |
+| 128 px and above | `source/icon-full.png` | Retains the original detailed artwork exactly. |
 
-The canonical sources and every file under `dist/` are production assets and
+`scripts/generate_acervo_icons.py` regenerates only the 16, 24, and 32 px
+favicon exports plus the multi-size ICO. It deliberately never modifies the
+approved 48px-and-larger artwork. All files under `dist/` are production assets and
 should be committed. Exploratory concepts, rejected variants, generated
 candidates, and pixel-test previews live under the ignored
 `design/generated/` directory.
@@ -54,6 +58,5 @@ Use the PNG declarations when optical-size switching matters. Declaring only
 }
 ```
 
-The small and micro masters were derived with built-in image generation from the
-selected full-size icon. The final 16 px mark was then redrawn as path-based SVG
-to eliminate font substitution and retain crisp geometry.
+The micro master uses path-based geometry, including the letter `A`, so its
+generation is deterministic and never depends on font substitution.

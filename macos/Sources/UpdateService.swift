@@ -263,7 +263,20 @@ final class UpdateService: ObservableObject {
 
     private func describe(_ error: Error) -> String {
         if case let UpdateFailure.message(text) = error { return text }
-        return (error as NSError).localizedDescription
+        let networkError = error as NSError
+        if networkError.domain == NSURLErrorDomain,
+           [
+            NSURLErrorSecureConnectionFailed,
+            NSURLErrorServerCertificateHasBadDate,
+            NSURLErrorServerCertificateUntrusted,
+            NSURLErrorServerCertificateHasUnknownRoot,
+            NSURLErrorServerCertificateNotYetValid,
+            NSURLErrorClientCertificateRejected,
+            NSURLErrorClientCertificateRequired,
+           ].contains(networkError.code) {
+            return "HTTPS could not be established. Use the address printed by Tailscale Serve or your HTTPS reverse proxy, not Acervo's HTTP app port."
+        }
+        return networkError.localizedDescription
     }
 
     private func presentFailure(_ message: String) {

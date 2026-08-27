@@ -32,14 +32,14 @@ h1 { margin: 0; font: 600 clamp(42px, 9vw, 86px)/1 Georgia, serif; letter-spacin
   position: absolute;
   top: max(18px, env(safe-area-inset-top));
   right: max(18px, env(safe-area-inset-right));
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   display: grid;
   place-items: center;
   border-radius: 50%;
 }
 .gear:hover { background: rgba(7, 26, 56, .07); color: #071a38; }
-.gear svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.gear svg { width: 20px; height: 20px; }
 .gear.has-update::after { content: ""; position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border: 2px solid #f7f3e8; border-radius: 50%; background: #8f1f2e; }
 
 .modal-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(7, 26, 56, .28); }
@@ -48,8 +48,15 @@ h1 { margin: 0; font: 600 clamp(42px, 9vw, 86px)/1 Georgia, serif; letter-spacin
 .settings h2 { margin: 0; font: 600 24px/1.2 Georgia, serif; }
 .close { font-size: 28px; line-height: 1; width: 32px; height: 32px; }
 .settings-body { display: grid; gap: 18px; padding: 22px 20px; }
-.update-status, .update-action { display: grid; gap: 5px; text-align: left; }
-.update-status span, .update-action span, .version { color: #68707a; font-size: 13px; line-height: 1.45; }
-.update-action { border: 1px solid rgba(143, 31, 46, .28); border-radius: 12px; padding: 14px; background: rgba(143, 31, 46, .06); color: #781a27; cursor: pointer; }
+.update-status, .update-action, .download-action { display: grid; gap: 5px; text-align: left; }
+.update-status span, .update-action span, .download-action span, .version { color: #68707a; font-size: 13px; line-height: 1.45; }
+.update-action, .download-action { border: 1px solid rgba(143, 31, 46, .28); border-radius: 12px; padding: 14px; background: rgba(143, 31, 46, .06); color: #781a27; cursor: pointer; }
 .update-action:hover { background: rgba(143, 31, 46, .1); }
+.download-action { text-decoration: none; border-color: rgba(7, 26, 56, .18); background: rgba(7, 26, 56, .04); color: #071a38; }
+.download-action:hover { background: rgba(7, 26, 56, .08); }
 .version { margin: 0; }
+
+@media (max-width: 520px) {
+  .gear { width: 36px; height: 36px; }
+  .gear svg { width: 19px; height: 19px; }
+}

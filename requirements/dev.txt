@@ -3,3 +3,4 @@
 -r benchmark.txt
 
 pytest
+cairosvg

@@ -18,18 +18,36 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Server") {
-                TextField("https://acervo.example.com", text: $serverURL)
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField(
+                        "",
+                        text: $serverURL,
+                        prompt: Text("https://acervo.example.com")
+                    )
+                    .accessibilityLabel("Acervo server address")
                     .textFieldStyle(.roundedBorder)
-                Text("The PWA, future API, and Mac updates use this one address. HTTPS is required outside local development.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Button("Save") { save() }
-                        .disabled(serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    if let serverMessage {
-                        Text(serverMessage).font(.caption).foregroundStyle(serverMessage == "Server saved." ? Color.secondary : Color.red)
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    .onSubmit(save)
+                    .onChange(of: serverURL) { _, _ in serverMessage = nil }
+
+                    Text("Use the same HTTPS address that opens Acervo in your browser. This Mac uses it to find and download updates.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 10) {
+                        Button("Save", action: save)
+                            .disabled(serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if let serverMessage {
+                            Text(serverMessage)
+                                .font(.caption)
+                                .foregroundStyle(serverMessage == "Server saved." ? Color.secondary : Color.red)
+                                .lineLimit(2)
+                        }
                     }
                 }
+                .padding(.vertical, 2)
             }
 
             Section("Updates") {

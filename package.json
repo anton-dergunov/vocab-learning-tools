@@ -12,7 +12,7 @@
     "server:down": "docker compose -f deploy/acervo/compose.yaml down",
     "test:web": "npm --prefix web run test",
     "test:pwa": "python3 -B scripts/verify_pwa.py",
-    "generate:icons": "python3 -B scripts/generate_app_icons.py",
+    "generate:icons": "python3 -B scripts/generate_acervo_icons.py && python3 -B scripts/generate_app_icons.py",
     "generate:mac": "xcodegen generate --spec macos/project.yml",
     "build:mac": "./scripts/build_macos.sh",
     "package:mac": "./scripts/package_macos_release.sh",
