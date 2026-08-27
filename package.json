@@ -1,0 +1,23 @@
+{
+  "name": "acervo",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "npm --prefix web run dev",
+    "build:web": "npm --prefix web run build",
+    "stage:pwa": "npm run build:web && ./scripts/stage-pocketbase.sh",
+    "package:server": "./scripts/package_release.sh",
+    "server:build": "npm run stage:pwa && docker compose -f deploy/acervo/compose.yaml build pocketbase",
+    "server:up": "npm run stage:pwa && docker compose -f deploy/acervo/compose.yaml up -d --build anki-sync-server pocketbase",
+    "server:down": "docker compose -f deploy/acervo/compose.yaml down",
+    "test:web": "npm --prefix web run test",
+    "test:pwa": "python3 -B scripts/verify_pwa.py",
+    "generate:icons": "python3 -B scripts/generate_app_icons.py",
+    "generate:mac": "xcodegen generate --spec macos/project.yml",
+    "build:mac": "./scripts/build_macos.sh",
+    "package:mac": "./scripts/package_macos_release.sh",
+    "run:mac": "./scripts/run_macos.sh",
+    "test:mac": "./scripts/test_macos.sh",
+    "test:app": "npm run test:web && npm run build:web && npm run test:pwa && npm run test:mac"
+  }
+}

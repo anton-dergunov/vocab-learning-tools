@@ -9,6 +9,9 @@ cache
 output
 data
 build
+web/node_modules
+web/dist
+DerivedData
 design/generated
 test-data-bkp
 checking

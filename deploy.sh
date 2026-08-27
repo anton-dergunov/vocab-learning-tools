@@ -10,15 +10,19 @@ reset_data=false
 remember=false
 bind_address=
 anki_port=
+app_bind_address=
+app_port=
 action=deploy
 
 usage() {
   cat >&2 <<'EOF'
 usage:
   ./deploy.sh --local [--root PATH] [--bind-address ADDRESS] [--port PORT]
+              [--app-bind-address ADDRESS] [--app-port PORT]
               [--configure-credentials] [--reset-data]
   ./deploy.sh [--target USER@HOST] [--root PATH] [--configure-credentials]
               [--bind-address ADDRESS] [--port PORT] [--remember-target]
+              [--app-bind-address ADDRESS] [--app-port PORT]
               [--reset-data]
   ./deploy.sh [--local | --target USER@HOST] --status
 EOF
@@ -34,15 +38,29 @@ while [ "$#" -gt 0 ]; do
     --remember-target) remember=true; shift ;;
     --bind-address) [ "$#" -ge 2 ] || usage; bind_address=$2; shift 2 ;;
     --port) [ "$#" -ge 2 ] || usage; anki_port=$2; shift 2 ;;
+    --app-bind-address) [ "$#" -ge 2 ] || usage; app_bind_address=$2; shift 2 ;;
+    --app-port) [ "$#" -ge 2 ] || usage; app_port=$2; shift 2 ;;
     --status) action=status; shift ;;
     --reset-data) reset_data=true; shift ;;
     *) usage ;;
   esac
 done
 case "$bind_address" in *[!A-Za-z0-9:._-]*) echo "Unsafe bind address" >&2; exit 2 ;; esac
+case "$app_bind_address" in *[!A-Za-z0-9:._-]*) echo "Unsafe app bind address" >&2; exit 2 ;; esac
 case "$anki_port" in ""|*[!0-9]*) [ -z "$anki_port" ] || { echo "Port must be numeric" >&2; exit 2; } ;; esac
+case "$app_port" in ""|*[!0-9]*) [ -z "$app_port" ] || { echo "App port must be numeric" >&2; exit 2; } ;; esac
 if [ -n "$anki_port" ] && { [ "$anki_port" -lt 1 ] || [ "$anki_port" -gt 65535 ]; }; then
   echo "Port must be between 1 and 65535" >&2
+  exit 2
+fi
+if [ -n "$app_port" ] && { [ "$app_port" -lt 1 ] || [ "$app_port" -gt 65535 ]; }; then
+  echo "App port must be between 1 and 65535" >&2
+  exit 2
+fi
+effective_anki_port=${anki_port:-27701}
+effective_app_port=${app_port:-27702}
+if [ "$effective_anki_port" = "$effective_app_port" ]; then
+  echo "The Acervo app/PocketBase port must differ from the Anki sync port" >&2
   exit 2
 fi
 
@@ -78,16 +96,36 @@ prompt_credentials() {
   esac
 }
 
+build_release_archive() {
+  eval "$("$repo_root/scripts/version.sh")"
+  export ACERVO_APP_VERSION ACERVO_APP_BUILD
+  if [ "$(uname -s)" = Darwin ] && [ "${ACERVO_SKIP_MACOS_RELEASE:-false}" != true ]; then
+    "$repo_root/scripts/package_macos_release.sh" >&2
+    ACERVO_INCLUDE_MACOS_RELEASE=true
+  else
+    ACERVO_INCLUDE_MACOS_RELEASE=false
+  fi
+  export ACERVO_INCLUDE_MACOS_RELEASE
+  if [ "${ACERVO_SKIP_APP_BUILD:-false}" != true ]; then
+    npm run stage:pwa >&2
+  fi
+  "$repo_root/scripts/package_acervo_server.sh"
+}
+
 if [ "$mode" = local ]; then
   if [ "$action" = status ]; then
     docker inspect \
       --format='state={{.State.Status}}, health={{.State.Health.Status}}' \
       acervo-anki-sync-server-1
     docker port acervo-anki-sync-server-1 8080
+    docker inspect \
+      --format='state={{.State.Status}}, health={{.State.Health.Status}}' \
+      acervo-pocketbase-1
+    docker port acervo-pocketbase-1 8090
     exit 0
   fi
   [ -n "$acervo_root" ] || acervo_root=${ACERVO_LOCAL_ROOT:-"$HOME/.acervo"}
-  local_archive=$($repo_root/scripts/package_acervo_server.sh)
+  local_archive=$(build_release_archive)
   credential_args=
   if [ "$configure" = true ] || [ ! -f "$acervo_root/secrets.env" ]; then
     prompt_credentials
@@ -96,6 +134,8 @@ if [ "$mode" = local ]; then
   set -- --root "$acervo_root" --archive "$local_archive"
   [ -z "$bind_address" ] || set -- "$@" --bind-address "$bind_address"
   [ -z "$anki_port" ] || set -- "$@" --port "$anki_port"
+  [ -z "$app_bind_address" ] || set -- "$@" --app-bind-address "$app_bind_address"
+  [ -z "$app_port" ] || set -- "$@" --app-port "$app_port"
   [ -z "$credential_args" ] || set -- "$@" "$credential_args"
   [ "$reset_data" = false ] || set -- "$@" --reset-data
   if [ -n "$credential_args" ]; then
@@ -128,11 +168,15 @@ if [ "$action" = status ]; then
      $privilege "$docker_path" inspect \
        --format=state={{.State.Status}},health={{.State.Health.Status}} \
        acervo-anki-sync-server-1 && \
-     $privilege "$docker_path" port acervo-anki-sync-server-1 8080'
+     $privilege "$docker_path" port acervo-anki-sync-server-1 8080 && \
+     $privilege "$docker_path" inspect \
+       --format=state={{.State.Status}},health={{.State.Health.Status}} \
+       acervo-pocketbase-1 && \
+     $privilege "$docker_path" port acervo-pocketbase-1 8090'
   exit 0
 fi
 
-archive=$($repo_root/scripts/package_acervo_server.sh)
+archive=$(build_release_archive)
 remote_archive="/tmp/acervo-release-$$.tar.gz"
 remote_installer="/tmp/acervo-install-$$.sh"
 remote_credentials="/tmp/acervo-credentials-$$"
@@ -168,6 +212,8 @@ fi
 [ -z "$credential_args" ] || installer_arguments="$installer_arguments $credential_args"
 [ -z "$bind_address" ] || installer_arguments="$installer_arguments --bind-address $bind_address"
 [ -z "$anki_port" ] || installer_arguments="$installer_arguments --port $anki_port"
+[ -z "$app_bind_address" ] || installer_arguments="$installer_arguments --app-bind-address $app_bind_address"
+[ -z "$app_port" ] || installer_arguments="$installer_arguments --app-port $app_port"
 [ "$reset_data" = false ] || installer_arguments="$installer_arguments --reset-data"
 
 echo "Installing on the remote server (sudo may ask for its password)..."

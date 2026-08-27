@@ -38,6 +38,8 @@ def deployment_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
     env = os.environ.copy()
     env["HOME"] = str(home)
     env["PATH"] = f"{fake_docker_path(tmp_path)}:{env['PATH']}"
+    env["ACERVO_SKIP_MACOS_RELEASE"] = "true"
+    env["ACERVO_SKIP_APP_BUILD"] = "true"
     return env, root
 
 
@@ -68,6 +70,10 @@ def test_local_deployment_preserves_data_backs_up_and_rotates(tmp_path: Path) ->
     (server / "media.db").write_bytes(b"media-index-v1")
     sentinel = server / "media-sentinel"
     sentinel.write_text("keep", encoding="utf-8")
+    pocketbase = root / "data" / "pocketbase"
+    pocketbase.mkdir(parents=True)
+    pocketbase_sentinel = pocketbase / "data.db"
+    pocketbase_sentinel.write_bytes(b"pocketbase-v1")
     backups = root / "backups"
     backups.mkdir()
     for index in range(11):
@@ -77,6 +83,7 @@ def test_local_deployment_preserves_data_backs_up_and_rotates(tmp_path: Path) ->
 
     assert result.returncode == 0, result.stderr
     assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert pocketbase_sentinel.read_bytes() == b"pocketbase-v1"
     assert len([path for path in backups.iterdir() if path.is_dir()]) == 10
     assert any(
         path.name == "collection.anki2" and path.read_bytes() == b"collection-v1"
@@ -117,6 +124,9 @@ def test_release_archive_excludes_deployment_secrets(tmp_path: Path) -> None:
         members = package.getnames()
     assert not any(name.endswith("secrets.env") for name in members)
     assert "deploy/acervo/secrets.env.example" in members
+    assert "deploy/acervo/pocketbase/pb_public/manifest.webmanifest" in members
+    assert "deploy/acervo/pocketbase/pb_hooks/acervo.js" in members
+    assert "version.json" in members
 
 
 def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
@@ -149,6 +159,8 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
             "ACERVO_TEST_RELEASE": str(release_upload),
             "ACERVO_TEST_HELPER": str(helper_upload),
             "ACERVO_TEST_CREDENTIALS": str(credential_upload),
+            "ACERVO_SKIP_MACOS_RELEASE": "true",
+            "ACERVO_SKIP_APP_BUILD": "true",
         }
     )
 
@@ -204,6 +216,10 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
             "0.0.0.0",
             "--port",
             "27801",
+            "--app-bind-address",
+            "127.0.0.1",
+            "--app-port",
+            "27802",
         ],
         cwd=REPO_ROOT,
         env=env,
@@ -220,6 +236,10 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
     deployment = (root / "deployment.env").read_text(encoding="utf-8")
     assert "ACERVO_BIND_ADDRESS=0.0.0.0\n" in deployment
     assert "ACERVO_ANKI_PORT=27801\n" in deployment
+    assert "ACERVO_APP_BIND_ADDRESS=127.0.0.1\n" in deployment
+    assert "ACERVO_APP_PORT=27802\n" in deployment
+    assert f"ACERVO_PB_DATA={root}/data/pocketbase\n" in deployment
+    assert f"ACERVO_DOWNLOADS={root}/downloads\n" in deployment
 
 
 def test_remote_status_does_not_build_or_upload(tmp_path: Path) -> None:
@@ -325,3 +345,28 @@ def test_acervo_wide_defaults_are_not_anki_named() -> None:
     assert "/opt/acervo" in installer
     assert "/etc/acervo-root" in installer
     assert "/volume1/docker/acervo-anki" not in deploy + installer
+
+
+def test_app_and_anki_ports_are_distinct_and_collisions_are_rejected(tmp_path: Path) -> None:
+    compose = (REPO_ROOT / "deploy/acervo/compose.yaml").read_text(encoding="utf-8")
+    assert "${ACERVO_ANKI_PORT:-27701}:8080" in compose
+    assert "${ACERVO_APP_PORT:-27702}:8090" in compose
+
+    env, _ = deployment_env(tmp_path)
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy.sh"),
+            "--local",
+            "--port",
+            "27800",
+            "--app-port",
+            "27800",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "must differ" in result.stderr

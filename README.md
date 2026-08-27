@@ -258,6 +258,25 @@ The versioned manifest, robot commands, remote Synology/Linux deployment,
 backups, security model, and mobile acceptance steps are documented in
 [`docs/acervo-anki-sync.md`](docs/acervo-anki-sync.md).
 
+## Acervo application shell
+
+The same deployment can now run an installable Acervo PWA and its own empty PocketBase instance
+beside the Anki sync service. A native macOS menu-bar application embeds that exact web build and
+updates from the same server. The initial interface displays only Acervo; vocabulary records and
+authentication are intentionally deferred.
+
+Build and test the interface with:
+
+```bash
+npm install --prefix web
+npm run build:web
+npm run test:app
+```
+
+Port separation, HTTPS/PWA installation, native packaging, update behavior, and persistent paths
+are documented in [`docs/acervo-app.md`](docs/acervo-app.md). All addresses in the documentation
+are reserved examples; deployment-specific values stay in ignored local configuration.
+
 Relative paths are resolved from the repository root. By default, regenerable
 media is cached under `cache/images` and `cache/audio`; HTML and `.apkg` output
 is written under `output`. Use `--force-media` to regenerate cached media, or

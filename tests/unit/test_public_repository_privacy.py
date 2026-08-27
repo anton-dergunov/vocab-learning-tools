@@ -28,6 +28,10 @@ def candidate_text_files():
         capture_output=True,
     ).stdout.decode().split("\0")
     for relative in filter(None, listing):
+        # Generated registry metadata can contain package maintainers' public contact addresses;
+        # it cannot contain local deployment configuration and is not repository-authored prose.
+        if relative.endswith("package-lock.json"):
+            continue
         path = REPO_ROOT / relative
         if not path.is_file():
             continue
@@ -44,6 +48,8 @@ def test_candidate_repository_files_contain_no_personal_details_or_secrets():
             if match.group(2) not in {"user", "example"}:
                 violations.append(f"{relative}: personal home path {match.group(0)!r}")
         for match in EMAIL_OR_SSH_TARGET.finditer(contents):
+            if match.group(0).endswith("@2x.png"):
+                continue  # Standard Apple Retina asset filename, not an address.
             domain = match.group(2).lower()
             if not (domain.endswith(".example.com") or domain.endswith(".example.test")):
                 violations.append(f"{relative}: non-reserved address {match.group(0)!r}")

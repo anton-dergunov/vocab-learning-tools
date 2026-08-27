@@ -17,6 +17,11 @@ old_prototypes/
 # Selected, app-ready assets belong under assets/ and remain tracked.
 /design/generated/
 /build/
+/web/node_modules/
+/web/dist/
+/DerivedData/
+/macos/Acervo.xcodeproj/
+/macos/Resources/Assets.xcassets/
 .acervo-deploy
 *.swp
 *.swo

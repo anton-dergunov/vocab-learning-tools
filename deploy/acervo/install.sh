@@ -7,7 +7,7 @@ PATH="$PATH:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/pa
 export PATH
 
 usage() {
-  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--reset-data]" >&2
+  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data]" >&2
   exit 2
 }
 
@@ -18,6 +18,8 @@ credentials_file=
 reset_data=false
 requested_bind_address=
 requested_anki_port=
+requested_app_bind_address=
+requested_app_port=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
@@ -26,16 +28,29 @@ while [ "$#" -gt 0 ]; do
     --credentials-file) [ "$#" -ge 2 ] || usage; credentials_file=$2; shift 2 ;;
     --bind-address) [ "$#" -ge 2 ] || usage; requested_bind_address=$2; shift 2 ;;
     --port) [ "$#" -ge 2 ] || usage; requested_anki_port=$2; shift 2 ;;
+    --app-bind-address) [ "$#" -ge 2 ] || usage; requested_app_bind_address=$2; shift 2 ;;
+    --app-port) [ "$#" -ge 2 ] || usage; requested_app_port=$2; shift 2 ;;
     --reset-data) reset_data=true; shift ;;
     *) usage ;;
   esac
 done
 [ "$credentials_stdin" = false ] || [ -z "$credentials_file" ] || usage
 case "$requested_bind_address" in *[!A-Za-z0-9:._-]*) usage ;; esac
+case "$requested_app_bind_address" in *[!A-Za-z0-9:._-]*) usage ;; esac
 case "$requested_anki_port" in ""|*[!0-9]*) [ -z "$requested_anki_port" ] || usage ;; esac
+case "$requested_app_port" in ""|*[!0-9]*) [ -z "$requested_app_port" ] || usage ;; esac
 if [ -n "$requested_anki_port" ] && { [ "$requested_anki_port" -lt 1 ] || [ "$requested_anki_port" -gt 65535 ]; }; then
   usage
 fi
+if [ -n "$requested_app_port" ] && { [ "$requested_app_port" -lt 1 ] || [ "$requested_app_port" -gt 65535 ]; }; then
+  usage
+fi
+effective_anki_port=${requested_anki_port:-${ACERVO_ANKI_PORT:-27701}}
+effective_app_port=${requested_app_port:-${ACERVO_APP_PORT:-27702}}
+[ "$effective_anki_port" != "$effective_app_port" ] || {
+  echo "The Acervo app/PocketBase port must differ from the Anki sync port" >&2
+  exit 2
+}
 
 if [ -z "$acervo_root" ]; then
   if [ -f /etc/acervo-root ]; then
@@ -65,6 +80,8 @@ umask 077
 mkdir -p \
   "$acervo_root/data/anki-server" \
   "$acervo_root/data/anki-robot" \
+  "$acervo_root/data/pocketbase" \
+  "$acervo_root/downloads" \
   "$acervo_root/input" \
   "$acervo_root/backups" \
   "$acervo_root/releases"
@@ -140,22 +157,45 @@ gid=$(id -g)
 compose_project=${ACERVO_COMPOSE_PROJECT:-acervo}
 bind_address=${requested_bind_address:-${ACERVO_BIND_ADDRESS:-127.0.0.1}}
 anki_port=${requested_anki_port:-${ACERVO_ANKI_PORT:-27701}}
+app_bind_address=${requested_app_bind_address:-${ACERVO_APP_BIND_ADDRESS:-127.0.0.1}}
+app_port=${requested_app_port:-${ACERVO_APP_PORT:-27702}}
+app_version=0.0.0
+app_build=0
+if [ -f "$release_dir/version.json" ]; then
+  app_version=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$release_dir/version.json" | head -n 1)
+  app_build=$(sed -n 's/.*"build"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$release_dir/version.json" | head -n 1)
+fi
 cat >"$acervo_root/deployment.env" <<EOF
 ACERVO_UID=$uid
 ACERVO_GID=$gid
 ACERVO_BIND_ADDRESS=$bind_address
 ACERVO_ANKI_PORT=$anki_port
+ACERVO_APP_BIND_ADDRESS=$app_bind_address
+ACERVO_APP_PORT=$app_port
+ACERVO_APP_VERSION=$app_version
+ACERVO_APP_BUILD=$app_build
 ACERVO_ANKI_SERVER_DATA=$acervo_root/data/anki-server
 ACERVO_ANKI_ROBOT_DATA=$acervo_root/data/anki-robot
+ACERVO_PB_DATA=$acervo_root/data/pocketbase
+ACERVO_DOWNLOADS=$acervo_root/downloads
 ACERVO_INPUT_PATH=$acervo_root/input
 EOF
 chmod 600 "$acervo_root/deployment.env"
+
+# A build made on macOS publishes the matching native application. A build made elsewhere keeps
+# the last known-good archive available instead of silently withdrawing desktop updates.
+if [ -f "$release_dir/downloads/release.json" ]; then
+  find "$acervo_root/downloads" -maxdepth 1 -type f -name '*.zip' -delete
+  cp -R "$release_dir/downloads/." "$acervo_root/downloads/"
+elif [ -f "$acervo_root/downloads/release.json" ]; then
+  echo "This release carries no macOS application; keeping the previously published one"
+fi
 
 compose_file="$release_dir/deploy/acervo/compose.yaml"
 compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
   --env-file "$acervo_root/secrets.env" \
-  -f "$compose_file" up -d --build anki-sync-server
+  -f "$compose_file" up -d --build anki-sync-server pocketbase
 
 attempt=0
 until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" ps --format json anki-sync-server 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
@@ -167,5 +207,16 @@ until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env
   sleep 2
 done
 
+attempt=0
+until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" ps --format json pocketbase 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" logs pocketbase >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 printf '%s\n' "$release_dir" >"$acervo_root/current-release"
 echo "Acervo Anki sync server is healthy at $bind_address:$anki_port"
+echo "Acervo web and API are healthy at $app_bind_address:$app_port"
