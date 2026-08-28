@@ -74,9 +74,20 @@ final class AcervoTests: XCTestCase {
     @MainActor
     func testMenuBarIconIsACompactTemplateImage() {
         let icon = makeMenuBarIcon(accessibilityDescription: "Acervo")
-        XCTAssertEqual(icon.size, NSSize(width: 20, height: 18))
+        XCTAssertEqual(icon.size, NSSize(width: 25, height: 18))
         XCTAssertTrue(icon.isTemplate)
         XCTAssertEqual(icon.accessibilityDescription, "Acervo")
+        XCTAssertNotNil(icon.tiffRepresentation)
+    }
+
+    @MainActor
+    func testMenuBarIconCanShowAnUpdateMark() {
+        let icon = makeMenuBarIcon(
+            accessibilityDescription: "Acervo; an update is available",
+            updateAvailable: true
+        )
+        XCTAssertTrue(icon.isTemplate)
+        XCTAssertEqual(icon.accessibilityDescription, "Acervo; an update is available")
         XCTAssertNotNil(icon.tiffRepresentation)
     }
 

@@ -9,8 +9,9 @@ func statusClickAction(for type: NSEvent.EventType?) -> StatusClickAction {
     type == .rightMouseUp ? .showMenu : .openWindow
 }
 
-func makeMenuBarIcon(accessibilityDescription: String) -> NSImage {
-    let canvasSize = NSSize(width: 20, height: 18)
+func makeMenuBarIcon(accessibilityDescription: String, updateAvailable: Bool = false) -> NSImage {
+    // The extra width gives the update mark room beside the book instead of covering it.
+    let canvasSize = NSSize(width: 25, height: 18)
     let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
     let book = NSImage(
         systemSymbolName: "book.fill",
@@ -20,7 +21,7 @@ func makeMenuBarIcon(accessibilityDescription: String) -> NSImage {
     let image = NSImage(size: canvasSize, flipped: false) { _ in
         let bookSize = book.size
         let bookOrigin = NSPoint(
-            x: (canvasSize.width - bookSize.width) / 2,
+            x: 0,
             y: (canvasSize.height - bookSize.height) / 2
         )
         book.draw(
@@ -53,6 +54,11 @@ func makeMenuBarIcon(accessibilityDescription: String) -> NSImage {
         cutOut("A", centeredAtX: 5)
         cutOut("Ñ", centeredAtX: 15)
         context.restoreGState()
+
+        if updateAvailable {
+            NSColor.labelColor.setFill()
+            NSBezierPath(ovalIn: NSRect(x: 20.5, y: 11.5, width: 4, height: 4)).fill()
+        }
         return true
     }
     image.isTemplate = true
@@ -62,7 +68,7 @@ func makeMenuBarIcon(accessibilityDescription: String) -> NSImage {
 
 @MainActor
 final class MenuBarController: NSObject {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: 29)
     private let openWindow: () -> Void
     private var updateAvailable = false
 
@@ -97,7 +103,8 @@ final class MenuBarController: NSObject {
 
     private func refreshImage() {
         statusItem.button?.image = makeMenuBarIcon(
-            accessibilityDescription: updateAvailable ? "Acervo; an update is available" : "Acervo"
+            accessibilityDescription: updateAvailable ? "Acervo; an update is available" : "Acervo",
+            updateAvailable: updateAvailable
         )
         statusItem.button?.imageScaling = .scaleNone
     }
