@@ -33,7 +33,7 @@ def main():
         _REPO_ROOT / "config/defaults.yaml",
         args.config,
     )
-    provider_name, _, provider_cfg = select_llm_provider(config, args.provider)
+    provider_name, provider_cfg = select_llm_provider(config, args.provider)
     if args.model:
         provider_cfg["options"]["model"] = args.model
 

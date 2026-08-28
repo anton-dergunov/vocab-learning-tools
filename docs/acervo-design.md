@@ -70,9 +70,8 @@ Solid arrows: content out, statistics back. Dashed: the corpus is consulted, nev
 
 ### Two systems, four orders of magnitude apart
 
-The single most useful number in this document: your Spanish vocabulary is **~940 entries** across
-twelve topic files, and the English file is ~700 lines. Ten times that, with full extended articles
-and no media, is still tens of megabytes.
+The single most useful sizing fact in this document: even **10,000 fully structured lexemes** with
+no media amount to only tens of megabytes.
 
 **What each layer actually holds**
 
@@ -107,7 +106,7 @@ different lifetimes.
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | uuid | Client-generated. Never server-assigned — see §04. |
+| `id` | recordId | Fifteen lowercase letters/digits, client-generated in PocketBase's native format. |
 | `language` | BCP-47 | `es`, `en`, `zh-Hans`. Required, indexed, on every query. |
 | `headword` | string | As you'd look it up: `desmayarse`, `ponerse malo`, `para entonces`. |
 | `lemma` | string | Normalized form for corpus matching. Usually equals headword. |
@@ -120,8 +119,11 @@ different lifetimes.
 | `topics` | string[] | Was your filename. Now many-per-word, which fixes the 387-entry *Misc* file. |
 | `status` | enum | inbox → active → learned → retired, plus **suppressed**. |
 | `shortGloss` | string? | **Derived, with override.** The one-line form — see below. Null unless curated. |
-| `notes` | string[] | Usage, register, synonyms, contrasts. Carried over from `ArticleExtended`. |
-| `addedAt` / `deviceId` | ts / string | Sync metadata, per §04. |
+| `notes` | string[] | Usage, register, synonyms and contrasts. |
+
+Every domain record also carries `ownerId`, `deleted`, `createdAt`, `editedAt`, `editedBy` and
+`revision`. These fields make the schema replication-ready; the replication protocol itself remains
+deferred to §04.
 
 > **WHY "SUPPRESSED" EARNS ITS PLACE**
 > Without a way to say *"I saw this, I've decided not to learn it"*, the same word arrives through
@@ -132,7 +134,7 @@ different lifetimes.
 
 | Field | Type | Notes |
 |---|---|---|
-| `lexemeId` | uuid | |
+| `lexemeId` | recordId | |
 | `definition` | string | In the **target** language. Longman/COBUILD style — pins the sense precisely. |
 | `definitionLang` | BCP-47 | Usually equals the lexeme's language; a field, not an assumption. |
 | `glosses[]` | `{lang, terms[]}[]` | **An array, not one language.** `[{en:["column","spine"]},{ru:["колонна"]}]`. |
@@ -146,7 +148,7 @@ definition is a longer road to the same place — and `sobremesa` is the case wh
 and only the definition works. You need both because your words are split between those two cases.
 
 `glosses` being an array (rather than one `glossLang`) is what lets one lexeme carry an English
-gloss *and* a Russian one without a migration.
+gloss *and* a Russian one without redesigning the schema.
 
 > **NO FIELD IS EVER NAMED `l1` OR `l2`**
 > L1 means native language, L2 a language being learned — and the shorthand assumes one of each,
@@ -165,19 +167,16 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
 
 | Field | Type | Notes |
 |---|---|---|
-| `lexemeId` | uuid | |
+| `lexemeId` | recordId | |
 | `text` | string | The sentence as encountered. Verbatim, typos included. |
 | `translation` | string? | Only if you wrote one. |
 | `sourceUrl` / `sourceTitle` | string? | Captured automatically — free, and you will want it later. |
 | `sourceKind` | enum | web · book · conversation · video · lesson · unknown |
 | `capturedAt` | ts | |
 
-> **YOUR EXISTING PIPELINE DISCARDS THIS**
-> `clean_vocab.py` keeps the model's rewrite and drops the source. Invert it: keep both, mark
-> provenance, and prefer the real one when rendering. Your English file is full of these and they
-> are the best thing in it — *"Since then, I have been navigating the job market as a junior,
-> alongside the uncertainties and turmoil caused by losing my job."* No generated sentence will ever
-> mean that much to you.
+> **ATTESTATIONS ARE NOT GENERATED EXAMPLES**
+> Keep verbatim source text and generated or curated examples as separate records, connect them with
+> explicit lineage, and prefer the attestation whenever the real context is what matters.
 
 **`example`, `studyState`, `captureQueue`**
 
@@ -198,7 +197,7 @@ make it a first-class case rather than an afterthought.
 
 ### The short form is a projection, not a second record
 
-`ArticleShort` — the concise one-liner kept in Obsidian — survives as a **rendering** of
+The concise one-liner kept in Obsidian survives as a **rendering** of
 `headword + emoji + primary gloss`, which is precisely the markdown shape already in use:
 
 ```
@@ -206,10 +205,9 @@ make it a first-class case rather than an afterthought.
 *raft*
 ```
 
-So `ArticleShort` stops being a storage class and becomes the **export renderer**: the thing that
-writes topic files for Obsidian (§10) and the thing the app's list view uses before you tap through
-to the full entry. One source, two presentations, no drift — which is the whole point of §01's first
-invariant applied inside the core.
+The short form is a **projection**, not a storage class: it is what the app's list view uses before
+you tap through to the full entry and what a future read-only export may render. One source, two
+presentations, no drift — which is the whole point of §01's first invariant applied inside the core.
 
 The one wrinkle: "first gloss of the first sense" is right most of the time and misleading for a
 word with five senses, where choosing the best one-liner is a judgement call. Hence `shortGloss`
@@ -223,8 +221,8 @@ artifacts:
 
 | Field | Type | Notes |
 |---|---|---|
-| `lexemeId` | uuid | |
-| `senseId` | uuid? | Null for the lexeme-level card image; set for a per-sense example image. |
+| `lexemeId` | recordId | |
+| `senseId` | recordId? | Null for the lexeme-level card image; set for a per-sense example image. |
 | `prompt` | string | |
 | `styleId` | string | From `image.styles` in config. |
 | `seed` | int | Derived from `lexemeId` — the same word keeps its look across regenerations. |
@@ -254,7 +252,8 @@ The case that justifies phrases being first-class — isolating a word here woul
 ```jsonc
 // lexeme
 {
-  "id": "01J8F2K9…",
+  "id": "lexeme000000001",
+  "ownerId": "owner0000000001",
   "language": "es",
   "headword": "que se mejoren",
   "lemma": "que se mejoren",
@@ -265,13 +264,16 @@ The case that justifies phrases being first-class — isolating a word here woul
   "emoji": "💖",
   "topics": ["health", "social"],
   "status": "active",
-  "addedAt": "2026-01-30T09:14:22.418Z",
-  "editedBy": "ipad-a3f1"
+  "createdAt": "2026-01-30T09:14:22.418Z",
+  "editedAt": "2026-01-30T09:14:22.418Z",
+  "editedBy": "device000000001",
+  "revision": 0,
+  "deleted": false
 }
 
 // sense — one row, no per-word breakdown, because there isn't one
 {
-  "lexemeId": "01J8F2K9…",
+  "lexemeId": "lexeme000000001",
   "order": 0,
   "definition": "Fórmula para desear a alguien una pronta recuperación.",
   "definitionLang": "es",
@@ -287,7 +289,7 @@ Raw versus cleaned — both kept, lineage explicit:
 ```jsonc
 // attestation — verbatim, mistakes and all, never rewritten
 {
-  "lexemeId": "01J8F2K9…",
+  "lexemeId": "lexeme000000001",
   "text": "espero que se mejoren pronto un abrazo a toda la familia",
   "sourceKind": "conversation",
   "sourceTitle": "WhatsApp — grupo del curso",
@@ -296,13 +298,13 @@ Raw versus cleaned — both kept, lineage explicit:
 
 // example — cleaned and lightly expanded, pointing back at its source
 {
-  "senseId": "01J8F2M1…",
+  "senseId": "sense0000000001",
   "text": "Espero que se mejoren pronto. Un abrazo a toda la familia.",
   "textLang": "es",
   "translation": "I hope you get better soon. A hug to the whole family.",
   "translationLang": "en",
   "origin": "attestation",
-  "sourceAttestationId": "01J8F2L7…",
+  "sourceAttestationId": "attest000000001",
   "modelId": "gemini-3-flash",
   "imageRef": null,
   "audioRef": "sha256:9c1e…",
@@ -328,14 +330,14 @@ And `studyState`, pulled back from Anki (§08):
 
 ```jsonc
 {
-  "lexemeId": "01J8F2K9…",
+  "lexemeId": "lexeme000000001",
   "system": "anki",
   "noteId": 1738291045123,
   "cardIds": [1738291045124, 1738291045125],
   "reps": 14, "lapses": 3,
   "stability": 41.7, "difficulty": 7.9, "retrievability": 0.86,
-  "lastReview": "2026-08-19T07:02:11Z",
-  "syncedAt": "2026-08-26T06:30:00Z"
+  "lastReview": "2026-08-19T07:02:11.000Z",
+  "syncedAt": "2026-08-26T06:30:00.000Z"
 }
 ```
 
@@ -386,16 +388,15 @@ setting splits front and back. Chinese inverts it for the reason you gave: with 
 etymological background, withholding the gloss buys nothing.
 ## §04 · Storage & sync
 
-### A second PocketBase, and the sync engine you already wrote
+### PocketBase durability and an owner-scoped local replica
 
 > ### DECISION
-> **The core runs on a second PocketBase instance beside Calorie Logger, reusing its sync design
-> wholesale.**
+> **PocketBase is the durable store. IndexedDB is the complete owner-scoped local replica and the
+> only store application vocabulary operations touch directly.**
 >
-> **Because** you have a proven, documented, offline-first replica engine that you personally rely
-> on daily. It already solves tombstones, the monotonic revision cursor, per-record rejection, and
-> the `datasetId` trap that makes a rebuilt database silently report itself in sync. Rewriting that
-> costs weeks and buys nothing.
+> **This iteration** supplies local transactions, tombstones, pending markers and replication-ready
+> metadata. Authenticated transport, cursors, revision assignment, dataset identity, merge order and
+> conflict resolution are deliberately deferred and will be designed directly for Acervo.
 >
 > **Coexistence is a non-issue.** Your `compose.yaml` is already parameterized: a different
 > `container_name`, `PB_PORT` and `PB_DATA_PATH` is the entire change. Separate container, separate
@@ -416,16 +417,14 @@ getting it wrong costs you nothing.
 
 ### What carries on every replicated row
 
-Unchanged from Calorie Logger, because it works: `deleted`, `createdAt`, `editedAt`, `editedBy`,
-`revision`. Last-writer-wins on `(editedAt, editedBy)`, computed identically on client and server.
-Deletions are tombstones. Ids are client-generated so a word captured on a plane can be edited,
-glossed and deleted before any server hears of it.
+Every record carries `ownerId`, `deleted`, `createdAt`, `editedAt`, `editedBy` and `revision`.
+Deletions are tombstones. IDs are client-generated so a word captured on a plane can be edited,
+glossed and deleted before any server hears of it. The eventual meaning and assignment of revisions
+belongs to the synchronization iteration.
 
-> **ONE THING THAT MUST BE RE-DERIVED, NOT COPIED**
-> Merge order. Calorie Logger merges foods before entries before settings, because an entry's food
-> relation must resolve. Here it is `lexeme → sense → example / attestation / studyState`. Get this
-> wrong and offline-created rows fail validation on push and sit in the queue looking like a network
-> problem.
+> **MERGE ORDER MUST FOLLOW THE GRAPH**
+> The synchronization iteration must derive its relation order from Acervo itself: lexemes before
+> senses and attestations; those before examples and optional sense-linked image prompts.
 
 ### Media
 
@@ -474,8 +473,8 @@ The specific correction: **an iOS Shortcut beats the Telegram route on its own g
 can POST *and then open a URL*, so it is one gesture from the same share sheet that lands you on the
 review screen. Same reach, one hop instead of two.
 
-The route still earns a place as a backfill source, and whatever has already accumulated in
-`data/inbox/lang/` is real captured data worth a one-time importer.
+The route may still earn a place as a future capture transport. It does not create a reason to add a
+legacy importer or a second persistence model.
 
 ### The selection dilemma, and the one transport that dissolves it
 
@@ -612,7 +611,7 @@ This settles every worry you raised at once:
 > **WHAT MULTILINGUAL ACTUALLY COSTS**
 > Almost nothing structurally — `language` on every row and a config block per language. The real
 > cost is three specific things: **Chinese needs segmentation** before anything else works, **the
-> reading field** must exist from the first migration, and **collation differs per language**, so
+> reading field** must exist in the initial schema, and **collation differs per language**, so
 > sorting is a per-language function rather than a global one. Retrofitting any of those later is
 > genuinely painful, which is why they belong in v1 even though Spanish is 90% of your usage today.
 
@@ -683,7 +682,7 @@ anyone actually speaks. That is exactly the gap the corpus fills, and it is why 
 
 ### Image prompts are their own stage
 
-Prompts come off `ArticleExtended` and get their own LLM call against the *finished* article.
+Prompts come off the validated vocabulary graph and get their own LLM call against the finished entry.
 
 > ### DECISION
 > **Generate the article first. Generate its image prompts second, from the validated article.**
@@ -840,9 +839,8 @@ Two cautions carried forward from that document, both still right:
   PocketBase, the corpus service and info-triage on the same Synology. Measure before committing —
   and if the box gets tight, that is an argument for SQLite FTS5 over Meilisearch in §06.
 
-The existing provider-factory pattern survives intact. What changes is only the edges: input comes
-from `captureQueue` instead of a markdown inbox, and output is written to the API instead of to
-topic files.
+The existing provider-factory pattern survives intact. Future flows will derive work from canonical
+PocketBase records and write results back as canonical records.
 
 ---
 
@@ -951,7 +949,7 @@ Your instinct to spend the image budget only on hard words was right — and FSR
 for free, with no marking discipline required.
 
 > **THE DETAIL THAT SAVES YOU A SILENT DATA LOSS**
-> Put the lexeme UUID in a dedicated hidden field on every Anki note. Do **not** rely on
+> Put the lexeme record ID in a dedicated hidden field on every Anki note. Do **not** rely on
 > deterministic GUIDs for the join. GUIDs derive from content, so the day you improve a card template
 > or fix a typo, your mapping breaks — quietly, and after the fact. An explicit id survives every
 > edit, template change, and re-import.
@@ -1011,7 +1009,7 @@ session is not.
 
 ## §10 · Obsidian
 
-### Export only, and one honest import
+### Export only
 
 > ### DECISION
 > **The database is the source of truth. Obsidian receives a generated, read-only export.**
@@ -1020,15 +1018,8 @@ session is not.
 > precisely the coupling you'd be building this to escape. One-directional export keeps Obsidian
 > useful for reading, linking and search without making it a second half-truth.
 
-The import runs once. Your twelve Spanish topic files are regular enough to parse deterministically —
-the `##### **word** emoji` / `*gloss*` / `> example` shape holds throughout, and topic comes from the
-filename. The English file needs LLM-assisted parsing because it is genuinely heterogeneous: Russian
-glosses, English-only definitions, multi-line quotes, occasional prose asides about usage. Route it
-through `captureQueue` and review it in the inbox rather than trusting a one-shot conversion.
-
-Two things to decide during import rather than after: the 387-entry *Misc* file wants re-topicking
-now that topics are many-per-word, and there are exact duplicates already in your data
-(`desmayarse` appears twice in *Health* alone) that the dedup pass should catch.
+There is deliberately no import bridge from historical Markdown or JSON formats. Existing data is
+disposable during the greenfield phase; canonical records are created through the current model.
 
 ---
 
@@ -1036,27 +1027,28 @@ now that topics are many-per-word, and there are exact duplicates already in you
 
 ### What lands in v1
 
-**1 · Schema and import**
-All ~940 Spanish entries and the English file into the database, attestations preserved, multilingual
-from the first migration. Until the data is in, everything else is speculation.
+**1 · Canonical schema and representative seed data**
+PocketBase and IndexedDB share the same owner-scoped graph, with multilingual examples present from
+the initial schema. The disposable demonstration seed makes the model inspectable without creating
+an alternative data source.
 
 **2 · Sync core**
-Ported from Calorie Logger — tombstones, revision cursor, `datasetId` guard, schema-version refusal.
-Re-derive only the merge order.
+Implement the protocol directly over the Acervo graph — tombstones, revision cursor, dataset guard,
+schema-version refusal, merge order and conflict handling.
 
 **3a · Manual add and inbox review**
 The floor, and it must exist regardless — a word you *heard* has no source to share from.
-`clean_vocab.py` becomes the worker behind it. **The system earns its keep here**, before a single
+A provider-backed processing worker sits behind it. **The system earns its keep here**, before a single
 flashcard exists.
 
 **3b · Ingest endpoint and transports**
 One endpoint, then thin clients against it in order of leverage: browser extension (macOS), iOS
 Shortcut (iPhone and iPad), Web Share Target (Android phone and tablet). The tap-to-pick-the-word
 review screen lands here. Sequenced *after* 3a deliberately: a fortnight of manual use tells you
-which capture friction is real. info-triage `lang` import is a one-off backfill whenever convenient.
+which capture friction is real.
 
 **4 · Anki via AnkiConnect**
-Content out, FSRS state in. Hidden UUID field. One deck per language.
+Content out, FSRS state in. Hidden Acervo record-ID field. One deck per language.
 
 **5 · Dictionary grounding**
 Wiktextract ingest plus grounded generation. Raises quality across every downstream consumer at once.
@@ -1118,17 +1110,13 @@ service are competing for the same Synology memory (§07). Measure the box first
 Argument for: one deploy script, as with Calorie Logger. Argument against: it has a wholly different
 lifecycle, and separating it makes "regenerable" structurally true rather than merely intended.
 
-**How much of the English file survives import?**
-~700 lines of genuinely messy notes. A judgement call on whether to import everything into `inbox`
-and triage over weeks, or import only entries with an attestation and archive the rest as a raw note.
-
 **Is the review UI in Acervo or in Anki?**
 Anki is a better scheduler; a web UI is a better place for LLM grading and clip playback. Likely both
 — but which one owns the daily session should be decided before you build either.
 
 **Sense-level or lexeme-level cards?**
-The current `ArticleExtended` generates one Anki note per meaning. Sense-level is more correct and
-more cards; lexeme-level is fewer reviews and blurs polysemy. Affects the study-state join.
+Sense-level cards are more correct and produce more cards; lexeme-level cards mean fewer reviews
+but blur polysemy. The choice affects the study-state join.
 
 **Does WebP render everywhere you review?**
 Fine on desktop and AnkiDroid; verify AnkiMobile before committing several thousand files (§07).
@@ -1147,78 +1135,28 @@ affects whether it pushes over SSH or HTTPS.
 
 ## §14 · Current implementation
 
-Facts about the code as it stands today, absorbed from `docs/anki_design.txt` and
-`docs/article_design.txt` when those were retired. They describe the pipeline this document
-supersedes, and remain true until each section lands.
+The §03 foundation is now the only application model:
 
-**The canonical article shape** (`ArticleExtended`, Pydantic, rejects unknown fields so prompt and
-model drift is caught immediately):
+- PocketBase owns locked, owner-scoped `lexemes`, `senses`, `attestations`, `examples`,
+  `image_prompts` and `study_states` collections. Accounts are administrator-created; the app API
+  provides password login and token refresh.
+- IDs are generated offline in PocketBase's native 15-character format and stored unchanged in
+  every relation and consumer manifest.
+- TypeScript runtime validation enforces the same graph constraints as the server. The PWA and
+  native macOS host use an IndexedDB replica with atomic local writes, tombstones and pending
+  markers. Incompatible local schemas are discarded rather than converted.
+- A development seeder inserts five disposable, multilingual examples into an explicitly selected
+  account. PocketBase remains the durable store; the tracked seed definition is initialization
+  material, not an alternative vocabulary database.
+- The former Markdown cleaner, short/extended article storage classes, directory-backed caches and
+  draft `.apkg` generator have been deleted. No compatibility adapters or import transformers
+  remain.
+- LLM, TTS and vision providers remain reusable. The separate headless Anki robot remains a
+  consumer and uses Acervo record IDs, but synchronization and content rendering are not yet wired
+  to the core.
 
-```json
-{
-  "word": "añorar",
-  "translation": "to yearn for",
-  "image_prompt": "Prompt for the word card, with no text",
-  "meanings": [
-    {
-      "meaning": "To miss something deeply",
-      "example": {
-        "spanish_phrase": "Añoro mi hogar.",
-        "english_translation": "I miss my home.",
-        "image_prompt": "Prompt illustrating the example, with no text",
-        "comment": "Optional usage nuance"
-      }
-    }
-  ],
-  "notes": ["Usage, register, synonyms, and contrasts."]
-}
-```
-
-`word` is the canonical key for a word *or* a phrase — the phrase-as-first-class decision in §03 is
-already half-made here. Each meaning's `image_prompt` lives on the example, because that image
-illustrates the sentence rather than the meaning.
-
-**Media and Anki, as currently implemented:**
-
-- TTS and images go through the provider factory, never through inline backends in the Anki script.
-- Kokoro's Spanish defaults: language code `e`, voice `ef_dora`, 24 kHz, 0.3 s of silence at both
-  ends, MP3 out.
-- Generated media uses deterministic, collision-resistant names under the ignored `cache/audio` and
-  `cache/images` directories.
-- Anki model and deck IDs stay stable; word and meaning notes use deterministic namespaced GUIDs so
-  rebuilding updates existing notes rather than duplicating them. **§08 replaces this join with an
-  explicit hidden UUID field** — the GUID scheme is what breaks when a template changes.
-- One word note plus one note per meaning; every note references its cached image and audio.
-- `preview` renders `templates/word_card.html` with no media or Anki backends; `build` generates or
-  reuses media and writes the `.apkg`.
-
-### Field-by-field migration
-
-`ArticleExtended` changes substantially. This is the whole mapping, so there is no ambiguity about
-where anything went:
-
-| `ArticleExtended` today | Acervo schema | Note |
-|---|---|---|
-| `word` | `lexeme.headword` | Already covers words *and* phrases — §03 makes that explicit. |
-| `translation` | `lexeme.shortGloss` | The article-level translation **is** the short form. |
-| `image_prompt` | `imagePrompt` row, `senseId = null` | Own row, own generation stage (§07). |
-| `meanings[].meaning` | `sense.definition` + `sense.glosses[]` | Split: definition in the target language, glosses per language. |
-| `meanings[].example.spanish_phrase` | `example.text` + `example.textLang` | No language is implied by a field name any more. |
-| `meanings[].example.english_translation` | `example.translation` + `example.translationLang` | |
-| `meanings[].example.image_prompt` | `imagePrompt` row, `senseId` set | Own row. |
-| `meanings[].example.comment` | `example.note` | Usage nuance stays with the example. |
-| `notes[]` | `lexeme.notes[]` | Unchanged in spirit. |
-| *(topic, from the filename)* | `lexeme.topics[]` | Many-per-word, which fixes the 387-entry *Misc* file. |
-| *(none)* | `attestation` | New, and the most valuable table (§03). |
-| *(none)* | `studyState` | New — the Anki feedback loop (§08). |
-
-**`ArticleShort` changes role rather than shape.** It stops being a parser for storage and becomes
-the export renderer: the topic files it writes for Obsidian (§10) are the same markdown format
-already in use, and the app's list view renders the same projection. The importer uses its parser
-once, on the way in, and never again.
-
-**The markdown topic files stop being the store** and become an output. That is the single largest
-conceptual change in this document, and everything else in §03 follows from it.
+The vocabulary UI, replica merge protocol and capture queue remain subsequent iterations. Markdown
+may return only as a generated export (§10), never as application storage.
 
 ---
 

@@ -159,6 +159,7 @@ def test_release_archive_excludes_deployment_secrets(tmp_path: Path) -> None:
     assert "deploy/acervo/secrets.env.example" in members
     assert "deploy/acervo/pocketbase/pb_public/manifest.webmanifest" in members
     assert "deploy/acervo/pocketbase/pb_hooks/acervo.js" in members
+    assert "deploy/acervo/pocketbase/pb_migrations/1787868000_acervo_core.js" in members
     assert "version.json" in members
 
 

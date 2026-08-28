@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated
-from uuid import UUID
-
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+RecordId = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]{15}$")]
 
 
 class SyncManifestNote(BaseModel):
@@ -15,8 +14,8 @@ class SyncManifestNote(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    note_id: UUID
-    lexeme_id: UUID
+    note_id: RecordId
+    lexeme_id: RecordId
     deck: NonEmptyString
     sentence: NonEmptyString
     translation: NonEmptyString

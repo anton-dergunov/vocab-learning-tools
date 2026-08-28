@@ -1,8 +1,5 @@
-# Optional Anki packaging, synchronization, text-to-speech, and image generation.
+# Optional Anki synchronization, text-to-speech, and image generation.
 -r anki-sync.txt
-
-# Anki deck generation
-genanki
 
 # Kokoro TTS and MP3 conversion
 kokoro

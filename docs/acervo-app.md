@@ -1,8 +1,8 @@
 # Acervo application shell
 
-Acervo now includes one shared web interface, an installable PWA, a native macOS host, and a
-dedicated PocketBase instance. This first application release contains no accounts, vocabulary
-records, dictionaries, or application collections.
+Acervo includes one shared web interface, an installable PWA, a native macOS host, and a dedicated
+PocketBase instance. PocketBase stores the owner-scoped vocabulary graph; each client keeps a
+complete IndexedDB replica. The current interface remains a shell while the vocabulary UI is built.
 
 PocketBase serves both the website and the future Acervo API from one listener. Acervo always
 coexists with other applications on a shared host; it never assumes ownership of the host's
@@ -30,13 +30,15 @@ Point an HTTPS reverse proxy at the configured Acervo app port, then open the pu
 example `https://acervo.example.com`. PocketBase serves:
 
 - `/` — the responsive Acervo interface and PWA;
-- `/api/acervo/v1/health` — the deployed application version;
+- `/api/acervo/v1/health` — the deployed application and schema version;
+- `/api/acervo/v1/session` — password authentication for administrator-created Acervo accounts;
+- `/api/acervo/v1/session/refresh` — authenticated token renewal;
 - `/api/acervo/v1/mac-release` — the current macOS release, when one is published;
 - `/_/` — PocketBase administration.
 
 HTTPS is required for service workers and PWA installation outside local development. Install the
 site through the browser's normal **Add to Home Screen** or **Install App** command. The cached shell
-opens offline. When a new build has downloaded, a dot appears on the gear; the new worker activates
+and IndexedDB replica open offline. When a new build has downloaded, a dot appears on the gear; the new worker activates
 only after **Update Acervo** is selected. Browser Settings also offers **Download Acervo for macOS**
 when the server has a native release; a server packaged without one says that no release is
 currently published.

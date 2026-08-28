@@ -15,8 +15,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = REPO_ROOT / "deploy" / "acervo" / "compose.yaml"
 NOTE_IDS = (
-    "22222222-2222-4222-8222-222222222222",
-    "33333333-3333-4333-8333-333333333333",
+    "note00000000001",
+    "note00000000002",
 )
 
 
@@ -45,7 +45,7 @@ def write_manifest(input_dir: Path, *, updated: bool = False) -> None:
         "notes": [
             {
                 "note_id": NOTE_IDS[0],
-                "lexeme_id": "11111111-1111-4111-8111-111111111111",
+                "lexeme_id": "lexeme000000001",
                 "deck": "Spanish::Vocabulary",
                 "sentence": "La balsa actualizada" if updated else "La balsa",
                 "translation": "The raft",
@@ -58,7 +58,7 @@ def write_manifest(input_dir: Path, *, updated: bool = False) -> None:
             },
             {
                 "note_id": NOTE_IDS[1],
-                "lexeme_id": "44444444-4444-4444-8444-444444444444",
+                "lexeme_id": "lexeme000000002",
                 "deck": "Spanish::Vocabulary",
                 "sentence": "El arroyo",
                 "translation": "The stream",

@@ -1,8 +1,16 @@
+import os
+
 import pytest
 from vocabgen.tts.kokoro import KokoroProvider
 
+RUN_SLOW_INTEGRATION_TESTS = os.getenv("RUN_SLOW_INTEGRATION_TESTS", "false").lower() == "true"
+
 
 @pytest.mark.integration
+@pytest.mark.skipif(
+    not RUN_SLOW_INTEGRATION_TESTS,
+    reason="Integration tests disabled (set RUN_SLOW_INTEGRATION_TESTS=true to enable)",
+)
 def test_kokoro_generate_audio(tmp_path):
     config = {
         "lang_code": "e",

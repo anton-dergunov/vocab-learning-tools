@@ -53,8 +53,8 @@ def load_config(
 def select_llm_provider(
     config: Box,
     requested_provider: Optional[str] = None,
-) -> Tuple[str, str, dict[str, Any]]:
-    """Resolve an LLM provider, its prompt, and factory configuration."""
+) -> Tuple[str, dict[str, Any]]:
+    """Resolve an LLM provider and its factory configuration."""
     provider_name = requested_provider or config.llm.default_provider
     providers = config.llm.providers
 
@@ -65,12 +65,6 @@ def select_llm_provider(
         )
 
     provider = providers[provider_name]
-    prompt_path = provider.get("prompt_path") or config.llm.get("prompt_path")
-    if not prompt_path:
-        raise ValueError(
-            f"No prompt_path configured for LLM provider {provider_name!r}"
-        )
-
     options = provider.get("options", Box()).to_dict()
     provider_config = {"provider": provider_name, "options": options}
-    return provider_name, str(prompt_path), provider_config
+    return provider_name, provider_config

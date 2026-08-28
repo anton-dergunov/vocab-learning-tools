@@ -82,7 +82,3 @@ final class WebInterfaceSchemeHandler: NSObject, WKURLSchemeHandler {
         }
     }
 }
-
-final class NativeMarker: NSObject, WKScriptMessageHandler {
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {}
-}

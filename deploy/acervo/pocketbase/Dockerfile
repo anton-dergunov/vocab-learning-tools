@@ -17,9 +17,10 @@ RUN apk add --no-cache ca-certificates unzip wget \
 
 WORKDIR /pb
 COPY deploy/acervo/pocketbase/pb_hooks /pb/pb_hooks
+COPY deploy/acervo/pocketbase/pb_migrations /pb/pb_migrations
 COPY deploy/acervo/pocketbase/pb_public /pb/pb_public
 RUN mkdir -p /pb/downloads /pb/pb_data \
-    && chmod -R a+rX /pb/pb_hooks /pb/pb_public \
+    && chmod -R a+rX /pb/pb_hooks /pb/pb_migrations /pb/pb_public \
     && chmod a+rx /pb /pb/downloads /pb/pb_data
 
 EXPOSE 8090

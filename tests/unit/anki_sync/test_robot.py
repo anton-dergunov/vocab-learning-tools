@@ -14,8 +14,8 @@ from vocabgen.anki_sync.robot import (
 )
 
 
-NOTE_ID = "22222222-2222-4222-8222-222222222222"
-LEXEME_ID = "11111111-1111-4111-8111-111111111111"
+NOTE_ID = "note00000000001"
+LEXEME_ID = "lexeme000000001"
 
 
 def make_robot(tmp_path: Path) -> AnkiRobot:
@@ -153,7 +153,7 @@ def test_upsert_refuses_unrelated_duplicate_collection_identity(tmp_path):
         notetype = create_notetype(collection, robot.css)
         for sentence in ("one", "two"):
             note = collection.new_note(notetype)
-            note["AcervoNoteId"] = "55555555-5555-4555-8555-555555555555"
+            note["AcervoNoteId"] = "note00000000003"
             note["AcervoLexemeId"] = LEXEME_ID
             note["Sentence"] = sentence
             note["Translation"] = sentence

@@ -1,35 +1,5 @@
-vocabulary:
-  # Target language for processing
-  language: "Spanish"
-
-  # Available categories for vocabulary classification
-  topics:
-    - "Emotions"
-    - "Actions"
-    - "Nature"
-    - "Culture"
-    - "Food"
-    - "Health"
-    - "Appearance"
-    - "Technology"
-    - "Travel"
-    - "Slang"
-    - "Misc"
-
-files:
-  # Source file containing new vocabulary entries
-  inbox: "data/Spanish vocab - Inbox.md"
-
-  # Destination pattern for categorized vocabulary (%topic = placeholder)
-  output_pattern: "data/Spanish vocab - %topic.md"
-
 llm:
-  # Provider used unless --llm-provider is passed.
   default_provider: "gemini"
-
-  # Shared prompt. A provider may override this with its own prompt_path.
-  prompt_path: "prompts/vocabulary_prompt_template.txt"
-
   providers:
     gemini:
       options:
@@ -38,19 +8,10 @@ llm:
         rate_limit_per_minute: 10
 
     ollama:
-      # Add prompt_path here if the local model needs a different prompt.
-      # prompt_path: "prompts/vocabulary_prompt_ollama.txt"
       options:
         model: "gemma3:4b"
         model_params: {}
         rate_limit_per_minute: 60
-
-processing:
-  # Items to process per batch
-  batch_size: 1
-
-  # Display the new vocabulary items
-  show_items: true
 
 tts:
   # Text-to-speech service
@@ -73,12 +34,3 @@ image:
     # generation_params:
     #   num_inference_steps: 50
     #   guidance_scale: 7.5
-
-anki:
-  # Keep these IDs stable so rebuilding updates the same Anki model and deck.
-  model_id: 1607392319
-  deck_id: 2059400110
-  deck_name: "Spanish Vocabulary"
-  template_dir: "templates"
-  cache_dir: "cache"
-  output_dir: "output"

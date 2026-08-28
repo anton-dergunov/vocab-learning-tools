@@ -22,8 +22,8 @@ def test_input_bundle_contains_only_manifest_and_referenced_media(tmp_path: Path
                 "schema_version": 1,
                 "notes": [
                     {
-                        "note_id": "813c6a14-d3ec-4f62-9ce6-e90cae322f70",
-                        "lexeme_id": "5eca9c9c-ae4e-44dc-b26c-27efeaeb7387",
+                        "note_id": "note00000000001",
+                        "lexeme_id": "lexeme000000001",
                         "deck": "Test",
                         "sentence": "Test",
                         "translation": "Test",

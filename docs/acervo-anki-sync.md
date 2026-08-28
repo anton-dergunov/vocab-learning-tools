@@ -234,8 +234,8 @@ The accepted version-one shape is:
 {
   "schema_version": 1,
   "notes": [{
-    "note_id": "8fb56fd8-49f1-4498-91f6-ab78c98f95ed",
-    "lexeme_id": "ff3a0df4-1612-411c-bda6-ae2aa35d4c66",
+    "note_id": "note00000000001",
+    "lexeme_id": "lexeme000000001",
     "deck": "Spanish::Vocabulary",
     "sentence": "La balsa",
     "translation": "The raft",

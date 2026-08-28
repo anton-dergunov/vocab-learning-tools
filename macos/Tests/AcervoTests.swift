@@ -168,8 +168,8 @@ final class AcervoTests: XCTestCase {
             return XCTFail("The test host did not bundle web/dist")
         }
         let configuration = WKWebViewConfiguration()
-        let marker = NativeMarker()
-        configuration.userContentController.add(marker, name: "acervo")
+        let bridge = SessionBridge()
+        configuration.userContentController.addScriptMessageHandler(bridge, contentWorld: .page, name: "acervo")
         configuration.setURLSchemeHandler(WebInterfaceSchemeHandler(root: root), forURLScheme: WebInterface.scheme)
         let webView = WKWebView(frame: .init(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
         let window = NSWindow(contentRect: webView.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -195,6 +195,6 @@ final class AcervoTests: XCTestCase {
             contentWorld: .page
         ) as? Bool
         XCTAssertEqual(indexedDB, true)
-        withExtendedLifetime((probe, marker)) {}
+        withExtendedLifetime((probe, bridge)) {}
     }
 }

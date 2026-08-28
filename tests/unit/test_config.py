@@ -44,12 +44,11 @@ def test_load_config_merges_local_overlay(tmp_path):
     assert config.files.output_pattern == "data/%topic.md"
 
 
-def test_select_llm_provider_uses_default_and_shared_prompt():
+def test_select_llm_provider_uses_default():
     config = Box(
         {
             "llm": {
                 "default_provider": "gemini",
-                "prompt_path": "prompts/shared.txt",
                 "providers": {
                     "gemini": {"options": {"model": "gemini-model"}},
                     "ollama": {"options": {"model": "local-model"}},
@@ -58,26 +57,23 @@ def test_select_llm_provider_uses_default_and_shared_prompt():
         }
     )
 
-    name, prompt_path, provider_config = select_llm_provider(config)
+    name, provider_config = select_llm_provider(config)
 
     assert name == "gemini"
-    assert prompt_path == "prompts/shared.txt"
     assert provider_config == {
         "provider": "gemini",
         "options": {"model": "gemini-model"},
     }
 
 
-def test_select_llm_provider_allows_cli_and_prompt_override():
+def test_select_llm_provider_allows_cli_override():
     config = Box(
         {
             "llm": {
                 "default_provider": "gemini",
-                "prompt_path": "prompts/shared.txt",
                 "providers": {
                     "gemini": {"options": {"model": "gemini-model"}},
                     "ollama": {
-                        "prompt_path": "prompts/ollama.txt",
                         "options": {"model": "local-model"},
                     },
                 },
@@ -85,10 +81,9 @@ def test_select_llm_provider_allows_cli_and_prompt_override():
         }
     )
 
-    name, prompt_path, provider_config = select_llm_provider(config, "ollama")
+    name, provider_config = select_llm_provider(config, "ollama")
 
     assert name == "ollama"
-    assert prompt_path == "prompts/ollama.txt"
     assert provider_config == {
         "provider": "ollama",
         "options": {"model": "local-model"},
@@ -100,7 +95,6 @@ def test_select_llm_provider_rejects_unknown_provider():
         {
             "llm": {
                 "default_provider": "gemini",
-                "prompt_path": "prompts/shared.txt",
                 "providers": {"gemini": {"options": {}}},
             }
         }
@@ -110,13 +104,10 @@ def test_select_llm_provider_rejects_unknown_provider():
         select_llm_provider(config, "missing")
 
 
-def test_default_media_and_anki_settings_preserve_prototype_decisions():
+def test_default_media_settings_preserve_provider_decisions():
     config = load_config(REPOSITORY_ROOT / "config" / "defaults.yaml")
 
     assert config.tts.options.lang_code == "e"
     assert config.tts.options.voice == "ef_dora"
     assert config.image.options.width == 384
     assert config.image.options.height == 384
-    assert config.anki.model_id == 1607392319
-    assert config.anki.deck_id == 2059400110
-    assert config.anki.template_dir == "templates"

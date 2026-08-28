@@ -1,329 +1,80 @@
+# Acervo
 
-# 📘 Vocab-Learning-Tools
+Acervo is a self-hosted, offline-first store for vocabulary chosen by one learner. PocketBase holds
+the durable owner-scoped copy; the PWA and native macOS host keep a complete IndexedDB replica so
+vocabulary remains readable and editable without a network connection.
 
-Image-provider research and the reproducible card-sized benchmark are described
-in [`docs/image-generation-research.md`](docs/image-generation-research.md) and
-[`docs/image-benchmark.md`](docs/image-benchmark.md). Reusable credential and
-troubleshooting steps for the hosted candidate are in
-[`docs/cloudflare-workers-ai.md`](docs/cloudflare-workers-ai.md).
+The current iteration provides the core data model and persistence foundation. The vocabulary UI,
+device synchronization, and capture workflow are separate later stages.
 
-[![Tests](https://github.com/adergunov/vocab-learning-tools/workflows/Tests/badge.svg)](https://github.com/adergunov/vocab-learning-tools/actions/workflows/tests.yml)
+## Core model
 
-**Vocab-Learning-Tools** is a set of scripts to help learning vocabulary when learning foreign languages
+The canonical graph separates six records with different lifetimes:
 
-TODO Describe all the scripts available
+- `lexeme` — the word or phrase being learned;
+- `sense` — one ordered meaning with target-language definition and multilingual glosses;
+- `attestation` — the verbatim context in which the learner encountered it;
+- `example` — a curated or generated sentence with explicit language and provenance;
+- `imagePrompt` — a regenerable prompt associated with a lexeme or sense;
+- `studyState` — statistics reported by an external learning system.
 
-Requires Python 3.12 (due to kokoro)
+Every record uses a client-generated PocketBase-compatible ID, belongs to one account, and carries
+replication-ready edit metadata. Markdown vocabulary files and extended-article JSON are not
+application storage formats.
 
-The tool reads an *inbox* file containing raw vocabulary notes (one or more entries separated by `---`),
-sends them to an LLM for normalization, and then appends cleanly formatted
-articles to topic-specific Markdown files (e.g., `Health.md`, `Misc.md`, etc).
+See [the design document](docs/acervo-design.md) for the product decisions and
+[the application guide](docs/acervo-app.md) for deployment details.
 
-It automatically detects duplicates, fuzzy matches, and malformed articles —
-providing a detailed summary and conflict report at the end of each run.
+## Development
 
-Developed as part of a personal vocabulary-building workflow using LLM-generated examples.
-
----
-
-## Installation
-
-Install the core cleaner, schemas, LLM providers, and HTML preview support:
-
-```bash
-pip install -r requirements.txt
-```
-
-Install optional Anki, TTS, and image-generation support:
-
-```bash
-pip install -r requirements/media.txt
-```
-
-Install only the official headless Anki runtime and Acervo sync robot support:
-
-```bash
-pip install -r requirements/anki-sync.txt
-```
-
-Install the complete runtime and test suite for development:
+Requirements are Python 3.12, Node.js 20+, Docker for server integration tests, and macOS 14 plus
+Xcode/XcodeGen for the native host.
 
 ```bash
 pip install -r requirements/dev.txt
+npm install --prefix web
+
+pytest
+npm --prefix web run test
+npm --prefix web run build
+npm run test:pwa
+npm run test:mac
 ```
 
-Kokoro and Stable Diffusion bring large model/runtime dependencies. MP3 export
-through pydub also requires `ffmpeg` to be available on the system path.
-
----
-
-## ✨ Example workflow
-
-```
-$ python scripts/clean_vocab.py --config config/local.yaml
-```
-
-Example output:
-
-```
-Processing sections: 100%|███████████████████████| 8/8 [00:19<00:00,  2.5s/section]
-
-Processing complete ✅
-
-Total inbox entries: 8
-New items added: 6
-Conflicts (exact, skipped): 1
-Conflicts (fuzzy, added): 1
-
-Breakdown by topic:
-  Health: 2
-  Misc: 4
-
-Newly added items:
-  Health: desmayarse
-  Misc: aleatorio
-  ...
-
-Conflicts found:
-────────────────────────────────────────────
-Conflict #1: el acertijo
-────────────────────────────────────────────
-Existing in: /data/Misc.md (line 1204)
-────────────────────────────────────────────
-##### **el acierto** ✅
-*success; correct decision*
-> Fue un **acierto** contratar a ese nuevo empleado. - It was a wise decision to hire that new employee.
-
-────────────────────────────────────────────
-Proposed new article:
-────────────────────────────────────────────
-##### **el acertijo** 🧠
-*riddle*
-> Los que resuelvan el **acertijo** podrán entrar al templo. - Those who solve the riddle can enter the temple.
-────────────────────────────────────────────
-Status: SKIPPED (title conflict)
-```
-
----
-
-## ⚙️ Configuration (`config.yaml`)
-
-All paths and LLM settings are defined in a YAML configuration file, for example:
-
-```yaml
-files:
-  inbox: "inbox.md"
-  output_pattern: "data/%topic.md"
-
-vocabulary:
-  language: "Spanish"
-  topics:
-    - "Health"
-    - "Travel"
-    - "Food"
-    - "Misc"
-
-llm:
-  default_provider: "gemini"
-  prompt_path: "prompts/vocabulary_prompt_template.txt"
-  providers:
-    gemini:
-      options:
-        model: "gemini-flash-latest"
-        model_params: {}
-        rate_limit_per_minute: 10
-    ollama:
-      options:
-        model: "gemma3:4b"
-        model_params: {}
-        rate_limit_per_minute: 60
-
-processing:
-  batch_size: 3
-  show_items: true
-```
-
-`config/defaults.yaml` is the tracked source of shared settings. It contains the
-topics, processing settings, media providers, and all available LLM providers.
-Gemini is selected by `llm.default_provider`. Select Ollama for one run with:
-
-```bash
-python scripts/clean_vocab.py --config config/local.yaml --llm-provider ollama
-```
-
-The shared `llm.prompt_path` is used by every provider unless that provider defines
-its own `prompt_path`. For example:
-
-```yaml
-llm:
-  providers:
-    ollama:
-      prompt_path: "prompts/vocabulary_prompt_ollama.txt"
-      options:
-        model: "gemma3:4b"
-```
-
-`config/local.yaml` is an ignored overlay containing only settings that differ on
-this machine. For example:
-
-```yaml
-files:
-  inbox: "/path/to/Spanish vocab - Inbox.md"
-  output_pattern: "/path/to/Spanish vocab - %topic.md"
-```
-
-Nested values from this file are merged over `config/defaults.yaml`; it does not
-need to repeat topics, providers, processing, TTS, or image settings.
-
----
-
-## 🧠 Prompt system
-
-LLM requests are built using a Jinja2 template (`prompts/vocabulary_prompt_template.txt`)
-so you can easily adjust style, structure, or instructions without touching code.
-
-Example prompt template:
-
-```jinja2
-You are a helpful assistant that formats Spanish vocabulary items.
-Each response must be a Markdown article like this:
-
-##### **{{ word }}** 🎯
-*{{ translation }}*
-> {{ example_sentence }} - {{ translation_en }}
-Topic: {{ topic }}
-```
-
----
-
-## 🧩 Features
-
-✅ **Structured vocabulary articles**
-✅ **Topic-based output files** (e.g., `Health.md`, `Food.md`)
-✅ **Automatic duplicate & fuzzy-match detection**
-✅ **Graceful interrupt handling** (`Ctrl+C` safe)
-✅ **Readable CLI summaries & conflict reports**
-✅ **Failure-safe inbox cleanup: incomplete or failed batches remain retryable**
-✅ **Configurable LLM provider and model**
-✅ **Validated extended-article JSON and media cache collections**
-
----
-
-## 🚀 Quick start
-
-1. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Create your inbox**
-   Add rough or unstructured entries to `inbox.md`, separating items with `---`.
-
-3. **Run the script**
-   ```bash
-   python scripts/clean_vocab.py --config config/local.yaml
-   ```
-
-4. **Check your topic files**
-   Newly generated articles appear in `data/Health.md`, `data/Misc.md`, etc.
-
-## Anki deck and HTML preview
-
-Validate an extended JSON article and render a standalone HTML preview. This
-does not load Kokoro, Stable Diffusion, or Anki, and it displays cached media
-when those files already exist:
-
-```bash
-python scripts/generate_anki_deck_draft.py preview input.json
-```
-
-Generate missing media through the configured providers and build the deck:
-
-```bash
-pip install -r requirements/media.txt
-python scripts/generate_anki_deck_draft.py build input.json --config config/local.yaml
-```
-
-## Acervo self-hosted Anki synchronization
-
-The Acervo deployment runs the official Anki sync server plus a separate
-headless robot; it does not require Anki Desktop. Start a local Docker Desktop
-deployment with:
+Run the application stack locally with:
 
 ```bash
 ./deploy.sh --local --configure-credentials
 ```
 
-The versioned manifest, robot commands, remote Synology/Linux deployment,
-backups, security model, and mobile acceptance steps are documented in
-[`docs/acervo-anki-sync.md`](docs/acervo-anki-sync.md).
+PocketBase creates accounts only through its administration interface. Self-registration is
+disabled. The application API exposes password login and token refresh; vocabulary collections are
+not exposed through generic public CRUD routes.
 
-Remote Acervo installations are designed for shared hosts running many unrelated services. The
-defaults use dedicated ports `27701` (Anki sync) and `27702` (web/API and Tailscale HTTPS); Acervo
-never claims the host's default HTTPS endpoint or rewrites unrelated proxy mappings. The ignored
-`.acervo-deploy` profile remembers the target, install root, bind addresses, and ports, while CLI
-options override that profile for one command. Install the restricted passwordless launcher once,
-then configure only Acervo's dedicated HTTPS listener explicitly:
+## Disposable demonstration data
+
+After creating an Acervo user in PocketBase, insert five owner-scoped demonstration entries with:
 
 ```bash
-./deploy.sh --install-helper
-./deploy.sh --configure-https
-./deploy.sh
+python scripts/seed_acervo_demo.py \
+  --server-url https://acervo.example.com \
+  --owner-email learner@account.example.com
 ```
 
-An operator may explicitly choose another free HTTPS port, including `443`, with `--https-port`;
-the configuration command refuses to replace any listener already assigned to another service.
+The command prompts for PocketBase superuser credentials, stores none of them, and is idempotent.
+The sample graph covers multilingual glosses, phrases, attestations, generated examples, prompts,
+study statistics, and a Chinese reading.
 
-## Acervo application shell
+## Components
 
-The same deployment can now run an installable Acervo PWA and its own empty PocketBase instance
-beside the Anki sync service. A native macOS menu-bar application embeds that exact web build and
-updates from the same server. The initial interface displays only Acervo; vocabulary records and
-authentication are intentionally deferred.
+- `web/src/domain.ts` — canonical TypeScript records and runtime validation.
+- `web/src/localDatabase.ts` — IndexedDB replica and atomic storage operations.
+- `web/src/repository.ts` — offline CRUD, tombstones, and pending markers.
+- `deploy/acervo/pocketbase/pb_migrations/` — canonical server schema.
+- `deploy/acervo/pocketbase/pb_hooks/` — validation, authentication, health, and releases.
+- `src/vocabgen/provider/` — reusable LLM, TTS, and vision provider factory.
+- `src/vocabgen/anki_sync/` — headless Anki consumer infrastructure.
+- `macos/` — native host for the shared web interface.
 
-Build and test the interface with:
-
-```bash
-npm install --prefix web
-npm run build:web
-npm run test:app
-```
-
-Port separation, HTTPS/PWA installation, native packaging, update behavior, and persistent paths
-are documented in [`docs/acervo-app.md`](docs/acervo-app.md). All addresses in the documentation
-are reserved examples; deployment-specific values stay in ignored local configuration.
-
-Relative paths are resolved from the repository root. By default, regenerable
-media is cached under `cache/images` and `cache/audio`; HTML and `.apkg` output
-is written under `output`. Use `--force-media` to regenerate cached media, or
-`--output` to select a different result path.
-
-
-```mermaid
-flowchart TD
-    A[ArticleExtended JSON] --> B{Command}
-    B -->|preview| C[Standalone HTML]
-    B -->|build| D{Media cache}
-    D -->|missing| E[TTS and image providers]
-    D -->|present| F[Reuse media]
-    E --> G[Deterministic Anki notes]
-    F --> G
-    G --> H["Anki package (.apkg)"]
-```
-
-## Tests and realistic vocabulary corpus
-
-`test-data/` is a tracked integration corpus containing the real normalized
-topic collection and a small raw inbox. Offline integration tests copy the
-entire directory to a temporary location before modifying anything:
-
-```bash
-pytest -m integration
-```
-
-Real-provider tests remain opt-in and skip unless their credential or local
-model is also available:
-
-```bash
-RUN_SLOW_INTEGRATION_TESTS=True pytest -m integration
-```
+Deployment is designed for shared hosts and uses dedicated configurable listeners. It never assumes
+ownership of ports 80/443 or unrelated proxy, Tailscale, firewall, or Docker configuration.

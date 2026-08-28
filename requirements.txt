@@ -1,2 +1,2 @@
-# Default installation: inbox cleaning, configuration, schemas, and HTML preview.
+# Default installation: provider configuration and the Acervo server tooling.
 -r requirements/core.txt

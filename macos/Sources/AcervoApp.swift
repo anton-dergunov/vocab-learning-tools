@@ -30,7 +30,7 @@ struct AcervoApplication {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
-    private let nativeMarker = NativeMarker()
+    private let sessionBridge = SessionBridge()
     private var menuBar: MenuBarController!
     private let updates = UpdateService()
     private let settings = SettingsWindowController()
@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func createWindow() {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        configuration.userContentController.add(nativeMarker, name: "acervo")
+        configuration.userContentController.addScriptMessageHandler(sessionBridge, contentWorld: .page, name: "acervo")
         configuration.userContentController.addUserScript(WKUserScript(
             source: WebInterface.startupDiagnostics,
             injectionTime: .atDocumentStart,

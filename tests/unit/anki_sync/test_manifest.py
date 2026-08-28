@@ -7,8 +7,8 @@ from pydantic import ValidationError
 from vocabgen.anki_sync.manifest import SyncManifest
 
 
-NOTE_ID = "22222222-2222-4222-8222-222222222222"
-LEXEME_ID = "11111111-1111-4111-8111-111111111111"
+NOTE_ID = "note00000000001"
+LEXEME_ID = "lexeme000000001"
 
 
 def payload(**note_overrides):
@@ -27,7 +27,7 @@ def payload(**note_overrides):
 
 def test_manifest_accepts_the_versioned_contract():
     manifest = SyncManifest.model_validate(payload())
-    assert str(manifest.notes[0].note_id) == NOTE_ID
+    assert manifest.notes[0].note_id == NOTE_ID
 
 
 @pytest.mark.parametrize(
