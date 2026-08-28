@@ -10,8 +10,7 @@ func statusClickAction(for type: NSEvent.EventType?) -> StatusClickAction {
 }
 
 func makeMenuBarIcon(accessibilityDescription: String, updateAvailable: Bool = false) -> NSImage {
-    // The extra width gives the update mark room beside the book instead of covering it.
-    let canvasSize = NSSize(width: 25, height: 18)
+    let canvasSize = NSSize(width: 20, height: 18)
     let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
     let book = NSImage(
         systemSymbolName: "book.fill",
@@ -21,7 +20,7 @@ func makeMenuBarIcon(accessibilityDescription: String, updateAvailable: Bool = f
     let image = NSImage(size: canvasSize, flipped: false) { _ in
         let bookSize = book.size
         let bookOrigin = NSPoint(
-            x: 0,
+            x: (canvasSize.width - bookSize.width) / 2,
             y: (canvasSize.height - bookSize.height) / 2
         )
         book.draw(
@@ -56,8 +55,13 @@ func makeMenuBarIcon(accessibilityDescription: String, updateAvailable: Bool = f
         context.restoreGState()
 
         if updateAvailable {
+            // Keep the original compact icon geometry. A small cleared halo separates the mark
+            // from the upper-right page without widening or shifting the book.
+            NSGraphicsContext.current?.cgContext.setBlendMode(.clear)
+            NSBezierPath(ovalIn: NSRect(x: 16.5, y: 13.5, width: 4, height: 4)).fill()
+            NSGraphicsContext.current?.cgContext.setBlendMode(.normal)
             NSColor.labelColor.setFill()
-            NSBezierPath(ovalIn: NSRect(x: 20.5, y: 11.5, width: 4, height: 4)).fill()
+            NSBezierPath(ovalIn: NSRect(x: 17.25, y: 14.25, width: 2.5, height: 2.5)).fill()
         }
         return true
     }
@@ -68,7 +72,7 @@ func makeMenuBarIcon(accessibilityDescription: String, updateAvailable: Bool = f
 
 @MainActor
 final class MenuBarController: NSObject {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: 29)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let openWindow: () -> Void
     private var updateAvailable = false
 

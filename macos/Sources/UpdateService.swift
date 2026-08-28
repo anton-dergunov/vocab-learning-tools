@@ -47,7 +47,7 @@ final class UpdateService: ObservableObject {
     func saveServerURL(_ raw: String) throws {
         let normalized = try ServerAddress.normalize(raw)
         defaults.set(normalized, forKey: Self.serverURLKey)
-        statusMessage = "Server saved."
+        statusMessage = nil
         if automaticChecks { start() }
     }
 

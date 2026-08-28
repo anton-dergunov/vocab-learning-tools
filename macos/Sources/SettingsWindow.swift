@@ -19,9 +19,10 @@ final class SettingsWindowController {
         ))
         let window = NSWindow(contentViewController: controller)
         window.title = "Acervo Settings"
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 580, height: 430))
+        window.contentMinSize = NSSize(width: 500, height: 360)
+        window.setContentSize(NSSize(width: 580, height: 410))
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

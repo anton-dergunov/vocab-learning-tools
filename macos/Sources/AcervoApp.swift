@@ -1,6 +1,20 @@
 import AppKit
 import WebKit
 
+@MainActor
+func makeEditMenu() -> NSMenu {
+    let menu = NSMenu(title: "Edit")
+    menu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+    let redoItem = menu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+    redoItem.keyEquivalentModifierMask = [.command, .shift]
+    menu.addItem(.separator())
+    menu.addItem(withTitle: "Cut", action: Selector(("cut:")), keyEquivalent: "x")
+    menu.addItem(withTitle: "Copy", action: Selector(("copy:")), keyEquivalent: "c")
+    menu.addItem(withTitle: "Paste", action: Selector(("paste:")), keyEquivalent: "v")
+    menu.addItem(withTitle: "Select All", action: Selector(("selectAll:")), keyEquivalent: "a")
+    return menu
+}
+
 @main
 struct AcervoApplication {
     static func main() {
@@ -132,6 +146,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         appMenu.addItem(withTitle: "Quit Acervo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        editItem.submenu = makeEditMenu()
+        main.addItem(editItem)
 
         let windowItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")

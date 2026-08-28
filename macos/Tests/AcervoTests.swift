@@ -72,9 +72,21 @@ final class AcervoTests: XCTestCase {
     }
 
     @MainActor
+    func testEditMenuProvidesStandardTextFieldShortcuts() throws {
+        let menu = makeEditMenu()
+        let expected = ["Cut": "x", "Copy": "c", "Paste": "v", "Select All": "a"]
+        for (title, shortcut) in expected {
+            let item = try XCTUnwrap(menu.item(withTitle: title))
+            XCTAssertEqual(item.keyEquivalent, shortcut)
+            XCTAssertEqual(item.keyEquivalentModifierMask, .command)
+        }
+        XCTAssertEqual(menu.item(withTitle: "Paste")?.action, Selector(("paste:")))
+    }
+
+    @MainActor
     func testMenuBarIconIsACompactTemplateImage() {
         let icon = makeMenuBarIcon(accessibilityDescription: "Acervo")
-        XCTAssertEqual(icon.size, NSSize(width: 25, height: 18))
+        XCTAssertEqual(icon.size, NSSize(width: 20, height: 18))
         XCTAssertTrue(icon.isTemplate)
         XCTAssertEqual(icon.accessibilityDescription, "Acervo")
         XCTAssertNotNil(icon.tiffRepresentation)
