@@ -34,6 +34,7 @@ export interface Topic extends SyncFields, OwnedFields {
   id: string;
   name: string;
   icon: string | null;
+  order: number;
 }
 
 export interface Lexeme extends SyncFields, OwnedFields {
@@ -42,6 +43,7 @@ export interface Lexeme extends SyncFields, OwnedFields {
   headword: string;
   lemma: string;
   reading: string | null;
+  ipa: string | null;
   pos: PartOfSpeech;
   gender: Gender | null;
   register: Register | null;
@@ -85,9 +87,13 @@ export interface Example extends SyncFields, OwnedFields {
   sourceAttestationId: string | null;
   modelId: string | null;
   videoRef: string | null;
+  videoTitle: string | null;
+  videoStart: number | null;
   imageRef: string | null;
   audioRef: string | null;
   note: string | null;
+  matchedForm: string | null;
+  matchedTranslationForm: string | null;
   approved: boolean;
 }
 
@@ -100,6 +106,8 @@ export interface ImagePrompt extends SyncFields, OwnedFields {
   seed: number;
   modelId: string;
   promptVersion: string;
+  imageRef: string | null;
+  imageModelId: string | null;
 }
 
 export interface StudyState extends SyncFields, OwnedFields {
@@ -194,6 +202,7 @@ export function validateGraph(graph: VocabularyGraph): void {
     remember(record);
     invariant(record.name.trim().length > 0, "Topic name is required.");
     optionalString(record.icon, "Topic icon");
+    invariant(Number.isSafeInteger(record.order) && record.order >= 0, "Topic order is invalid.");
     topics.set(record.id, record);
   });
   const lexemes = new Map<string, Lexeme>();
@@ -202,6 +211,7 @@ export function validateGraph(graph: VocabularyGraph): void {
     language(record.language, "Lexeme language");
     invariant(record.headword.trim().length > 0 && record.lemma.trim().length > 0, "Lexeme headword and lemma are required.");
     optionalString(record.reading, "Reading");
+    optionalString(record.ipa, "IPA");
     if (record.language.toLowerCase().startsWith("zh")) invariant(Boolean(record.reading?.trim()), "Chinese lexemes require a reading.");
     oneOf(record.pos, PARTS_OF_SPEECH, "Part of speech");
     if (record.gender !== null) oneOf(record.gender, GENDERS, "Gender");
@@ -277,7 +287,16 @@ export function validateGraph(graph: VocabularyGraph): void {
       invariant(record.ownerId === attestation.ownerId, "Example and attestation must have the same owner.");
       invariant(attestation.lexemeId === sense.lexemeId, "Example sense and attestation must belong to one lexeme.");
     }
-    [record.modelId, record.videoRef, record.imageRef, record.audioRef, record.note].forEach((value) => optionalString(value, "Example optional field"));
+    [record.modelId, record.videoRef, record.videoTitle, record.imageRef, record.audioRef, record.note].forEach((value) => optionalString(value, "Example optional field"));
+    invariant(record.videoStart === null || (Number.isSafeInteger(record.videoStart) && record.videoStart >= 0), "Example video start is invalid.");
+    if (record.videoTitle || record.videoStart !== null) invariant(record.videoRef, "An example clip title or start time requires a video reference.");
+    optionalString(record.matchedForm, "Matched form");
+    optionalString(record.matchedTranslationForm, "Matched translation form");
+    if (record.matchedForm) invariant(record.text.includes(record.matchedForm), "The matched form must occur in the example text.");
+    if (record.matchedTranslationForm) {
+      invariant(record.translation, "A matched translation form requires a translation.");
+      invariant(record.translation.includes(record.matchedTranslationForm), "The matched translation form must occur in the translation.");
+    }
     invariant(typeof record.approved === "boolean", "Example approval is invalid.");
   });
 
@@ -294,6 +313,9 @@ export function validateGraph(graph: VocabularyGraph): void {
     }
     invariant(record.prompt.trim() && record.styleId.trim() && record.modelId.trim() && record.promptVersion.trim(), "Image prompt fields are required.");
     invariant(Number.isSafeInteger(record.seed) && record.seed >= 0 && record.seed <= 2147483647, "Image prompt seed is invalid.");
+    optionalString(record.imageRef, "Rendered image reference");
+    optionalString(record.imageModelId, "Rendering model id");
+    invariant(Boolean(record.imageRef) === Boolean(record.imageModelId), "A rendered image and its rendering model must be supplied together.");
   });
 
   graph.studyStates.forEach((record) => {

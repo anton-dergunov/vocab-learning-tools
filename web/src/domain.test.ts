@@ -8,9 +8,9 @@ const sync = {
 };
 
 function graph(): VocabularyGraph {
-  const topic: Topic = { id: "topic0000000001", name: "Travel", icon: "🧭", ...sync };
+  const topic: Topic = { id: "topic0000000001", name: "Travel", icon: "🧭", order: 0, ...sync };
   const lexeme: Lexeme = {
-    id: "lexeme000000001", language: "es", headword: "la balsa", lemma: "balsa", reading: null,
+    id: "lexeme000000001", language: "es", headword: "la balsa", lemma: "balsa", reading: null, ipa: "/ˈbalsa/",
     pos: "noun", gender: "feminine", register: "neutral", dialect: null, emoji: "🛶",
     topicIds: [topic.id], status: "active", shortGloss: null, notes: [], ...sync
   };
@@ -48,7 +48,8 @@ describe("Acervo domain", () => {
     value.examples.push({
       id: "example00000001", senseId: value.senses[0].id, text: "Tuvo un mareo.", textLang: "es",
       translation: null, translationLang: null, origin: "attestation", sourceAttestationId: "attest000000001",
-      modelId: null, videoRef: null, imageRef: null, audioRef: null, note: null, approved: true, ...sync
+      modelId: null, videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+      note: null, matchedForm: null, matchedTranslationForm: null, approved: true, ...sync
     });
     expect(() => validateGraph(value)).toThrow("one lexeme");
   });

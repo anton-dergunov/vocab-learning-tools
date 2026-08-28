@@ -109,6 +109,7 @@ different lifetimes.
 | `id` | recordId | Client-generated in the same format as every other record. |
 | `name` | string | User-visible label such as `Health`, `Travel`, or `Slang`. |
 | `icon` | string? | Optional emoji or symbolic icon identifier, not binary media. |
+| `order` | int | Where the topic sits in the navigation rail. Arrangement is a judgement, so it is data. |
 
 Topics are owner-scoped data, not a hard-coded classification enum. Starter topics are ordinary
 seed records, so an empty topic remains available in navigation and users can add, rename, or
@@ -123,6 +124,7 @@ retire topics independently of their current lexemes.
 | `headword` | string | As you'd look it up: `desmayarse`, `ponerse malo`, `para entonces`. |
 | `lemma` | string | Normalized form for corpus matching. Usually equals headword. |
 | `reading` | string? | Pinyin, furigana, transliteration. Empty for Latin scripts, mandatory for `zh`. |
+| `ipa` | string? | Broad transcription, shown beside the headword. Independent of `reading`, which is a script aid. |
 | `pos` | enum | noun · verb · adj · adv · **phrase** · idiom · expression |
 | `gender` | enum? | Spanish articles. `la balsa` vs `el tobillo`. |
 | `register` | enum? | neutral · formal · colloquial · slang · vulgar. Your Slang file is already this, as a filename. |
@@ -194,9 +196,18 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
 
 - `example` — `senseId · text · textLang · translation · translationLang ·
   origin(attestation|llm|tatoeba|subtitle|wiktionary|manual) · sourceAttestationId · modelId ·
-  videoRef · imageRef · audioRef · approved`. `origin` plus `modelId` on every row is what makes
+  videoRef · videoTitle · videoStart · imageRef · audioRef · note · matchedForm ·
+  matchedTranslationForm · approved`. `origin` plus `modelId` on every row is what makes
   bulk regeneration safe; **`sourceAttestationId`** is what lets an example be cleaned up and still
-  point at the messy original you actually captured.
+  point at the messy original you actually captured. `videoTitle` and `videoStart` (seconds) are
+  what turn a bare `videoRef` into the citable clip the specimen above shows —
+  `[clip · DW Español · 4:12]`.
+
+  **`matchedForm` and `matchedTranslationForm`** hold the inflected surface form the corpus or the
+  generator actually matched — `pica` for the lexeme `picar`, `itches` in the translation. The
+  reader emphasises those substrings. They exist because the alternative is inline markup inside
+  `text`, and §01's first invariant forbids a second storage format sneaking in through a
+  presentation detail: the sentence stays a plain string, and the emphasis stays a field.
 - `studyState` — one row per *(lexeme, system)*: `system · noteId · cardIds[] · reps · lapses ·
   stability · difficulty · retrievability · lastReview · syncedAt`. Keyed by system so a second
   learning tool never collides with Anki.
@@ -240,6 +251,8 @@ artifacts:
 | `seed` | int | Derived from `lexemeId` — the same word keeps its look across regenerations. |
 | `modelId` | string | Which model wrote the prompt, not which drew the image. |
 | `promptVersion` | string | Checksum of the prompt template, so a template change is detectable. |
+| `imageRef` | string? | The rendered image, once a drawing stage has produced one. Null until then. |
+| `imageModelId` | string? | Which model *drew* it. Set together with `imageRef`, never alone. |
 
 **Specimen — one entry, fully rendered**
 
@@ -1157,9 +1170,15 @@ The §03 foundation is now the only application model:
 - TypeScript runtime validation enforces the same graph constraints as the server. The PWA and
   native macOS host use an IndexedDB replica with atomic local writes, tombstones and pending
   markers. Incompatible local schemas are discarded rather than converted.
-- A development seeder inserts five disposable, multilingual examples into an explicitly selected
-  account. PocketBase remains the durable store; the tracked seed definition is initialization
-  material, not an alternative vocabulary database.
+- The vocabulary interface is the design in `design/ui-prototype/` rendered from real records: the
+  topic rail, list, article, YAML projection and add sheet, on every platform the same web build
+  serves. It reads the local replica only, so it opens and works with the server unreachable.
+- Clients read the durable store through one authenticated, owner-scoped `GET /api/acervo/v1/graph`
+  route. It is a one-way pull that refreshes the replica in the background and keeps unsent local
+  writes; generic collection access stays closed and no client writes to PocketBase yet.
+- A development seeder inserts a disposable, multilingual demonstration vocabulary into an
+  explicitly selected account. PocketBase remains the durable store; the tracked seed definition is
+  initialization material, not an alternative vocabulary database.
 - The former Markdown cleaner, short/extended article storage classes, directory-backed caches and
   draft `.apkg` generator have been deleted. No compatibility adapters or import transformers
   remain.
@@ -1167,8 +1186,11 @@ The §03 foundation is now the only application model:
   consumer and uses Acervo record IDs, but synchronization and content rendering are not yet wired
   to the core.
 
-The vocabulary UI, replica merge protocol and capture queue remain subsequent iterations. Markdown
-may return only as a generated export (§10), never as application storage.
+What the interface cannot do yet, it says so plainly rather than pretending: capture, entry
+creation and YAML editing report that they are not connected, and audio and clip playback have no
+media behind them. The push half of replication, the merge protocol and the capture queue remain
+subsequent iterations. Markdown may return only as a generated export (§10), never as application
+storage.
 
 ---
 

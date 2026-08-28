@@ -1,7 +1,9 @@
+import type { VocabularyGraph } from "./domain";
 import { normalizeServerURL, sessionStore, type StoredSession } from "./session";
 
 type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type LoginResponse = { token: string; user: { id: string; email: string } };
+export type GraphResponse = VocabularyGraph & { syncedAt: string };
 const API_PATH = "/api/acervo/v1";
 const REQUEST_TIMEOUT = 15_000;
 
@@ -79,5 +81,6 @@ export const backendSession = {
       return current;
     }
   },
-  async logout() { client.configure(null); await sessionStore.clear(); }
+  async logout() { client.configure(null); await sessionStore.clear(); },
+  fetchGraph(): Promise<GraphResponse> { return client.call<GraphResponse>("/graph"); }
 };

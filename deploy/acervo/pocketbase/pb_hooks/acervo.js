@@ -60,6 +60,130 @@ function releaseManifest() {
   };
 }
 
+/* ── owner-scoped graph projection ──────────────────────────────────────
+   Maps the snake_case storage boundary onto the camelCase client model in
+   web/src/domain.ts. Tombstones are included; the client owns filtering. */
+
+function textOrNull(record, field) {
+  return trimmed(record.getString(field)) || null;
+}
+
+function instantOrNull(record, field) {
+  let value;
+  try { value = record.getDateTime(field); } catch (_) { return null; }
+  const text = trimmed(value ? value.string() : "");
+  if (!text) return null;
+  return text.replace(" ", "T");
+}
+
+function syncFieldsOf(record) {
+  return {
+    ownerId: record.getString("owner"),
+    deleted: Boolean(record.get("deleted")),
+    createdAt: record.getString("created_at"),
+    editedAt: record.getString("edited_at"),
+    editedBy: record.getString("edited_by"),
+    revision: Number(record.get("revision")) || 0,
+  };
+}
+
+function ownerRecords(app, collection, ownerId, project) {
+  return app.findAllRecords(collection, $dbx.hashExp({ owner: ownerId })).map((record) => {
+    const projected = project(record);
+    projected.id = record.id;
+    return Object.assign(projected, syncFieldsOf(record));
+  });
+}
+
+function ownerGraph(app, ownerId) {
+  return {
+    topics: ownerRecords(app, "topics", ownerId, (record) => ({
+      name: record.getString("name"),
+      icon: textOrNull(record, "icon"),
+      order: Number(record.get("topic_order")) || 0,
+    })),
+    lexemes: ownerRecords(app, "lexemes", ownerId, (record) => ({
+      language: record.getString("language"),
+      headword: record.getString("headword"),
+      lemma: record.getString("lemma"),
+      reading: textOrNull(record, "reading"),
+      ipa: textOrNull(record, "ipa"),
+      pos: record.getString("pos"),
+      gender: textOrNull(record, "gender"),
+      register: textOrNull(record, "register"),
+      dialect: textOrNull(record, "dialect"),
+      emoji: textOrNull(record, "emoji"),
+      topicIds: jsonValue(record.getStringSlice("topics")) || [],
+      status: record.getString("status"),
+      shortGloss: textOrNull(record, "short_gloss"),
+      notes: jsonValue(record.get("notes")) || [],
+    })),
+    senses: ownerRecords(app, "senses", ownerId, (record) => ({
+      lexemeId: record.getString("lexeme"),
+      definition: record.getString("definition"),
+      definitionLang: record.getString("definition_lang"),
+      glosses: jsonValue(record.get("glosses")) || [],
+      domain: textOrNull(record, "domain"),
+      order: Number(record.get("sense_order")) || 0,
+    })),
+    attestations: ownerRecords(app, "attestations", ownerId, (record) => ({
+      lexemeId: record.getString("lexeme"),
+      text: record.getString("text"),
+      translation: textOrNull(record, "translation"),
+      sourceUrl: textOrNull(record, "source_url"),
+      sourceTitle: textOrNull(record, "source_title"),
+      sourceKind: record.getString("source_kind"),
+      capturedAt: instantOrNull(record, "captured_at"),
+    })),
+    examples: ownerRecords(app, "examples", ownerId, (record) => {
+      const videoRef = textOrNull(record, "video_ref");
+      return {
+        senseId: record.getString("sense"),
+        text: record.getString("text"),
+        textLang: record.getString("text_lang"),
+        translation: textOrNull(record, "translation"),
+        translationLang: textOrNull(record, "translation_lang"),
+        origin: record.getString("origin"),
+        sourceAttestationId: textOrNull(record, "source_attestation"),
+        modelId: textOrNull(record, "model_id"),
+        videoRef: videoRef,
+        videoTitle: videoRef ? textOrNull(record, "video_title") : null,
+        videoStart: videoRef ? Number(record.get("video_start")) || 0 : null,
+        imageRef: textOrNull(record, "image_ref"),
+        audioRef: textOrNull(record, "audio_ref"),
+        note: textOrNull(record, "note"),
+        matchedForm: textOrNull(record, "matched_form"),
+        matchedTranslationForm: textOrNull(record, "matched_translation_form"),
+        approved: Boolean(record.get("approved")),
+      };
+    }),
+    imagePrompts: ownerRecords(app, "image_prompts", ownerId, (record) => ({
+      lexemeId: record.getString("lexeme"),
+      senseId: textOrNull(record, "sense"),
+      prompt: record.getString("prompt"),
+      styleId: record.getString("style_id"),
+      seed: Number(record.get("seed")) || 0,
+      modelId: record.getString("model_id"),
+      promptVersion: record.getString("prompt_version"),
+      imageRef: textOrNull(record, "image_ref"),
+      imageModelId: textOrNull(record, "image_model_id"),
+    })),
+    studyStates: ownerRecords(app, "study_states", ownerId, (record) => ({
+      lexemeId: record.getString("lexeme"),
+      system: record.getString("system"),
+      noteId: Number(record.get("note_id")) || null,
+      cardIds: jsonValue(record.get("card_ids")) || [],
+      reps: Number(record.get("reps")) || 0,
+      lapses: Number(record.get("lapses")) || 0,
+      stability: Number(record.get("stability")) || 0,
+      difficulty: Number(record.get("difficulty")) || 0,
+      retrievability: Number(record.get("retrievability")) || 0,
+      lastReview: instantOrNull(record, "last_review"),
+      syncedAt: instantOrNull(record, "synced_at"),
+    })),
+  };
+}
+
 function dispatch(event) {
   const path = String(event.request.url.path || "");
   const relative = path.indexOf(API_ROOT) === 0 ? path.slice(API_ROOT.length) || "/" : path;
@@ -70,7 +194,7 @@ function dispatch(event) {
         name: "Acervo",
         version: trimmed($os.getenv("ACERVO_APP_VERSION")) || "0.0.0",
         build: trimmed($os.getenv("ACERVO_APP_BUILD")) || "0",
-        schemaVersion: 2,
+        schemaVersion: 3,
       });
     }
     if (method === "GET" && relative === "/mac-release") return respond(event, releaseManifest());
@@ -89,6 +213,14 @@ function dispatch(event) {
         throw apiError(401, "unauthenticated", "Sign in to continue.");
       }
       return respond(event, { token: event.auth.newAuthToken(), user: { id: event.auth.id, email: event.auth.email() } });
+    }
+    if (method === "GET" && relative === "/graph") {
+      if (!event.auth || event.auth.collection().name !== "users") {
+        throw apiError(401, "unauthenticated", "Sign in to continue.");
+      }
+      const graph = ownerGraph(event.app, event.auth.id);
+      graph.syncedAt = new Date().toISOString();
+      return respond(event, graph);
     }
     throw apiError(404, "not_found", "The requested Acervo API route does not exist.");
   } catch (error) {
@@ -183,6 +315,16 @@ function validateRecord(app, record) {
     const translationLanguage = trimmed(record.getString("translation_lang"));
     if (Boolean(translation) !== Boolean(translationLanguage)) invalid("Example translation and language must be provided together.");
     if (translationLanguage) validLanguage(translationLanguage, "Translation language");
+    const videoRef = trimmed(record.getString("video_ref"));
+    if (!videoRef && (trimmed(record.getString("video_title")) || Number(record.get("video_start")) > 0)) {
+      invalid("An example clip title or start time requires a video reference.");
+    }
+    const matched = trimmed(record.getString("matched_form"));
+    if (matched && record.getString("text").indexOf(matched) < 0) invalid("The matched form must occur in the example text.");
+    const matchedTranslation = trimmed(record.getString("matched_translation_form"));
+    if (matchedTranslation && translation.indexOf(matchedTranslation) < 0) {
+      invalid("The matched translation form must occur in the example translation.");
+    }
     const sourceId = record.getString("source_attestation");
     if (record.getString("origin") === "attestation" && !sourceId) invalid("Attestation examples require a source attestation.");
     if (sourceId) {
@@ -202,6 +344,11 @@ function validateRecord(app, record) {
       const sense = related(app, "senses", senseId, "Sense");
       sameOwner(record, sense, "Image prompt sense");
       if (sense.getString("lexeme") !== lexeme.id) invalid("Image prompt sense must belong to its lexeme.");
+    }
+    const imageRef = trimmed(record.getString("image_ref"));
+    const imageModelId = trimmed(record.getString("image_model_id"));
+    if (Boolean(imageRef) !== Boolean(imageModelId)) {
+      invalid("A rendered image and its rendering model must be provided together.");
     }
     return;
   }

@@ -4,7 +4,7 @@ import { createLocalDatabase } from "./localDatabase";
 import { LocalAcervoRepository } from "./repository";
 
 const lexemeInput = {
-  language: "es", headword: "la balsa", lemma: "balsa", reading: null, pos: "noun" as const,
+  language: "es", headword: "la balsa", lemma: "balsa", reading: null, ipa: null, pos: "noun" as const,
   gender: "feminine" as const, register: "neutral" as const, dialect: null, emoji: "🛶",
   topicIds: [], status: "active" as const, shortGloss: null, notes: []
 };
@@ -22,7 +22,7 @@ describe("IndexedDB Acervo repository", () => {
       editedAt: "2026-08-28T12:00:00.000Z", editedBy: first.snapshot().deviceId, revision: 0
     };
     await first.writeGraph({
-      topics: [{ id: "topic0000000001", name: "Travel", icon: "🧭", ...sync }],
+      topics: [{ id: "topic0000000001", name: "Travel", icon: "🧭", order: 0, ...sync }],
       lexemes: [{ id: "lexeme000000001", ...lexemeInput, topicIds: ["topic0000000001"], ...sync }],
       senses: [{
         id: "sense0000000001", lexemeId: "lexeme000000001", definition: "Una embarcación sencilla.",

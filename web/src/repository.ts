@@ -5,10 +5,10 @@ import {
   type OwnedFields, type StudyState, type StudyStateInput, type SyncFields, type Topic, type TopicInput,
   type VocabularyGraph
 } from "./domain";
-import { createLocalDatabase, MemoryDatabase, pendingKey, type LocalDatabase, type RecordStore, type ReplicaMeta } from "./localDatabase";
+import { createLocalDatabase, MemoryDatabase, pendingKey, RECORD_STORES, type LocalDatabase, type RecordStore, type ReplicaMeta } from "./localDatabase";
 import { newDeviceId, newId, nowInstant } from "./ids";
 
-export const LOCAL_SCHEMA_VERSION = 2;
+export const LOCAL_SCHEMA_VERSION = 3;
 
 const EMPTY_GRAPH = (): VocabularyGraph => ({
   topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
@@ -21,6 +21,7 @@ export interface ReplicaSnapshot extends VocabularyGraph {
   ready: boolean;
   ownerId: string;
   deviceId: string;
+  pending: string[];
   pendingCount: number;
   persistent: boolean;
 }
@@ -29,6 +30,7 @@ export interface AcervoRepository {
   load(ownerId: string): Promise<void>;
   clear(): Promise<void>;
   snapshot(): ReplicaSnapshot;
+  applyRemote(graph: VocabularyGraph): Promise<void>;
   writeGraph(changes: Partial<VocabularyGraph>): Promise<void>;
   saveTopic(input: TopicInput, id?: string): Promise<Topic>;
   saveLexeme(input: LexemeInput, id?: string): Promise<Lexeme>;
@@ -103,8 +105,33 @@ export class LocalAcervoRepository implements AcervoRepository {
   snapshot(): ReplicaSnapshot {
     return {
       ...structuredClone(this.graph), ready: this.ready, ownerId: this.meta.ownerId,
-      deviceId: this.meta.deviceId, pendingCount: this.pending.size, persistent: this.persistent
+      deviceId: this.meta.deviceId, pending: [...this.pending], pendingCount: this.pending.size,
+      persistent: this.persistent
     };
+  }
+
+  /**
+   * Replaces the replica with the records the server holds for this owner. Records that still
+   * carry a pending marker are kept as they are locally, so an unsent local write is never lost
+   * to a pull. This is a one-way display pull; merge and conflict resolution remain deferred.
+   */
+  async applyRemote(graph: VocabularyGraph): Promise<void> {
+    if (!this.ready) throw new Error("Load the Acervo repository before applying remote records.");
+    const next = EMPTY_GRAPH();
+    RECORD_STORES.forEach((kind) => {
+      const local = new Map((this.graph[kind] as Entity[]).map((record) => [record.id, record]));
+      const merged = (graph[kind] as Entity[]).map((record) => {
+        if (record.ownerId !== this.meta.ownerId) throw new Error("Cannot apply a record owned by another account.");
+        const existing = local.get(record.id);
+        local.delete(record.id);
+        return this.pending.has(pendingKey(kind, record.id)) && existing ? existing : record;
+      });
+      local.forEach((record, id) => { if (this.pending.has(pendingKey(kind, id))) merged.push(record); });
+      next[kind] = structuredClone(merged) as never;
+    });
+    validateGraph(next);
+    await this.database.write({ ...next, replaceRecords: true });
+    this.graph = next;
   }
 
   private instant(): string {

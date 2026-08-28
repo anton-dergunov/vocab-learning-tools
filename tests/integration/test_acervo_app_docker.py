@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -107,7 +108,7 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         status, health = request(base, "GET", "/api/acervo/v1/health")
         assert status == 200
         assert health["data"] == {
-                "name": "Acervo", "version": "0.1.0", "build": "202608280000", "schemaVersion": 2
+                "name": "Acervo", "version": "0.1.0", "build": "202608280000", "schemaVersion": 3
         }
         assert b"<title>Acervo</title>" in get_bytes(base + "/")[1]
 
@@ -147,15 +148,48 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         assert "created 0" in second_seed.stdout
         assert "created 0" not in first_seed.stdout
 
+        seeded = demo_records(owners[0]["id"])
+        expected = Counter(collection for collection, _ in seeded)
         counts = {}
         for collection in ("topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"):
             owner_filter = urllib.parse.quote(f'owner="{owners[0]["id"]}"')
-            status, result = request(base, "GET", f"/api/collections/{collection}/records?perPage=100&filter={owner_filter}", token=admin_token)
+            status, result = request(base, "GET", f"/api/collections/{collection}/records?perPage=200&filter={owner_filter}", token=admin_token)
             assert status == 200, result
             counts[collection] = result["totalItems"]
-        assert counts == {"topics": 13, "lexemes": 5, "senses": 6, "attestations": 2, "examples": 6, "image_prompts": 2, "study_states": 1}
+        assert counts == dict(expected)
 
-        seeded = demo_records(owners[0]["id"])
+        # The graph route is the only way a client reads vocabulary: owner-scoped and authenticated.
+        assert request(base, "GET", "/api/acervo/v1/graph")[0] == 401
+        status, graph = request(base, "GET", "/api/acervo/v1/graph", token=user_token)
+        assert status == 200, graph
+        graph = graph["data"]
+        assert {key: len(graph[key]) for key in
+                ("topics", "lexemes", "senses", "attestations", "examples", "imagePrompts", "studyStates")} == {
+            "topics": expected["topics"], "lexemes": expected["lexemes"], "senses": expected["senses"],
+            "attestations": expected["attestations"], "examples": expected["examples"],
+            "imagePrompts": expected["image_prompts"], "studyStates": expected["study_states"],
+        }
+        picar = next(record for record in graph["lexemes"] if record["headword"] == "picar")
+        assert picar["ipa"] == "/piˈkaɾ/"
+        assert picar["ownerId"] == owners[0]["id"] and picar["deleted"] is False
+        assert len(picar["topicIds"]) == 3 and picar["notes"]
+        assert all(len(topic) == 15 for topic in picar["topicIds"])
+        clip = next(record for record in graph["examples"]
+                    if record["videoTitle"] == "Easy Spanish — Comiendo en un mercado")
+        assert clip["videoStart"] == 461 and clip["matchedForm"] in clip["text"]
+        assert clip["matchedTranslationForm"] in clip["translation"]
+        plain = next(record for record in graph["examples"] if not record["videoRef"])
+        assert plain["videoTitle"] is None and plain["videoStart"] is None
+        assert graph["topics"][0]["order"] is not None
+        assert graph["senses"][0]["order"] is not None
+        assert graph["attestations"][0]["capturedAt"].endswith("Z") and "T" in graph["attestations"][0]["capturedAt"]
+
+        # A second account shares the server and must see none of it.
+        status, other_login = request(base, "POST", "/api/acervo/v1/session", {"email": other_email, "password": user_password})
+        assert status == 200, other_login
+        status, empty = request(base, "GET", "/api/acervo/v1/graph", token=other_login["data"]["token"])
+        assert status == 200 and empty["data"]["lexemes"] == []
+
         lexeme_id = next(record["id"] for collection, record in seeded if collection == "lexemes")
         status, updated = request(base, "PATCH", f"/api/collections/lexemes/records/{lexeme_id}", {"short_gloss": "demonstration"}, admin_token)
         assert status == 200 and updated["short_gloss"] == "demonstration"

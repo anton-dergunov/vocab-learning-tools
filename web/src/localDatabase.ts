@@ -18,6 +18,8 @@ export interface DatabaseContents extends VocabularyGraph {
 }
 
 export interface DatabaseWrite extends Partial<VocabularyGraph> {
+  /** Empties every record store before the supplied records are written, in the same transaction. */
+  replaceRecords?: boolean;
   addPending?: string[];
   clearPending?: string[];
   meta?: Partial<ReplicaMeta>;
@@ -85,6 +87,7 @@ class IndexedDatabase implements LocalDatabase {
     const database = await this.open();
     const transaction = database.transaction(STORES, "readwrite");
     RECORD_STORES.forEach((store) => {
+      if (changes.replaceRecords) transaction.objectStore(store).clear();
       changes[store]?.forEach((record) => transaction.objectStore(store).put(record, record.id));
     });
     changes.addPending?.forEach((key) => transaction.objectStore("pending").put(true, key));
@@ -120,7 +123,7 @@ export class MemoryDatabase implements LocalDatabase {
 
   async write(changes: DatabaseWrite): Promise<void> {
     const replace = <T extends { id: string }>(current: T[], updates?: T[]) => {
-      const result = [...current];
+      const result = changes.replaceRecords ? [] : [...current];
       updates?.forEach((update) => {
         const index = result.findIndex((record) => record.id === update.id);
         if (index < 0) result.push(update); else result[index] = update;

@@ -188,6 +188,10 @@ final class AcervoTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(500))
         let title = try await webView.evaluateJavaScript("document.querySelector('h1')?.textContent") as? String
         XCTAssertEqual(title, "Acervo")
+        let signInField = try await webView.evaluateJavaScript(
+            "document.querySelector('#serverUrl') ? true : false"
+        ) as? Bool
+        XCTAssertEqual(signInField, true, "The host must load the real interface, not a placeholder")
         let indexedDB = try await webView.callAsyncJavaScript(
             "return await new Promise(resolve => { const request = indexedDB.open('acervo-host-test'); request.onsuccess = () => { request.result.close(); resolve(true); }; request.onerror = () => resolve(false); });",
             arguments: [:],

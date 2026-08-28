@@ -1,57 +1,183 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { AcervoApiError, backendSession } from "./api";
 import { UPDATE_EVENT } from "./pwa";
+import { repository } from "./repository";
+import { TEST_OWNER, testGraph } from "./testGraph";
 
 vi.mock("virtual:pwa-register", () => ({ registerSW: vi.fn() }));
 
-describe("Acervo shell", () => {
-  beforeEach(() => {
+const SESSION = {
+  baseUrl: "https://acervo.example.com", email: "learner@account.example.com",
+  token: "token", userId: TEST_OWNER
+};
+
+function signedIn() {
+  vi.spyOn(backendSession, "restore").mockResolvedValue(SESSION);
+  vi.spyOn(backendSession, "fetchGraph").mockResolvedValue({ ...testGraph(), syncedAt: "2026-08-28T12:00:00.000Z" });
+}
+
+/** Renders the app and waits for the pulled replica to reach the word list. */
+async function openList() {
+  render(<App />);
+  await screen.findByRole("heading", { name: /All words/ });
+  await screen.findByRole("button", { name: /picar/ });
+}
+
+describe("Acervo application", () => {
+  beforeEach(async () => {
     delete window.webkit;
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: null }),
-    }));
+    await repository.clear();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: null }) }));
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-  it("shows only the product shell and browser settings control", () => {
+  it("asks for a server and an account when no session is stored", async () => {
+    vi.spyOn(backendSession, "restore").mockResolvedValue(null);
     render(<App />);
-    expect(screen.getByRole("heading", { name: "Acervo" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open settings" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Server")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
 
-  it("announces and installs a waiting update explicitly", () => {
+  it("reports why a sign in failed without leaving the form", async () => {
+    vi.spyOn(backendSession, "restore").mockResolvedValue(null);
+    vi.spyOn(backendSession, "login")
+      .mockRejectedValue(new AcervoApiError("The email or password is incorrect.", 401, "invalid_credentials"));
     render(<App />);
-    act(() => window.dispatchEvent(new CustomEvent(UPDATE_EVENT, { detail: "ready" })));
+    fireEvent.change(await screen.findByLabelText("Server"), { target: { value: "https://acervo.example.com" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "learner@account.example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByText("The email or password is incorrect.")).toBeInTheDocument();
+  });
+
+  it("lists the owner's words pulled from the server", async () => {
+    signedIn();
+    await openList();
+    expect(screen.getByRole("button", { name: /picar/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /la balsa/ })).toBeInTheDocument();
+    // The inbox word is filed separately, not among the filed collections.
+    expect(screen.queryByRole("button", { name: /espolvorear/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Inbox/ })).toBeInTheDocument();
+  });
+
+  it("still opens on the stored replica when the server is unreachable", async () => {
+    signedIn();
+    await openList();
+    vi.spyOn(backendSession, "fetchGraph")
+      .mockRejectedValue(new AcervoApiError("The Acervo server could not be reached. Local vocabulary remains available.", 0, "offline"));
+    render(<App />);
+    expect(await screen.findByText(/could not be reached/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /picar/ }).length).toBeGreaterThan(0);
+  });
+
+  it("narrows the list by topic and by search", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /Travel/ }));
+    expect(await screen.findByRole("heading", { name: /Travel/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /picar/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Search your words…"), { target: { value: "itch" } });
+    expect(await screen.findByRole("heading", { name: /Search/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /picar/ })).toBeInTheDocument();
+  });
+
+  it("opens the article with its senses, lineage, schedule and provenance", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    expect(await screen.findByRole("heading", { name: "picar" })).toBeInTheDocument();
+    expect(screen.getByText("/piˈkaɾ/")).toBeInTheDocument();
+    expect(screen.getByText("Producir comezón.")).toBeInTheDocument();
+    expect(screen.getByText("Cortar en trozos pequeños.")).toBeInTheDocument();
+    expect(screen.getByText("unapproved")).toBeInTheDocument();
+    expect(screen.getByText(/Comiendo en un mercado/)).toBeInTheDocument();
+    expect(screen.getByText(/starts at 7:41/)).toBeInTheDocument();
+    expect(screen.getByText("cuidado que esa salsa pica un monton")).toBeInTheDocument();
+    expect(screen.getByText("18.3")).toBeInTheDocument();
+  });
+
+  it("projects the open record as YAML", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "YAML" }));
+    expect(await screen.findByText("picar.yaml")).toBeInTheDocument();
+    expect(document.querySelector(".code-scroll code")!.textContent).toContain("id: lexemepicar0001");
+  });
+
+  it("says plainly which actions are not connected yet", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    expect(await screen.findByText("Audio is not wired up yet")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit as YAML" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Editing is not wired up yet")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Process" }));
+    expect(await screen.findByText("Capture pipeline is not wired up yet")).toBeInTheDocument();
+
+    const sheet = within(screen.getByRole("dialog", { name: "Add a word" }));
+    fireEvent.click(sheet.getByRole("button", { name: "YAML" }));
+    fireEvent.click(await sheet.findByRole("button", { name: "Validate & save" }));
+    expect(await screen.findByText("Creating entries is not wired up yet")).toBeInTheDocument();
+  });
+
+  it("deletes a word by writing a tombstone to this device", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /la balsa/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(await screen.findByText(/tombstone/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("button", { name: /la balsa/ })).not.toBeInTheDocument());
+    expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemebalsa0001")?.deleted).toBe(true);
+  });
+
+  it("switches between the languages the replica holds", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: "Vocabulary language" }));
+    fireEvent.click(await screen.findByRole("button", { name: /English/ }));
+    expect(await screen.findByRole("button", { name: /turmoil/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /picar/ })).not.toBeInTheDocument();
+  });
+
+  it("announces and installs a waiting update explicitly", async () => {
+    signedIn();
+    await openList();
+    act(() => { window.dispatchEvent(new CustomEvent(UPDATE_EVENT, { detail: "ready" })); });
     const gear = screen.getByRole("button", { name: "Open settings; an update is ready" });
     expect(gear).toHaveClass("has-update");
     fireEvent.click(gear);
-    expect(screen.getByRole("button", { name: /Update Acervo/ })).toBeInTheDocument();
-  });
-
-  it("keeps PWA controls out of the native host", () => {
-    window.webkit = { messageHandlers: { acervo: { postMessage: vi.fn() } } };
-    render(<App />);
-    expect(screen.queryByRole("button", { name: /Open settings/ })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Update Acervo/ })).toBeInTheDocument();
   });
 
   it("offers the native macOS release from browser settings", async () => {
+    signedIn();
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => ({ data: {
-        version: "0.1.0",
-        build: "202608270001",
-        file: "Acervo.zip",
-        size: 42,
-        sha256: "abc",
-        url: "/api/acervo/downloads/Acervo.zip",
-      } }),
+        version: "0.1.0", build: "202608270001", file: "Acervo.zip", size: 42, sha256: "abc",
+        url: "/api/acervo/downloads/Acervo.zip"
+      } })
     } as Response);
-    render(<App />);
+    await openList();
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
     const link = await screen.findByRole("link", { name: /Download Acervo for macOS/ });
     expect(link).toHaveAttribute("href", "/api/acervo/downloads/Acervo.zip");
     expect(link).toHaveAttribute("download", "Acervo.zip");
+  });
+
+  it("keeps browser update controls out of the native host", async () => {
+    window.webkit = { messageHandlers: { acervo: { postMessage: vi.fn() } } };
+    signedIn();
+    await openList();
+    expect(screen.queryByRole("button", { name: /Open settings/ })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("navigation")).getByRole("button", { name: /All/ })).toBeInTheDocument();
   });
 });
