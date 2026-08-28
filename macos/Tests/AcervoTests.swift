@@ -167,8 +167,11 @@ final class AcervoTests: XCTestCase {
         guard let root = WebInterface.bundledInterfaceDirectory() else {
             return XCTFail("The test host did not bundle web/dist")
         }
+        let defaultsSuite = "AcervoTests.WebInterface.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsSuite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: defaultsSuite) }
         let configuration = WKWebViewConfiguration()
-        let bridge = SessionBridge()
+        let bridge = SessionBridge(defaults: defaults)
         configuration.userContentController.addScriptMessageHandler(bridge, contentWorld: .page, name: "acervo")
         configuration.setURLSchemeHandler(WebInterfaceSchemeHandler(root: root), forURLScheme: WebInterface.scheme)
         let webView = WKWebView(frame: .init(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
