@@ -1,0 +1,445 @@
+/* Acervo — prototype fixture data.
+   Shapes follow web/src/domain.ts so the mock-up can be wired to the real
+   repository later without reshaping the view layer. Content is illustrative. */
+
+const LANGUAGES = [
+  { code: "es",      flag: "\u{1F1EA}\u{1F1F8}", name: "Spanish",             definitionLang: "es", glossLangs: ["en"] },
+  { code: "en",      flag: "\u{1F1EC}\u{1F1E7}", name: "English",             definitionLang: "en", glossLangs: ["ru"] },
+  { code: "zh-Hans", flag: "\u{1F1E8}\u{1F1F3}", name: "Chinese (Simplified)", definitionLang: "en", glossLangs: ["ru", "en"] }
+];
+
+const TOPICS = [
+  { key: "emotions",   name: "Emotions",   icon: "\u{1F4AD}" },
+  { key: "actions",    name: "Actions",    icon: "⚡" },
+  { key: "nature",     name: "Nature",     icon: "\u{1F33F}" },
+  { key: "culture",    name: "Culture",    icon: "\u{1F3AD}" },
+  { key: "food",       name: "Food",       icon: "\u{1F37D}️" },
+  { key: "health",     name: "Health",     icon: "\u{1FA7A}" },
+  { key: "appearance", name: "Appearance", icon: "\u{1F464}" },
+  { key: "technology", name: "Technology", icon: "\u{1F4BB}" },
+  { key: "travel",     name: "Travel",     icon: "\u{1F9ED}" },
+  { key: "slang",      name: "Slang",      icon: "\u{1F4AC}" },
+  { key: "social",     name: "Social",     icon: "\u{1F91D}" },
+  { key: "places",     name: "Places",     icon: "\u{1F4CD}" },
+  { key: "misc",       name: "Misc",       icon: "\u{1F4CC}" }
+];
+
+const LEXEMES = [
+  {
+    id: "k3m91xq7d0a2vbe", language: "es",
+    headword: "picar", lemma: "picar", reading: null,
+    pos: "verb", gender: null, register: "neutral", dialect: null,
+    emoji: "\u{1F336}️", topics: ["food", "health", "actions"],
+    status: "active", shortGloss: "to itch; to sting; to chop; to nibble",
+    ipa: "/piˈkaɾ/",
+    notes: [
+      "One of the most overloaded verbs in everyday Spanish — the sense is almost always carried by the object, not the verb.",
+      "In Mexico, <b>picar</b> for “to be spicy” is far more common than <i>ser picante</i>.",
+      "<b>picar algo</b> before dinner is the standard way to say “have a nibble”; the noun <i>el picoteo</i> follows from it."
+    ],
+    createdAt: "2026-02-11", editedAt: "2026-08-24", revision: 7,
+    senses: [
+      {
+        definition: "Producir una sensación de comezón o escozor en alguna parte del cuerpo.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["to itch", "to feel prickly"] }],
+        domain: null,
+        examples: [
+          { text: "Me <b>pica</b> la nariz, creo que voy a estornudar.", translation: "My nose <b>itches</b>, I think I’m going to sneeze.",
+            origin: "attestation", modelId: "gemini-3-flash", approved: true, audio: true },
+          { text: "La lana de este jersey <b>pica</b> muchísimo.", translation: "The wool of this jumper <b>is</b> really <b>itchy</b>.",
+            origin: "tatoeba", modelId: null, approved: true, audio: true }
+        ],
+        images: [{ src: "img/sense-a.webp", style: "flat-vector", prompt: "A hand hovering near an itchy nose, flat vector, bold shapes, limited palette, no text" }]
+      },
+      {
+        definition: "Dicho de un alimento: producir una sensación ardiente en la boca.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["to be spicy", "to be hot"] }],
+        domain: "cooking",
+        examples: [
+          { text: "¿Te <b>pica</b> mucho la salsa?", translation: "Is the sauce very <b>spicy</b> for you?",
+            origin: "subtitle", modelId: null, approved: true, audio: true,
+            clip: { title: "Easy Spanish — Comiendo en un mercado de Ciudad de México", at: "7:41" } }
+        ],
+        images: [{ src: "img/sense-d.webp", style: "storybook", prompt: "A chilli pepper glowing on a spoon of red sauce, soft storybook gouache, warm light, no text" }]
+      },
+      {
+        definition: "Cortar algo en trozos muy pequeños con un cuchillo.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["to chop", "to mince", "to dice"] }],
+        domain: "cooking",
+        examples: [
+          { text: "<b>Pica</b> la cebolla bien fina antes de sofreírla.", translation: "<b>Chop</b> the onion very finely before frying it.",
+            origin: "llm", modelId: "gemini-3-flash", approved: true, audio: false }
+        ],
+        images: []
+      },
+      {
+        definition: "Comer una cantidad pequeña de algo, generalmente entre horas.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["to nibble", "to snack"] }],
+        domain: null,
+        examples: [
+          { text: "Vamos a <b>picar</b> algo antes de cenar.", translation: "Let’s <b>have a nibble</b> before dinner.",
+            origin: "llm", modelId: "gemini-3-flash", approved: false, audio: false, note: "Waiting for review — check whether “nibble” reads as too British." }
+        ],
+        images: []
+      },
+      {
+        definition: "Dicho de un insecto o de un ave: morder o herir con el pico o el aguijón.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["to bite", "to sting"] }],
+        domain: null,
+        examples: [
+          { text: "Me <b>picaron</b> los mosquitos toda la noche.", translation: "The mosquitoes <b>bit</b> me all night.",
+            origin: "tatoeba", modelId: null, approved: true, audio: true }
+        ],
+        images: []
+      }
+    ],
+    attestations: [
+      { text: "cuidado que esa salsa pica un monton eh", translation: null,
+        sourceKind: "conversation", sourceTitle: "WhatsApp — grupo del curso", sourceUrl: null, capturedAt: "11 Feb 2026" },
+      { text: "Se pican las verduras en dados de un centimetro y se reservan.", translation: "The vegetables are diced into one-centimetre cubes and set aside.",
+        sourceKind: "web", sourceTitle: "Receta — pisto manchego, El Comidista", sourceUrl: "https://example.com/pisto", capturedAt: "3 Mar 2026" }
+    ],
+    study: { system: "anki", reps: 21, lapses: 4, stability: 18.3, difficulty: 8.4, retrievability: 0.71, lastReview: "22 Aug 2026" }
+  },
+
+  {
+    id: "b7t42naz9c6uk1p", language: "es",
+    headword: "desmayarse", lemma: "desmayarse", reading: null,
+    pos: "verb", gender: null, register: "neutral", dialect: null,
+    emoji: "\u{1F635}‍\u{1F4AB}", topics: ["health", "actions"],
+    status: "active", shortGloss: null,
+    ipa: "/desmaˈjaɾse/",
+    notes: ["Always pronominal in this meaning. <i>Desmayar</i> without the pronoun is literary and means “to lose heart”."],
+    createdAt: "2026-01-14", editedAt: "2026-06-02", revision: 3,
+    senses: [
+      {
+        definition: "Perder el sentido y el conocimiento de forma temporal.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["to faint", "to pass out"] }],
+        domain: "medicine",
+        examples: [
+          { text: "Me <b>desmayé</b> cuando vi a la aterradora criatura.", translation: "I <b>fainted</b> when I saw the terrifying creature.",
+            origin: "attestation", modelId: null, approved: true, audio: true },
+          { text: "Se <b>desmayó</b> en pleno directo, delante de las cámaras.", translation: "She <b>passed out</b> live on air, in front of the cameras.",
+            origin: "subtitle", modelId: null, approved: true, audio: true,
+            clip: { title: "DW Español — Informe semanal", at: "4:12" } }
+        ],
+        images: [{ src: "img/sense-c.webp", style: "retro-futurist", prompt: "A figure swooning backwards, stars circling, 1970s sci-fi paperback, muted print palette, no text" }]
+      },
+      {
+        definition: "Quedar sobrecogido por una emoción muy intensa.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["to be overcome", "to swoon"] }],
+        domain: null,
+        examples: [
+          { text: "Casi me <b>desmayo</b> de la emoción.", translation: "I almost <b>swooned</b> with excitement.",
+            origin: "tatoeba", modelId: null, approved: true, audio: false }
+        ],
+        images: []
+      }
+    ],
+    attestations: [
+      { text: "Me desmaye cuando vi a la aterradora criatura", translation: null,
+        sourceKind: "book", sourceTitle: "Cuentos de la selva — Horacio Quiroga", sourceUrl: null, capturedAt: "14 Jan 2026" }
+    ],
+    study: { system: "anki", reps: 14, lapses: 1, stability: 96.4, difficulty: 4.1, retrievability: 0.93, lastReview: "19 Aug 2026" }
+  },
+
+  {
+    id: "q8v53mrb2e7wl4d", language: "es",
+    headword: "la sobremesa", lemma: "sobremesa", reading: null,
+    pos: "noun", gender: "feminine", register: "neutral", dialect: null,
+    emoji: "☕", topics: ["culture", "food", "social"],
+    status: "active", shortGloss: "the talk that keeps everyone at the table after a meal",
+    ipa: "/soβɾeˈmesa/",
+    notes: [
+      "No English word covers it — this is the case where the Spanish definition does the work and the gloss cannot.",
+      "Common collocations: <i>hacer sobremesa</i>, <i>una sobremesa larga</i>, <i>alargar la sobremesa</i>."
+    ],
+    createdAt: "2026-03-08", editedAt: "2026-03-08", revision: 1,
+    senses: [
+      {
+        definition: "Tiempo que se está a la mesa después de haber comido, charlando con los demás comensales.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["after-dinner conversation", "lingering at the table"] }],
+        domain: null,
+        examples: [
+          { text: "La comida duró una hora, pero la <b>sobremesa</b> se alargó hasta las seis.", translation: "Lunch lasted an hour, but the <b>sobremesa</b> stretched until six.",
+            origin: "llm", modelId: "gemini-3-flash", approved: true, audio: true }
+        ],
+        images: [{ src: "img/sense-b.webp", style: "storybook", prompt: "Empty coffee cups and crumbs on a sunlit table, chairs pushed back, soft storybook gouache, no text" }]
+      }
+    ],
+    attestations: [],
+    study: { system: "anki", reps: 5, lapses: 0, stability: 12.9, difficulty: 5.2, retrievability: 0.88, lastReview: "16 Aug 2026" }
+  },
+
+  {
+    id: "z1c64pdw8f3hj7s", language: "es",
+    headword: "que se mejoren", lemma: "que se mejoren", reading: null,
+    pos: "expression", gender: null, register: "neutral", dialect: null,
+    emoji: "\u{1F496}", topics: ["health", "social"],
+    status: "learned", shortGloss: "get better; feel better soon",
+    ipa: "/ke se meˈxoɾen/",
+    notes: ["Plural form; use <i>que te mejores</i> to one person you address informally."],
+    createdAt: "2026-01-30", editedAt: "2026-05-19", revision: 2,
+    senses: [
+      {
+        definition: "Fórmula para desear a alguien una pronta recuperación.",
+        definitionLang: "es",
+        glosses: [
+          { lang: "en", terms: ["get better", "feel better soon"] },
+          { lang: "ru", terms: ["выздоравливайте"] }
+        ],
+        domain: null,
+        examples: [
+          { text: "Espero <b>que se mejoren</b> pronto. Un abrazo a toda la familia.", translation: "I hope <b>you get better</b> soon. A hug to the whole family.",
+            origin: "attestation", modelId: "gemini-3-flash", approved: true, audio: true }
+        ],
+        images: []
+      }
+    ],
+    attestations: [
+      { text: "espero que se mejoren pronto un abrazo a toda la familia", translation: null,
+        sourceKind: "conversation", sourceTitle: "WhatsApp — grupo del curso", sourceUrl: null, capturedAt: "30 Jan 2026" }
+    ],
+    study: { system: "anki", reps: 26, lapses: 0, stability: 402.7, difficulty: 2.8, retrievability: 0.97, lastReview: "2 Aug 2026" }
+  },
+
+  {
+    id: "m5r18kts4b9gy2n", language: "es",
+    headword: "el atasco", lemma: "atasco", reading: null,
+    pos: "noun", gender: "masculine", register: "neutral", dialect: "es-ES",
+    emoji: "\u{1F697}", topics: ["travel", "places"],
+    status: "active", shortGloss: "traffic jam",
+    ipa: "/aˈtasko/",
+    notes: ["Peninsular. In Mexico you will hear <i>el embotellamiento</i> or <i>el tráfico</i>."],
+    createdAt: "2026-02-02", editedAt: "2026-02-02", revision: 1,
+    senses: [{
+      definition: "Congestión de vehículos que impide circular con normalidad.",
+      definitionLang: "es",
+      glosses: [{ lang: "en", terms: ["traffic jam", "gridlock"] }],
+      domain: null,
+      examples: [{ text: "Ayer hubo un <b>atasco</b> tremendo en la M-30.", translation: "Yesterday there was a terrible <b>traffic jam</b> on the M-30.",
+        origin: "manual", modelId: null, approved: true, audio: true }],
+      images: []
+    }],
+    attestations: [],
+    study: { system: "anki", reps: 9, lapses: 1, stability: 44.1, difficulty: 4.9, retrievability: 0.9, lastReview: "12 Aug 2026" }
+  },
+
+  {
+    id: "w9h27fjc5d1qx8v", language: "es",
+    headword: "currar", lemma: "currar", reading: null,
+    pos: "verb", gender: null, register: "colloquial", dialect: "es-ES",
+    emoji: "\u{1F477}", topics: ["slang", "actions"],
+    status: "active", shortGloss: "to work; to graft",
+    ipa: "/kuˈraɾ/",
+    notes: ["Noun form <i>el curro</i> = the job. Both are everyday Peninsular colloquial, not rude."],
+    createdAt: "2026-04-21", editedAt: "2026-04-21", revision: 1,
+    senses: [{
+      definition: "Trabajar, especialmente de forma dura o continuada.",
+      definitionLang: "es",
+      glosses: [{ lang: "en", terms: ["to work", "to graft", "to slog"] }],
+      domain: null,
+      examples: [{ text: "Lleva <b>currando</b> desde las siete de la mañana.", translation: "He’s been <b>working</b> since seven in the morning.",
+        origin: "subtitle", modelId: null, approved: true, audio: true, clip: { title: "RTVE — Aquí la tierra", at: "12:03" } }],
+      images: []
+    }],
+    attestations: [],
+    study: { system: "anki", reps: 3, lapses: 2, stability: 4.2, difficulty: 9.1, retrievability: 0.44, lastReview: "26 Aug 2026" }
+  },
+
+  {
+    id: "p2n85gvx7k4rt3c", language: "es",
+    headword: "espolvorear", lemma: "espolvorear", reading: null,
+    pos: "verb", gender: null, register: "neutral", dialect: null,
+    emoji: "\u{1F9C2}", topics: ["food", "actions"],
+    status: "inbox", shortGloss: "to sprinkle; to dust",
+    ipa: "/espolβoɾeˈaɾ/",
+    notes: [],
+    createdAt: "2026-08-27", editedAt: "2026-08-27", revision: 0,
+    senses: [{
+      definition: "Esparcir sobre algo una materia hecha polvo.",
+      definitionLang: "es",
+      glosses: [{ lang: "en", terms: ["to sprinkle", "to dust"] }],
+      domain: "cooking",
+      examples: [{ text: "<b>Espolvoreé</b> canela sobre el pastel.", translation: "I <b>sprinkled</b> cinnamon on the cake.",
+        origin: "attestation", modelId: "gemini-3-flash", approved: false, audio: false }],
+      images: []
+    }],
+    attestations: [{ text: "Espolvoree canela sobre el pastel.", translation: "I sprinkled cinnamon on the cake.",
+      sourceKind: "unknown", sourceTitle: null, sourceUrl: null, capturedAt: "27 Aug 2026" }],
+    study: null
+  },
+
+  {
+    id: "d4y96wlq1m8sz5b", language: "es",
+    headword: "tirarse panza arriba", lemma: "tirarse panza arriba", reading: null,
+    pos: "phrase", gender: null, register: "colloquial", dialect: null,
+    emoji: "\u{1F3D6}️", topics: ["travel", "actions"],
+    status: "active", shortGloss: "to sprawl out on your back",
+    ipa: null,
+    notes: [],
+    createdAt: "2026-05-05", editedAt: "2026-05-05", revision: 1,
+    senses: [{
+      definition: "Tumbarse boca arriba de manera relajada, sin hacer nada.",
+      definitionLang: "es",
+      glosses: [{ lang: "en", terms: ["to lie on one’s back", "to sprawl out"] }],
+      domain: null,
+      examples: [{ text: "Me gusta <b>tirarme panza arriba</b> en la playa.", translation: "I like to <b>lie on my back</b> at the beach.",
+        origin: "manual", modelId: null, approved: true, audio: true }],
+      images: []
+    }],
+    attestations: [],
+    study: { system: "anki", reps: 7, lapses: 0, stability: 61.5, difficulty: 3.6, retrievability: 0.94, lastReview: "10 Aug 2026" }
+  },
+
+  {
+    id: "f6k39xzb8n2ph7m", language: "es",
+    headword: "la balsa", lemma: "balsa", reading: null,
+    pos: "noun", gender: "feminine", register: "neutral", dialect: null,
+    emoji: "\u{1F6F6}", topics: ["travel", "nature"],
+    status: "active", shortGloss: "raft",
+    ipa: "/ˈbalsa/",
+    notes: [],
+    createdAt: "2026-01-22", editedAt: "2026-01-22", revision: 1,
+    senses: [
+      { definition: "Embarcación plana formada por maderos unidos entre sí.",
+        definitionLang: "es", glosses: [{ lang: "en", terms: ["raft"] }], domain: null,
+        examples: [{ text: "Cruzaron el río en una <b>balsa</b> improvisada.", translation: "They crossed the river on a makeshift <b>raft</b>.",
+          origin: "llm", modelId: "gemini-3-flash", approved: true, audio: true }], images: [] },
+      { definition: "Hueco del terreno que se llena de agua, natural o artificialmente.",
+        definitionLang: "es", glosses: [{ lang: "en", terms: ["pond", "pool"] }], domain: null,
+        examples: [{ text: "El agua de la <b>balsa</b> estaba completamente quieta.", translation: "The water of the <b>pond</b> was completely still.",
+          origin: "tatoeba", modelId: null, approved: true, audio: false }], images: [] }
+    ],
+    attestations: [],
+    study: { system: "anki", reps: 11, lapses: 0, stability: 74.2, difficulty: 3.9, retrievability: 0.95, lastReview: "8 Aug 2026" }
+  },
+
+  {
+    id: "n7s24bqk6v9dm3t", language: "es",
+    headword: "ponerse malo", lemma: "ponerse malo", reading: null,
+    pos: "phrase", gender: null, register: "colloquial", dialect: "es-ES",
+    emoji: "\u{1F912}", topics: ["health"],
+    status: "active", shortGloss: "to get sick",
+    ipa: null, notes: [],
+    createdAt: "2026-02-18", editedAt: "2026-02-18", revision: 1,
+    senses: [{
+      definition: "Empezar a encontrarse mal de salud.",
+      definitionLang: "es", glosses: [{ lang: "en", terms: ["to become ill", "to get sick"] }], domain: null,
+      examples: [{ text: "Me he <b>puesto muy malo</b> después de cenar.", translation: "I’ve <b>become very ill</b> after dinner.",
+        origin: "attestation", modelId: null, approved: true, audio: true }], images: []
+    }],
+    attestations: [], study: { system: "anki", reps: 12, lapses: 2, stability: 30.8, difficulty: 6.4, retrievability: 0.83, lastReview: "20 Aug 2026" }
+  },
+
+  {
+    id: "v8j51ctr3x7bn6q", language: "es",
+    headword: "el tobillo", lemma: "tobillo", reading: null,
+    pos: "noun", gender: "masculine", register: "neutral", dialect: null,
+    emoji: "\u{1F9B5}", topics: ["health", "appearance"],
+    status: "learned", shortGloss: "ankle",
+    ipa: "/toˈβiʊo/", notes: [],
+    createdAt: "2026-01-19", editedAt: "2026-01-19", revision: 1,
+    senses: [{
+      definition: "Parte del cuerpo donde se une el pie con la pierna.",
+      definitionLang: "es", glosses: [{ lang: "en", terms: ["ankle"] }], domain: "medicine",
+      examples: [{ text: "Me torcí el <b>tobillo</b> bajando las escaleras.", translation: "I twisted my <b>ankle</b> going down the stairs.",
+        origin: "llm", modelId: "gemini-3-flash", approved: true, audio: true }], images: []
+    }],
+    attestations: [], study: { system: "anki", reps: 19, lapses: 0, stability: 388.1, difficulty: 2.4, retrievability: 0.98, lastReview: "1 Jul 2026" }
+  },
+
+  {
+    id: "g3q76mwd9j5fk1z", language: "es",
+    headword: "la azafata", lemma: "azafata", reading: null,
+    pos: "noun", gender: "feminine", register: "neutral", dialect: null,
+    emoji: "\u{1F469}‍✈️", topics: ["travel", "social"],
+    status: "active", shortGloss: "flight attendant",
+    ipa: "/aθaˈfata/", notes: ["Masculine counterpart: <i>el auxiliar de vuelo</i>."],
+    createdAt: "2026-03-30", editedAt: "2026-03-30", revision: 1,
+    senses: [{
+      definition: "Persona encargada de atender a los pasajeros a bordo de un avión.",
+      definitionLang: "es", glosses: [{ lang: "en", terms: ["flight attendant", "stewardess"] }], domain: null,
+      examples: [{ text: "La <b>azafata</b> nos pidió abrocharnos el cinturón.", translation: "The <b>flight attendant</b> asked us to fasten our seatbelts.",
+        origin: "llm", modelId: "gemini-3-flash", approved: true, audio: true }], images: []
+    }],
+    attestations: [], study: { system: "anki", reps: 6, lapses: 1, stability: 21.6, difficulty: 5.8, retrievability: 0.86, lastReview: "18 Aug 2026" }
+  },
+
+  {
+    id: "h2l83nfy7c4vs9r", language: "en",
+    headword: "turmoil", lemma: "turmoil", reading: null,
+    pos: "noun", gender: null, register: "formal", dialect: null,
+    emoji: "\u{1F32A}️", topics: ["emotions", "misc"],
+    status: "active", shortGloss: "суматоха; смятение",
+    ipa: "/ˈtɜːmɔɪl/",
+    notes: ["Mass noun — no plural. Usually <i>in turmoil</i>, rarely <i>a turmoil</i>."],
+    createdAt: "2026-02-25", editedAt: "2026-07-14", revision: 4,
+    senses: [{
+      definition: "A state of great confusion, disturbance or uncertainty.",
+      definitionLang: "en",
+      glosses: [{ lang: "ru", terms: ["суматоха", "смятение", "потрясения"] }],
+      domain: null,
+      examples: [
+        { text: "The country was in <b>turmoil</b> for weeks after the vote.", translation: "Страна несколько недель находилась в <b>смятении</b> после голосования.",
+          origin: "attestation", modelId: "gemini-3-flash", approved: true, audio: true },
+        { text: "Her mind was in <b>turmoil</b> and she could not sleep.", translation: "В её голове царила <b>суматоха</b>, и она не могла заснуть.",
+          origin: "wiktionary", modelId: null, approved: true, audio: false }
+      ],
+      images: []
+    }],
+    attestations: [{ text: "Markets remained in turmoil as the deadline passed without an agreement.", translation: null,
+      sourceKind: "web", sourceTitle: "Reuters — markets live blog", sourceUrl: "https://example.com/markets", capturedAt: "25 Feb 2026" }],
+    study: { system: "anki", reps: 8, lapses: 1, stability: 33.4, difficulty: 5.5, retrievability: 0.89, lastReview: "21 Aug 2026" }
+  },
+
+  {
+    id: "c9d47ztk2h6mp8w", language: "en",
+    headword: "hoax", lemma: "hoax", reading: null,
+    pos: "noun", gender: null, register: "neutral", dialect: null,
+    emoji: "\u{1F3AD}", topics: ["culture", "misc"],
+    status: "active", shortGloss: "мистификация; розыгрыш",
+    ipa: "/həʊks/", notes: [],
+    createdAt: "2026-04-02", editedAt: "2026-04-02", revision: 1,
+    senses: [{
+      definition: "A deliberate deception intended to make people believe something untrue.",
+      definitionLang: "en",
+      glosses: [{ lang: "ru", terms: ["мистификация", "розыгрыш", "обман"] }],
+      domain: null,
+      examples: [{ text: "The photograph turned out to be an elaborate <b>hoax</b>.", translation: "Фотография оказалась тщательно подготовленной <b>мистификацией</b>.",
+        origin: "llm", modelId: "gemini-3-flash", approved: true, audio: true }], images: []
+    }],
+    attestations: [], study: { system: "anki", reps: 4, lapses: 0, stability: 17.2, difficulty: 4.4, retrievability: 0.91, lastReview: "23 Aug 2026" }
+  },
+
+  {
+    id: "t5b62vqj9n3xw7f", language: "zh-Hans",
+    headword: "图书馆", lemma: "图书馆", reading: "tú shū guǎn",
+    pos: "noun", gender: null, register: "neutral", dialect: null,
+    emoji: "\u{1F4DA}", topics: ["places", "culture"],
+    status: "active", shortGloss: "библиотека; library",
+    ipa: null,
+    notes: ["图 (picture) + 书 (book) + 馆 (public building) — the third character recurs in 博物馆 and 体育馆."],
+    createdAt: "2026-06-11", editedAt: "2026-06-11", revision: 1,
+    senses: [{
+      definition: "A building where books are kept and may be borrowed.",
+      definitionLang: "en",
+      glosses: [
+        { lang: "ru", terms: ["библиотека"] },
+        { lang: "en", terms: ["library"] }
+      ],
+      domain: null,
+      examples: [{ text: "我在<b>图书馆</b>学习了一下午。", translation: "I studied at the <b>library</b> all afternoon.",
+        origin: "llm", modelId: "gemini-3-flash", approved: true, audio: true }], images: []
+    }],
+    attestations: [], study: null
+  }
+];

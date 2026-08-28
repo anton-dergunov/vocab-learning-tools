@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Acervo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Literata:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="acervo.css">
+</head>
+<body>
+
+<div class="viewport">
+<div class="app">
+  <div class="brand"><span class="mark">A.</span></div>
+
+  <header class="topbar">
+    <div class="search" id="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+      <input id="q" type="search" placeholder="Search your words…" autocomplete="off" spellcheck="false">
+      <span class="kbd">⌘K</span>
+      <span class="scope">yours</span>
+    </div>
+
+    <button class="tb-btn primary" id="addBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <span class="wide-only">Add</span>
+    </button>
+
+    <button class="tb-btn lang-btn" id="langBtn" aria-haspopup="menu"></button>
+    <div class="menu" id="langMenu"></div>
+  </header>
+
+  <nav class="rail" id="rail" aria-label="Topics"></nav>
+
+  <main class="main" id="main">
+    <div class="pane">
+      <div class="art-bar" id="artBar" style="display:none"></div>
+      <div id="pane"></div>
+    </div>
+  </main>
+</div>
+</div>
+
+<div class="sheet-back" id="sheetBack"></div>
+<div class="toast" id="toast"></div>
+
+<div id="harness" title="Prototype only — preview at other screen sizes">
+  <button data-frame="desktop" class="on">Desktop</button>
+  <button data-frame="tablet">Tablet</button>
+  <button data-frame="phone">Phone</button>
+  <span style="width:1px;background:var(--rule-soft);margin:2px 3px"></span>
+  <button id="themeBtn" title="Cycle light / dark / follow the system">Theme</button>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
