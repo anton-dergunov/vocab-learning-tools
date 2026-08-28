@@ -18,6 +18,10 @@ override, check the server's existing container port assignments. The app listen
 `127.0.0.1` by default so it can sit behind an HTTPS reverse proxy; use `--app-bind-address` only
 when the network design requires a different interface.
 
+`web/dist/` and `deploy/acervo/pocketbase/pb_public/` are generated, ignored staging directories.
+The supported build and deployment commands repopulate them before packaging; their contents are
+disposable and should not be committed.
+
 ## Browser and PWA
 
 Point an HTTPS reverse proxy at the configured Acervo app port, then open the public address, for
