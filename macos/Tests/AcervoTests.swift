@@ -71,6 +71,15 @@ final class AcervoTests: XCTestCase {
         XCTAssertEqual(statusClickAction(for: nil), .openWindow)
     }
 
+    @MainActor
+    func testMenuBarIconIsACompactTemplateImage() {
+        let icon = makeMenuBarIcon(accessibilityDescription: "Acervo")
+        XCTAssertEqual(icon.size, NSSize(width: 20, height: 18))
+        XCTAssertTrue(icon.isTemplate)
+        XCTAssertEqual(icon.accessibilityDescription, "Acervo")
+        XCTAssertNotNil(icon.tiffRepresentation)
+    }
+
     func testSchemeHandlerRefusesTraversalAndKnowsTypes() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
