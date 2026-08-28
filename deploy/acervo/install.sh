@@ -97,15 +97,21 @@ if [ "$credentials_stdin" = true ] || [ -n "$credentials_file" ]; then
   fi
   IFS= read -r username <&3 || { echo "Missing sync username" >&2; exit 2; }
   IFS= read -r password <&3 || { echo "Missing sync password" >&2; exit 2; }
+  IFS= read -r pb_email <&3 || { echo "Missing PocketBase superuser email" >&2; exit 2; }
+  IFS= read -r pb_password <&3 || { echo "Missing PocketBase superuser password" >&2; exit 2; }
   exec 3<&-
   case "$username$password" in
     *:*) echo "Anki sync credentials may not contain a colon" >&2; exit 2 ;;
   esac
   username_env=$(printf '%s' "$username" | sed "s/'/\\\\'/g")
   password_env=$(printf '%s' "$password" | sed "s/'/\\\\'/g")
+  pb_email_env=$(printf '%s' "$pb_email" | sed "s/'/\\\\'/g")
+  pb_password_env=$(printf '%s' "$pb_password" | sed "s/'/\\\\'/g")
   {
     printf "ACERVO_ANKI_SYNC_USERNAME='%s'\n" "$username_env"
     printf "ACERVO_ANKI_SYNC_PASSWORD='%s'\n" "$password_env"
+    printf "ACERVO_PB_SUPERUSER_EMAIL='%s'\n" "$pb_email_env"
+    printf "ACERVO_PB_SUPERUSER_PASSWORD='%s'\n" "$pb_password_env"
   } >"$credentials_tmp"
   chmod 600 "$credentials_tmp"
   mv "$credentials_tmp" "$acervo_root/secrets.env"
@@ -117,6 +123,9 @@ if [ ! -f "$acervo_root/secrets.env" ]; then
   exit 2
 fi
 chmod 600 "$acervo_root/secrets.env"
+. "$acervo_root/secrets.env"
+: "${ACERVO_PB_SUPERUSER_EMAIL:?Set ACERVO_PB_SUPERUSER_EMAIL in $acervo_root/secrets.env}"
+: "${ACERVO_PB_SUPERUSER_PASSWORD:?Set ACERVO_PB_SUPERUSER_PASSWORD in $acervo_root/secrets.env}"
 
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup_dir="$acervo_root/backups/$timestamp"
@@ -216,6 +225,9 @@ until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env
   fi
   sleep 2
 done
+
+compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" \
+  exec -T pocketbase /pb/pocketbase superuser upsert "$ACERVO_PB_SUPERUSER_EMAIL" "$ACERVO_PB_SUPERUSER_PASSWORD"
 
 printf '%s\n' "$release_dir" >"$acervo_root/current-release"
 echo "Acervo Anki sync server is healthy at $bind_address:$anki_port"

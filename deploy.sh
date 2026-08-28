@@ -187,6 +187,23 @@ prompt_credentials() {
   case "$sync_username$sync_password" in
     *:*) echo "Anki sync credentials may not contain a colon" >&2; exit 2 ;;
   esac
+  printf '%s' 'Initial PocketBase superuser email: ' >&2
+  IFS= read -r pb_superuser_email
+  printf '%s' 'Initial PocketBase superuser password: ' >&2
+  if [ -t 0 ]; then
+    stty -echo
+    trap 'stty echo' EXIT HUP INT TERM
+    IFS= read -r pb_superuser_password
+    stty echo
+    trap - EXIT HUP INT TERM
+  else
+    IFS= read -r pb_superuser_password
+  fi
+  printf '\n' >&2
+  [ -n "$pb_superuser_email" ] && [ -n "$pb_superuser_password" ] || {
+    echo "PocketBase superuser email and password are required" >&2
+    exit 2
+  }
 }
 
 build_release_archive() {
@@ -226,7 +243,7 @@ if [ "$mode" = local ]; then
   [ -z "$credential_args" ] || set -- "$@" "$credential_args"
   [ "$reset_data" = false ] || set -- "$@" --reset-data
   if [ -n "$credential_args" ]; then
-    printf '%s\n%s\n' "$sync_username" "$sync_password" | "$repo_root/deploy/acervo/install.sh" "$@"
+    printf '%s\n%s\n%s\n%s\n' "$sync_username" "$sync_password" "$pb_superuser_email" "$pb_superuser_password" | "$repo_root/deploy/acervo/install.sh" "$@"
   else
     "$repo_root/deploy/acervo/install.sh" "$@"
   fi
@@ -307,7 +324,7 @@ remote_failed() {
 credential_args=
 if [ "$configure" = true ]; then
   prompt_credentials
-  printf '%s\n%s\n' "$sync_username" "$sync_password" | \
+  printf '%s\n%s\n%s\n%s\n' "$sync_username" "$sync_password" "$pb_superuser_email" "$pb_superuser_password" | \
     ssh -T "$target" "umask 077 && cat > $remote_credentials" || remote_failed
   credential_args="--credentials-file $remote_credentials"
 fi

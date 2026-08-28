@@ -64,7 +64,9 @@ def deployment_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
     root.mkdir(parents=True)
     secrets = root / "secrets.env"
     secrets.write_text(
-        "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n",
+        "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n"
+        "ACERVO_PB_SUPERUSER_EMAIL=admin@account.example.com\n"
+        "ACERVO_PB_SUPERUSER_PASSWORD=pb-password\n",
         encoding="utf-8",
     )
     secrets.chmod(0o600)
@@ -207,7 +209,7 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
         ],
         cwd=REPO_ROOT,
         env=env,
-        input="sync-user\ntest-password\n",
+        input="sync-user\ntest-password\nadmin@account.example.com\npb-password\n",
         text=True,
         capture_output=True,
         check=False,
@@ -216,7 +218,9 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     with tarfile.open(release_upload) as package:
         assert "deploy/acervo/compose.yaml" in package.getnames()
-    assert credential_upload.read_text(encoding="utf-8") == "sync-user\ntest-password\n"
+    assert credential_upload.read_text(encoding="utf-8") == (
+        "sync-user\ntest-password\nadmin@account.example.com\npb-password\n"
+    )
     commands = ssh_log.read_text(encoding="utf-8")
     assert "cat > /tmp/acervo-credentials-" in commands
     assert "--credentials-file /tmp/acervo-credentials-" in commands
@@ -231,7 +235,10 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
 ) -> None:
     root = tmp_path / "acervo"
     credential_file = tmp_path / "credentials"
-    credential_file.write_text("sync-user\ntest-password\n", encoding="utf-8")
+    credential_file.write_text(
+        "sync-user\ntest-password\nadmin@account.example.com\npb-password\n",
+        encoding="utf-8",
+    )
     credential_file.chmod(0o600)
     env = os.environ.copy()
     env["PATH"] = f"{fake_docker_path(tmp_path)}:{env['PATH']}"
@@ -263,6 +270,8 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
     assert (root / "secrets.env").read_text(encoding="utf-8") == (
         "ACERVO_ANKI_SYNC_USERNAME='sync-user'\n"
         "ACERVO_ANKI_SYNC_PASSWORD='test-password'\n"
+        "ACERVO_PB_SUPERUSER_EMAIL='admin@account.example.com'\n"
+        "ACERVO_PB_SUPERUSER_PASSWORD='pb-password'\n"
     )
     deployment = (root / "deployment.env").read_text(encoding="utf-8")
     assert "ACERVO_BIND_ADDRESS=0.0.0.0\n" in deployment
@@ -362,7 +371,9 @@ def test_remote_helper_runs_the_packaged_installer_from_standard_input(tmp_path:
     root.mkdir()
     secrets = root / "secrets.env"
     secrets.write_text(
-        "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n",
+        "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n"
+        "ACERVO_PB_SUPERUSER_EMAIL=admin@account.example.com\n"
+        "ACERVO_PB_SUPERUSER_PASSWORD=pb-password\n",
         encoding="utf-8",
     )
     secrets.chmod(0o600)
