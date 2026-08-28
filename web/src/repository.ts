@@ -2,19 +2,20 @@ import {
   validateGraph,
   type Attestation, type AttestationInput, type EntityKind, type Example, type ExampleInput,
   type ImagePrompt, type ImagePromptInput, type Lexeme, type LexemeInput, type Sense, type SenseInput,
-  type OwnedFields, type StudyState, type StudyStateInput, type SyncFields, type VocabularyGraph
+  type OwnedFields, type StudyState, type StudyStateInput, type SyncFields, type Topic, type TopicInput,
+  type VocabularyGraph
 } from "./domain";
 import { createLocalDatabase, MemoryDatabase, pendingKey, type LocalDatabase, type RecordStore, type ReplicaMeta } from "./localDatabase";
 import { newDeviceId, newId, nowInstant } from "./ids";
 
-export const LOCAL_SCHEMA_VERSION = 1;
+export const LOCAL_SCHEMA_VERSION = 2;
 
 const EMPTY_GRAPH = (): VocabularyGraph => ({
-  lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
+  topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
 });
 
-type Entity = Lexeme | Sense | Attestation | Example | ImagePrompt | StudyState;
-type EntityInput = LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput;
+type Entity = Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | StudyState;
+type EntityInput = TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput;
 
 export interface ReplicaSnapshot extends VocabularyGraph {
   ready: boolean;
@@ -29,6 +30,7 @@ export interface AcervoRepository {
   clear(): Promise<void>;
   snapshot(): ReplicaSnapshot;
   writeGraph(changes: Partial<VocabularyGraph>): Promise<void>;
+  saveTopic(input: TopicInput, id?: string): Promise<Topic>;
   saveLexeme(input: LexemeInput, id?: string): Promise<Lexeme>;
   saveSense(input: SenseInput, id?: string): Promise<Sense>;
   saveAttestation(input: AttestationInput, id?: string): Promise<Attestation>;
@@ -70,6 +72,7 @@ export class LocalAcervoRepository implements AcervoRepository {
       await this.database.write({ meta: this.meta });
     } else {
       const graph: VocabularyGraph = {
+        topics: contents.topics,
         lexemes: contents.lexemes,
         senses: contents.senses,
         attestations: contents.attestations,
@@ -79,7 +82,7 @@ export class LocalAcervoRepository implements AcervoRepository {
       };
       validateGraph(graph);
       const allRecords: Entity[][] = [
-        graph.lexemes, graph.senses, graph.attestations, graph.examples, graph.imagePrompts, graph.studyStates
+        graph.topics, graph.lexemes, graph.senses, graph.attestations, graph.examples, graph.imagePrompts, graph.studyStates
       ];
       const hasForeignRecord = allRecords.some((records) => records.some((record) => record.ownerId !== ownerId));
       if (hasForeignRecord) throw new Error("Replica records do not belong to the authenticated owner.");
@@ -161,6 +164,7 @@ export class LocalAcervoRepository implements AcervoRepository {
     return record;
   }
 
+  saveTopic(input: TopicInput, id?: string) { return this.save("topics", input, id) as Promise<Topic>; }
   saveLexeme(input: LexemeInput, id?: string) { return this.save("lexemes", input, id) as Promise<Lexeme>; }
   saveSense(input: SenseInput, id?: string) { return this.save("senses", input, id) as Promise<Sense>; }
   saveAttestation(input: AttestationInput, id?: string) { return this.save("attestations", input, id) as Promise<Attestation>; }
@@ -171,16 +175,25 @@ export class LocalAcervoRepository implements AcervoRepository {
   async delete(kind: EntityKind, id: string): Promise<void> {
     if (!this.ready) throw new Error("Load the Acervo repository before writing.");
     const changed: Partial<VocabularyGraph> = {};
-    const tombstone = <T extends Entity>(store: EntityKind, record: T) => {
-      const value = { ...record, ...this.stamp(record), deleted: true } as T;
+    const change = <T extends Entity>(store: EntityKind, value: T) => {
       const list = (changed[store] ?? []) as T[];
       list.push(value);
       changed[store] = list as never;
     };
+    const tombstone = <T extends Entity>(store: EntityKind, record: T) => {
+      const value = { ...record, ...this.stamp(record), deleted: true } as T;
+      change(store, value);
+    };
     const target = (this.graph[kind] as Entity[]).find((record) => record.id === id);
     if (!target || target.deleted) return;
     tombstone(kind, target);
-    if (kind === "lexemes") {
+    if (kind === "topics") {
+      this.graph.lexemes
+        .filter((record) => record.topicIds.includes(id) && !record.deleted)
+        .forEach((record) => change("lexemes", {
+          ...record, ...this.stamp(record), topicIds: record.topicIds.filter((topicId) => topicId !== id)
+        }));
+    } else if (kind === "lexemes") {
       const senseIds = new Set(this.graph.senses.filter((record) => record.lexemeId === id).map((record) => record.id));
       this.graph.senses.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("senses", record));
       this.graph.attestations.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("attestations", record));

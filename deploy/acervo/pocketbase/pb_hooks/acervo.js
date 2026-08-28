@@ -70,7 +70,7 @@ function dispatch(event) {
         name: "Acervo",
         version: trimmed($os.getenv("ACERVO_APP_VERSION")) || "0.0.0",
         build: trimmed($os.getenv("ACERVO_APP_BUILD")) || "0",
-        schemaVersion: 1,
+        schemaVersion: 2,
       });
     }
     if (method === "GET" && relative === "/mac-release") return respond(event, releaseManifest());
@@ -149,12 +149,19 @@ function sameOwner(record, parent, label) {
 function validateRecord(app, record) {
   const collection = record.collection().name;
   syncRecord(record);
+  if (collection === "topics") {
+    if (!trimmed(record.getString("name"))) invalid("Topic name is required.");
+    return;
+  }
   if (collection === "lexemes") {
     const language = validLanguage(record.getString("language"), "Lexeme language");
     if (language.toLowerCase().indexOf("zh") === 0 && !trimmed(record.getString("reading"))) {
       invalid("Chinese lexemes require a reading.");
     }
-    stringArray(jsonValue(record.get("topics")), "Topics");
+    const topicIds = record.getStringSlice("topics");
+    for (let index = 0; index < topicIds.length; index += 1) {
+      sameOwner(record, related(app, "topics", topicIds[index], "Topic"), "Lexeme topic");
+    }
     stringArray(jsonValue(record.get("notes")), "Notes");
     return;
   }

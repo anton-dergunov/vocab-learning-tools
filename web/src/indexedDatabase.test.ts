@@ -6,7 +6,7 @@ import { LocalAcervoRepository } from "./repository";
 const lexemeInput = {
   language: "es", headword: "la balsa", lemma: "balsa", reading: null, pos: "noun" as const,
   gender: "feminine" as const, register: "neutral" as const, dialect: null, emoji: "🛶",
-  topics: ["travel"], status: "active" as const, shortGloss: null, notes: []
+  topicIds: [], status: "active" as const, shortGloss: null, notes: []
 };
 
 describe("IndexedDB Acervo repository", () => {
@@ -22,7 +22,8 @@ describe("IndexedDB Acervo repository", () => {
       editedAt: "2026-08-28T12:00:00.000Z", editedBy: first.snapshot().deviceId, revision: 0
     };
     await first.writeGraph({
-      lexemes: [{ id: "lexeme000000001", ...lexemeInput, ...sync }],
+      topics: [{ id: "topic0000000001", name: "Travel", icon: "🧭", ...sync }],
+      lexemes: [{ id: "lexeme000000001", ...lexemeInput, topicIds: ["topic0000000001"], ...sync }],
       senses: [{
         id: "sense0000000001", lexemeId: "lexeme000000001", definition: "Una embarcación sencilla.",
         definitionLang: "es", glosses: [{ lang: "en", terms: ["raft"] }], domain: null, order: 0, ...sync
@@ -31,7 +32,8 @@ describe("IndexedDB Acervo repository", () => {
 
     const reopened = new LocalAcervoRepository(createLocalDatabase());
     await reopened.load("owner0000000001");
-    expect(reopened.snapshot()).toMatchObject({ persistent: true, pendingCount: 2 });
+    expect(reopened.snapshot()).toMatchObject({ persistent: true, pendingCount: 3 });
+    expect(reopened.snapshot().topics[0].name).toBe("Travel");
     expect(reopened.snapshot().lexemes[0].headword).toBe("la balsa");
     expect(reopened.snapshot().senses[0].lexemeId).toBe("lexeme000000001");
   });

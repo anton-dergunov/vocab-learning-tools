@@ -9,8 +9,9 @@ device synchronization, and capture workflow are separate later stages.
 
 ## Core model
 
-The canonical graph separates six records with different lifetimes:
+The canonical graph separates seven records with different lifetimes:
 
+- `topic` — an editable grouping label with an optional symbolic icon;
 - `lexeme` — the word or phrase being learned;
 - `sense` — one ordered meaning with target-language definition and multilingual glosses;
 - `attestation` — the verbatim context in which the learner encountered it;
@@ -62,8 +63,8 @@ python scripts/seed_acervo_demo.py \
 ```
 
 The command prompts for PocketBase superuser credentials, stores none of them, and is idempotent.
-The sample graph covers multilingual glosses, phrases, attestations, generated examples, prompts,
-study statistics, and a Chinese reading.
+The sample graph includes thirteen editable starter topics plus five lexemes covering multilingual
+glosses, phrases, attestations, generated examples, prompts, study statistics, and a Chinese reading.
 
 ## Components
 

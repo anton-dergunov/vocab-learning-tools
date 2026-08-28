@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveShortGloss, validateGraph, type Lexeme, type Sense, type VocabularyGraph } from "./domain";
+import { effectiveShortGloss, validateGraph, type Lexeme, type Sense, type Topic, type VocabularyGraph } from "./domain";
 import { newId } from "./ids";
 
 const sync = {
@@ -8,16 +8,17 @@ const sync = {
 };
 
 function graph(): VocabularyGraph {
+  const topic: Topic = { id: "topic0000000001", name: "Travel", icon: "🧭", ...sync };
   const lexeme: Lexeme = {
     id: "lexeme000000001", language: "es", headword: "la balsa", lemma: "balsa", reading: null,
     pos: "noun", gender: "feminine", register: "neutral", dialect: null, emoji: "🛶",
-    topics: ["travel"], status: "active", shortGloss: null, notes: [], ...sync
+    topicIds: [topic.id], status: "active", shortGloss: null, notes: [], ...sync
   };
   const sense: Sense = {
     id: "sense0000000001", lexemeId: lexeme.id, definition: "Una embarcación sencilla.", definitionLang: "es",
     glosses: [{ lang: "en", terms: ["raft"] }, { lang: "ru", terms: ["плот"] }], domain: null, order: 0, ...sync
   };
-  return { lexemes: [lexeme], senses: [sense], attestations: [], examples: [], imagePrompts: [], studyStates: [] };
+  return { topics: [topic], lexemes: [lexeme], senses: [sense], attestations: [], examples: [], imagePrompts: [], studyStates: [] };
 }
 
 describe("Acervo domain", () => {
@@ -56,6 +57,12 @@ describe("Acervo domain", () => {
     const value = graph();
     value.senses[0].ownerId = "owner0000000002";
     expect(() => validateGraph(value)).toThrow("one owner only");
+  });
+
+  it("rejects a lexeme that references a missing topic", () => {
+    const value = graph();
+    value.lexemes[0].topicIds = ["topic0000000002"];
+    expect(() => validateGraph(value)).toThrow("missing topic");
   });
 
   it("generates PocketBase-compatible ids without bias-visible shape errors", () => {

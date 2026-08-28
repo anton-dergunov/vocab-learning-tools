@@ -11,7 +11,7 @@ export type Register = typeof REGISTERS[number];
 export type LexemeStatus = typeof LEXEME_STATUSES[number];
 export type SourceKind = typeof SOURCE_KINDS[number];
 export type ExampleOrigin = typeof EXAMPLE_ORIGINS[number];
-export type EntityKind = "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "studyStates";
+export type EntityKind = "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "studyStates";
 
 export interface SyncFields {
   deleted: boolean;
@@ -30,6 +30,12 @@ export interface Gloss {
   terms: string[];
 }
 
+export interface Topic extends SyncFields, OwnedFields {
+  id: string;
+  name: string;
+  icon: string | null;
+}
+
 export interface Lexeme extends SyncFields, OwnedFields {
   id: string;
   language: string;
@@ -41,7 +47,7 @@ export interface Lexeme extends SyncFields, OwnedFields {
   register: Register | null;
   dialect: string | null;
   emoji: string | null;
-  topics: string[];
+  topicIds: string[];
   status: LexemeStatus;
   shortGloss: string | null;
   notes: string[];
@@ -112,6 +118,7 @@ export interface StudyState extends SyncFields, OwnedFields {
 }
 
 export interface VocabularyGraph {
+  topics: Topic[];
   lexemes: Lexeme[];
   senses: Sense[];
   attestations: Attestation[];
@@ -120,6 +127,7 @@ export interface VocabularyGraph {
   studyStates: StudyState[];
 }
 
+export type TopicInput = Omit<Topic, "id" | keyof SyncFields | keyof OwnedFields>;
 export type LexemeInput = Omit<Lexeme, "id" | keyof SyncFields | keyof OwnedFields>;
 export type SenseInput = Omit<Sense, "id" | keyof SyncFields | keyof OwnedFields>;
 export type AttestationInput = Omit<Attestation, "id" | keyof SyncFields | keyof OwnedFields>;
@@ -181,6 +189,13 @@ export function validateGraph(graph: VocabularyGraph): void {
     invariant(!ids.has(record.id), `Duplicate record id ${record.id}.`);
     ids.add(record.id);
   };
+  const topics = new Map<string, Topic>();
+  graph.topics.forEach((record) => {
+    remember(record);
+    invariant(record.name.trim().length > 0, "Topic name is required.");
+    optionalString(record.icon, "Topic icon");
+    topics.set(record.id, record);
+  });
   const lexemes = new Map<string, Lexeme>();
   graph.lexemes.forEach((record) => {
     remember(record);
@@ -193,7 +208,13 @@ export function validateGraph(graph: VocabularyGraph): void {
     if (record.register !== null) oneOf(record.register, REGISTERS, "Register");
     optionalString(record.dialect, "Dialect");
     optionalString(record.emoji, "Emoji");
-    stringArray(record.topics, "Topics");
+    stringArray(record.topicIds, "Topic ids");
+    record.topicIds.forEach((topicId) => {
+      validateRecordId(topicId);
+      const topic = topics.get(topicId);
+      invariant(topic, "Lexeme references a missing topic.");
+      invariant(topic.ownerId === record.ownerId, "Lexeme and topic must have the same owner.");
+    });
     oneOf(record.status, LEXEME_STATUSES, "Lexeme status");
     optionalString(record.shortGloss, "Short gloss");
     stringArray(record.notes, "Notes");

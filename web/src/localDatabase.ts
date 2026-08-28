@@ -1,8 +1,8 @@
 import type { VocabularyGraph } from "./domain";
 
 const DATABASE_NAME = "acervo";
-const DATABASE_VERSION = 1;
-export const RECORD_STORES = ["lexemes", "senses", "attestations", "examples", "imagePrompts", "studyStates"] as const;
+const DATABASE_VERSION = 2;
+export const RECORD_STORES = ["topics", "lexemes", "senses", "attestations", "examples", "imagePrompts", "studyStates"] as const;
 const STORES = [...RECORD_STORES, "pending", "meta"] as const;
 export type RecordStore = typeof RECORD_STORES[number];
 
@@ -69,12 +69,13 @@ class IndexedDatabase implements LocalDatabase {
     const meta: Record<string, unknown> = {};
     metaKeys.forEach((key, index) => { meta[String(key)] = metaValues[index]; });
     return {
-      lexemes: records[0] as VocabularyGraph["lexemes"],
-      senses: records[1] as VocabularyGraph["senses"],
-      attestations: records[2] as VocabularyGraph["attestations"],
-      examples: records[3] as VocabularyGraph["examples"],
-      imagePrompts: records[4] as VocabularyGraph["imagePrompts"],
-      studyStates: records[5] as VocabularyGraph["studyStates"],
+      topics: records[0] as VocabularyGraph["topics"],
+      lexemes: records[1] as VocabularyGraph["lexemes"],
+      senses: records[2] as VocabularyGraph["senses"],
+      attestations: records[3] as VocabularyGraph["attestations"],
+      examples: records[4] as VocabularyGraph["examples"],
+      imagePrompts: records[5] as VocabularyGraph["imagePrompts"],
+      studyStates: records[6] as VocabularyGraph["studyStates"],
       pending: pending.map(String),
       meta: meta as Partial<ReplicaMeta>
     };
@@ -110,7 +111,7 @@ class IndexedDatabase implements LocalDatabase {
 
 export class MemoryDatabase implements LocalDatabase {
   private contents: DatabaseContents = {
-    lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: [], pending: [], meta: {}
+    topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: [], pending: [], meta: {}
   };
 
   async read(): Promise<DatabaseContents> {
@@ -130,6 +131,7 @@ export class MemoryDatabase implements LocalDatabase {
     changes.addPending?.forEach((key) => pending.add(key));
     changes.clearPending?.forEach((key) => pending.delete(key));
     this.contents = {
+      topics: replace(this.contents.topics, changes.topics),
       lexemes: replace(this.contents.lexemes, changes.lexemes),
       senses: replace(this.contents.senses, changes.senses),
       attestations: replace(this.contents.attestations, changes.attestations),
@@ -142,7 +144,7 @@ export class MemoryDatabase implements LocalDatabase {
   }
 
   async wipe(): Promise<void> {
-    this.contents = { lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: [], pending: [], meta: {} };
+    this.contents = { topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: [], pending: [], meta: {} };
   }
 }
 

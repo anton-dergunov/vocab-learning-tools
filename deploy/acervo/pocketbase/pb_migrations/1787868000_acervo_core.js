@@ -33,6 +33,23 @@ migrate((app) => {
     collectionId: users.id, cascadeDelete: true,
   });
 
+  const topics = new Collection({
+    type: "base",
+    name: "topics",
+    ...locked,
+    fields: [
+      ownerField(),
+      { type: "text", name: "name", required: true, min: 1, max: 120 },
+      { type: "text", name: "icon", max: 120 },
+      ...syncFields,
+    ],
+    indexes: [
+      "CREATE INDEX idx_topics_owner_revision ON topics (owner, revision)",
+      "CREATE INDEX idx_topics_owner_name ON topics (owner, name COLLATE NOCASE)",
+    ],
+  });
+  app.save(topics);
+
   const lexemes = new Collection({
     type: "base",
     name: "lexemes",
@@ -48,7 +65,7 @@ migrate((app) => {
       { type: "select", name: "register", maxSelect: 1, values: ["neutral", "formal", "colloquial", "slang", "vulgar"] },
       { type: "text", name: "dialect", max: 35, pattern: "^(?:[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*)?$" },
       { type: "text", name: "emoji", max: 32 },
-      { type: "json", name: "topics" },
+      { type: "relation", name: "topics", maxSelect: 100, collectionId: topics.id, cascadeDelete: false },
       { type: "select", name: "status", required: true, maxSelect: 1, values: ["inbox", "active", "learned", "retired", "suppressed"] },
       { type: "text", name: "short_gloss", max: 500 },
       { type: "json", name: "notes" },
@@ -182,7 +199,7 @@ migrate((app) => {
   });
   app.save(studyStates);
 }, (app) => {
-  ["study_states", "image_prompts", "examples", "attestations", "senses", "lexemes"].forEach((name) => {
+  ["study_states", "image_prompts", "examples", "attestations", "senses", "lexemes", "topics"].forEach((name) => {
     try { app.delete(app.findCollectionByNameOrId(name)); } catch (_) { /* already absent */ }
   });
 });

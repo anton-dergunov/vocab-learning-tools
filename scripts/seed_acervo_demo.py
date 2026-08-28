@@ -16,6 +16,21 @@ import urllib.request
 
 STAMP = "2026-08-28T12:00:00.000Z"
 EDITOR = "acervoseed"
+STARTER_TOPICS = (
+    ("emotions", "Emotions", "💭"),
+    ("actions", "Actions", "⚡"),
+    ("nature", "Nature", "🌿"),
+    ("culture", "Culture", "🎭"),
+    ("food", "Food", "🍽️"),
+    ("health", "Health", "🩺"),
+    ("appearance", "Appearance", "👤"),
+    ("technology", "Technology", "💻"),
+    ("travel", "Travel", "🧭"),
+    ("slang", "Slang", "💬"),
+    ("social", "Social", "🤝"),
+    ("places", "Places", "📍"),
+    ("misc", "Misc", "📌"),
+)
 
 
 def record_id(owner_id: str, collection: str, key: str) -> str:
@@ -84,6 +99,7 @@ def sync_fields() -> dict:
 
 def demo_records(owner_id: str) -> list[tuple[str, dict]]:
     rid = lambda collection, key: record_id(owner_id, collection, key)
+    topics = {key: rid("topics", key) for key, _, _ in STARTER_TOPICS}
     lexemes = {
         "balsa": rid("lexemes", "balsa"),
         "desmayarse": rid("lexemes", "desmayarse"),
@@ -92,9 +108,13 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
         "library": rid("lexemes", "library-zh"),
     }
     base = {"owner": owner_id, **sync_fields()}
-    records: list[tuple[str, dict]] = []
+    records: list[tuple[str, dict]] = [
+        ("topics", {"id": topics[key], **base, "name": name, "icon": icon})
+        for key, name, icon in STARTER_TOPICS
+    ]
 
     def lexeme(key: str, **fields: object) -> None:
+        fields["topics"] = [topics[topic] for topic in fields.get("topics", [])]
         records.append(("lexemes", {"id": lexemes[key], **base, **fields}))
 
     lexeme("balsa", language="es", headword="la balsa", lemma="balsa", reading="", pos="noun",

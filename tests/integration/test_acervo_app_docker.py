@@ -107,7 +107,7 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         status, health = request(base, "GET", "/api/acervo/v1/health")
         assert status == 200
         assert health["data"] == {
-            "name": "Acervo", "version": "0.1.0", "build": "202608280000", "schemaVersion": 1
+                "name": "Acervo", "version": "0.1.0", "build": "202608280000", "schemaVersion": 2
         }
         assert b"<title>Acervo</title>" in get_bytes(base + "/")[1]
 
@@ -148,12 +148,12 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         assert "created 0" not in first_seed.stdout
 
         counts = {}
-        for collection in ("lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"):
+        for collection in ("topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"):
             owner_filter = urllib.parse.quote(f'owner="{owners[0]["id"]}"')
             status, result = request(base, "GET", f"/api/collections/{collection}/records?perPage=100&filter={owner_filter}", token=admin_token)
             assert status == 200, result
             counts[collection] = result["totalItems"]
-        assert counts == {"lexemes": 5, "senses": 6, "attestations": 2, "examples": 6, "image_prompts": 2, "study_states": 1}
+        assert counts == {"topics": 13, "lexemes": 5, "senses": 6, "attestations": 2, "examples": 6, "image_prompts": 2, "study_states": 1}
 
         seeded = demo_records(owners[0]["id"])
         lexeme_id = next(record["id"] for collection, record in seeded if collection == "lexemes")
@@ -168,6 +168,16 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
             "edited_by": "integrationtest", "revision": 0,
         }
         assert request(base, "POST", "/api/collections/senses/records", cross_owner_sense, admin_token)[0] == 400
+
+        cross_owner_topic = {
+            "id": "topiccrossown01", "owner": owners[1]["id"], "name": "Other account", "icon": "🔒",
+            "deleted": False, "created_at": "2026-08-28T12:00:00.000Z",
+            "edited_at": "2026-08-28T12:00:00.000Z", "edited_by": "integrationtest", "revision": 0,
+        }
+        assert request(base, "POST", "/api/collections/topics/records", cross_owner_topic, admin_token)[0] == 200
+        assert request(base, "PATCH", f"/api/collections/lexemes/records/{lexeme_id}", {
+            "topics": [cross_owner_topic["id"]]
+        }, admin_token)[0] == 400
 
         sentinel = data / "deployment-sentinel"
         sentinel.write_text("preserved", encoding="utf-8")

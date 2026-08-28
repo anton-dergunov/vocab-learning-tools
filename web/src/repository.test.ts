@@ -4,7 +4,7 @@ import { LocalAcervoRepository } from "./repository";
 
 const lexemeInput = {
   language: "es", headword: "desmayarse", lemma: "desmayarse", reading: null, pos: "verb" as const,
-  gender: null, register: "neutral" as const, dialect: null, emoji: "😵‍💫", topics: ["health"],
+  gender: null, register: "neutral" as const, dialect: null, emoji: "😵‍💫", topicIds: [],
   status: "active" as const, shortGloss: null, notes: []
 };
 
@@ -18,13 +18,15 @@ describe("offline Acervo repository", () => {
       editedAt: "2026-08-28T12:00:00.000Z", editedBy: repository.snapshot().deviceId, revision: 0
     };
     await repository.writeGraph({
-      lexemes: [{ id: "lexeme000000001", ...lexemeInput, ...sync }],
+      topics: [{ id: "topic0000000001", name: "Health", icon: "🩺", ...sync }],
+      lexemes: [{ id: "lexeme000000001", ...lexemeInput, topicIds: ["topic0000000001"], ...sync }],
       senses: [{
         id: "sense0000000001", lexemeId: "lexeme000000001", definition: "Perder el conocimiento.",
         definitionLang: "es", glosses: [{ lang: "en", terms: ["to faint"] }], domain: null, order: 0, ...sync
       }]
     });
-    expect(repository.snapshot()).toMatchObject({ pendingCount: 2 });
+    expect(repository.snapshot()).toMatchObject({ pendingCount: 3 });
+    expect(repository.snapshot().topics).toHaveLength(1);
     expect(repository.snapshot().lexemes).toHaveLength(1);
     expect(repository.snapshot().senses).toHaveLength(1);
   });
@@ -49,7 +51,8 @@ describe("offline Acervo repository", () => {
     const database = new MemoryDatabase();
     const repository = new LocalAcervoRepository(database);
     await repository.load("owner0000000001");
-    const lexeme = await repository.saveLexeme(lexemeInput, "lexeme000000001");
+    const topic = await repository.saveTopic({ name: "Health", icon: "🩺" }, "topic0000000001");
+    const lexeme = await repository.saveLexeme({ ...lexemeInput, topicIds: [topic.id] }, "lexeme000000001");
     const sense = await repository.saveSense({
       lexemeId: lexeme.id, definition: "Perder brevemente el conocimiento.", definitionLang: "es",
       glosses: [{ lang: "en", terms: ["to faint", "to pass out"] }], domain: "health", order: 0
@@ -63,8 +66,8 @@ describe("offline Acervo repository", () => {
       translationLang: "en", origin: "attestation", sourceAttestationId: attestation.id, modelId: null,
       videoRef: null, imageRef: null, audioRef: null, note: null, approved: true
     }, "example00000001");
-    expect(repository.snapshot()).toMatchObject({ ready: true, ownerId: "owner0000000001", pendingCount: 4 });
-    expect((await database.read()).pending).toHaveLength(4);
+    expect(repository.snapshot()).toMatchObject({ ready: true, ownerId: "owner0000000001", pendingCount: 5 });
+    expect((await database.read()).pending).toHaveLength(5);
   });
 
   it("atomically refuses invalid relations and Chinese records without readings", async () => {
@@ -96,6 +99,20 @@ describe("offline Acervo repository", () => {
     expect((await database.read()).pending).toEqual(expect.arrayContaining(["lexemes:lexeme000000001", "senses:sense0000000001"]));
   });
 
+  it("tombstones a topic and removes it from related lexemes atomically", async () => {
+    const database = new MemoryDatabase();
+    const repository = new LocalAcervoRepository(database);
+    await repository.load("owner0000000001");
+    const topic = await repository.saveTopic({ name: "Health", icon: "🩺" }, "topic0000000001");
+    await repository.saveLexeme({ ...lexemeInput, topicIds: [topic.id] }, "lexeme000000001");
+    await repository.delete("topics", topic.id);
+    expect(repository.snapshot().topics[0].deleted).toBe(true);
+    expect(repository.snapshot().lexemes[0].topicIds).toEqual([]);
+    expect((await database.read()).pending).toEqual(expect.arrayContaining([
+      "topics:topic0000000001", "lexemes:lexeme000000001"
+    ]));
+  });
+
   it("wipes another owner's replica without converting it and preserves the device id", async () => {
     const database = new MemoryDatabase();
     const first = new LocalAcervoRepository(database);
@@ -119,6 +136,6 @@ describe("offline Acervo repository", () => {
     expect(repository.snapshot()).toMatchObject({
       lexemes: [], pendingCount: 0, deviceId: "device000000001", ownerId: "owner0000000001"
     });
-    expect((await database.read()).meta.schemaVersion).toBe(1);
+    expect((await database.read()).meta.schemaVersion).toBe(2);
   });
 });

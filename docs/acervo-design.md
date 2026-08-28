@@ -102,6 +102,18 @@ Your current markdown conflates things that need separating — a headword, its 
 sentence you met it in, and an illustrative example are four different kinds of thing with four
 different lifetimes.
 
+**`topic` — an editable grouping**
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | recordId | Client-generated in the same format as every other record. |
+| `name` | string | User-visible label such as `Health`, `Travel`, or `Slang`. |
+| `icon` | string? | Optional emoji or symbolic icon identifier, not binary media. |
+
+Topics are owner-scoped data, not a hard-coded classification enum. Starter topics are ordinary
+seed records, so an empty topic remains available in navigation and users can add, rename, or
+retire topics independently of their current lexemes.
+
 **`lexeme` — the thing being learned**
 
 | Field | Type | Notes |
@@ -116,7 +128,7 @@ different lifetimes.
 | `register` | enum? | neutral · formal · colloquial · slang · vulgar. Your Slang file is already this, as a filename. |
 | `dialect` | string? | `es-ES` / `es-MX`. Matters more than you'd think once the corpus is in. |
 | `emoji` | string? | Keep it — it's genuinely good recall scaffolding and it's already in your data. |
-| `topics` | string[] | Was your filename. Now many-per-word, which fixes the 387-entry *Misc* file. |
+| `topicIds` | recordId[] | Zero or more topic relations; grouping is many-to-many from the lexeme side. |
 | `status` | enum | inbox → active → learned → retired, plus **suppressed**. |
 | `shortGloss` | string? | **Derived, with override.** The one-line form — see below. Null unless curated. |
 | `notes` | string[] | Usage, register, synonyms and contrasts. |
@@ -262,7 +274,7 @@ The case that justifies phrases being first-class — isolating a word here woul
   "gender": null,
   "register": "neutral",
   "emoji": "💖",
-  "topics": ["health", "social"],
+  "topicIds": ["topic0000000001", "topic0000000002"],
   "status": "active",
   "createdAt": "2026-01-30T09:14:22.418Z",
   "editedAt": "2026-01-30T09:14:22.418Z",
@@ -318,7 +330,7 @@ away. Punctuation and capitalisation are repaired; wording is not invented.
 Your English case, with both glossing halves earning their place:
 
 ```jsonc
-{ "language": "en", "headword": "turmoil", "pos": "noun", "topics": ["emotions"] }
+{ "language": "en", "headword": "turmoil", "pos": "noun", "topicIds": ["topic0000000003"] }
 {
   "definition": "A state of great confusion, disturbance or uncertainty.",
   "definitionLang": "en",
@@ -1137,7 +1149,7 @@ affects whether it pushes over SSH or HTTPS.
 
 The §03 foundation is now the only application model:
 
-- PocketBase owns locked, owner-scoped `lexemes`, `senses`, `attestations`, `examples`,
+- PocketBase owns locked, owner-scoped `topics`, `lexemes`, `senses`, `attestations`, `examples`,
   `image_prompts` and `study_states` collections. Accounts are administrator-created; the app API
   provides password login and token refresh.
 - IDs are generated offline in PocketBase's native 15-character format and stored unchanged in
