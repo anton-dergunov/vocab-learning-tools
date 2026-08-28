@@ -19,6 +19,8 @@ def main() -> None:
     assert manifest["name"] == "Acervo"
     assert manifest["display"] == "standalone"
     assert manifest["start_url"] == "."
+    assert manifest["prefer_related_applications"] is False
+    assert {app["platform"] for app in manifest["related_applications"]} == {"webapp"}
     purposes = {icon.get("purpose", "any") for icon in manifest["icons"]}
     assert {"any", "maskable"} <= purposes
     for icon in manifest["icons"]:
@@ -26,6 +28,8 @@ def main() -> None:
 
     index = (DIST / "index.html").read_text(encoding="utf-8")
     assert "<title>Acervo</title>" in index
+    assert '<meta name="apple-mobile-web-app-capable" content="yes"' in index
+    assert '<meta name="apple-mobile-web-app-title" content="Acervo"' in index
     assert re.search(r'(?:src|href)="\./', index), "assets must be relative for the native host"
 
     service_worker = (DIST / "sw.js").read_text(encoding="utf-8")

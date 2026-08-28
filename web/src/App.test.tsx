@@ -28,16 +28,34 @@ async function openList() {
 describe("Acervo application", () => {
   beforeEach(async () => {
     delete window.webkit;
+    localStorage.clear();
+    sessionStorage.clear();
     await repository.clear();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: null }) }));
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-  it("asks for a server and an account when no session is stored", async () => {
+  it("uses the web page origin when signing in from a browser", async () => {
+    vi.spyOn(backendSession, "restore").mockResolvedValue(null);
+    const login = vi.spyOn(backendSession, "login").mockResolvedValue({
+      baseUrl: window.location.origin, email: "learner@account.example.com", token: "token", userId: TEST_OWNER
+    });
+    render(<App />);
+    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Server")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "learner@account.example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(login).toHaveBeenCalledWith(
+      window.location.origin, "learner@account.example.com", "secret-password"
+    ));
+  });
+
+  it("keeps explicit server selection in the native macOS host", async () => {
+    window.webkit = { messageHandlers: { acervo: { postMessage: vi.fn() } } };
     vi.spyOn(backendSession, "restore").mockResolvedValue(null);
     render(<App />);
     expect(await screen.findByLabelText("Server")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
 
   it("reports why a sign in failed without leaving the form", async () => {
@@ -45,11 +63,39 @@ describe("Acervo application", () => {
     vi.spyOn(backendSession, "login")
       .mockRejectedValue(new AcervoApiError("The email or password is incorrect.", 401, "invalid_credentials"));
     render(<App />);
-    fireEvent.change(await screen.findByLabelText("Server"), { target: { value: "https://acervo.example.com" } });
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "learner@account.example.com" } });
+    fireEvent.change(await screen.findByLabelText("Email"), { target: { value: "learner@account.example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByText("The email or password is incorrect.")).toBeInTheDocument();
+  });
+
+  it("offers Android installation before sign in", async () => {
+    vi.stubGlobal("navigator", {
+      userAgent: "Mozilla/5.0 (Linux; Android 15)", platform: "Linux armv8l", maxTouchPoints: 5
+    });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    vi.spyOn(backendSession, "restore").mockResolvedValue(null);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Install the app" })).toBeInTheDocument();
+    expect(screen.getByText(/offers Install app when Acervo is not installed yet/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Continue in browser" }));
+    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
+  });
+
+  it("shows the Safari home-screen steps on iPhone and iPad", async () => {
+    vi.stubGlobal("navigator", {
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+      platform: "iPhone", maxTouchPoints: 5
+    });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    vi.spyOn(backendSession, "restore").mockResolvedValue(null);
+    render(<App />);
+
+    expect(await screen.findByText("Open this page in ", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Share")).toBeInTheDocument();
+    expect(screen.getByText("Add to Home Screen")).toBeInTheDocument();
   });
 
   it("lists the owner's words pulled from the server", async () => {

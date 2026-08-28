@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Install Acervo — UI prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Literata:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="acervo.css">
+</head>
+<body>
+<div class="install-page"><section class="install-card" aria-labelledby="install-title">
+  <p class="install-kicker">Acervo</p>
+  <h1 id="install-title">Install the app</h1>
+  <ol class="install-steps" id="ios-steps">
+    <li>Open this page in <strong>Safari</strong>.</li>
+    <li>Tap <strong>Share</strong>.</li>
+    <li>Choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.</li>
+  </ol>
+  <div id="android-steps" hidden>
+    <p class="install-copy">Chrome only offers the install button once. If it does not appear, open the ⋮ menu: it offers Install app when Acervo is not installed yet, and Open app when it already is.</p>
+  </div>
+  <button class="continue-browser">Continue in browser</button>
+</section></div>
+<div id="harness" title="Prototype only — preview installation instructions">
+  <a href="?platform=ios">iOS</a>
+  <a href="?platform=android">Android</a>
+</div>
+<script>
+const android = new URLSearchParams(location.search).get("platform") === "android";
+document.querySelector("#ios-steps").hidden = android;
+document.querySelector("#android-steps").hidden = !android;
+document.querySelector(`#harness a[href="?platform=${android ? "android" : "ios"}"]`).classList.add("on");
+</script>
+</body>
+</html>

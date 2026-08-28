@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { backendSession } from "./api";
+import { isNativeHost } from "./pwa";
 import type { StoredSession } from "./session";
 
 export default function SignIn({ onSignedIn }: { onSignedIn(session: StoredSession): void }) {
-  const [serverUrl, setServerUrl] = useState("");
+  const native = isNativeHost();
+  const [serverUrl, setServerUrl] = useState(native ? "" : window.location.origin);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,13 +27,13 @@ export default function SignIn({ onSignedIn }: { onSignedIn(session: StoredSessi
   return <div className="signin-page">
     <form className="signin" onSubmit={submit}>
       <h1 className="mark">Acervo</h1>
-      <p className="lead">Sign in to the server that holds your vocabulary. It is kept on this device afterwards, so the app opens offline.</p>
-      <div className="field">
+      <p className="lead">Sign in to your account. Your vocabulary is kept on this device afterwards, so Acervo opens offline.</p>
+      {native && <div className="field">
         <label className="label" htmlFor="serverUrl">Server</label>
         <input id="serverUrl" type="url" inputMode="url" autoComplete="url" required
           placeholder="https://acervo.example.com" value={serverUrl}
           onChange={(event) => setServerUrl(event.target.value)} />
-      </div>
+      </div>}
       <div className="field">
         <label className="label" htmlFor="email">Email</label>
         <input id="email" type="email" autoComplete="username" required

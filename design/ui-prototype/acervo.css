@@ -510,12 +510,12 @@ details.fold .fold-body { padding: 4px 0 18px; }
   display: flex; gap: 3px; padding: 4px;
   background: var(--surface); border: 1px solid var(--rule); border-radius: 9px; box-shadow: var(--shadow);
 }
-#harness button {
+#harness button, #harness a {
   font-family: var(--mono); font-size: 10px; letter-spacing: .09em; text-transform: uppercase;
-  padding: 6px 9px; border-radius: 6px; color: var(--ink-3);
+  padding: 6px 9px; border-radius: 6px; color: var(--ink-3); text-decoration: none;
 }
-#harness button.on { background: var(--core-soft); color: var(--core); font-weight: 600; }
-#harness button:hover { color: var(--ink); }
+#harness button.on, #harness a.on { background: var(--core-soft); color: var(--core); font-weight: 600; }
+#harness button:hover, #harness a:hover { color: var(--ink); }
 body.framed { padding: 26px 0; display: grid; place-items: start center; background: var(--surface-2); height: auto; min-height: 100%; }
 body.framed .viewport {
   border: 1px solid var(--rule); border-radius: 14px; overflow: hidden;
@@ -523,6 +523,34 @@ body.framed .viewport {
 }
 body.phone  .viewport { width: 402px; height: 874px; }
 body.tablet .viewport { width: 834px; height: 1000px; }
+
+/* ══════════════════════════ install ══════════════════════════ */
+.install-page {
+  min-height: 100%; overflow-y: auto;
+  display: grid; place-items: center;
+  padding: max(28px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+           max(28px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  background: var(--paper);
+}
+.install-card {
+  width: min(430px, 100%);
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 30px 28px 26px;
+}
+.install-kicker {
+  margin: 0 0 5px; color: var(--core);
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .13em; text-transform: uppercase;
+}
+.install-card h1 { margin: 0 0 17px; font: 700 28px/1.15 var(--serif); letter-spacing: -.02em; }
+.install-copy, .install-steps { margin: 0 0 20px; color: var(--ink-3); font-size: 14.5px; line-height: 1.55; }
+.install-steps { padding-left: 20px; }
+.install-steps li + li { margin-top: 7px; }
+.install-button { width: 100%; height: 40px; justify-content: center; }
+.continue-browser {
+  width: 100%; margin-top: 10px; border: 0; background: transparent;
+  color: var(--core); padding: 8px; cursor: pointer; font-size: 12px;
+}
 
 /* ══════════════════════════ narrow layout ══════════════════════════ */
 @media (max-width: 720px) { #harness { display: none; } }

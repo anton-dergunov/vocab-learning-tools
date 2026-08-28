@@ -5,7 +5,11 @@ import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from 
 import LexemeArticle from "./LexemeArticle";
 import LexemeList from "./LexemeList";
 import { languageOf } from "./languages";
-import { isNativeHost, UPDATE_EVENT, updateStage, type UpdateStage } from "./pwa";
+import {
+  alreadyInstalledOnThisDevice, canPromptInstall, detectedInstallPlatform,
+  INSTALL_AVAILABLE_EVENT, INSTALLED_EVENT, isNativeHost, promptInstall,
+  shouldOfferMobileInstall, UPDATE_EVENT, updateStage, type UpdateStage
+} from "./pwa";
 import { repository, type ReplicaSnapshot } from "./repository";
 import {
   articleFor, inboxCount, languageOptions, topicOptions, visibleRows,
@@ -21,8 +25,57 @@ import "./styles.css";
 
 type Mode = "read" | "yaml" | "edit";
 
+function InstallGate({ onContinue }: { onContinue(): void }) {
+  const platform = detectedInstallPlatform();
+  const [promptAvailable, setPromptAvailable] = useState(canPromptInstall());
+  const [installedHere, setInstalledHere] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void alreadyInstalledOnThisDevice().then((installed) => { if (active) setInstalledHere(installed); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const available = () => setPromptAvailable(true);
+    const installed = () => onContinue();
+    window.addEventListener(INSTALL_AVAILABLE_EVENT, available);
+    window.addEventListener(INSTALLED_EVENT, installed);
+    return () => {
+      window.removeEventListener(INSTALL_AVAILABLE_EVENT, available);
+      window.removeEventListener(INSTALLED_EVENT, installed);
+    };
+  }, [onContinue]);
+
+  const install = async () => {
+    const accepted = await promptInstall();
+    setPromptAvailable(false);
+    if (accepted) onContinue();
+  };
+
+  return <div className="install-page"><section className="install-card" aria-labelledby="install-title">
+    <p className="install-kicker">Acervo</p>
+    <h1 id="install-title">Install the app</h1>
+    {platform === "ios" ? <ol className="install-steps">
+      <li>Open this page in <strong>Safari</strong>.</li>
+      <li>Tap <strong>Share</strong>.</li>
+      <li>Choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.</li>
+    </ol> : <>
+      <p className="install-copy">{promptAvailable
+        ? "Add Acervo to your home screen for a compact, full-screen experience."
+        : installedHere
+          ? "Acervo is already installed on this device. Open it from your home screen, or carry on here in the browser."
+          : "Chrome only offers the install button once. If it does not appear, open the ⋮ menu: it offers Install app when Acervo is not installed yet, and Open app when it already is."}</p>
+      {promptAvailable && <button className="tb-btn primary install-button" onClick={() => void install()}>Install Acervo</button>}
+    </>}
+    <button className="continue-browser" onClick={onContinue}>Continue in browser</button>
+  </section></div>;
+}
+
 export default function App() {
   const native = isNativeHost();
+  const [showInstall, setShowInstall] = useState(() => shouldOfferMobileInstall()
+    && sessionStorage.getItem("acervo-install-dismissed") !== "true");
   const [session, setSession] = useState<StoredSession | null | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<ReplicaSnapshot | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
@@ -144,6 +197,12 @@ export default function App() {
     setSession(null);
   }
 
+  const dismissInstall = useCallback(() => {
+    sessionStorage.setItem("acervo-install-dismissed", "true");
+    setShowInstall(false);
+  }, []);
+
+  if (showInstall) return <InstallGate onContinue={dismissInstall} />;
   if (session === undefined) return <div className="signin-page" />;
   if (session === null) return <SignIn onSignedIn={setSession} />;
 
