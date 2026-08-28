@@ -11,7 +11,7 @@ func statusClickAction(for type: NSEvent.EventType?) -> StatusClickAction {
 
 func makeMenuBarIcon(accessibilityDescription: String) -> NSImage {
     let canvasSize = NSSize(width: 20, height: 18)
-    let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+    let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
     let book = NSImage(
         systemSymbolName: "book.fill",
         accessibilityDescription: nil
@@ -36,7 +36,7 @@ func makeMenuBarIcon(accessibilityDescription: String) -> NSImage {
         context.setShouldAntialias(true)
 
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 6.2, weight: .heavy),
+            .font: NSFont.systemFont(ofSize: 6.7, weight: .heavy),
             .foregroundColor: NSColor.black,
         ]
 
@@ -45,12 +45,13 @@ func makeMenuBarIcon(accessibilityDescription: String) -> NSImage {
             let glyphSize = glyph.size()
             glyph.draw(at: NSPoint(
                 x: centerX - glyphSize.width / 2,
-                y: 5.6
+                y: 5.3
             ))
         }
 
-        cutOut("A", centeredAtX: 5.5)
-        cutOut("Ñ", centeredAtX: 14.5)
+        // A half-point shift is one physical pixel on a Retina menu bar.
+        cutOut("A", centeredAtX: 5)
+        cutOut("Ñ", centeredAtX: 15)
         context.restoreGState()
         return true
     }
