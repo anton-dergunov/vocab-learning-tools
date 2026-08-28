@@ -163,24 +163,30 @@ to completion. It preserves card IDs, scheduling, and non-`acervo::` tags.
 
 ## Remote deployment
 
-The remote account needs Docker Compose and either root or sudo access. For
-Synology:
+The remote account needs SSH key access. For Synology, save the target and per-host port profile
+while installing the stable launcher:
 
 ```bash
 ./deploy.sh --target user@server.example.com --root /volume1/docker/acervo \
-  --configure-credentials --remember-target
+  --remember-target --install-helper
+./deploy.sh --configure-credentials
 ```
 
 For another Linux server, omit `--root` to use `/opt/acervo`. The remembered SSH
-target is stored in the ignored `.acervo-deploy` file. Release archives contain
-code and configuration, never `secrets.env`.
+target is stored in the ignored `.acervo-deploy` file. The profile also remembers the install root,
+bind addresses, Anki port, app backend port, and dedicated Tailscale HTTPS port. CLI arguments
+override the profile for one invocation. Legacy profiles containing only `user@host` remain
+accepted and are upgraded the next time `--remember-target` is used. Release archives contain code
+and configuration, never `secrets.env`.
 
-The deployment does not use SCP or SFTP. Synology installations that disable
-those subsystems are supported by streaming the archive, installer, and initial
-credentials through ordinary SSH. Credentials enter a mode-600 temporary file
-through standard input and never appear in a command argument. Temporary uploads
-are removed after installation, and ordinary sudo may prompt in the final
-terminal session.
+The launcher setup operation may ask for the NAS sudo password. Routine `./deploy.sh` and
+`./deploy.sh --status` calls subsequently use only the reviewed launcher through `sudo -n`; changes
+to the packaged installer do not require copying the launcher again unless its protocol changes.
+
+The deployment does not use SCP or SFTP. Synology installations that disable those subsystems are
+supported by streaming the archive and optional initial credentials through ordinary SSH.
+Credentials enter a mode-600 temporary file through standard input and never appear in a command
+argument. Routine deployment is non-interactive and never asks for the sudo password.
 
 For trusted-LAN testing, explicitly publish the port beyond loopback:
 

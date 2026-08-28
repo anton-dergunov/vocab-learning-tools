@@ -1,0 +1,197 @@
+#!/bin/sh
+set -eu
+
+PROTOCOL=1
+HELPER_PATH=/usr/local/sbin/deploy-acervo
+SUDOERS_PATH=/etc/sudoers.d/deploy-acervo
+PATH="$PATH:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
+export PATH
+
+[ "$(id -u)" -eq 0 ] || {
+  echo "deploy-acervo must be installed as a root-owned command and invoked through sudo" >&2
+  exit 1
+}
+
+validate_port() {
+  label=$1
+  value=$2
+  case "$value" in ''|*[!0-9]*) echo "$label must be numeric" >&2; exit 2 ;; esac
+  if [ "$value" -lt 1 ] || [ "$value" -gt 65535 ]; then
+    echo "$label must be between 1 and 65535" >&2
+    exit 2
+  fi
+}
+
+install_helper() {
+  deployment_user=${SUDO_USER:-}
+  [ -n "$deployment_user" ] && [ "$deployment_user" != root ] || {
+    echo "Run --install through sudo from the ordinary SSH deployment account" >&2
+    exit 2
+  }
+  id "$deployment_user" >/dev/null 2>&1 || {
+    echo "Unknown deployment account" >&2
+    exit 2
+  }
+  mkdir -p /usr/local/sbin /etc/sudoers.d
+  install -o root -g root -m 755 "$0" "$HELPER_PATH"
+  sudoers_tmp=$(mktemp /etc/sudoers.d/deploy-acervo.XXXXXX)
+  trap 'rm -f "$sudoers_tmp"' EXIT HUP INT TERM
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$deployment_user" "$HELPER_PATH" >"$sudoers_tmp"
+  chown root:root "$sudoers_tmp"
+  chmod 440 "$sudoers_tmp"
+  if command -v visudo >/dev/null 2>&1; then visudo -cf "$sudoers_tmp" >/dev/null; fi
+  mv "$sudoers_tmp" "$SUDOERS_PATH"
+  trap - EXIT HUP INT TERM
+  echo "Installed passwordless Acervo launcher for the deployment account."
+}
+
+docker_path() {
+  command -v docker 2>/dev/null || printf '%s\n' /var/packages/ContainerManager/target/usr/bin/docker
+}
+
+show_status() {
+  docker=$(docker_path)
+  "$docker" inspect --format='state={{.State.Status}},health={{.State.Health.Status}}' acervo-anki-sync-server-1
+  "$docker" port acervo-anki-sync-server-1 8080
+  "$docker" inspect --format='state={{.State.Status}},health={{.State.Health.Status}}' acervo-pocketbase-1
+  "$docker" port acervo-pocketbase-1 8090
+}
+
+configure_https() {
+  https_port=
+  app_port=
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --https-port) [ "$#" -ge 2 ] || exit 2; https_port=$2; shift 2 ;;
+      --app-port) [ "$#" -ge 2 ] || exit 2; app_port=$2; shift 2 ;;
+      *) echo "Unsupported configure-https argument: $1" >&2; exit 2 ;;
+    esac
+  done
+  validate_port "HTTPS port" "$https_port"
+  validate_port "App port" "$app_port"
+
+  tailscale=/var/packages/Tailscale/target/bin/tailscale
+  [ -x "$tailscale" ] || tailscale=$(command -v tailscale || true)
+  [ -n "$tailscale" ] && [ -x "$tailscale" ] || {
+    echo "Tailscale is unavailable on this server" >&2
+    exit 1
+  }
+  serve_status=$($tailscale serve status)
+  listener=$(printf '%s\n' "$serve_status" | awk -v port="$https_port" '
+    /^[a-z]+:\/\// {
+      address=$1
+      matches=(address ~ (":" port "$"))
+      if (port == "443" && address ~ /^https:\/\/[^:]+$/) matches=1
+      if (matches) { print; exit }
+    }
+  ')
+  current_target=$(printf '%s\n' "$serve_status" | awk -v port="$https_port" '
+    /^[a-z]+:\/\// {
+      address=$1
+      active=(address ~ (":" port "$"))
+      if (port == "443" && address ~ /^https:\/\/[^:]+$/) active=1
+      next
+    }
+    active && /\|-- \/ proxy / { sub(/^.*proxy /, ""); print; exit }
+  ')
+  expected_target="http://127.0.0.1:$app_port"
+  if [ -n "$listener" ] && [ "$current_target" != "$expected_target" ]; then
+    echo "Refusing to replace the existing listener on port $https_port:" >&2
+    printf '%s\n' "$listener" >&2
+    [ -z "$current_target" ] || printf '%s\n' "|-- / proxy $current_target" >&2
+    exit 1
+  fi
+  if [ "$current_target" = "$expected_target" ]; then
+    echo "Acervo HTTPS mapping already exists; no Tailscale configuration changed."
+    return 0
+  fi
+
+  "$tailscale" serve --bg --yes --https="$https_port" "$expected_target"
+  updated_status=$($tailscale serve status)
+  updated_target=$(printf '%s\n' "$updated_status" | awk -v port="$https_port" '
+    /^[a-z]+:\/\// {
+      address=$1
+      active=(address ~ (":" port "$"))
+      if (port == "443" && address ~ /^https:\/\/[^:]+$/) active=1
+      next
+    }
+    active && /\|-- \/ proxy / { sub(/^.*proxy /, ""); print; exit }
+  ')
+  [ "$updated_target" = "$expected_target" ] || {
+    echo "Tailscale did not report the requested Acervo mapping" >&2
+    exit 1
+  }
+  echo "Configured Acervo only: HTTPS port $https_port -> $expected_target"
+}
+
+deploy_release() {
+  acervo_root=
+  credentials_file=
+  reset_data=false
+  bind_address=
+  anki_port=
+  app_bind_address=
+  app_port=
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --root) [ "$#" -ge 2 ] || exit 2; acervo_root=$2; shift 2 ;;
+      --credentials-file) [ "$#" -ge 2 ] || exit 2; credentials_file=$2; shift 2 ;;
+      --bind-address) [ "$#" -ge 2 ] || exit 2; bind_address=$2; shift 2 ;;
+      --port) [ "$#" -ge 2 ] || exit 2; anki_port=$2; shift 2 ;;
+      --app-bind-address) [ "$#" -ge 2 ] || exit 2; app_bind_address=$2; shift 2 ;;
+      --app-port) [ "$#" -ge 2 ] || exit 2; app_port=$2; shift 2 ;;
+      --reset-data) reset_data=true; shift ;;
+      *) echo "Unsupported deploy argument: $1" >&2; exit 2 ;;
+    esac
+  done
+  case "$acervo_root" in ''|/*/acervo) ;; *) echo "Acervo root must be an absolute path ending in /acervo" >&2; exit 2 ;; esac
+  case "$bind_address$app_bind_address" in *[!A-Za-z0-9:._-]*) echo "Unsafe bind address" >&2; exit 2 ;; esac
+  validate_port "Anki port" "$anki_port"
+  validate_port "App port" "$app_port"
+  [ "$anki_port" != "$app_port" ] || {
+    echo "The Acervo app/PocketBase port must differ from the Anki sync port" >&2
+    exit 2
+  }
+  if [ -n "$credentials_file" ]; then
+    case "$credentials_file" in /tmp/acervo-credentials-[0-9]*) ;; *) echo "Unexpected credentials path" >&2; exit 2 ;; esac
+    [ -f "$credentials_file" ] && [ ! -L "$credentials_file" ] || {
+      echo "Missing credentials file" >&2
+      exit 2
+    }
+  fi
+
+  private_dir=$(mktemp -d /tmp/acervo-deploy.XXXXXX)
+  trap 'rm -rf "$private_dir"; [ -z "${credentials_file:-}" ] || rm -f "$credentials_file"' EXIT HUP INT TERM
+  archive="$private_dir/release.tar.gz"
+  installer="$private_dir/install.sh"
+  chmod 700 "$private_dir"
+  cat >"$archive"
+  [ -s "$archive" ] || { echo "The Acervo release archive is empty" >&2; exit 2; }
+  tar -xOf "$archive" deploy/acervo/install.sh >"$installer" || {
+    echo "The release archive has no Acervo installer" >&2
+    exit 2
+  }
+  chmod 700 "$installer"
+
+  set -- --archive "$archive" --bind-address "$bind_address" --port "$anki_port" \
+    --app-bind-address "$app_bind_address" --app-port "$app_port"
+  [ -z "$acervo_root" ] || set -- "$@" --root "$acervo_root"
+  if [ -n "$credentials_file" ]; then
+    credentials_copy="$private_dir/credentials"
+    cp "$credentials_file" "$credentials_copy"
+    chmod 600 "$credentials_copy"
+    set -- "$@" --credentials-file "$credentials_copy"
+  fi
+  [ "$reset_data" = false ] || set -- "$@" --reset-data
+  sh "$installer" "$@"
+}
+
+command_name=${1:-}
+case "$command_name" in
+  --install) [ "$#" -eq 1 ] || exit 2; install_helper ;;
+  check) [ "$#" -eq 1 ] || exit 2; echo "acervo-deploy-protocol: $PROTOCOL" ;;
+  status) [ "$#" -eq 1 ] || exit 2; show_status ;;
+  configure-https) shift; configure_https "$@" ;;
+  deploy) shift; deploy_release "$@" ;;
+  *) echo "deploy-acervo accepts only check, deploy, status, or configure-https" >&2; exit 2 ;;
+esac

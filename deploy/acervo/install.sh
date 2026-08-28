@@ -219,4 +219,5 @@ done
 
 printf '%s\n' "$release_dir" >"$acervo_root/current-release"
 echo "Acervo Anki sync server is healthy at $bind_address:$anki_port"
-echo "Acervo web and API are healthy at $app_bind_address:$app_port"
+echo "Acervo internal HTTP backend is healthy at http://$app_bind_address:$app_port"
+echo "Open the separately configured HTTPS reverse-proxy or Tailscale Serve address; this deployment does not claim the host's default HTTPS endpoint."

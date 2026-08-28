@@ -2,6 +2,10 @@
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
+helper_path=/usr/local/sbin/deploy-acervo
+helper_protocol=1
+
 mode=
 target=
 acervo_root=
@@ -12,6 +16,7 @@ bind_address=
 anki_port=
 app_bind_address=
 app_port=
+https_port=
 action=deploy
 
 usage() {
@@ -23,10 +28,17 @@ usage:
   ./deploy.sh [--target USER@HOST] [--root PATH] [--configure-credentials]
               [--bind-address ADDRESS] [--port PORT] [--remember-target]
               [--app-bind-address ADDRESS] [--app-port PORT]
-              [--reset-data]
+              [--https-port PORT] [--reset-data]
+  ./deploy.sh [--target USER@HOST] [--remember-target] --install-helper
+  ./deploy.sh [--target USER@HOST] [--https-port PORT] --configure-https
   ./deploy.sh [--local | --target USER@HOST] --status
 EOF
   exit 2
+}
+
+choose_action() {
+  [ "$action" = deploy ] || usage
+  action=$1
 }
 
 while [ "$#" -gt 0 ]; do
@@ -40,29 +52,110 @@ while [ "$#" -gt 0 ]; do
     --port) [ "$#" -ge 2 ] || usage; anki_port=$2; shift 2 ;;
     --app-bind-address) [ "$#" -ge 2 ] || usage; app_bind_address=$2; shift 2 ;;
     --app-port) [ "$#" -ge 2 ] || usage; app_port=$2; shift 2 ;;
-    --status) action=status; shift ;;
+    --https-port) [ "$#" -ge 2 ] || usage; https_port=$2; shift 2 ;;
+    --install-helper) choose_action install-helper; shift ;;
+    --configure-https) choose_action configure-https; shift ;;
+    --status) choose_action status; shift ;;
     --reset-data) reset_data=true; shift ;;
     *) usage ;;
   esac
 done
-case "$bind_address" in *[!A-Za-z0-9:._-]*) echo "Unsafe bind address" >&2; exit 2 ;; esac
-case "$app_bind_address" in *[!A-Za-z0-9:._-]*) echo "Unsafe app bind address" >&2; exit 2 ;; esac
-case "$anki_port" in ""|*[!0-9]*) [ -z "$anki_port" ] || { echo "Port must be numeric" >&2; exit 2; } ;; esac
-case "$app_port" in ""|*[!0-9]*) [ -z "$app_port" ] || { echo "App port must be numeric" >&2; exit 2; } ;; esac
-if [ -n "$anki_port" ] && { [ "$anki_port" -lt 1 ] || [ "$anki_port" -gt 65535 ]; }; then
-  echo "Port must be between 1 and 65535" >&2
-  exit 2
+
+read_profile() {
+  [ -f "$profile" ] || return 0
+  first_line=$(sed -n '/[^[:space:]]/ { p; q; }' "$profile")
+  case "$first_line" in
+    *=*)
+      while IFS='=' read -r key value; do
+        case "$key" in
+          ''|'#'*) continue ;;
+          DEPLOY_TARGET) profile_target=$value ;;
+          ACERVO_ROOT) profile_root=$value ;;
+          ACERVO_BIND_ADDRESS) profile_bind_address=$value ;;
+          ACERVO_ANKI_PORT) profile_anki_port=$value ;;
+          ACERVO_APP_BIND_ADDRESS) profile_app_bind_address=$value ;;
+          ACERVO_APP_PORT) profile_app_port=$value ;;
+          ACERVO_HTTPS_PORT) profile_https_port=$value ;;
+          *) echo "Unknown setting in .acervo-deploy: $key" >&2; exit 2 ;;
+        esac
+      done <"$profile"
+      ;;
+    *) profile_target=$first_line ;;
+  esac
+}
+
+validate_address() {
+  label=$1
+  value=$2
+  case "$value" in
+    ''|*[!A-Za-z0-9:._-]*) echo "Unsafe $label" >&2; exit 2 ;;
+  esac
+}
+
+validate_port() {
+  label=$1
+  value=$2
+  case "$value" in
+    ''|*[!0-9]*) echo "$label must be numeric" >&2; exit 2 ;;
+  esac
+  if [ "$value" -lt 1 ] || [ "$value" -gt 65535 ]; then
+    echo "$label must be between 1 and 65535" >&2
+    exit 2
+  fi
+}
+
+write_profile() {
+  umask 077
+  {
+    printf 'DEPLOY_TARGET=%s\n' "$target"
+    printf 'ACERVO_ROOT=%s\n' "$acervo_root"
+    printf 'ACERVO_BIND_ADDRESS=%s\n' "$effective_bind_address"
+    printf 'ACERVO_ANKI_PORT=%s\n' "$effective_anki_port"
+    printf 'ACERVO_APP_BIND_ADDRESS=%s\n' "$effective_app_bind_address"
+    printf 'ACERVO_APP_PORT=%s\n' "$effective_app_port"
+    printf 'ACERVO_HTTPS_PORT=%s\n' "$effective_https_port"
+  } >"$profile"
+  chmod 600 "$profile"
+}
+
+profile_target=
+profile_root=
+profile_bind_address=
+profile_anki_port=
+profile_app_bind_address=
+profile_app_port=
+profile_https_port=
+if [ "$mode" != local ]; then
+  read_profile
+  target=${target:-$profile_target}
+  acervo_root=${acervo_root:-$profile_root}
+  bind_address=${bind_address:-$profile_bind_address}
+  anki_port=${anki_port:-$profile_anki_port}
+  app_bind_address=${app_bind_address:-$profile_app_bind_address}
+  app_port=${app_port:-$profile_app_port}
+  https_port=${https_port:-$profile_https_port}
 fi
-if [ -n "$app_port" ] && { [ "$app_port" -lt 1 ] || [ "$app_port" -gt 65535 ]; }; then
-  echo "App port must be between 1 and 65535" >&2
-  exit 2
-fi
+
+effective_bind_address=${bind_address:-127.0.0.1}
 effective_anki_port=${anki_port:-27701}
+effective_app_bind_address=${app_bind_address:-127.0.0.1}
 effective_app_port=${app_port:-27702}
-if [ "$effective_anki_port" = "$effective_app_port" ]; then
+effective_https_port=${https_port:-27702}
+validate_address "bind address" "$effective_bind_address"
+validate_address "app bind address" "$effective_app_bind_address"
+validate_port "Anki port" "$effective_anki_port"
+validate_port "App port" "$effective_app_port"
+validate_port "HTTPS port" "$effective_https_port"
+[ "$effective_anki_port" != "$effective_app_port" ] || {
   echo "The Acervo app/PocketBase port must differ from the Anki sync port" >&2
   exit 2
+}
+
+if [ "$mode" = local ] && { [ "$action" = install-helper ] || [ "$action" = configure-https ]; }; then
+  usage
 fi
+if [ "$configure" = true ] && [ "$action" != deploy ]; then usage; fi
+if [ "$reset_data" = true ] && [ "$action" != deploy ]; then usage; fi
 
 if [ "$reset_data" = true ]; then
   printf '%s' 'Type RESET ACERVO DATA to permanently replace server and robot data: '
@@ -114,13 +207,9 @@ build_release_archive() {
 
 if [ "$mode" = local ]; then
   if [ "$action" = status ]; then
-    docker inspect \
-      --format='state={{.State.Status}}, health={{.State.Health.Status}}' \
-      acervo-anki-sync-server-1
+    docker inspect --format='state={{.State.Status}}, health={{.State.Health.Status}}' acervo-anki-sync-server-1
     docker port acervo-anki-sync-server-1 8080
-    docker inspect \
-      --format='state={{.State.Status}}, health={{.State.Health.Status}}' \
-      acervo-pocketbase-1
+    docker inspect --format='state={{.State.Status}}, health={{.State.Health.Status}}' acervo-pocketbase-1
     docker port acervo-pocketbase-1 8090
     exit 0
   fi
@@ -131,11 +220,9 @@ if [ "$mode" = local ]; then
     prompt_credentials
     credential_args=--credentials-stdin
   fi
-  set -- --root "$acervo_root" --archive "$local_archive"
-  [ -z "$bind_address" ] || set -- "$@" --bind-address "$bind_address"
-  [ -z "$anki_port" ] || set -- "$@" --port "$anki_port"
-  [ -z "$app_bind_address" ] || set -- "$@" --app-bind-address "$app_bind_address"
-  [ -z "$app_port" ] || set -- "$@" --app-port "$app_port"
+  set -- --root "$acervo_root" --archive "$local_archive" \
+    --bind-address "$effective_bind_address" --port "$effective_anki_port" \
+    --app-bind-address "$effective_app_bind_address" --app-port "$effective_app_port"
   [ -z "$credential_args" ] || set -- "$@" "$credential_args"
   [ "$reset_data" = false ] || set -- "$@" --reset-data
   if [ -n "$credential_args" ]; then
@@ -146,56 +233,76 @@ if [ "$mode" = local ]; then
   exit 0
 fi
 
-if [ -z "$target" ] && [ -f "$repo_root/.acervo-deploy" ]; then
-  IFS= read -r target <"$repo_root/.acervo-deploy"
-fi
 [ -n "$target" ] || usage
 case "$target" in *[!A-Za-z0-9_.@:-]*) echo "Unsafe SSH target" >&2; exit 2 ;; esac
 if [ -n "$acervo_root" ]; then
-  case "$acervo_root" in /*) ;; *) echo "Remote root must be absolute" >&2; exit 2 ;; esac
+  case "$acervo_root" in /*/acervo) ;; *) echo "Remote root must be an absolute path ending in /acervo" >&2; exit 2 ;; esac
   case "$acervo_root" in *[!A-Za-z0-9_./-]*) echo "Unsafe remote root" >&2; exit 2 ;; esac
 fi
-if [ "$remember" = true ]; then
-  printf '%s\n' "$target" >"$repo_root/.acervo-deploy"
-  chmod 600 "$repo_root/.acervo-deploy"
+if [ "$remember" = true ]; then write_profile; fi
+
+if [ "$action" = install-helper ]; then
+  remote_helper="/tmp/deploy-acervo-$$"
+  echo "Uploading the reviewed Acervo deployment launcher..."
+  ssh -T "$target" "umask 077 && cat > $remote_helper" <"$repo_root/deploy/acervo/remote-helper.sh"
+  echo "Installing the launcher (sudo asks once; routine deployments will not)..."
+  ssh -t "$target" \
+    "sudo sh $remote_helper --install; result=\$?; rm -f $remote_helper; exit \$result"
+  exit 0
 fi
 
+remote_probe=$(ssh -T "$target" \
+  "if [ \"\$(id -u)\" -eq 0 ]; then echo root; \
+   elif report=\$(sudo -n $helper_path check 2>/dev/null) && \
+        [ \"\$report\" = 'acervo-deploy-protocol: $helper_protocol' ]; then echo helper; \
+   else echo missing; fi")
+remote_mode=$(printf '%s\n' "$remote_probe" | tail -n 1)
+case "$remote_mode" in
+  root|helper) ;;
+  *)
+    echo "The passwordless Acervo launcher is missing or incompatible on $target." >&2
+    echo "Install or refresh it once with: ./deploy.sh --install-helper" >&2
+    exit 1
+    ;;
+esac
+
 if [ "$action" = status ]; then
-  ssh -t "$target" \
-    'docker_path=$(command -v docker || true); \
-     [ -n "$docker_path" ] || docker_path=/var/packages/ContainerManager/target/usr/bin/docker; \
-     if [ "$(id -u)" -eq 0 ]; then privilege=; else privilege=sudo; fi; \
-     $privilege "$docker_path" inspect \
-       --format=state={{.State.Status}},health={{.State.Health.Status}} \
-       acervo-anki-sync-server-1 && \
-     $privilege "$docker_path" port acervo-anki-sync-server-1 8080 && \
-     $privilege "$docker_path" inspect \
-       --format=state={{.State.Status}},health={{.State.Health.Status}} \
-       acervo-pocketbase-1 && \
-     $privilege "$docker_path" port acervo-pocketbase-1 8090'
+  if [ "$remote_mode" = root ]; then
+    ssh -T "$target" 'docker_path=$(command -v docker || true); \
+      [ -n "$docker_path" ] || docker_path=/var/packages/ContainerManager/target/usr/bin/docker; \
+      "$docker_path" inspect --format=state={{.State.Status}},health={{.State.Health.Status}} acervo-anki-sync-server-1 && \
+      "$docker_path" port acervo-anki-sync-server-1 8080 && \
+      "$docker_path" inspect --format=state={{.State.Status}},health={{.State.Health.Status}} acervo-pocketbase-1 && \
+      "$docker_path" port acervo-pocketbase-1 8090'
+  else
+    ssh -T "$target" "sudo -n $helper_path status"
+  fi
+  exit 0
+fi
+
+if [ "$action" = configure-https ]; then
+  if [ "$remote_mode" = root ]; then
+    ssh -T "$target" "sh -s -- configure-https --https-port $effective_https_port --app-port $effective_app_port" \
+      <"$repo_root/deploy/acervo/remote-helper.sh"
+  else
+    ssh -T "$target" \
+      "sudo -n $helper_path configure-https --https-port $effective_https_port --app-port $effective_app_port"
+  fi
   exit 0
 fi
 
 archive=$(build_release_archive)
-remote_archive="/tmp/acervo-release-$$.tar.gz"
 remote_installer="/tmp/acervo-install-$$.sh"
+remote_archive="/tmp/acervo-release-$$.tar.gz"
 remote_credentials="/tmp/acervo-credentials-$$"
-
 remote_cleanup() {
-  ssh -T "$target" "rm -f $remote_archive $remote_installer $remote_credentials" \
-    >/dev/null 2>&1 || true
+  ssh -T "$target" "rm -f $remote_installer $remote_archive $remote_credentials" >/dev/null 2>&1 || true
 }
-
 remote_failed() {
   remote_cleanup
   echo "Acervo deployment failed on the remote server" >&2
   exit 1
 }
-
-echo "Streaming the Acervo release over SSH..."
-ssh -T "$target" "umask 077 && cat > $remote_archive" <"$archive" || remote_failed
-ssh -T "$target" "umask 077 && cat > $remote_installer" \
-  <"$repo_root/deploy/acervo/install.sh" || remote_failed
 
 credential_args=
 if [ "$configure" = true ]; then
@@ -205,20 +312,25 @@ if [ "$configure" = true ]; then
   credential_args="--credentials-file $remote_credentials"
 fi
 
-installer_arguments="--archive $remote_archive"
-if [ -n "$acervo_root" ]; then
-  installer_arguments="$installer_arguments --root $acervo_root"
-fi
+installer_arguments=
+[ -z "$acervo_root" ] || installer_arguments="$installer_arguments --root $acervo_root"
 [ -z "$credential_args" ] || installer_arguments="$installer_arguments $credential_args"
-[ -z "$bind_address" ] || installer_arguments="$installer_arguments --bind-address $bind_address"
-[ -z "$anki_port" ] || installer_arguments="$installer_arguments --port $anki_port"
-[ -z "$app_bind_address" ] || installer_arguments="$installer_arguments --app-bind-address $app_bind_address"
-[ -z "$app_port" ] || installer_arguments="$installer_arguments --app-port $app_port"
+installer_arguments="$installer_arguments --bind-address $effective_bind_address --port $effective_anki_port"
+installer_arguments="$installer_arguments --app-bind-address $effective_app_bind_address --app-port $effective_app_port"
 [ "$reset_data" = false ] || installer_arguments="$installer_arguments --reset-data"
 
-echo "Installing on the remote server (sudo may ask for its password)..."
-ssh -t "$target" \
-  "if [ \"\$(id -u)\" -eq 0 ]; then run=sh; else run='sudo sh'; fi; \
-   \$run $remote_installer $installer_arguments; \
-   status=\$?; rm -f $remote_archive $remote_installer $remote_credentials; exit \$status" \
-  || remote_failed
+if [ "$remote_mode" = helper ]; then
+  echo "Streaming and installing with the passwordless Acervo launcher..."
+  ssh -T "$target" "sudo -n $helper_path deploy$installer_arguments" <"$archive" || remote_failed
+else
+  echo "Streaming the Acervo release over SSH as root..."
+  ssh -T "$target" "umask 077 && cat > $remote_archive" <"$archive" || remote_failed
+  ssh -T "$target" "umask 077 && cat > $remote_installer" <"$repo_root/deploy/acervo/install.sh" || remote_failed
+  ssh -T "$target" \
+    "sh $remote_installer --archive $remote_archive$installer_arguments; \
+     result=\$?; rm -f $remote_installer $remote_archive $remote_credentials; exit \$result" || remote_failed
+fi
+
+echo "Acervo deployment completed."
+echo "Internal HTTP backend: http://$effective_app_bind_address:$effective_app_port"
+echo "Dedicated Tailscale HTTPS listener: port $effective_https_port (configure explicitly with ./deploy.sh --configure-https)"

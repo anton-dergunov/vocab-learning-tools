@@ -9,6 +9,39 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+def runnable_remote_helper(tmp_path: Path) -> Path:
+    source = (REPO_ROOT / "deploy/acervo/remote-helper.sh").read_text(encoding="utf-8")
+    source = source.replace('[ "$(id -u)" -eq 0 ] || {', "true || {", 1)
+    helper = tmp_path / "deploy-acervo"
+    helper.write_text(source, encoding="utf-8")
+    helper.chmod(0o755)
+    return helper
+
+
+def fake_tailscale_path(tmp_path: Path, initial_status: str) -> tuple[Path, Path, Path]:
+    bin_dir = tmp_path / "tailscale-bin"
+    bin_dir.mkdir()
+    state = tmp_path / "tailscale-status"
+    state.write_text(initial_status, encoding="utf-8")
+    log = tmp_path / "tailscale-log"
+    tailscale = bin_dir / "tailscale"
+    tailscale.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1 $2\" = 'serve status' ]; then cat \"$ACERVO_TEST_TS_STATE\"; exit 0; fi\n"
+        "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_TS_LOG\"\n"
+        "case \"$4\" in\n"
+        "  --https=443) address=https://server.example.com ;;\n"
+        "  --https=*) address=https://server.example.com:${4#--https=} ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n"
+        "printf '\\n%s (tailnet only)\\n|-- / proxy %s\\n' \"$address\" \"$5\" "
+        ">>\"$ACERVO_TEST_TS_STATE\"\n",
+        encoding="utf-8",
+    )
+    tailscale.chmod(0o755)
+    return bin_dir, state, log
+
+
 def fake_docker_path(tmp_path: Path) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -134,15 +167,14 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
     bin_dir.mkdir()
     ssh_log = tmp_path / "ssh.log"
     release_upload = tmp_path / "release.tar.gz"
-    helper_upload = tmp_path / "install.sh"
     credential_upload = tmp_path / "credentials"
     ssh = bin_dir / "ssh"
     ssh.write_text(
         "#!/bin/sh\n"
         "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_SSH_LOG\"\n"
         "case \"$*\" in\n"
-        "  *'cat > /tmp/acervo-release-'*) cat >\"$ACERVO_TEST_RELEASE\" ;;\n"
-        "  *'cat > /tmp/acervo-install-'*) cat >\"$ACERVO_TEST_HELPER\" ;;\n"
+        "  *'deploy-acervo check'*) printf 'helper\\n' ;;\n"
+        "  *'deploy-acervo deploy'*) cat >\"$ACERVO_TEST_RELEASE\" ;;\n"
         "  *'cat > /tmp/acervo-credentials-'*) cat >\"$ACERVO_TEST_CREDENTIALS\" ;;\n"
         "esac\n",
         encoding="utf-8",
@@ -157,7 +189,6 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
             "PATH": f"{bin_dir}:{env['PATH']}",
             "ACERVO_TEST_SSH_LOG": str(ssh_log),
             "ACERVO_TEST_RELEASE": str(release_upload),
-            "ACERVO_TEST_HELPER": str(helper_upload),
             "ACERVO_TEST_CREDENTIALS": str(credential_upload),
             "ACERVO_SKIP_MACOS_RELEASE": "true",
             "ACERVO_SKIP_APP_BUILD": "true",
@@ -184,14 +215,13 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     with tarfile.open(release_upload) as package:
         assert "deploy/acervo/compose.yaml" in package.getnames()
-    assert helper_upload.read_bytes() == (REPO_ROOT / "deploy/acervo/install.sh").read_bytes()
     assert credential_upload.read_text(encoding="utf-8") == "sync-user\ntest-password\n"
     commands = ssh_log.read_text(encoding="utf-8")
-    assert "cat > /tmp/acervo-release-" in commands
-    assert "cat > /tmp/acervo-install-" in commands
     assert "cat > /tmp/acervo-credentials-" in commands
     assert "--credentials-file /tmp/acervo-credentials-" in commands
-    assert "sudo sh" in commands
+    assert "sudo -n /usr/local/sbin/deploy-acervo deploy" in commands
+    assert "sudo sh" not in commands
+    assert " -t " not in commands
     assert "test-password" not in commands
 
 
@@ -250,7 +280,10 @@ def test_remote_status_does_not_build_or_upload(tmp_path: Path) -> None:
     ssh.write_text(
         "#!/bin/sh\n"
         "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_SSH_LOG\"\n"
-        "printf 'state=running,health=healthy\\n0.0.0.0:27701\\n'\n",
+        "case \"$*\" in\n"
+        "  *'deploy-acervo check'*) printf 'helper\\n' ;;\n"
+        "  *'deploy-acervo status'*) printf 'state=running,health=healthy\\n0.0.0.0:27701\\n' ;;\n"
+        "esac\n",
         encoding="utf-8",
     )
     ssh.chmod(0o755)
@@ -275,8 +308,291 @@ def test_remote_status_does_not_build_or_upload(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "health=healthy" in result.stdout
     commands = ssh_log.read_text(encoding="utf-8")
-    assert "docker" in commands
+    assert "sudo -n /usr/local/sbin/deploy-acervo status" in commands
     assert "cat >" not in commands
+
+
+def test_remote_helper_install_is_an_explicit_one_password_operation(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    uploaded = tmp_path / "remote-helper.sh"
+    ssh_log = tmp_path / "ssh.log"
+    ssh = bin_dir / "ssh"
+    ssh.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_SSH_LOG\"\n"
+        "case \"$*\" in *'cat > /tmp/deploy-acervo-'*) cat >\"$ACERVO_TEST_HELPER\" ;; esac\n",
+        encoding="utf-8",
+    )
+    ssh.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "ACERVO_TEST_SSH_LOG": str(ssh_log),
+            "ACERVO_TEST_HELPER": str(uploaded),
+        }
+    )
+
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy.sh"),
+            "--target",
+            "deployer@server.example.test",
+            "--install-helper",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert uploaded.read_bytes() == (REPO_ROOT / "deploy/acervo/remote-helper.sh").read_bytes()
+    commands = ssh_log.read_text(encoding="utf-8")
+    assert "sudo sh /tmp/deploy-acervo-" in commands
+    assert "--install" in commands
+
+
+def test_remote_helper_runs_the_packaged_installer_from_standard_input(tmp_path: Path) -> None:
+    helper = runnable_remote_helper(tmp_path)
+    root = tmp_path / "acervo"
+    root.mkdir()
+    secrets = root / "secrets.env"
+    secrets.write_text(
+        "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n",
+        encoding="utf-8",
+    )
+    secrets.chmod(0o600)
+    archive_result = subprocess.run(
+        [str(REPO_ROOT / "scripts/package_acervo_server.sh")],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    archive = Path(archive_result.stdout.strip())
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_docker_path(tmp_path)}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            str(helper),
+            "deploy",
+            "--root",
+            str(root),
+            "--bind-address",
+            "127.0.0.1",
+            "--port",
+            "27701",
+            "--app-bind-address",
+            "127.0.0.1",
+            "--app-port",
+            "27702",
+        ],
+        env=env,
+        input=archive.read_bytes(),
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode()
+    assert (root / "deployment.env").exists()
+    assert b"internal HTTP backend" in result.stdout
+
+
+def test_deploy_profile_supports_legacy_format_defaults_and_cli_precedence(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    ssh_log = tmp_path / "ssh.log"
+    ssh = bin_dir / "ssh"
+    ssh.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_SSH_LOG\"\n"
+        "case \"$*\" in *'deploy-acervo check'*) printf 'helper\\n' ;; esac\n",
+        encoding="utf-8",
+    )
+    ssh.chmod(0o755)
+    profile = tmp_path / ".acervo-deploy"
+    profile.write_text("deployer@server.example.test\n", encoding="utf-8")
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "ACERVO_TEST_SSH_LOG": str(ssh_log),
+            "ACERVO_DEPLOY_PROFILE": str(profile),
+        }
+    )
+
+    legacy = subprocess.run(
+        [str(REPO_ROOT / "deploy.sh"), "--configure-https"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert legacy.returncode == 0, legacy.stderr
+    assert "--https-port 27702 --app-port 27702" in ssh_log.read_text(encoding="utf-8")
+
+    profile.write_text(
+        "DEPLOY_TARGET=deployer@server.example.test\n"
+        "ACERVO_ROOT=/volume1/docker/acervo\n"
+        "ACERVO_BIND_ADDRESS=127.0.0.1\n"
+        "ACERVO_ANKI_PORT=27801\n"
+        "ACERVO_APP_BIND_ADDRESS=127.0.0.1\n"
+        "ACERVO_APP_PORT=27802\n"
+        "ACERVO_HTTPS_PORT=27803\n",
+        encoding="utf-8",
+    )
+    ssh_log.write_text("", encoding="utf-8")
+    overridden = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy.sh"),
+            "--configure-https",
+            "--app-port",
+            "27902",
+            "--https-port",
+            "27903",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert overridden.returncode == 0, overridden.stderr
+    assert "--https-port 27903 --app-port 27902" in ssh_log.read_text(encoding="utf-8")
+
+    saved_profile = tmp_path / "saved-acervo-deploy"
+    env["ACERVO_DEPLOY_PROFILE"] = str(saved_profile)
+    saved = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy.sh"),
+            "--target",
+            "deployer@server.example.test",
+            "--root",
+            "/volume1/docker/acervo",
+            "--https-port",
+            "27903",
+            "--remember-target",
+            "--status",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert saved.returncode == 0, saved.stderr
+    assert saved_profile.stat().st_mode & 0o777 == 0o600
+    assert saved_profile.read_text(encoding="utf-8") == (
+        "DEPLOY_TARGET=deployer@server.example.test\n"
+        "ACERVO_ROOT=/volume1/docker/acervo\n"
+        "ACERVO_BIND_ADDRESS=127.0.0.1\n"
+        "ACERVO_ANKI_PORT=27701\n"
+        "ACERVO_APP_BIND_ADDRESS=127.0.0.1\n"
+        "ACERVO_APP_PORT=27702\n"
+        "ACERVO_HTTPS_PORT=27903\n"
+    )
+
+
+def test_configure_https_is_additive_idempotent_and_collision_safe(tmp_path: Path) -> None:
+    helper = runnable_remote_helper(tmp_path)
+    existing = (
+        "https://server.example.com (tailnet only)\n"
+        "|-- / proxy http://127.0.0.1:8080\n\n"
+        "https://server.example.com:8091 (tailnet only)\n"
+        "|-- / proxy http://127.0.0.1:8090\n\n"
+        "https://server.example.com:8443 (tailnet only)\n"
+        "|-- / proxy http://127.0.0.1:8000\n"
+    )
+    bin_dir, state, log = fake_tailscale_path(tmp_path, existing)
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "ACERVO_TEST_TS_STATE": str(state),
+            "ACERVO_TEST_TS_LOG": str(log),
+        }
+    )
+
+    added = subprocess.run(
+        [str(helper), "configure-https", "--https-port", "27702", "--app-port", "27702"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert added.returncode == 0, added.stderr
+    assert log.read_text(encoding="utf-8") == (
+        "serve --bg --yes --https=27702 http://127.0.0.1:27702\n"
+    )
+    assert state.read_text(encoding="utf-8").startswith(existing)
+
+    log.write_text("", encoding="utf-8")
+    repeated = subprocess.run(
+        [str(helper), "configure-https", "--https-port", "27702", "--app-port", "27702"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert repeated.returncode == 0, repeated.stderr
+    assert "already exists" in repeated.stdout
+    assert log.read_text(encoding="utf-8") == ""
+
+    occupied = subprocess.run(
+        [str(helper), "configure-https", "--https-port", "8091", "--app-port", "27702"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert occupied.returncode == 1
+    assert "Refusing to replace" in occupied.stderr
+    assert log.read_text(encoding="utf-8") == ""
+
+
+def test_explicit_port_443_is_allowed_but_cannot_replace_an_existing_service(tmp_path: Path) -> None:
+    helper = runnable_remote_helper(tmp_path)
+    occupied_status = (
+        "https://server.example.com (tailnet only)\n"
+        "|-- / proxy http://127.0.0.1:8080\n"
+    )
+    bin_dir, state, log = fake_tailscale_path(tmp_path, occupied_status)
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "ACERVO_TEST_TS_STATE": str(state),
+            "ACERVO_TEST_TS_LOG": str(log),
+        }
+    )
+
+    occupied = subprocess.run(
+        [str(helper), "configure-https", "--https-port", "443", "--app-port", "27702"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert occupied.returncode == 1
+    assert log.exists() is False
+
+    state.write_text("", encoding="utf-8")
+    allowed = subprocess.run(
+        [str(helper), "configure-https", "--https-port", "443", "--app-port", "27702"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert allowed.returncode == 0, allowed.stderr
+    assert log.read_text(encoding="utf-8") == (
+        "serve --bg --yes --https=443 http://127.0.0.1:27702\n"
+    )
 
 
 def test_remote_robot_wrapper_streams_validated_input_without_scp(tmp_path: Path) -> None:
@@ -370,3 +686,18 @@ def test_app_and_anki_ports_are_distinct_and_collisions_are_rejected(tmp_path: P
     )
     assert result.returncode == 2
     assert "must differ" in result.stderr
+
+
+def test_shared_host_guardrails_are_documented_and_global_serve_mutations_are_absent() -> None:
+    agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    docs = (REPO_ROOT / "docs/acervo-app.md").read_text(encoding="utf-8")
+    helper = (REPO_ROOT / "deploy/acervo/remote-helper.sh").read_text(encoding="utf-8")
+    combined = agents + readme + docs
+
+    assert "shared host" in combined.lower()
+    assert "never assume" in agents
+    assert "--https-port" in readme + docs
+    assert "serve --bg http://127.0.0.1:27702" not in combined
+    assert "serve reset" not in helper
+    assert "serve off" not in helper

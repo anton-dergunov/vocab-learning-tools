@@ -258,6 +258,22 @@ The versioned manifest, robot commands, remote Synology/Linux deployment,
 backups, security model, and mobile acceptance steps are documented in
 [`docs/acervo-anki-sync.md`](docs/acervo-anki-sync.md).
 
+Remote Acervo installations are designed for shared hosts running many unrelated services. The
+defaults use dedicated ports `27701` (Anki sync) and `27702` (web/API and Tailscale HTTPS); Acervo
+never claims the host's default HTTPS endpoint or rewrites unrelated proxy mappings. The ignored
+`.acervo-deploy` profile remembers the target, install root, bind addresses, and ports, while CLI
+options override that profile for one command. Install the restricted passwordless launcher once,
+then configure only Acervo's dedicated HTTPS listener explicitly:
+
+```bash
+./deploy.sh --install-helper
+./deploy.sh --configure-https
+./deploy.sh
+```
+
+An operator may explicitly choose another free HTTPS port, including `443`, with `--https-port`;
+the configuration command refuses to replace any listener already assigned to another service.
+
 ## Acervo application shell
 
 The same deployment can now run an installable Acervo PWA and its own empty PocketBase instance

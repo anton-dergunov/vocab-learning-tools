@@ -4,9 +4,11 @@ Acervo now includes one shared web interface, an installable PWA, a native macOS
 dedicated PocketBase instance. This first application release contains no accounts, vocabulary
 records, dictionaries, or application collections.
 
-PocketBase serves both the website and the future Acervo API from one listener. The default host
-port is `27702`, deliberately separate from the Anki sync listener on `27701` and from any other
-PocketBase deployment. Override it when either port is already assigned:
+PocketBase serves both the website and the future Acervo API from one listener. Acervo always
+coexists with other applications on a shared host; it never assumes ownership of the host's
+default HTTP/HTTPS endpoints or unrelated proxy configuration. The default backend port is
+`27702`, deliberately separate from the Anki sync listener on `27701` and from other PocketBase
+deployments. Override it when either port is already assigned:
 
 ```bash
 ./deploy.sh --local --app-port 27802
@@ -42,53 +44,53 @@ currently published.
 ## HTTPS with Tailscale Serve on Synology (recommended for a private tailnet)
 
 Use Tailscale Serve when Acervo should be reachable only by devices in the same tailnet. Serve
-creates the browser-trusted HTTPS endpoint and proxies it to Acervo locally; no router port or DSM
-reverse-proxy rule is required.
+terminates browser-trusted HTTPS on a dedicated Tailscale listener and proxies it to Acervo's
+localhost HTTP backend. The default mapping is HTTPS `27702` to HTTP `127.0.0.1:27702`; using the
+same number is safe because the listeners bind different addresses and speak different protocols.
+Do not browse directly to the backend before the Serve mapping exists.
 
-Port `27702` is intentionally plain HTTP. Do not put `https://` in front of the NAS name while
-keeping `:27702`: that asks an HTTP listener to perform TLS and produces a TLS connection error.
-
-1. Keep the default Acervo deployment settings:
-   - bind address: `127.0.0.1`
-   - app/PocketBase port: `27702`
+1. Keep the default backend bind address `127.0.0.1` and app port `27702`, or save host-specific
+   choices in the ignored `.acervo-deploy` profile.
 2. In the Tailscale admin console's **DNS** page, enable **MagicDNS** and **HTTPS Certificates** if
-   they are not already enabled. Enabling certificates publishes the generated machine and tailnet
-   DNS names to the public certificate-transparency ledger, although access remains private to the
-   tailnet. Rename a machine first if its Tailscale machine name is sensitive.
-3. Connect to the NAS using DSM's ordinary SSH service and inspect any existing Serve configuration:
+   needed. Enabling certificates publishes the generated machine and tailnet DNS names to the
+   public certificate-transparency ledger, although access remains private to the tailnet.
+3. Install the restricted Acervo launcher once. This is the only routine setup command that asks
+   for the NAS account's sudo password:
 
    ```bash
-   sudo /var/packages/Tailscale/target/bin/tailscale serve status
+   ./deploy.sh --install-helper
    ```
 
-   Do not replace an existing root Serve mapping without first deciding how its current service
-   should be retained.
-4. When the HTTPS root is free, configure a persistent reverse proxy to Acervo:
+4. Add only Acervo's configured listener:
 
    ```bash
-   sudo /var/packages/Tailscale/target/bin/tailscale serve --bg http://127.0.0.1:27702
+   ./deploy.sh --configure-https
    ```
 
-   If HTTPS has not yet been approved for the tailnet, the command prints an authorization link.
-   Complete that one-time approval and run the command again if requested.
-5. The command prints the full HTTPS address generated for this NAS. Open that exact address from a
-   device connected to the tailnet. Do not append port `27702`.
-6. Verify the application and API through the HTTPS address:
+   The command inspects every existing Serve listener first. It does nothing when the exact mapping
+   exists, refuses to replace a port used by another service, and never resets the Serve
+   configuration. To choose a different listener explicitly, use `--https-port PORT` and save it
+   with `--remember-target`. Port 443 is accepted only when explicitly selected and currently free
+   (or already mapped to this exact Acervo backend); it is never Acervo's default.
+5. Verify the application and API through the dedicated HTTPS port:
 
    ```text
-   https://<generated-tailnet-name>/
-   https://<generated-tailnet-name>/api/acervo/v1/health
+   https://server.example.com:27702/
+   https://server.example.com:27702/api/acervo/v1/health
    ```
 
-7. Enter only the first address, without `/api/...`, in the Acervo macOS Settings window. The native
+6. Enter the first address, without `/api/...`, in the Acervo macOS Settings window. The native
    updater derives its manifest and download addresses from that base URL.
 
-Serve started with `--bg` persists across Tailscale restarts. To inspect or deliberately disable it:
+Serve mappings configured in the background persist across Tailscale restarts. Inspect the complete
+shared-host configuration before making changes:
 
 ```bash
 sudo /var/packages/Tailscale/target/bin/tailscale serve status
-sudo /var/packages/Tailscale/target/bin/tailscale serve off
 ```
+
+Never use a global reset or an unqualified disable command on a shared host. If Acervo's listener
+must be removed manually, target only its configured port with `tailscale serve --https=PORT off`.
 
 Every phone, tablet, and computer opening this address must be connected to the tailnet and allowed
 to reach the NAS by the tailnet access policy. Use **Serve**, not **Funnel**; Funnel would publish the
@@ -120,9 +122,10 @@ origin.
 5. Open `https://acervo.example.com/` and check both `/api/acervo/v1/health` and
    `/api/acervo/v1/mac-release`. Enable HSTS only after the certificate and proxy rule work.
 
-Do not publish port `27702` directly through the router or NAS firewall. Only the HTTPS reverse
-proxy needs to be reachable. Certificates validate DNS names, so use the certified hostname rather
-than an address when opening the application.
+Do not publish port `27702` directly through the router or NAS firewall. Only the explicitly chosen
+HTTPS reverse-proxy listener needs to be reachable. Certificates validate DNS names, so use the
+certified hostname rather than an address when opening the application. As with Tailscale Serve,
+create an Acervo-specific rule and leave every unrelated virtual host and listener unchanged.
 
 The DSM locations and reverse-proxy fields are documented by Synology in its
 [Reverse Proxy help](https://kb.synology.com/en-id/DSM/help/DSM/AdminCenter/system_login_portal_advanced?version=7)
