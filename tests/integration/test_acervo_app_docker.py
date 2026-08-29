@@ -21,6 +21,10 @@ from scripts.seed_acervo_demo import demo_records
 
 
 ROOT = Path(__file__).resolve().parents[2]
+API = "/api/acervo/v1"
+# Kept in step with web/src/api.ts and pb_hooks/acervo.js; a mismatch is a 409 by design.
+SCHEMA_VERSION = 4
+GRAPH = f"{API}/graph?schemaVersion={SCHEMA_VERSION}&since=0"
 
 
 def free_port() -> int:
@@ -108,7 +112,7 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         status, health = request(base, "GET", "/api/acervo/v1/health")
         assert status == 200
         assert health["data"] == {
-                "name": "Acervo", "version": "0.1.0", "build": "202608280000", "schemaVersion": 3
+                "name": "Acervo", "version": "0.1.0", "build": "202608280000", "schemaVersion": SCHEMA_VERSION
         }
         assert b"<title>Acervo</title>" in get_bytes(base + "/")[1]
 
@@ -158,11 +162,23 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
             counts[collection] = result["totalItems"]
         assert counts == dict(expected)
 
+        # Every seeded record must carry a server-allocated revision, or no cursor pull would
+        # ever deliver it. This is the trap that makes the save hook load-bearing.
+        for collection in ("topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"):
+            owner_filter = urllib.parse.quote(f'owner="{owners[0]["id"]}"')
+            status, result = request(base, "GET", f"/api/collections/{collection}/records?perPage=200&filter={owner_filter}", token=admin_token)
+            assert status == 200, result
+            assert all(record["revision"] > 0 for record in result["items"]), collection
+
         # The graph route is the only way a client reads vocabulary: owner-scoped and authenticated.
-        assert request(base, "GET", "/api/acervo/v1/graph")[0] == 401
-        status, graph = request(base, "GET", "/api/acervo/v1/graph", token=user_token)
-        assert status == 200, graph
-        graph = graph["data"]
+        assert request(base, "GET", GRAPH)[0] == 401
+        assert request(base, "GET", f"{API}/graph?schemaVersion=999&since=0", token=user_token)[0] == 409
+        status, envelope = request(base, "GET", GRAPH, token=user_token)
+        assert status == 200, envelope
+        envelope = envelope["data"]
+        dataset_id, cursor = envelope["datasetId"], envelope["cursor"]
+        assert dataset_id and cursor > 0
+        graph = envelope["changes"]
         assert {key: len(graph[key]) for key in
                 ("topics", "lexemes", "senses", "attestations", "examples", "imagePrompts", "studyStates")} == {
             "topics": expected["topics"], "lexemes": expected["lexemes"], "senses": expected["senses"],
@@ -184,11 +200,63 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         assert graph["senses"][0]["order"] is not None
         assert graph["attestations"][0]["capturedAt"].endswith("Z") and "T" in graph["attestations"][0]["capturedAt"]
 
+        # A caught-up cursor returns nothing at all: the steady-state poll is nearly free.
+        status, caught_up = request(base, "GET", f"{API}/graph?schemaVersion={SCHEMA_VERSION}&since={cursor}", token=user_token)
+        assert status == 200 and caught_up["data"]["cursor"] == cursor
+        assert all(caught_up["data"]["changes"][key] == [] for key in caught_up["data"]["changes"])
+
         # A second account shares the server and must see none of it.
         status, other_login = request(base, "POST", "/api/acervo/v1/session", {"email": other_email, "password": user_password})
         assert status == 200, other_login
-        status, empty = request(base, "GET", "/api/acervo/v1/graph", token=other_login["data"]["token"])
-        assert status == 200 and empty["data"]["lexemes"] == []
+        other_token = other_login["data"]["token"]
+        status, empty = request(base, "GET", GRAPH, token=other_token)
+        assert status == 200 and empty["data"]["changes"]["lexemes"] == []
+        # Each owner counts in their own sequence, but within one database, not one per owner.
+        assert empty["data"]["datasetId"] != dataset_id
+
+        # ── the write route ────────────────────────────────────────────────────────────────
+        picar_now = next(record for record in graph["lexemes"] if record["headword"] == "picar")
+        edited = {**picar_now, "shortGloss": "to sting", "editedAt": "2026-08-29T09:00:00.000Z"}
+        status, written = request(base, "POST", "/api/acervo/v1/graph", {
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "changes": {"lexemes": [edited]},
+        }, user_token)
+        assert status == 200, written
+        stored = written["data"]["records"]["lexemes"][0]
+        assert stored["shortGloss"] == "to sting"
+        assert stored["revision"] > cursor, stored
+        assert stored["editedBy"] == "integrationtest"
+        assert written["data"]["cursor"] == stored["revision"]
+
+        # The same payload again is now stale: its revision is the one the server just replaced.
+        status, stale = request(base, "POST", "/api/acervo/v1/graph", {
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "changes": {"lexemes": [edited]},
+        }, user_token)
+        assert status == 409 and stale["error"]["code"] == "stale_record", stale
+
+        # And the delta a caught-up device asks for carries exactly that one change.
+        status, delta = request(base, "GET", f"{API}/graph?schemaVersion={SCHEMA_VERSION}&since={cursor}", token=user_token)
+        assert status == 200 and [record["id"] for record in delta["data"]["changes"]["lexemes"]] == [stored["id"]]
+        assert delta["data"]["changes"]["topics"] == []
+
+        # A batch is all-or-nothing: one invalid record leaves the valid one unwritten too.
+        good = {**graph["topics"][0], "name": "Renamed"}
+        bad = {**graph["senses"][0], "definitionLang": "not a language tag"}
+        assert request(base, "POST", "/api/acervo/v1/graph", {
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest",
+            "changes": {"topics": [good], "senses": [bad]},
+        }, user_token)[0] == 400
+        status, unchanged = request(base, "GET", f"{API}/graph?schemaVersion={SCHEMA_VERSION}&since=0", token=user_token)
+        assert next(record for record in unchanged["data"]["changes"]["topics"]
+                    if record["id"] == good["id"])["name"] != "Renamed"
+
+        # Writing is owner-scoped and version-gated like reading.
+        assert request(base, "POST", "/api/acervo/v1/graph", {
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "changes": {"lexemes": [edited]},
+        }, other_token)[0] == 400
+        assert request(base, "POST", "/api/acervo/v1/graph", {
+            "schemaVersion": 999, "deviceId": "integrationtest", "changes": {},
+        }, user_token)[0] == 409
+        assert request(base, "POST", "/api/acervo/v1/graph", {"schemaVersion": SCHEMA_VERSION, "changes": {}}, user_token)[0] == 400
 
         lexeme_id = next(record["id"] for collection, record in seeded if collection == "lexemes")
         status, updated = request(base, "PATCH", f"/api/collections/lexemes/records/{lexeme_id}", {"short_gloss": "demonstration"}, admin_token)
@@ -213,6 +281,30 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
             "topics": [cross_owner_topic["id"]]
         }, admin_token)[0] == 400
 
+        # ── reset ──────────────────────────────────────────────────────────────────────────
+        assert request(base, "POST", "/api/acervo/v1/graph/reset", {
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "confirm": "yes",
+        }, user_token)[0] == 400
+        status, reset = request(base, "POST", "/api/acervo/v1/graph/reset", {
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "confirm": "delete-all-vocabulary",
+        }, user_token)
+        assert status == 200 and reset["data"]["deleted"] == sum(expected.values()), reset
+        assert reset["data"]["datasetId"] == dataset_id
+
+        # Nothing is removed: a full pull still carries every row, now as a tombstone. That is
+        # what keeps an accidental reset undoable.
+        status, after = request(base, "GET", GRAPH, token=user_token)
+        assert status == 200
+        emptied = after["data"]["changes"]
+        assert len(emptied["lexemes"]) == expected["lexemes"]
+        assert all(record["deleted"] for record in emptied["lexemes"])
+        assert all(record["deleted"] for record in emptied["senses"])
+        # A second reset has nothing left to tombstone.
+        status, again = request(base, "POST", "/api/acervo/v1/graph/reset", {
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "confirm": "delete-all-vocabulary",
+        }, user_token)
+        assert status == 200 and again["data"]["deleted"] == 0
+
         sentinel = data / "deployment-sentinel"
         sentinel.write_text("preserved", encoding="utf-8")
         stop()
@@ -220,6 +312,11 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         assert sentinel.read_text(encoding="utf-8") == "preserved"
         status, persisted = request(base, "GET", f"/api/collections/lexemes/records/{lexeme_id}", token=admin_token)
         assert status == 200 and persisted["short_gloss"] == "demonstration"
+        # The cursor must never outlive the database that issued it — and must survive a restart
+        # that did not rebuild it, or every device would discard a perfectly good replica.
+        status, restarted = request(base, "GET", GRAPH, token=user_token)
+        assert status == 200 and restarted["data"]["datasetId"] == dataset_id
+        assert restarted["data"]["cursor"] >= cursor
 
         archive = downloads / "Acervo-test.zip"
         archive.write_bytes(b"test")

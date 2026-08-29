@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AddSheet, { type AddTab } from "./AddSheet";
 import { backendSession } from "./api";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
@@ -18,7 +18,8 @@ import {
 import Settings from "./Settings";
 import SignIn from "./SignIn";
 import type { StoredSession } from "./session";
-import { pullGraph } from "./sync";
+import { syncEngine } from "./sync";
+import { SyncChip } from "./SyncStatus";
 import { yamlFor } from "./yaml";
 import { YamlEditor, YamlView } from "./YamlPane";
 import "./styles.css";
@@ -78,7 +79,6 @@ export default function App() {
     && sessionStorage.getItem("acervo-install-dismissed") !== "true");
   const [session, setSession] = useState<StoredSession | null | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<ReplicaSnapshot | null>(null);
-  const [syncedAt, setSyncedAt] = useState<string | null>(null);
 
   const [language, setLanguage] = useState("");
   const [topic, setTopic] = useState<TopicSelection>("all");
@@ -109,26 +109,41 @@ export default function App() {
     return () => window.removeEventListener(UPDATE_EVENT, changed);
   }, []);
 
+  const syncStatus = useSyncExternalStore(syncEngine.subscribe, syncEngine.getStatus);
+
   useEffect(() => { void backendSession.restore().then(setSession); }, []);
 
-  /* The replica renders first; the pull is a background refresh that may simply fail. */
+  /* A rejected token drops the sign-in but keeps the replica: the vocabulary is still the owner's,
+     and signing back in puts the article they were reading straight back on screen. */
+  useEffect(() => {
+    backendSession.onUnauthorized(() => {
+      syncEngine.stop();
+      void backendSession.reject().then(() => setSession(null));
+    });
+    return () => backendSession.onUnauthorized(null);
+  }, []);
+
+  /* The replica renders first and the engine refreshes it behind that, so a server that is down
+     costs nothing but freshness. Every later repaint is driven by the sync status changing. */
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
     void (async () => {
       await repository.load(session.userId);
-      if (!cancelled) setSnapshot(repository.snapshot());
-      try {
-        const stamp = await pullGraph();
-        if (cancelled) return;
-        setSnapshot(repository.snapshot());
-        setSyncedAt(stamp);
-      } catch (error) {
-        if (!cancelled) notify(error instanceof Error ? error.message : "The vocabulary could not be refreshed.");
-      }
+      if (cancelled) return;
+      setSnapshot(repository.snapshot());
+      syncEngine.start();
+      await syncEngine.syncNow();
+      // Extending the token happens once the vocabulary is already on screen, and signs the owner
+      // out only if the server answers and rejects it.
+      await backendSession.refresh();
     })();
-    return () => { cancelled = true; };
-  }, [session, notify]);
+    return () => { cancelled = true; syncEngine.stop(); };
+  }, [session]);
+
+  useEffect(() => {
+    if (session && repository.snapshot().ready) setSnapshot(repository.snapshot());
+  }, [session, syncStatus]);
 
   const languages = useMemo(() => (snapshot ? languageOptions(snapshot) : []), [snapshot]);
 
@@ -146,7 +161,7 @@ export default function App() {
     [snapshot, language]
   );
   const article = useMemo(
-    () => (snapshot && openId ? articleFor(snapshot, openId, snapshot.pending) : null),
+    () => (snapshot && openId ? articleFor(snapshot, openId) : null),
     [snapshot, openId]
   );
 
@@ -183,13 +198,20 @@ export default function App() {
   }, [addTab, openId]);
 
   async function removeLexeme(id: string) {
-    await repository.delete("lexemes", id);
+    try {
+      await repository.delete("lexemes", id);
+    } catch (error) {
+      // Nothing was changed locally. Saying so is the point: the entry is still there.
+      notify(error instanceof Error ? error.message : "That entry could not be deleted.");
+      return;
+    }
     setSnapshot(repository.snapshot());
     setOpenId(null);
-    notify("Deleted — a tombstone was written to this device");
+    notify("Deleted everywhere — the entry is kept as a tombstone");
   }
 
   async function signOut() {
+    syncEngine.stop();
     await backendSession.logout();
     await repository.clear();
     setSnapshot(null);
@@ -232,6 +254,8 @@ export default function App() {
           <button className="tb-btn primary" onClick={() => setAddTab("capture")}>
             <PlusIcon /><span className="wide-only">Add</span>
           </button>
+
+          {!native && <SyncChip status={syncStatus} onOpen={() => setSettings(true)} />}
 
           {!native && <button
             className={`icon-btn gear ${update === "ready" ? "has-update" : ""}`}
@@ -309,8 +333,8 @@ export default function App() {
 
     {addTab && <AddSheet tab={addTab} onTab={setAddTab} onClose={() => setAddTab(null)} onUnsupported={notify} />}
     {settings && <Settings
-      update={update} email={session.email} syncedAt={syncedAt}
-      onSignOut={() => void signOut()} onClose={() => setSettings(false)}
+      update={update} email={session.email} status={syncStatus} snapshot={snapshot}
+      onSignOut={() => void signOut()} onClose={() => setSettings(false)} onNotify={notify}
     />}
     <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
   </>;

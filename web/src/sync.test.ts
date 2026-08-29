@@ -1,63 +1,213 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AcervoApiError, backendSession } from "./api";
+import { AcervoApiError, backendSession, SCHEMA_VERSION } from "./api";
+import type { VocabularyGraph } from "./domain";
 import { repository } from "./repository";
-import { pullGraph } from "./sync";
+import { syncEngine } from "./sync";
 import { TEST_OWNER, testGraph } from "./testGraph";
 
-const response = () => ({ ...testGraph(), syncedAt: "2026-08-28T12:00:00.000Z" });
+const DATASET = "dataset00000001";
+const EMPTY = (): VocabularyGraph => ({
+  topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
+});
 
-describe("graph pull", () => {
+/** The server numbers every row it hands back; the cursor is the highest of them. */
+function numbered(graph: VocabularyGraph = testGraph()) {
+  let revision = 0;
+  (Object.keys(graph) as (keyof VocabularyGraph)[]).forEach((kind) => {
+    (graph[kind] as { revision: number }[]).forEach((record) => { record.revision = ++revision; });
+  });
+  return { graph, cursor: revision };
+}
+
+function pullResponse(changes: VocabularyGraph, cursor: number, datasetId = DATASET) {
+  return { schemaVersion: SCHEMA_VERSION, datasetId, cursor, serverTime: "2026-08-29T12:00:00.000Z", changes };
+}
+
+const signedIn = () => vi.spyOn(backendSession, "current")
+  .mockReturnValue({ baseUrl: "https://acervo.example.com", email: "learner@account.example.com", token: "t", userId: TEST_OWNER });
+
+describe("the cursor pull", () => {
   beforeEach(async () => {
     await repository.clear();
     await repository.load(TEST_OWNER);
+    signedIn();
+    syncEngine.start();
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { syncEngine.stop(); vi.restoreAllMocks(); });
 
-  it("fills the replica from the owner's records on the server", async () => {
-    vi.spyOn(backendSession, "fetchGraph").mockResolvedValue(response());
-    await expect(pullGraph()).resolves.toBe("2026-08-28T12:00:00.000Z");
+  it("fills an empty replica and remembers where it got to", async () => {
+    const { graph, cursor } = numbered();
+    const pull = vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
+    expect(pull).toHaveBeenCalledWith(0);
     const snapshot = repository.snapshot();
     expect(snapshot.lexemes).toHaveLength(4);
     expect(snapshot.senses).toHaveLength(5);
-    // A pull is not a local write, so nothing is queued for sending back.
-    expect(snapshot.pendingCount).toBe(0);
+    expect(snapshot.cursor).toBe(cursor);
+    expect(snapshot.datasetId).toBe(DATASET);
+    expect(syncEngine.getStatus().state).toBe("idle");
   });
 
-  it("replaces records the server no longer sends", async () => {
-    vi.spyOn(backendSession, "fetchGraph").mockResolvedValue(response());
-    await pullGraph();
-    const trimmed = response();
-    trimmed.lexemes = trimmed.lexemes.filter((lexeme) => lexeme.id !== "lexemeturmoil01");
-    trimmed.senses = trimmed.senses.filter((sense) => sense.lexemeId !== "lexemeturmoil01");
-    vi.spyOn(backendSession, "fetchGraph").mockResolvedValue(trimmed);
-    await pullGraph();
-    expect(repository.snapshot().lexemes.map((lexeme) => lexeme.id)).not.toContain("lexemeturmoil01");
-  });
+  it("asks only for what it has not seen, and an empty delta changes nothing", async () => {
+    const { graph, cursor } = numbered();
+    const pull = vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
 
-  it("keeps an unsent local tombstone through a pull that still carries the record", async () => {
-    vi.spyOn(backendSession, "fetchGraph").mockResolvedValue(response());
-    await pullGraph();
-    await repository.delete("lexemes", "lexemebalsa0001");
-    expect(repository.snapshot().pendingCount).toBeGreaterThan(0);
-    await pullGraph();
-    const balsa = repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemebalsa0001");
-    expect(balsa?.deleted).toBe(true);
-  });
-
-  it("leaves the replica intact when the server cannot be reached", async () => {
-    vi.spyOn(backendSession, "fetchGraph").mockResolvedValue(response());
-    await pullGraph();
-    vi.spyOn(backendSession, "fetchGraph")
-      .mockRejectedValue(new AcervoApiError("The Acervo server could not be reached.", 0, "offline"));
-    await expect(pullGraph()).rejects.toThrow("could not be reached");
+    pull.mockResolvedValue(pullResponse(EMPTY(), cursor));
+    await syncEngine.syncNow(true);
+    expect(pull).toHaveBeenLastCalledWith(cursor);
     expect(repository.snapshot().lexemes).toHaveLength(4);
   });
 
-  it("refuses records belonging to another account", async () => {
-    const foreign = response();
-    foreign.topics[0].ownerId = "owner0000000002";
-    vi.spyOn(backendSession, "fetchGraph").mockResolvedValue(foreign);
-    await expect(pullGraph()).rejects.toThrow("one owner only");
+  it("applies a tombstone that arrives in a later delta", async () => {
+    const { graph, cursor } = numbered();
+    vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
+
+    const removed = { ...graph.lexemes[0], deleted: true, revision: cursor + 1 };
+    vi.spyOn(backendSession, "pullGraph")
+      .mockResolvedValue(pullResponse({ ...EMPTY(), lexemes: [removed] }, cursor + 1));
+    await syncEngine.syncNow(true);
+    expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === removed.id)?.deleted).toBe(true);
+  });
+
+  it("ignores a record older than the one it already holds", async () => {
+    const { graph, cursor } = numbered();
+    vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
+
+    const stale = { ...graph.lexemes[0], headword: "stale", revision: 1 };
+    vi.spyOn(backendSession, "pullGraph")
+      .mockResolvedValue(pullResponse({ ...EMPTY(), lexemes: [stale] }, cursor));
+    await syncEngine.syncNow(true);
+    expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === stale.id)?.headword).not.toBe("stale");
+  });
+
+  it("keeps the replica and reports offline when the server cannot be reached", async () => {
+    const { graph, cursor } = numbered();
+    vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
+
+    vi.spyOn(backendSession, "pullGraph")
+      .mockRejectedValue(new AcervoApiError("The Acervo server could not be reached.", 0, "offline"));
+    await syncEngine.syncNow(true);
+    expect(syncEngine.getStatus().state).toBe("offline");
+    expect(repository.snapshot().lexemes).toHaveLength(4);
+  });
+
+  it("refuses a graph containing another account's records", async () => {
+    const { graph, cursor } = numbered();
+    graph.topics[0].ownerId = "owner0000000002";
+    vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
+    expect(syncEngine.getStatus().state).toBe("offline");
     expect(repository.snapshot().lexemes).toHaveLength(0);
+  });
+
+  it("runs one request when three callers ask at once", async () => {
+    const pull = vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(EMPTY(), 0));
+    await Promise.all([syncEngine.syncNow(), syncEngine.syncNow(), syncEngine.syncNow()]);
+    expect(pull).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("synchronisation that must stop", () => {
+  beforeEach(async () => {
+    await repository.clear();
+    await repository.load(TEST_OWNER);
+    signedIn();
+    syncEngine.start();
+  });
+  afterEach(() => { syncEngine.stop(); vi.restoreAllMocks(); });
+
+  it("blocks on a schema mismatch and stops asking, while reading still works", async () => {
+    const pull = vi.spyOn(backendSession, "pullGraph")
+      .mockRejectedValue(new AcervoApiError("Update the app to continue.", 409, "schema_version_mismatch"));
+    await syncEngine.syncNow(true);
+    expect(syncEngine.getStatus().state).toBe("blocked");
+
+    await syncEngine.syncNow(true);
+    expect(pull).toHaveBeenCalledTimes(1);
+    expect(repository.snapshot().ready).toBe(true);
+  });
+
+  it("stops without destroying anything when the server database changed identity", async () => {
+    const { graph, cursor } = numbered();
+    const pull = vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
+
+    pull.mockResolvedValue(pullResponse(EMPTY(), 3, "dataset00000002"));
+    await syncEngine.syncNow(true);
+    expect(syncEngine.getStatus().state).toBe("datasetChanged");
+    // The whole point: this replica may be the most complete copy left, so it is untouched.
+    const snapshot = repository.snapshot();
+    expect(snapshot.lexemes).toHaveLength(4);
+    expect(snapshot.datasetId).toBe(DATASET);
+    expect(snapshot.cursor).toBe(cursor);
+  });
+
+  it("makes no request at all when nobody is signed in", async () => {
+    vi.spyOn(backendSession, "current").mockReturnValue(null);
+    const pull = vi.spyOn(backendSession, "pullGraph");
+    await syncEngine.syncNow(true);
+    expect(pull).not.toHaveBeenCalled();
+    expect(syncEngine.getStatus().state).toBe("signedOut");
+  });
+});
+
+describe("writing through the server", () => {
+  beforeEach(async () => {
+    await repository.clear();
+    await repository.load(TEST_OWNER);
+    signedIn();
+    syncEngine.start();
+    const { graph, cursor } = numbered();
+    vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
+  });
+  afterEach(() => { syncEngine.stop(); vi.restoreAllMocks(); });
+
+  it("stores what the server returns, not what was sent", async () => {
+    const cursor = repository.snapshot().cursor;
+    const push = vi.spyOn(backendSession, "pushGraph").mockImplementation(async (_device, changes) => ({
+      schemaVersion: SCHEMA_VERSION, datasetId: DATASET, cursor: cursor + 1,
+      serverTime: "2026-08-29T12:00:01.000Z",
+      // The server allocates the revision; the client never invents one.
+      records: { topics: (changes.topics ?? []).map((topic) => ({ ...topic, revision: cursor + 1 })) }
+    }));
+
+    const topic = await repository.saveTopic({ name: "Slang", icon: "🗣️", order: 2 });
+    expect(push).toHaveBeenCalledOnce();
+    const stored = repository.snapshot().topics.find((candidate) => candidate.id === topic.id);
+    expect(stored?.revision).toBe(cursor + 1);
+  });
+
+  it("changes nothing locally when the write cannot reach the server", async () => {
+    vi.spyOn(backendSession, "pushGraph")
+      .mockRejectedValue(new AcervoApiError("The Acervo server could not be reached.", 0, "offline"));
+    const before = repository.snapshot();
+
+    await expect(repository.delete("lexemes", "lexemebalsa0001")).rejects.toThrow("could not be reached");
+
+    const after = repository.snapshot();
+    expect(after.lexemes).toEqual(before.lexemes);
+    expect(after.cursor).toBe(before.cursor);
+    expect(syncEngine.getStatus().state).toBe("offline");
+  });
+
+  it("surfaces a refused stale write and leaves the entry as it was", async () => {
+    vi.spyOn(backendSession, "pushGraph").mockRejectedValue(
+      new AcervoApiError("This entry was changed somewhere else.", 409, "stale_record")
+    );
+    const before = repository.snapshot();
+    await expect(repository.delete("lexemes", "lexemebalsa0001")).rejects.toThrow("changed somewhere else");
+    expect(repository.snapshot().lexemes).toEqual(before.lexemes);
+  });
+
+  it("refuses to write at all with no transport attached", async () => {
+    syncEngine.stop();
+    const before = repository.snapshot();
+    await expect(repository.saveTopic({ name: "Slang", icon: null, order: 2 })).rejects.toThrow("not connected");
+    expect(repository.snapshot().topics).toEqual(before.topics);
   });
 });

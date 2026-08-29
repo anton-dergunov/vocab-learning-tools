@@ -5,7 +5,7 @@ import { yamlFor } from "./yaml";
 
 describe("YAML projection", () => {
   it("projects a multi-sense entry with its lineage and schedule", () => {
-    const document = yamlFor(articleFor(testGraph(), "lexemepicar0001", [])!);
+    const document = yamlFor(articleFor(testGraph(), "lexemepicar0001")!);
     expect(document).toContain("# picar — Spanish");
     expect(document).toContain("id: lexemepicar0001");
     expect(document).toContain(String.raw`ipa: "/piˈkaɾ/"`);
@@ -21,7 +21,7 @@ describe("YAML projection", () => {
   });
 
   it("marks a derived short form rather than inventing one", () => {
-    const document = yamlFor(articleFor(testGraph(), "lexemebalsa0001", [])!);
+    const document = yamlFor(articleFor(testGraph(), "lexemebalsa0001")!);
     expect(document).toContain("shortGloss: null");
     expect(document).toContain("gender: feminine");
     expect(document).not.toContain("ipa:");
@@ -30,7 +30,7 @@ describe("YAML projection", () => {
   it("quotes anything that would not survive as a plain YAML scalar", () => {
     const graph = testGraph();
     graph.lexemes[1].headword = "yes: really";
-    const document = yamlFor(articleFor(graph, "lexemebalsa0001", [])!);
+    const document = yamlFor(articleFor(graph, "lexemebalsa0001")!);
     expect(document).toContain('headword: "yes: really"');
   });
 });

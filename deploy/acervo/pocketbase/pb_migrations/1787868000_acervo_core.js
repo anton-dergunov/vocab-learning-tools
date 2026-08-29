@@ -33,6 +33,23 @@ migrate((app) => {
     collectionId: users.id, cascadeDelete: true,
   });
 
+  // The replication cursor: one strictly increasing sequence per owner, and the record id doubles
+  // as the dataset identity a client checks its cursor against. Deliberately its own collection and
+  // never replicated — a counter only the server may advance must not be a field a stale device can
+  // overwrite. The unique index is safe here for exactly the same reason: this row never syncs, so
+  // it cannot be the constraint two offline devices independently satisfy.
+  const syncState = new Collection({
+    type: "base",
+    name: "sync_state",
+    ...locked,
+    fields: [
+      ownerField(),
+      { type: "number", name: "sequence", min: 0, onlyInt: true },
+    ],
+    indexes: ["CREATE UNIQUE INDEX idx_sync_state_owner ON sync_state (owner)"],
+  });
+  app.save(syncState);
+
   const topics = new Collection({
     type: "base",
     name: "topics",
@@ -207,7 +224,7 @@ migrate((app) => {
   });
   app.save(studyStates);
 }, (app) => {
-  ["study_states", "image_prompts", "examples", "attestations", "senses", "lexemes", "topics"].forEach((name) => {
+  ["study_states", "image_prompts", "examples", "attestations", "senses", "lexemes", "topics", "sync_state"].forEach((name) => {
     try { app.delete(app.findCollectionByNameOrId(name)); } catch (_) { /* already absent */ }
   });
 });

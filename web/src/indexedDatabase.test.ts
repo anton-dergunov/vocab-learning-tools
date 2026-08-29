@@ -2,6 +2,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createLocalDatabase } from "./localDatabase";
 import { LocalAcervoRepository } from "./repository";
+import { fakeRemote } from "./testRemote";
 
 const lexemeInput = {
   language: "es", headword: "la balsa", lemma: "balsa", reading: null, ipa: null, pos: "noun" as const,
@@ -14,9 +15,10 @@ describe("IndexedDB Acervo repository", () => {
     Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: new IDBFactory() });
   });
 
-  it("persists an atomic multi-store graph and its pending markers", async () => {
+  it("persists an atomic multi-store graph, and the cursor that covers it", async () => {
     const first = new LocalAcervoRepository(createLocalDatabase());
     await first.load("owner0000000001");
+    first.attachRemote(fakeRemote());
     const sync = {
       ownerId: "owner0000000001", deleted: false, createdAt: "2026-08-28T12:00:00.000Z",
       editedAt: "2026-08-28T12:00:00.000Z", editedBy: first.snapshot().deviceId, revision: 0
@@ -30,9 +32,13 @@ describe("IndexedDB Acervo repository", () => {
       }]
     });
 
+    await first.applyRemote({}, 41, "dataset00000001");
+
     const reopened = new LocalAcervoRepository(createLocalDatabase());
     await reopened.load("owner0000000001");
-    expect(reopened.snapshot()).toMatchObject({ persistent: true, pendingCount: 3 });
+    // The cursor and the dataset it counts within survive a reload, or the next pull would either
+    // refetch everything or silently skip what it already asked for.
+    expect(reopened.snapshot()).toMatchObject({ persistent: true, cursor: 41, datasetId: "dataset00000001" });
     expect(reopened.snapshot().topics[0].name).toBe("Travel");
     expect(reopened.snapshot().lexemes[0].headword).toBe("la balsa");
     expect(reopened.snapshot().senses[0].lexemeId).toBe("lexeme000000001");
@@ -41,6 +47,7 @@ describe("IndexedDB Acervo repository", () => {
   it("wipes the IndexedDB replica when the authenticated owner changes", async () => {
     const first = new LocalAcervoRepository(createLocalDatabase());
     await first.load("owner0000000001");
+    first.attachRemote(fakeRemote());
     await first.saveLexeme(lexemeInput, "lexeme000000001");
     const deviceId = first.snapshot().deviceId;
 

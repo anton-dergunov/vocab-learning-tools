@@ -468,20 +468,21 @@ class PocketBase:
                 return False
             raise
 
-    def create(self, collection: str, record: dict) -> bool:
+    def create(self, collection: str, record: dict) -> int | None:
+        """Creates the record and returns the revision the server gave it, or None if it existed."""
         if self.exists(collection, record["id"]):
-            return False
-        self.request("POST", f"/api/collections/{collection}/records", record)
-        return True
+            return None
+        created = self.request("POST", f"/api/collections/{collection}/records", record)
+        return int(created.get("revision") or 0)
 
 
 def sync_fields(created: str = STAMP, edited: str | None = None) -> dict:
+    """Replication metadata, minus `revision`: the server's save hook allocates that."""
     return {
         "deleted": False,
         "created_at": created,
         "edited_at": edited or created,
         "edited_by": EDITOR,
-        "revision": 0,
     }
 
 
@@ -566,6 +567,15 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
     return records
 
 
+def raise_if_unnumbered(collection: str, identifier: str, revision: int) -> None:
+    if revision > 0:
+        return
+    raise RuntimeError(
+        f"{collection}/{identifier} was stored without a revision, so no client could ever "
+        "receive it. The server is missing the hook that allocates replication revisions."
+    )
+
+
 def normalize_server_url(value: str) -> str:
     parsed = urllib.parse.urlsplit(value.strip().rstrip("/"))
     local = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
@@ -599,10 +609,14 @@ def main() -> int:
     created = 0
     skipped = 0
     for collection, record in demo_records(owners[0]["id"]):
-        if client.create(collection, record):
-            created += 1
-        else:
+        revision = client.create(collection, record)
+        if revision is None:
             skipped += 1
+            continue
+        # A record left at revision zero is invisible to every `revision > cursor` pull, so it
+        # would seed a vocabulary no client could ever download. Fail loudly instead.
+        raise_if_unnumbered(collection, record["id"], revision)
+        created += 1
     print(f"Acervo demo data ready for {args.owner_email.strip()}: created {created}, already present {skipped}.")
     return 0
 

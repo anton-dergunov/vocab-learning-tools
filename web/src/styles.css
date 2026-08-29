@@ -630,6 +630,62 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .settings-body .tb-btn { justify-content: center; }
 .version { margin: 0; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; }
 
+/* ══════════════════════════ synchronisation ══════════════════════════ */
+/* Offline is an ordinary state here, not a failure — the chip stays quiet until it is not. */
+.sync-chip { padding: 7px; }
+.sync-chip svg { width: 17px; height: 17px; }
+.sync-chip.synced { color: var(--ink-3); }
+.sync-chip.syncing { color: var(--core); }
+.sync-chip.syncing svg { animation: sync-spin 1.1s linear infinite; }
+.sync-chip.offline { color: var(--ink-3); opacity: .8; }
+.sync-chip.blocked { color: var(--warn); }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sync-chip.syncing svg { animation: none; } }
+
+.sync-panel { display: grid; gap: 10px; }
+.sync-warning, .sync-message {
+  margin: 0; font-size: 13px; line-height: 1.45;
+  border-radius: 8px; padding: 10px 12px;
+}
+.sync-warning { color: var(--warn); background: var(--warn-soft); }
+.sync-message { color: var(--ink-3); background: var(--surface-2); }
+.sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sync-actions .tb-btn { flex: 1 1 auto; justify-content: center; }
+
+.replace-copy {
+  display: grid; gap: 9px; padding: 12px 13px;
+  border: 1px solid var(--rule); border-radius: 8px; background: var(--surface-2);
+}
+.replace-copy p { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.replace-copy label {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.replace-copy input {
+  font-family: var(--mono); font-size: 14px; letter-spacing: .08em;
+  padding: 9px 11px; border: 1px solid var(--rule); border-radius: 7px;
+  background: var(--surface); color: var(--ink);
+}
+
+.danger-zone {
+  display: grid; gap: 9px; padding: 14px 15px;
+  border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-soft);
+}
+.danger-zone h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--warn); }
+.danger-zone p { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.danger-zone label {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.danger-zone input {
+  font-family: var(--mono); font-size: 14px; letter-spacing: .08em;
+  padding: 9px 11px; border: 1px solid var(--rule); border-radius: 7px;
+  background: var(--surface); color: var(--ink);
+}
+.tb-btn.danger { border-color: var(--warn); color: var(--warn); }
+.tb-btn.danger:hover:not(:disabled) { background: var(--warn); color: var(--surface); }
+.tb-btn:disabled { opacity: .5; cursor: not-allowed; }
+
 .gear.has-update { position: relative; }
 .gear.has-update::after {
   content: ""; position: absolute; top: 4px; right: 4px;

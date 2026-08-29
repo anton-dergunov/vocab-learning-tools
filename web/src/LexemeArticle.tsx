@@ -162,7 +162,6 @@ export default function LexemeArticle({ article, onUnsupported }: {
       <span>added <b>{formatDay(lexeme.createdAt)}</b></span>
       <span>edited <b>{formatDay(lexeme.editedAt)}</b></span>
       <span>rev <b>{lexeme.revision}</b></span>
-      <span>synced <b>{article.synced ? "yes" : "pending"}</b></span>
     </div>
   </>;
 }

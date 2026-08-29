@@ -1,18 +1,44 @@
 import { useEffect, useState } from "react";
-import { formatDay } from "./format";
 import { fetchMacRelease, type MacRelease } from "./macRelease";
 import { installUpdate, type UpdateStage } from "./pwa";
+import type { ReplicaSnapshot } from "./repository";
+import { syncEngine, type SyncStatus } from "./sync";
+import { SyncPanel } from "./SyncStatus";
 import { appVersionLabel } from "./version";
 
-export default function Settings({ update, email, syncedAt, onSignOut, onClose }: {
+/** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
+const CONFIRMATION = "DELETE";
+
+export default function Settings({ update, email, status, snapshot, onSignOut, onClose, onNotify }: {
   update?: UpdateStage;
   email: string;
-  syncedAt: string | null;
+  status: SyncStatus;
+  snapshot: ReplicaSnapshot | null;
   onSignOut(): void;
   onClose(): void;
+  onNotify(message: string): void;
 }) {
   const [macRelease, setMacRelease] = useState<MacRelease | null>();
   const [releaseError, setReleaseError] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [working, setWorking] = useState(false);
+
+  const liveLexemes = snapshot?.lexemes.filter((lexeme) => !lexeme.deleted).length ?? 0;
+  const liveTopics = snapshot?.topics.filter((topic) => !topic.deleted).length ?? 0;
+
+  async function run(action: () => Promise<void>, failure: string) {
+    setWorking(true);
+    try { await action(); }
+    catch (error) { onNotify(error instanceof Error ? error.message : failure); }
+    finally { setWorking(false); }
+  }
+
+  async function deleteEverything() {
+    await run(() => syncEngine.resetVocabulary(), "The vocabulary could not be deleted.");
+    setConfirming(false);
+    setTyped("");
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -34,8 +60,14 @@ export default function Settings({ update, email, syncedAt, onSignOut, onClose }
         {!update && <div className="update-status"><strong>Acervo is up to date</strong><span>This is the newest version available from this server.</span></div>}
         <div className="update-status">
           <strong>Signed in as {email}</strong>
-          <span>{syncedAt ? `Vocabulary last received ${formatDay(syncedAt)}.` : "Showing the copy stored on this device."}</span>
+          <span>{liveLexemes} {liveLexemes === 1 ? "entry" : "entries"} across {liveTopics} {liveTopics === 1 ? "topic" : "topics"} on this device.</span>
         </div>
+        <SyncPanel
+          status={status}
+          lexemeCount={liveLexemes}
+          onSyncNow={() => void run(() => syncEngine.syncNow(true), "The vocabulary could not be refreshed.")}
+          onDownloadAgain={() => void run(() => syncEngine.downloadAgain(), "The vocabulary could not be downloaded again.")}
+        />
         {macRelease && <a className="download-action" href={macRelease.url} download={macRelease.file}>
           <strong>Download Acervo for macOS</strong>
           <span>Version {macRelease.version}, build {macRelease.build}</span>
@@ -44,6 +76,35 @@ export default function Settings({ update, email, syncedAt, onSignOut, onClose }
         {macRelease === undefined && !releaseError && <div className="update-status"><strong>macOS application</strong><span>Checking for a native release…</span></div>}
         {releaseError && <div className="update-status"><strong>macOS application</strong><span>The native release could not be checked right now.</span></div>}
         <button className="tb-btn" onClick={onSignOut}>Sign out</button>
+
+        <div className="danger-zone">
+          <h3>Delete all vocabulary</h3>
+          {!confirming && <>
+            <p>Removes every entry from the server and from every device you use. This needs a
+              connection to the server, like any other change.</p>
+            <button className="tb-btn danger" onClick={() => setConfirming(true)}>Delete all vocabulary…</button>
+          </>}
+          {confirming && <>
+            <p role="alert">
+              This deletes <strong>{liveLexemes} {liveLexemes === 1 ? "entry" : "entries"}</strong> and
+              everything attached to them — senses, examples, the sentences you captured, and study
+              history. Your other devices are emptied the next time they sync.
+            </p>
+            <label htmlFor="delete-confirmation">Type {CONFIRMATION} to confirm</label>
+            <input
+              id="delete-confirmation" value={typed} autoComplete="off"
+              onChange={(event) => setTyped(event.target.value)}
+            />
+            <div className="sync-actions">
+              <button className="tb-btn" onClick={() => { setConfirming(false); setTyped(""); }}>Cancel</button>
+              <button
+                className="tb-btn danger" disabled={typed.trim() !== CONFIRMATION || working}
+                onClick={() => void deleteEverything()}
+              >Delete everything</button>
+            </div>
+          </>}
+        </div>
+
         <p className="version">Version {appVersionLabel()}</p>
       </div>
     </section>

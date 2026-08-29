@@ -5,10 +5,10 @@ import {
   type OwnedFields, type StudyState, type StudyStateInput, type SyncFields, type Topic, type TopicInput,
   type VocabularyGraph
 } from "./domain";
-import { createLocalDatabase, MemoryDatabase, pendingKey, RECORD_STORES, type LocalDatabase, type RecordStore, type ReplicaMeta } from "./localDatabase";
+import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase, type ReplicaMeta } from "./localDatabase";
 import { newDeviceId, newId, nowInstant } from "./ids";
 
-export const LOCAL_SCHEMA_VERSION = 3;
+export const LOCAL_SCHEMA_VERSION = 4;
 
 const EMPTY_GRAPH = (): VocabularyGraph => ({
   topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
@@ -17,12 +17,29 @@ const EMPTY_GRAPH = (): VocabularyGraph => ({
 type Entity = Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | StudyState;
 type EntityInput = TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput;
 
+/** What the server returns for a batch of applied records. */
+export interface RemoteWrite {
+  records: Partial<VocabularyGraph>;
+  cursor: number;
+  datasetId: string;
+}
+
+/**
+ * The write half of the server transport. `sync.ts` owns the routes and attaches this; the
+ * repository never reaches the network itself, and the interface never reaches past the repository.
+ */
+export interface RemoteGraph {
+  push(changes: Partial<VocabularyGraph>): Promise<RemoteWrite>;
+}
+
 export interface ReplicaSnapshot extends VocabularyGraph {
   ready: boolean;
   ownerId: string;
   deviceId: string;
-  pending: string[];
-  pendingCount: number;
+  datasetId: string;
+  cursor: number;
+  lastPulledAt: string | null;
+  lastWroteAt: string | null;
   persistent: boolean;
 }
 
@@ -30,7 +47,8 @@ export interface AcervoRepository {
   load(ownerId: string): Promise<void>;
   clear(): Promise<void>;
   snapshot(): ReplicaSnapshot;
-  applyRemote(graph: VocabularyGraph): Promise<void>;
+  attachRemote(remote: RemoteGraph | null): void;
+  applyRemote(changes: Partial<VocabularyGraph>, cursor: number, datasetId: string): Promise<number>;
   writeGraph(changes: Partial<VocabularyGraph>): Promise<void>;
   saveTopic(input: TopicInput, id?: string): Promise<Topic>;
   saveLexeme(input: LexemeInput, id?: string): Promise<Lexeme>;
@@ -42,13 +60,19 @@ export interface AcervoRepository {
   delete(kind: EntityKind, id: string): Promise<void>;
 }
 
+const EMPTY_META = (): ReplicaMeta => ({
+  ownerId: "", deviceId: "", schemaVersion: LOCAL_SCHEMA_VERSION,
+  datasetId: "", cursor: 0, lastPulledAt: null, lastWroteAt: null
+});
+
 export class LocalAcervoRepository implements AcervoRepository {
   private graph = EMPTY_GRAPH();
-  private meta: ReplicaMeta = { ownerId: "", deviceId: "", schemaVersion: LOCAL_SCHEMA_VERSION };
-  private pending = new Set<string>();
+  private meta: ReplicaMeta = EMPTY_META();
   private ready = false;
   private persistent = true;
   private lastInstant = "";
+  private remote: RemoteGraph | null = null;
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private database: LocalDatabase = createLocalDatabase()) {}
 
@@ -69,8 +93,7 @@ export class LocalAcervoRepository implements AcervoRepository {
     if (stale) {
       await this.database.wipe();
       this.graph = EMPTY_GRAPH();
-      this.pending = new Set();
-      this.meta = { ownerId, deviceId, schemaVersion: LOCAL_SCHEMA_VERSION };
+      this.meta = { ...EMPTY_META(), ownerId, deviceId };
       await this.database.write({ meta: this.meta });
     } else {
       const graph: VocabularyGraph = {
@@ -89,8 +112,15 @@ export class LocalAcervoRepository implements AcervoRepository {
       const hasForeignRecord = allRecords.some((records) => records.some((record) => record.ownerId !== ownerId));
       if (hasForeignRecord) throw new Error("Replica records do not belong to the authenticated owner.");
       this.graph = graph;
-      this.pending = new Set(contents.pending);
-      this.meta = { ownerId, deviceId, schemaVersion: LOCAL_SCHEMA_VERSION };
+      this.meta = {
+        ...EMPTY_META(),
+        ownerId,
+        deviceId,
+        datasetId: contents.meta.datasetId ?? "",
+        cursor: contents.meta.cursor ?? 0,
+        lastPulledAt: contents.meta.lastPulledAt ?? null,
+        lastWroteAt: contents.meta.lastWroteAt ?? null
+      };
     }
     this.ready = true;
   }
@@ -98,40 +128,76 @@ export class LocalAcervoRepository implements AcervoRepository {
   async clear(): Promise<void> {
     await this.database.wipe();
     this.graph = EMPTY_GRAPH();
-    this.pending = new Set();
+    this.meta = EMPTY_META();
     this.ready = false;
   }
 
   snapshot(): ReplicaSnapshot {
     return {
       ...structuredClone(this.graph), ready: this.ready, ownerId: this.meta.ownerId,
-      deviceId: this.meta.deviceId, pending: [...this.pending], pendingCount: this.pending.size,
+      deviceId: this.meta.deviceId, datasetId: this.meta.datasetId, cursor: this.meta.cursor,
+      lastPulledAt: this.meta.lastPulledAt, lastWroteAt: this.meta.lastWroteAt,
       persistent: this.persistent
     };
   }
 
+  attachRemote(remote: RemoteGraph | null): void {
+    this.remote = remote;
+  }
+
   /**
-   * Replaces the replica with the records the server holds for this owner. Records that still
-   * carry a pending marker are kept as they are locally, so an unsent local write is never lost
-   * to a pull. This is a one-way display pull; merge and conflict resolution remain deferred.
+   * Serialises everything that reads and then rewrites the graph. A pull and a write each take a
+   * copy on entry and install it on exit, so interleaving them would silently drop whichever
+   * finished first. Both round trips are seconds at worst, and neither is on a render path.
    */
-  async applyRemote(graph: VocabularyGraph): Promise<void> {
+  private serialize<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(work, work);
+    this.queue = result.catch(() => undefined);
+    return result;
+  }
+
+  /**
+   * Applies a delta the server sent, newest wins by revision. Only the server mints revisions, so
+   * they totally order the versions of a record — there is no timestamp comparison and no merge.
+   * Records and the cursor that covers them land in one transaction. Returns how many were applied.
+   */
+  applyRemote(changes: Partial<VocabularyGraph>, cursor: number, datasetId: string): Promise<number> {
+    return this.serialize(() => this.merge(changes, cursor, datasetId));
+  }
+
+  private async merge(
+    changes: Partial<VocabularyGraph>, cursor: number, datasetId: string, wroteAt?: string
+  ): Promise<number> {
     if (!this.ready) throw new Error("Load the Acervo repository before applying remote records.");
-    const next = EMPTY_GRAPH();
+    const next = structuredClone(this.graph);
+    const write: Partial<VocabularyGraph> = {};
+    let applied = 0;
     RECORD_STORES.forEach((kind) => {
-      const local = new Map((this.graph[kind] as Entity[]).map((record) => [record.id, record]));
-      const merged = (graph[kind] as Entity[]).map((record) => {
+      const incoming = changes[kind] as Entity[] | undefined;
+      if (!incoming?.length) return;
+      const target = next[kind] as Entity[];
+      const accepted: Entity[] = [];
+      incoming.forEach((record) => {
         if (record.ownerId !== this.meta.ownerId) throw new Error("Cannot apply a record owned by another account.");
-        const existing = local.get(record.id);
-        local.delete(record.id);
-        return this.pending.has(pendingKey(kind, record.id)) && existing ? existing : record;
+        const index = target.findIndex((candidate) => candidate.id === record.id);
+        // A reply that lost a race with a newer version of the same record must not undo it.
+        if (index >= 0 && record.revision <= target[index].revision) return;
+        if (index < 0) target.push(structuredClone(record)); else target[index] = structuredClone(record);
+        accepted.push(record);
       });
-      local.forEach((record, id) => { if (this.pending.has(pendingKey(kind, id))) merged.push(record); });
-      next[kind] = structuredClone(merged) as never;
+      if (!accepted.length) return;
+      write[kind] = structuredClone(accepted) as never;
+      applied += accepted.length;
     });
     validateGraph(next);
-    await this.database.write({ ...next, replaceRecords: true });
+    // A push is not a pull: only a pull moves the "last received" stamp.
+    const meta: Partial<ReplicaMeta> = wroteAt
+      ? { cursor, datasetId, lastWroteAt: wroteAt }
+      : { cursor, datasetId, lastPulledAt: this.instant() };
+    await this.database.write({ ...write, meta });
     this.graph = next;
+    this.meta = { ...this.meta, ...meta } as ReplicaMeta;
+    return applied;
   }
 
   private instant(): string {
@@ -149,31 +215,42 @@ export class LocalAcervoRepository implements AcervoRepository {
       createdAt: existing?.createdAt ?? editedAt,
       editedAt,
       editedBy: this.meta.deviceId,
-      revision: 0
+      // The revision the edit is based on. The server refuses the write if it has moved on, and
+      // replaces this with the one it allocates.
+      revision: existing?.revision ?? 0
     };
   }
 
-  async writeGraph(changes: Partial<VocabularyGraph>): Promise<void> {
+  /**
+   * Sends a change set to the server and stores what comes back. Nothing local moves until the
+   * server has accepted it: offline, this throws and the replica is exactly as it was.
+   */
+  private commit(changes: Partial<VocabularyGraph>): Promise<void> {
+    return this.serialize(() => this.send(changes));
+  }
+
+  private async send(changes: Partial<VocabularyGraph>): Promise<void> {
     if (!this.ready) throw new Error("Load the Acervo repository before writing.");
-    const next = structuredClone(this.graph);
-    const pending: string[] = [];
-    const write: Partial<VocabularyGraph> = {};
+    const proposed = structuredClone(this.graph);
     (Object.entries(changes) as [EntityKind, Entity[]][]).forEach(([kind, records]) => {
-      if (!records) return;
-      const target = next[kind] as Entity[];
-      records.forEach((record) => {
+      records?.forEach((record) => {
         if (record.ownerId !== this.meta.ownerId) throw new Error("Cannot write a record owned by another account.");
+        const target = proposed[kind] as Entity[];
         const index = target.findIndex((candidate) => candidate.id === record.id);
-        if (index < 0) target.push(structuredClone(record));
-        else target[index] = structuredClone(record);
-        pending.push(pendingKey(kind as RecordStore, record.id));
+        if (index < 0) target.push(record); else target[index] = record;
       });
-      write[kind] = structuredClone(records) as never;
     });
-    validateGraph(next);
-    await this.database.write({ ...write, addPending: pending });
-    this.graph = next;
-    pending.forEach((key) => this.pending.add(key));
+    validateGraph(proposed);
+    if (!this.remote) {
+      throw new Error("Acervo is not connected to the server, so this change was not saved.");
+    }
+    const result = await this.remote.push(changes);
+    // One transaction for the records the server blessed and the stamp that says we wrote.
+    await this.merge(result.records, result.cursor, result.datasetId, this.instant());
+  }
+
+  writeGraph(changes: Partial<VocabularyGraph>): Promise<void> {
+    return this.commit(changes);
   }
 
   private async save(kind: EntityKind, input: EntityInput, requestedId?: string): Promise<Entity> {
@@ -181,14 +258,8 @@ export class LocalAcervoRepository implements AcervoRepository {
     const records = this.graph[kind] as Entity[];
     const existing = requestedId ? records.find((record) => record.id === requestedId) : undefined;
     const record = { ...input, id: existing?.id ?? requestedId ?? newId(), ...this.stamp(existing) } as Entity;
-    const next = structuredClone(this.graph);
-    (next[kind] as Entity[]).splice(existing ? records.indexOf(existing) : records.length, existing ? 1 : 0, record);
-    validateGraph(next);
-    const key = pendingKey(kind as RecordStore, record.id);
-    await this.database.write({ [kind]: [record], addPending: [key] });
-    this.graph = next;
-    this.pending.add(key);
-    return record;
+    await this.commit({ [kind]: [record] });
+    return (this.graph[kind] as Entity[]).find((candidate) => candidate.id === record.id) ?? record;
   }
 
   saveTopic(input: TopicInput, id?: string) { return this.save("topics", input, id) as Promise<Topic>; }
@@ -208,8 +279,7 @@ export class LocalAcervoRepository implements AcervoRepository {
       changed[store] = list as never;
     };
     const tombstone = <T extends Entity>(store: EntityKind, record: T) => {
-      const value = { ...record, ...this.stamp(record), deleted: true } as T;
-      change(store, value);
+      change(store, { ...record, ...this.stamp(record), deleted: true } as T);
     };
     const target = (this.graph[kind] as Entity[]).find((record) => record.id === id);
     if (!target || target.deleted) return;
@@ -231,20 +301,7 @@ export class LocalAcervoRepository implements AcervoRepository {
       this.graph.examples.filter((record) => record.senseId === id && !record.deleted).forEach((record) => tombstone("examples", record));
       this.graph.imagePrompts.filter((record) => record.senseId === id && !record.deleted).forEach((record) => tombstone("imagePrompts", record));
     }
-    const next = structuredClone(this.graph);
-    const pending: string[] = [];
-    Object.entries(changed).forEach(([store, updates]) => {
-      (updates ?? []).forEach((record) => {
-        const list = next[store as EntityKind] as Entity[];
-        const index = list.findIndex((candidate) => candidate.id === record.id);
-        list[index] = record as Entity;
-        pending.push(pendingKey(store as RecordStore, record.id));
-      });
-    });
-    validateGraph(next);
-    await this.database.write({ ...changed, addPending: pending });
-    this.graph = next;
-    pending.forEach((key) => this.pending.add(key));
+    await this.commit(changed);
   }
 }
 

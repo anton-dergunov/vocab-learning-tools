@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MemoryDatabase } from "./localDatabase";
 import { LocalAcervoRepository } from "./repository";
+import { fakeRemote } from "./testRemote";
 
 const lexemeInput = {
   language: "es", headword: "desmayarse", lemma: "desmayarse", reading: null, ipa: null, pos: "verb" as const,
@@ -8,11 +9,12 @@ const lexemeInput = {
   status: "active" as const, shortGloss: null, notes: []
 };
 
-describe("offline Acervo repository", () => {
+describe("the Acervo repository", () => {
   it("commits valid multi-collection graph writes atomically", async () => {
     const database = new MemoryDatabase();
     const repository = new LocalAcervoRepository(database);
     await repository.load("owner0000000001");
+    repository.attachRemote(fakeRemote());
     const sync = {
       ownerId: "owner0000000001", deleted: false, createdAt: "2026-08-28T12:00:00.000Z",
       editedAt: "2026-08-28T12:00:00.000Z", editedBy: repository.snapshot().deviceId, revision: 0
@@ -25,7 +27,6 @@ describe("offline Acervo repository", () => {
         definitionLang: "es", glosses: [{ lang: "en", terms: ["to faint"] }], domain: null, order: 0, ...sync
       }]
     });
-    expect(repository.snapshot()).toMatchObject({ pendingCount: 3 });
     expect(repository.snapshot().topics).toHaveLength(1);
     expect(repository.snapshot().lexemes).toHaveLength(1);
     expect(repository.snapshot().senses).toHaveLength(1);
@@ -35,6 +36,7 @@ describe("offline Acervo repository", () => {
     const database = new MemoryDatabase();
     const repository = new LocalAcervoRepository(database);
     await repository.load("owner0000000001");
+    repository.attachRemote(fakeRemote());
     const sync = {
       ownerId: "owner0000000001", deleted: false, createdAt: "2026-08-28T12:00:00.000Z",
       editedAt: "2026-08-28T12:00:00.000Z", editedBy: repository.snapshot().deviceId, revision: 0
@@ -44,13 +46,13 @@ describe("offline Acervo repository", () => {
       glosses: [{ lang: "en", terms: ["missing"] }], domain: null, order: 0, ...sync
     }] })).rejects.toThrow("missing lexeme");
     expect((await database.read()).senses).toEqual([]);
-    expect((await database.read()).pending).toEqual([]);
   });
 
-  it("writes a complete graph locally and marks every record pending", async () => {
+  it("stores a complete graph with the revisions the server allocated", async () => {
     const database = new MemoryDatabase();
     const repository = new LocalAcervoRepository(database);
     await repository.load("owner0000000001");
+    repository.attachRemote(fakeRemote());
     const topic = await repository.saveTopic({ name: "Health", icon: "🩺", order: 0 }, "topic0000000001");
     const lexeme = await repository.saveLexeme({ ...lexemeInput, topicIds: [topic.id] }, "lexeme000000001");
     const sense = await repository.saveSense({
@@ -67,14 +69,18 @@ describe("offline Acervo repository", () => {
       videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null, note: null,
       matchedForm: null, matchedTranslationForm: null, approved: true
     }, "example00000001");
-    expect(repository.snapshot()).toMatchObject({ ready: true, ownerId: "owner0000000001", pendingCount: 5 });
-    expect((await database.read()).pending).toHaveLength(5);
+    expect(repository.snapshot()).toMatchObject({ ready: true, ownerId: "owner0000000001" });
+    // Every stored record carries the revision the server allocated, never a locally invented one.
+    const stored = await database.read();
+    expect([...stored.topics, ...stored.lexemes, ...stored.senses, ...stored.attestations, ...stored.examples]
+      .map((record) => record.revision).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("atomically refuses invalid relations and Chinese records without readings", async () => {
     const database = new MemoryDatabase();
     const repository = new LocalAcervoRepository(database);
     await repository.load("owner0000000001");
+    repository.attachRemote(fakeRemote());
     await expect(repository.saveSense({
       lexemeId: "missing00000001", definition: "Missing", definitionLang: "en",
       glosses: [{ lang: "en", terms: ["missing"] }], domain: null, order: 0
@@ -85,10 +91,12 @@ describe("offline Acervo repository", () => {
     expect(repository.snapshot().lexemes).toHaveLength(0);
   });
 
-  it("tombstones a lexeme and its dependent graph in one database write", async () => {
+  it("tombstones a lexeme and its dependent graph in one write", async () => {
     const database = new MemoryDatabase();
     const repository = new LocalAcervoRepository(database);
     await repository.load("owner0000000001");
+    const remote = fakeRemote();
+    repository.attachRemote(remote);
     const lexeme = await repository.saveLexeme(lexemeInput, "lexeme000000001");
     await repository.saveSense({
       lexemeId: lexeme.id, definition: "Perder el conocimiento.", definitionLang: "es",
@@ -97,27 +105,82 @@ describe("offline Acervo repository", () => {
     await repository.delete("lexemes", lexeme.id);
     expect(repository.snapshot().lexemes[0].deleted).toBe(true);
     expect(repository.snapshot().senses[0].deleted).toBe(true);
-    expect((await database.read()).pending).toEqual(expect.arrayContaining(["lexemes:lexeme000000001", "senses:sense0000000001"]));
+    // The lexeme and its dependent sense travel to the server as one batch.
+    expect(Object.keys(remote.sent.at(-1)!).sort()).toEqual(["lexemes", "senses"]);
   });
 
   it("tombstones a topic and removes it from related lexemes atomically", async () => {
     const database = new MemoryDatabase();
     const repository = new LocalAcervoRepository(database);
     await repository.load("owner0000000001");
+    const remote = fakeRemote();
+    repository.attachRemote(remote);
     const topic = await repository.saveTopic({ name: "Health", icon: "🩺", order: 0 }, "topic0000000001");
     await repository.saveLexeme({ ...lexemeInput, topicIds: [topic.id] }, "lexeme000000001");
     await repository.delete("topics", topic.id);
     expect(repository.snapshot().topics[0].deleted).toBe(true);
     expect(repository.snapshot().lexemes[0].topicIds).toEqual([]);
-    expect((await database.read()).pending).toEqual(expect.arrayContaining([
-      "topics:topic0000000001", "lexemes:lexeme000000001"
-    ]));
+    expect(Object.keys(remote.sent.at(-1)!).sort()).toEqual(["lexemes", "topics"]);
+  });
+
+  it("leaves every store untouched when the server refuses the write", async () => {
+    const database = new MemoryDatabase();
+    const repository = new LocalAcervoRepository(database);
+    await repository.load("owner0000000001");
+    const remote = fakeRemote();
+    repository.attachRemote(remote);
+    await repository.saveLexeme(lexemeInput, "lexeme000000001");
+    const before = await database.read();
+
+    remote.fail = new Error("This entry was changed somewhere else.");
+    await expect(repository.delete("lexemes", "lexeme000000001")).rejects.toThrow("changed somewhere else");
+
+    expect(await database.read()).toEqual(before);
+    expect(repository.snapshot().lexemes[0].deleted).toBe(false);
+  });
+
+  it("refuses to write with no transport attached, rather than queueing", async () => {
+    const database = new MemoryDatabase();
+    const repository = new LocalAcervoRepository(database);
+    await repository.load("owner0000000001");
+    await expect(repository.saveLexeme(lexemeInput, "lexeme000000001")).rejects.toThrow("not connected");
+    expect((await database.read()).lexemes).toEqual([]);
+  });
+
+  it("does not let two graph writes landing at once drop each other's records", async () => {
+    // The window is the await inside a commit: both callers copy the graph, both store, and the
+    // later assignment would silently discard the earlier one's records.
+    const database = new MemoryDatabase();
+    const write = database.write.bind(database);
+    let gate: Promise<void> | null = null;
+    database.write = async (changes) => { if (gate) await gate; return write(changes); };
+
+    const repository = new LocalAcervoRepository(database);
+    await repository.load("owner0000000001");
+    const topic = (id: string, name: string, revision: number) => ({
+      id, name, icon: null, order: 0, ownerId: "owner0000000001", deleted: false,
+      createdAt: "2026-08-29T12:00:00.000Z", editedAt: "2026-08-29T12:00:00.000Z",
+      editedBy: "device000000001", revision
+    });
+
+    let release: () => void = () => {};
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    const first = repository.applyRemote({ topics: [topic("topic0000000001", "Health", 1)] }, 1, "dataset00000001");
+    const second = repository.applyRemote({ topics: [topic("topic0000000002", "Travel", 2)] }, 2, "dataset00000001");
+    release();
+    await Promise.all([first, second]);
+
+    expect(repository.snapshot().topics.map((entry) => entry.id).sort())
+      .toEqual(["topic0000000001", "topic0000000002"]);
+    expect(repository.snapshot().cursor).toBe(2);
+    expect((await database.read()).topics).toHaveLength(2);
   });
 
   it("wipes another owner's replica without converting it and preserves the device id", async () => {
     const database = new MemoryDatabase();
     const first = new LocalAcervoRepository(database);
     await first.load("owner0000000001");
+    first.attachRemote(fakeRemote());
     await first.saveLexeme(lexemeInput, "lexeme000000001");
     const deviceId = first.snapshot().deviceId;
     const second = new LocalAcervoRepository(database);
@@ -134,9 +197,10 @@ describe("offline Acervo repository", () => {
     } });
     const repository = new LocalAcervoRepository(database);
     await repository.load("owner0000000001");
+    repository.attachRemote(fakeRemote());
     expect(repository.snapshot()).toMatchObject({
-      lexemes: [], pendingCount: 0, deviceId: "device000000001", ownerId: "owner0000000001"
+      lexemes: [], cursor: 0, datasetId: "", deviceId: "device000000001", ownerId: "owner0000000001"
     });
-    expect((await database.read()).meta.schemaVersion).toBe(3);
+    expect((await database.read()).meta.schemaVersion).toBe(4);
   });
 });

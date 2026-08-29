@@ -1,6 +1,6 @@
 # Acervo
 
-**Design document · Rev. D · 27 Aug 2026 · V1 scope agreed**
+**Design document · Rev. E · 29 Aug 2026 · V1 scope agreed · synchronization decided**
 
 > *acervo* — *m.* — the body of words a person actually holds — *working name, rename freely*
 
@@ -62,7 +62,7 @@ Solid arrows: content out, statistics back. Dashed: the corpus is consulted, nev
   mass-regenerate in two years without touching a word you wrote yourself.
 - **A lexeme with no image and no audio is complete.** Media is an enhancement with its own
   lifecycle, never a blocker on a word being usable, reviewable or exportable. This is what makes
-  best-effort, opportunistic generation (§07) safe.
+  best-effort, opportunistic generation (§09) safe.
 
 ---
 
@@ -239,7 +239,7 @@ generator judges derivation inadequate.
 
 ### `imagePrompt` — its own row, its own stage
 
-Prompts come off the article entirely (§07 explains why) and become first-class regenerable
+Prompts come off the article entirely (§09 explains why) and become first-class regenerable
 artifacts:
 
 | Field | Type | Notes |
@@ -351,7 +351,7 @@ Your English case, with both glossing halves earning their place:
 }
 ```
 
-And `studyState`, pulled back from Anki (§08):
+And `studyState`, pulled back from Anki (§10):
 
 ```jsonc
 {
@@ -366,7 +366,7 @@ And `studyState`, pulled back from Anki (§08):
 }
 ```
 
-Difficulty 7.9/10 with 3 lapses is the gate in §08: *this* is a word that earns a custom image.
+Difficulty 7.9/10 with 3 lapses is the gate in §10: *this* is a word that earns a custom image.
 
 ### Glossing and reveal order are configuration
 
@@ -417,15 +417,143 @@ etymological background, withholding the gloss buys nothing.
 
 > ### DECISION
 > **PocketBase is the durable store. IndexedDB is the complete owner-scoped local replica and the
-> only store application vocabulary operations touch directly.**
->
-> **This iteration** supplies local transactions, tombstones, pending markers and replication-ready
-> metadata. Authenticated transport, cursors, revision assignment, dataset identity, merge order and
-> conflict resolution are deliberately deferred and will be designed directly for Acervo.
+> only store the interface reads. Reads work offline forever; writes require the server.**
 >
 > **Coexistence is a non-issue.** Your `compose.yaml` is already parameterized: a different
 > `container_name`, `PB_PORT` and `PB_DATA_PATH` is the entire change. Separate container, separate
 > volume, separate SQLite file. They never see each other.
+
+### The asymmetry that decides everything else
+
+This design was drawn from Calorie Logger, which has been in daily use long enough to be trusted.
+Copying it wholesale would be the wrong instinct, because the two apps sit on opposite sides of one
+question: **must a write survive being made with no network?**
+
+For Calorie Logger, yes, and non-negotiably. You log a meal standing in a kitchen with no signal, the
+record is a food, a day and an amount, and last-write-wins on three scalar fields is an honest merge.
+
+For Acervo, no. Almost every write is *creation or revision of a rich article*, and almost all of it
+originates on the server anyway: capture calls an LLM (§05), in-place editing calls an LLM (§06),
+enrichment is a Prefect flow (§09), study state arrives from Anki (§10). What is left for a device to
+originate by hand is rare — marking a word learned, flagging one to focus on, occasionally correcting
+a generated sentence. Merging two independently-edited versions of an article has no honest answer,
+and building the machinery to attempt it would buy a case that barely occurs.
+
+> ### DECISION
+> **Every read is served from the replica and works with the server unreachable. Every write —
+> create, edit, delete, reset — is a synchronous round trip that fails loudly when offline and
+> leaves the replica untouched.**
+>
+> **Because** this deletes the entire conflict-resolution surface rather than implementing it, and
+> the cases it costs are ones this app does not have.
+>
+> **And it pays for itself twice.** Only the server ever mints a version of a record, so `revision`
+> becomes a reliable total order on versions. There is no timestamp comparison anywhere in the merge
+> path and no clock skew to tolerate — which Calorie Logger cannot have, precisely because two of its
+> devices can each produce version *n+1* offline before either is seen.
+
+`editedAt` and `editedBy` stay on every row. They are provenance — *when, and from which device* —
+and no longer a merge key.
+
+### How this differs from Calorie Logger, and why
+
+| | Calorie Logger | Acervo | Why |
+|---|---|---|---|
+| **Offline writes** | Queued, unbounded | **Refused, with an error** | Rich records; merging two edited articles has no honest answer |
+| **Merge key** | `editedAt` string compare, tie broken by `editedBy` | **`revision` alone** | Only the server mints versions, so revisions totally order them |
+| **Concurrent edit** | Last-write-wins, counted and reported afterwards | **Refused — `409 stale_record`** | An interactive save can be retried; a queued one cannot |
+| **Round trips** | One combined `POST /sync` | **Separate pull and push** | There is nothing to push at poll time |
+| **Partial failure** | Rejected per record | **All-or-nothing per batch** | One save is one article; half an article is worse than none |
+| **Poll interval** | 15 s | **60 s** | A newly captured word does not need to arrive this second |
+| **Pending queue** | Central to the design | **Does not exist** | Nothing is ever unsent |
+| **Rebuilt server** | Wipe the cursor, re-push everything | **Stop and ask** | Nothing is re-pushed here, so wiping could destroy the last full copy |
+
+### The cursor is a counter, not a clock
+
+Every replicated row carries `revision`: a position in one strictly increasing per-owner sequence,
+assigned by the server. A client stores the highest revision it has received and asks for
+`revision > cursor`.
+
+> **WHY NOT A TIMESTAMP**
+> A record written while your request is already in flight is stamped *before* the moment your read
+> finishes. Ask next time for "everything since that moment" and you skip it — permanently, silently,
+> and only for the one device that was unlucky. A monotonic counter has no such gap.
+
+The counter lives in a `sync_state` row, one per owner, in a collection that is **never replicated**.
+It is deliberately not a field on a synced record: a counter only the server may advance must not be
+something a stale device can overwrite. That row's id doubles as the **`datasetId`** — rebuild the
+database and every outstanding cursor is invalidated for free.
+
+**Revisions are assigned by a model hook, not by the API route.** The route is not the only writer:
+the seeder writes as a superuser, Prefect flows will write generated content, the Anki consumer will
+write study state. A record saved with `revision` left at zero is invisible to `revision > cursor`
+forever — a silent, permanent, per-record data loss. Putting the allocation in the save hook means no
+writer can forget.
+
+### The protocol
+
+**Pull — `GET /api/acervo/v1/graph?since=<cursor>`**
+
+Returns `{ schemaVersion, datasetId, cursor, serverTime, changes }`, where `changes` is the seven
+record arrays filtered to `owner = you AND revision > since`, ordered by revision. Tombstones
+included; the client filters them at read time. `since=0` returns everything, so a first sync and a
+steady-state poll are the same code path with no special case.
+
+**Push — `POST /api/acervo/v1/graph`**
+
+Carries `{ schemaVersion, deviceId, changes }` and applies it in one transaction. Each record states
+the `revision` it was edited from; if the stored revision has moved on, the whole batch is refused
+with `409 stale_record` naming the entry, and the interface says so rather than guessing. The
+response is the canonical stored rows plus the new cursor, so the screen repaints without waiting for
+the next poll.
+
+> **MERGE ORDER FOLLOWS THE GRAPH**
+> Topics before lexemes; lexemes before senses and attestations; those before examples and
+> sense-linked image prompts. Applied in that order, on both sides, a relation always resolves.
+
+**Both requests carry `schemaVersion`.** A mismatch is a `409` that puts the client in a terminal
+*blocked* state: it stops syncing and says the app needs updating, while local reading carries on
+untouched.
+
+### Polling, not push
+
+> ### DECISION
+> **The client polls every 60 seconds while visible, on focus, on regaining the network, and
+> immediately after any write. There is no server push.**
+>
+> **Because** a cursor pull that finds nothing is one indexed range scan per collection and a few
+> hundred bytes — the indexes it needs are already in the schema. SSE or PocketBase realtime would
+> buy seconds of latency in exchange for a long-lived connection through a reverse proxy and
+> Tailscale, reconnect and backoff logic, and a subscription surface on a server whose generic
+> collection access is deliberately closed.
+>
+> **And it is not a one-way door.** The cursor is the client's entire synchronization state, so a
+> push channel can be added later as a pure latency optimisation, changing nothing else.
+
+A failed sync is not an error the owner must act on; it is a sync that will happen later. There is no
+backoff and no retry queue — the interval *is* the retry.
+
+### Resetting, and the trap in restoring
+
+Two destructive actions exist, and they are not the same action:
+
+- **Download this device's copy again** — discard the replica, pull from zero. Costs nothing; the
+  server is unaffected.
+- **Delete all vocabulary** — tombstone every record, server-side, replicating to every device. This
+  is the one genuinely dangerous button in the application, so it quotes the live counts and requires
+  the word `DELETE` to be typed. It is a write, so it needs the server like any other. It never
+  removes a row: §17's rule that tombstones are never collected means even this stays undoable.
+
+> ### THE CONSEQUENCE OF ONE-WAY WRITES, WRITTEN DOWN
+> Devices never push, so **a device replica can no longer silently repair a server restored from an
+> old snapshot.** In Calorie Logger that repair is automatic and free. Here, "rebuild the server from
+> this device" (§17, layer 0) becomes a *deliberate, manual* recovery path.
+>
+> Which is exactly why a changed `datasetId` must not behave as it does in Calorie Logger. There, a
+> rebuilt server means "reset the cursor and re-push everything." Here there is nothing to re-push,
+> so the same reflex would discard the most complete surviving copy of the vocabulary in order to
+> replace it with an older one. **The client stops instead**, explains what happened, and does
+> nothing destructive until a human chooses.
 
 ### On wanting NoSQL experience
 
@@ -435,7 +563,7 @@ relational: lexeme → sense → example → attestation → card link are all j
 free to self-host, but idles at hundreds of megabytes against PocketBase's ~20, and buys nothing
 here.
 
-Put that curiosity where it is genuinely earned: **the corpus index** (§06). Millions of lemmatized
+Put that curiosity where it is genuinely earned: **the corpus index** (§07). Millions of lemmatized
 subtitle lines with ranked full-text retrieval and faceting is a real search-engineering problem —
 and a far better thing to have built than "I stored 900 words in Mongo." It is also the layer where
 getting it wrong costs you nothing.
@@ -443,13 +571,10 @@ getting it wrong costs you nothing.
 ### What carries on every replicated row
 
 Every record carries `ownerId`, `deleted`, `createdAt`, `editedAt`, `editedBy` and `revision`.
-Deletions are tombstones. IDs are client-generated so a word captured on a plane can be edited,
-glossed and deleted before any server hears of it. The eventual meaning and assignment of revisions
-belongs to the synchronization iteration.
-
-> **MERGE ORDER MUST FOLLOW THE GRAPH**
-> The synchronization iteration must derive its relation order from Acervo itself: lexemes before
-> senses and attestations; those before examples and optional sense-linked image prompts.
+Deletions are tombstones. IDs stay client-generated in PocketBase's own 15-character format: it costs
+nothing, it keeps id minting out of the write path, and it means a future offline-write mode would
+need no schema change — every field such a mode requires is already on the row. That is an escape
+hatch left open, not a plan.
 
 ### Media
 
@@ -527,6 +652,33 @@ clipboard-and-hotkey route gets neither. Clipboard is a fine floor, not the plan
 **Voice** stays unbuilt for now. Phone and tablet dictation is mediocre but free, and building for it
 before knowing you need it is speculative.
 
+### Capture is online by nature
+
+Worth stating plainly, because it settles what §04's online-only writes actually cost: **nothing
+here.** Capture submits a word or a sentence and gets back a built article, and building it means
+calling an LLM and consulting the corpus — both of which live on the server. There was never a
+version of capture that worked on a plane. The rule that a write needs the network takes away a
+capability capture did not have.
+
+What you submit is small by design: one word, or one sentence containing it. Everything else is
+derived.
+
+> ### DECISION
+> **Capture merges into the lexeme you already have. It does not create a second article for a word
+> already in the store.**
+>
+> **Because** the same word arrives repeatedly — that is what reading a lot looks like — and the
+> second encounter is usually *better* than the first: a sharper sentence, a sense you had not met.
+> Treating it as a new entry turns the store into a pile of near-duplicates within months.
+>
+> **So a repeat capture is an addition, not an entry**: the new sentence becomes another attestation
+> on the existing lexeme, and an unmet meaning becomes another sense. `suppressed` (§03) is what
+> keeps a *rejected* word from arriving forever, and dedup is what keeps an *accepted* one from
+> arriving twice.
+
+This is also the first real consumer of the write route in §04: a merge is an ordinary batch of
+records against an existing lexeme, at its current revision.
+
 ### Immediate processing, deferred approval
 
 The transport may be fire-and-forget; the **processing is not**. Senses, glosses and an example are
@@ -555,7 +707,61 @@ seconds. Small feature, large effect on whether you trust the automatic path.
 
 ---
 
-## §06 · Corpus · v1
+## §06 · Article chat and LLM editing
+
+### The article is the thing you argue with
+
+Capture builds an entry. What is missing is everything that happens *after* you read it and find it
+not quite right — you want another example, or the definition explained further, or the one thing no
+dictionary gives you: **how this word differs from the neighbouring one you keep confusing it with.**
+
+The workaround needs no software: copy the article into a chat, ask, paste the result back. It works,
+and it is worth naming why it is nonetheless the wrong shape. The model in that chat does not know
+the schema, so what comes back is prose you must re-key by hand. It does not know the rest of your
+store, so it cannot say "you already have `mareo`, and here is the contrast." And the round trip is
+long enough that you stop doing it.
+
+> ### DECISION
+> **Chat lives inside the article, and its output is a proposed revision of that record.**
+>
+> **Because** the value is entirely in the conditioning. A model handed the canonical record, its
+> schema, and the account's related lexemes answers a different class of question than one handed a
+> block of text — and can return something structurally valid rather than something you transcribe.
+
+### How it fits what already exists
+
+- **The prompt is assembled server-side.** The PWA sends the lexeme id and the question; the server
+  attaches the record, the schema and the grounding (§09), and holds the credentials. Nothing about
+  the LLM leaks into the client, and every transport gets the same behaviour for free.
+- **A proposed change is shown, never applied.** The model answers in prose *and*, when the answer
+  implies an edit, offers it: *"Would you like me to add that contrast to the notes?"* You approve.
+- **Approval is an ordinary write.** It goes through §04's route, at the record's current revision,
+  and it is refused if the entry moved underneath you. No second write path, no second storage
+  format, and a chat-driven edit is indistinguishable downstream from one you typed.
+- **Provenance survives it.** `editedBy` and the `modelId` already on generated rows record that a
+  model made the change, which is what keeps §01's mass-regeneration promise honest.
+
+> **THIS IS WHY MANUAL YAML EDITING STAYS**
+> The projection in §03 looked like a nice-to-have when the expectation was that entries are rarely
+> edited by hand — and that expectation is right. It earns its place for a different reason: it is
+> the review surface for what the model proposes and the escape hatch for the case the chat gets
+> wrong. A generated store you cannot open and correct directly is a store you have to trust
+> blindly.
+
+### Where the line falls
+
+Chat is a **consumer of the core**, like every other renderer in §01 — it reads records and proposes
+records. It does not get its own storage, its own article format, or a private history that matters:
+the transcript is a convenience, and losing it costs nothing, which is precisely the test §01 sets
+for whether something belongs in the core. It does not.
+
+**Out of scope for this iteration**, along with capture itself. It is recorded here because it is the
+reason the write route is shaped the way §04 shapes it: an interactive, confirmed, revision-checked
+batch against one article.
+
+---
+
+## §07 · Corpus · v1
 
 ### Invert the video problem and it disappears
 
@@ -591,8 +797,8 @@ This settles every worry you raised at once:
 | 1 | **Video clip** | Human subtitles from free channels. Shows register, speed, regional accent. Playable in place. |
 | 2 | **Tatoeba** | Millions of human-translated sentence pairs, CC-BY. Text only, but genuinely human. |
 | 3 | **OpenSubtitles / OPUS** | Sentence-aligned subtitle corpora, 60 corpora across 58 languages. Broad coverage, no playback. |
-| 4 | **Wiktextract** | Wiktionary as JSONL — senses, IPA, inflections, domains. The *grounding* source (§07) more than an example source. |
-| 5 | **Generated** | The fallback, not the default. Correct, and blander than any of the above — see §07. |
+| 4 | **Wiktextract** | Wiktionary as JSONL — senses, IPA, inflections, domains. The *grounding* source (§09) more than an example source. |
+| 5 | **Generated** | The fallback, not the default. Correct, and blander than any of the above — see §09. |
 
 ### The pipeline
 
@@ -675,7 +881,53 @@ Three things about Chinese genuinely break the assumptions above:
 
 ---
 
-## §07 · Generation & orchestration
+## §08 · External dictionaries
+
+### Read them where they lie
+
+A published dictionary belongs in the same application — looking a word up and keeping a word you
+chose are the same gesture two seconds apart. It does **not** belong in the same storage.
+
+> ### DECISION
+> **External dictionaries are read-only files, read directly. They are never ingested into
+> PocketBase and never enter the replica.**
+>
+> **Because** the whole justification for the core's shape — small enough to hold on every device,
+> synced in full, backed up as though irreplaceable (§02) — is destroyed by a million entries you did
+> not write and could re-download in an afternoon. Loading them into the relational store would be
+> paying the core's costs for corpus-shaped data, which is the exact mistake §02 exists to prevent.
+
+So: a thin reader over the downloaded dictionary file, exposing lookup and search behind the same
+interface the personal store uses. No relational schema, no records, no revisions, no sync. The
+`sourceKind`/provenance vocabulary already in §03 is enough to say where a shown entry came from.
+
+**Offline availability is a file download, not replication.** The unit is "this dictionary is on this
+device", chosen deliberately and stored whole — not per-entry caching and certainly not a second
+replication protocol. Nothing about §04 changes.
+
+### What they are, and are not
+
+| | Personal store | External dictionary |
+|---|---|---|
+| Origin | Words you chose | Everything the compiler included |
+| Editable | Yes — and via chat (§06) | **Never.** No YAML projection, no edit affordance |
+| Storage | PocketBase + full replica | A file, read in place |
+| Backed up | As irreplaceable (§17) | Re-downloaded |
+| Carries | Attestations, clips, images, Anki state | Definitions |
+
+An external entry is a **starting point, not an entry**: promoting one creates an ordinary Acervo
+lexeme, at which point it gains everything the personal store adds — the sentence you actually met it
+in, the clip, the image, the FSRS history. That promotion is a normal write through §04, and dedup
+applies exactly as in §05.
+
+This is also the honest answer to why the personal store exists at all next to a dictionary that
+already defines every word: the dictionary knows the language, and the store knows *you*.
+
+**Out of scope for this iteration.**
+
+---
+
+## §09 · Generation & orchestration
 
 ### Ground the model, and it stops being a knowledge source
 
@@ -694,7 +946,7 @@ have been:
 
 Which points somewhere precise: **the glosses are fine; the example sentences are the weak link.**
 They will be grammatical, correct and bland — textbook Spanish with safe collocations, not how
-anyone actually speaks. That is exactly the gap the corpus fills, and it is why §06 is in v1.
+anyone actually speaks. That is exactly the gap the corpus fills, and it is why §07 is in v1.
 
 > ### THE HIGHEST-LEVERAGE CHANGE TO THE EXISTING PIPELINE
 > **Pass the Wiktextract sense inventory and 2–3 real attestations into the generation prompt as
@@ -837,13 +1089,13 @@ image:
 Two things fall out of broadening it this far.
 
 **The Mac needs exactly one work pool.** Earlier revisions gave it two, the second for AnkiConnect —
-that is gone now that §08 runs Anki on the NAS.
+that is gone now that §10 runs Anki on the NAS.
 
 | Pool | Gate | Runs |
 |---|---|---|
 | `mac-idle` | `HIDIdleTime` > threshold, on AC, no thermal pressure | MFLUX image generation, local models |
 
-Only one, because §08 moves Anki onto the NAS entirely. The Mac does exactly one job, and only while
+Only one, because §10 moves Anki onto the NAS entirely. The Mac does exactly one job, and only while
 you are away from it.
 
 > ### FLOWS ARE SWEEPS, NOT EVENT CONSUMERS
@@ -862,14 +1114,14 @@ Two cautions carried forward from that document, both still right:
   idempotent.
 - **Footprint.** A Prefect server plus SQLite is a few hundred megabytes resident, queueing behind
   PocketBase, the corpus service and info-triage on the same Synology. Measure before committing —
-  and if the box gets tight, that is an argument for SQLite FTS5 over Meilisearch in §06.
+  and if the box gets tight, that is an argument for SQLite FTS5 over Meilisearch in §07.
 
 The existing provider-factory pattern survives intact. Future flows will derive work from canonical
 PocketBase records and write results back as canonical records.
 
 ---
 
-## §08 · Anki loop
+## §10 · Anki loop
 
 ### The desktop is not in this loop
 
@@ -914,7 +1166,7 @@ what is needed: `sync_login()` for a `SyncAuth`, then `sync_collection()`.
 | **Tablet** | Study. The only device touched. |
 | **Mac** | Image generation only, idle-gated. |
 
-This collapses §07's Mac pools to one: `mac-available` disappears, because Anki no longer needs the
+This collapses §09's Mac pools to one: `mac-available` disappears, because Anki no longer needs the
 laptop at all.
 
 **Four risks to build for:**
@@ -930,7 +1182,7 @@ laptop at all.
 4. **Reachability.** The tablet needs the NAS from outside the house. Tailscale already covers this
    for Calorie Logger; the sync server belongs behind it rather than exposed.
 
-One bonus: the collection now lives on the NAS, so it falls under §15 like everything else. **Review
+One bonus: the collection now lives on the NAS, so it falls under §17 like everything else. **Review
 history is as irreplaceable as the vocabulary** — years of FSRS state cannot be regenerated.
 
 ### Decks
@@ -947,7 +1199,7 @@ anki_deck: "Spanish::%topic"       # split, same placeholder as output_pattern
 > **SPLITTING DECKS DOES NOT REDUCE MEDIA SIZE.** Every deck in one collection shares a single
 > `collection.media` folder; the deck is only a scheduling container. Ten decks or one, the media
 > total is identical. What reduces it: smaller images, fewer images per note, or self-hosting so the
-> quota question never arises — which §08 now does.
+> quota question never arises — which §10 now does.
 
 ### Let FSRS tell you what's hard; don't rely on discipline
 
@@ -973,6 +1225,12 @@ Anki maintains a memory state per card — **stability** (days until recall drop
 Your instinct to spend the image budget only on hard words was right — and FSRS hands you that list
 for free, with no marking discipline required.
 
+> **STUDY STATE IS READ-ONLY IN THE APP**
+> It flows *in* — §01's first invariant, applied to the one table Anki owns. Nothing in the interface
+> edits it, and it is deliberately absent from the YAML projection: reps, lapses and stability are a
+> report from the scheduler, not a field you may correct. The one place a review outcome changes the
+> core is the mapping above, where it moves the lexeme's `status`.
+
 > **THE DETAIL THAT SAVES YOU A SILENT DATA LOSS**
 > Put the lexeme record ID in a dedicated hidden field on every Anki note. Do **not** rely on
 > deterministic GUIDs for the join. GUIDs derive from content, so the day you improve a card template
@@ -987,7 +1245,7 @@ the only export that works when nothing else does.
 
 ---
 
-## §09 · Learning
+## §11 · Learning
 
 ### Six ways to learn a word, ranked by what they return
 
@@ -1032,7 +1290,7 @@ session is not.
 
 ---
 
-## §10 · Obsidian
+## §12 · Obsidian
 
 ### Export only
 
@@ -1048,7 +1306,7 @@ disposable during the greenfield phase; canonical records are created through th
 
 ---
 
-## §11 · Build order
+## §13 · Build order
 
 ### What lands in v1
 
@@ -1058,8 +1316,10 @@ the initial schema. The disposable demonstration seed makes the model inspectabl
 an alternative data source.
 
 **2 · Sync core**
-Implement the protocol directly over the Acervo graph — tombstones, revision cursor, dataset guard,
-schema-version refusal, merge order and conflict handling.
+The protocol in §04, directly over the Acervo graph: a server-assigned revision cursor, a delta pull,
+an online-only write route with a revision precondition, tombstones, the dataset guard, and
+schema-version refusal. Conflict *handling* mostly disappears rather than being built — that is the
+point of making writes online-only.
 
 **3a · Manual add and inbox review**
 The floor, and it must exist regardless — a word you *heard* has no source to share from.
@@ -1096,14 +1356,18 @@ actually miss.
   Calorie Logger.
 - **A reader.** Lute already does reading-based acquisition well. Capture from wherever you already
   read instead.
-- **The Chinese subsystem.** The schema lands in v1 (§06); composition, components, measure words
+- **The Chinese subsystem.** The schema lands in v1 (§07); composition, components, measure words
   and the corpus harvest wait until you actually start.
 - **Voice capture.** Phone and tablet dictation is free and adequate. Revisit only if it annoys you.
 - **"Extract the interesting words from this article."** Needs a populated core to work at all — v2.
+- **Offline writing.** Reading works on a plane; saving does not, deliberately (§04). The fields a
+  future offline mode would need are already on every row, so this is reversible — but nothing is
+  built for it now.
+- **External dictionaries** (§08) and **article chat** (§06). Both are designed, neither is v1.
 
 ---
 
-## §12 · Prior art
+## §14 · Prior art
 
 ### What exists, and why none of it is this
 
@@ -1123,13 +1387,13 @@ actually miss.
 
 ---
 
-## §13 · Open
+## §15 · Open
 
 ### Still open
 
 **Meilisearch or SQLite FTS5?**
-Genuinely a preference at your scale (§06) — but now leaning FTS5, because Prefect and the corpus
-service are competing for the same Synology memory (§07). Measure the box first.
+Genuinely a preference at your scale (§07) — but now leaning FTS5, because Prefect and the corpus
+service are competing for the same Synology memory (§09). Measure the box first.
 
 **Does the corpus service live in the same repo?**
 Argument for: one deploy script, as with Calorie Logger. Argument against: it has a wholly different
@@ -1144,57 +1408,68 @@ Sense-level cards are more correct and produce more cards; lexeme-level cards me
 but blur polysemy. The choice affects the study-state join.
 
 **Does WebP render everywhere you review?**
-Fine on desktop and AnkiDroid; verify AnkiMobile before committing several thousand files (§07).
+Fine on desktop and AnkiDroid; verify AnkiMobile before committing several thousand files (§09).
 
 **How large should images actually be?**
 Deferred pending measurement. Per-sense images stay — senses genuinely diverge, especially in
 English, and one image per lexeme would misrepresent them. The open part is only the resolution and
-the resulting media total, and self-hosting (§08) removes the quota pressure that made it urgent.
+the resulting media total, and self-hosting (§10) removes the quota pressure that made it urgent.
 
 **Which git remote holds the export?**
-A private repository somewhere you do not also host — the point of §15's second layer is that it
+A private repository somewhere you do not also host — the point of §17's second layer is that it
 survives your own infrastructure. Worth deciding before the exporter is written, since the answer
 affects whether it pushes over SSH or HTTPS.
 
 ---
 
-## §14 · Current implementation
+## §16 · Current implementation
 
-The §03 foundation is now the only application model:
+The §03 foundation is the only application model, and §04's protocol is now built on it:
 
 - PocketBase owns locked, owner-scoped `topics`, `lexemes`, `senses`, `attestations`, `examples`,
-  `image_prompts` and `study_states` collections. Accounts are administrator-created; the app API
-  provides password login and token refresh.
+  `image_prompts` and `study_states`, plus a `sync_state` row per owner that is never replicated.
+  Accounts are administrator-created; the app API provides password login and token refresh.
 - IDs are generated offline in PocketBase's native 15-character format and stored unchanged in
-  every relation and consumer manifest.
+  every relation and consumer manifest. `revision` is allocated by a save hook on every replicated
+  collection, so the seeder, a future flow and the graph route all number their writes identically
+  and none of them can produce a record no client would ever receive.
+- Three authenticated, owner-scoped routes carry everything: `GET /graph?since=` returns the delta
+  above a cursor with tombstones included, `POST /graph` applies a change set in one transaction
+  and returns the canonical rows, and `POST /graph/reset` tombstones the account. All three refuse
+  a client whose `schemaVersion` differs. Generic collection access stays closed.
+- A record written to the server states the revision it was edited from; a stale one is refused
+  rather than merged, and an invalid record in a batch refuses the whole batch.
 - TypeScript runtime validation enforces the same graph constraints as the server. The PWA and
-  native macOS host use an IndexedDB replica with atomic local writes, tombstones and pending
-  markers. Incompatible local schemas are discarded rather than converted.
+  native macOS host hold an IndexedDB replica whose applied records, tombstones and cursor land in
+  one transaction. A replica belonging to another account or schema version is discarded rather
+  than converted; one whose `datasetId` no longer matches is *not* — synchronisation stops and the
+  owner chooses, because that copy may be the most complete one left.
+- The client polls every sixty seconds while visible, on focus, on regaining the network, and
+  immediately after any write, single-flight throughout. A failed sync changes the status and
+  nothing else; the interval is the retry.
 - The vocabulary interface is the design in `design/ui-prototype/` rendered from real records: the
   topic rail, list, article, YAML projection and add sheet, on every platform the same web build
-  serves. It reads the local replica only, so it opens and works with the server unreachable.
-- Clients read the durable store through one authenticated, owner-scoped `GET /api/acervo/v1/graph`
-  route. It is a one-way pull that refreshes the replica in the background and keeps unsent local
-  writes; generic collection access stays closed and no client writes to PocketBase yet.
+  serves. Reading is served entirely from the replica, so it opens and works with the server
+  unreachable; a sync chip in the topbar says which of those two situations you are in, and
+  Settings explains it, offers a manual sync, a re-download, and a typed-confirmation delete.
 - A development seeder inserts a disposable, multilingual demonstration vocabulary into an
   explicitly selected account. PocketBase remains the durable store; the tracked seed definition is
   initialization material, not an alternative vocabulary database.
 - The former Markdown cleaner, short/extended article storage classes, directory-backed caches and
-  draft `.apkg` generator have been deleted. No compatibility adapters or import transformers
-  remain.
+  draft `.apkg` generator have been deleted, and the pending-write queue that anticipated offline
+  writing has been deleted with them. No compatibility adapters or import transformers remain.
 - LLM, TTS and vision providers remain reusable. The separate headless Anki robot remains a
-  consumer and uses Acervo record IDs, but synchronization and content rendering are not yet wired
-  to the core.
+  consumer and uses Acervo record IDs, but is not yet wired to the core.
 
 What the interface cannot do yet, it says so plainly rather than pretending: capture, entry
 creation and YAML editing report that they are not connected, and audio and clip playback have no
-media behind them. The push half of replication, the merge protocol and the capture queue remain
-subsequent iterations. Markdown may return only as a generated export (§10), never as application
-storage.
+media behind them. Deleting an entry is the one write path in use, and it exercises the whole
+route. Capture (§05), article chat (§06) and external dictionaries (§08) remain subsequent
+iterations. Markdown may return only as a generated export (§12), never as application storage.
 
 ---
 
-## §15 · Durability
+## §17 · Durability
 
 ### The threat is not disk failure
 
@@ -1205,13 +1480,15 @@ replicates**: a bad migration or a mis-tap removes 200 words, and by the time yo
 device has faithfully agreed.
 
 > ### THE TRAP SPECIFIC TO THIS ARCHITECTURE
-> **Restoring the server does not undo a deletion.** The devices still hold the tombstones, and a
-> tombstone wins on `editedAt` like any other edit. Restore an old snapshot and the devices will
-> re-delete everything the moment they sync.
+> **Restoring the server does not undo a deletion.** Undoing a logical delete is a **data edit**, not
+> a restore: write a *new* un-delete, which the server stamps with a higher revision so it beats the
+> tombstone on every device. Two entirely different procedures for two failure modes that feel
+> identical from the outside.
 >
-> Undoing a logical delete is a **data edit**, not a restore: write a *new* un-delete with a current
-> timestamp so it beats the tombstone. Two entirely different procedures for two failure modes that
-> feel identical from the outside.
+> §04's online-only writes make this *less* dangerous than it is in Calorie Logger — devices cannot
+> re-push tombstones at a restored server, because devices never push at all — but they do not make
+> it go away, because a restore that mints a new `datasetId` is exactly the situation where a client
+> would otherwise replace its own good copy with the older one. That is why it stops and asks.
 
 Which yields a design rule: **never garbage-collect tombstones.** Calorie Logger might eventually;
 this must not. A deleted word remains *in* the database, so accidental deletion is recoverable by
@@ -1222,8 +1499,17 @@ everything.
 
 **0 · The replicas themselves.** Every device already holds a complete copy — N-way redundancy
 against server loss, for free. A device that has not synced recently holds an accidental
-*point-in-time* copy. Build a deliberate **"rebuild the server from this device"** path: it is the
-fastest recovery available and needs no backup at all.
+*point-in-time* copy.
+
+> **THIS LAYER IS NO LONGER AUTOMATIC.** In Calorie Logger, devices re-push everything they hold, so a
+> restored snapshot repairs itself and "the replicas are a backup" is true without anyone doing
+> anything. Acervo's devices never push (§04), so **the same recovery must be built and invoked by
+> hand.** A deliberate "rebuild the server from this device" path is therefore not a nice-to-have
+> here; it is what keeps this layer from being a comforting fiction. Until it exists, treat the
+> replicas as evidence — enough to see what was lost — rather than as a restore.
+
+The corollary already lands in the sync design: a client that meets a rebuilt server refuses to
+discard its replica, because that replica may be the most complete copy left.
 
 **1 · SQLite snapshots on the NAS.** Hourly keep 24, daily keep 30, monthly keep 12. The database is
 ~50 MB, so this is nearly free.
@@ -1248,7 +1534,7 @@ One file per word rather than one blob, because then `git log -- es/desmayarse.j
 `git diff HEAD~1` after the daily commit is a readable review of what changed. The day 200 words
 vanish, you see it in a diff rather than discovering it in November.
 
-Export the Obsidian markdown (§10) into the same repository, and both machine-readable and
+Export the Obsidian markdown (§12) into the same repository, and both machine-readable and
 human-readable forms live together.
 
 Cadence: debounced after any sync that changed something, **plus a daily commit even when nothing
@@ -1259,7 +1545,7 @@ still parses.
 **3 · Media and the Anki collection, separately.** Media is 2–10 GB, so git is the wrong tool.
 Regenerable in principle (§01), but regenerating ~2,700 images costs real money and time — so restic
 or rclone to another disk or cheap object storage, content-addressed by hash so dedup is free. The
-Anki collection now lives on the NAS too (§08) and joins this tier: **review history is as
+Anki collection now lives on the NAS too (§10) and joins this tier: **review history is as
 irreplaceable as the vocabulary**, because years of FSRS state cannot be regenerated at any price.
 
 **4 · Restore drills.** The layer everyone skips, and the only one that proves the others work. A
@@ -1270,19 +1556,29 @@ for six months."*
 ### Restoring
 
 > **A restore must mint a new `datasetId`.** The revision sequence restarts, so every client holding
-> an old cursor is asking for revisions the restored database has not reached. It pulls nothing,
-> pushes nothing, and reports itself perfectly in sync while showing a collection no other device can
-> see. A new `datasetId` forces every client to reset its cursor and re-push everything it holds.
+> an old cursor is asking for revisions the restored database has not reached. Without the guard it
+> pulls nothing, reports itself perfectly in sync, and shows a collection no other device can see.
 >
-> This is the trap `docs/sync.md` already names, arriving through a door that was not yet labelled.
+> Because the identity is the `sync_state` row's id (§04), a rebuilt database gets a new one for
+> free. A restore into an *existing* database must invalidate it deliberately — restoring the file
+> and leaving that row intact is the one way to reproduce this bug on purpose.
 
-The happy consequence of the same mechanism: **server backup plus N device replicas recovers almost
-the whole delta.** Restoring a week-old snapshot and letting the devices re-push loses far less than
-the snapshot's age suggests, because each device is itself a full replica of everything it knew.
+**What a new `datasetId` does here is stop every client, not reset them.** Calorie Logger resets the
+cursor and re-pushes; that is safe there and unsafe here, for the reason layer 0 gives above. So the
+restore procedure has a manual step by design:
+
+1. Restore the snapshot. Every device notices and stops syncing.
+2. Decide, per device, which copy is more complete — the devices are the evidence.
+3. Either rebuild the server from the best replica, or accept the snapshot and let each device
+   download it again.
+
+Losing that automatic repair is the real price of online-only writes, and it is worth paying: it
+costs a manual step in a rare procedure, and it buys the absence of merge conflicts in the everyday
+one.
 
 ### What is not backed up
 
-The corpus (§06), by definition — it is regenerable, and that is the invariant that earns it a
+The corpus (§07), by definition — it is regenerable, and that is the invariant that earns it a
 separate database in the first place. **But the harvest list** — which channels, which video ids —
 **goes in git.** It is tiny and it encodes curation decisions that would be painful to reconstruct.
 

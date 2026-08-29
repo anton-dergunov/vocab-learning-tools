@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { AcervoApiError, backendSession } from "./api";
+import { AcervoApiError, backendSession, SCHEMA_VERSION } from "./api";
 import { UPDATE_EVENT } from "./pwa";
 import { repository } from "./repository";
 import { TEST_OWNER, testGraph } from "./testGraph";
@@ -13,9 +13,27 @@ const SESSION = {
   token: "token", userId: TEST_OWNER
 };
 
+const DATASET = "dataset00000001";
+
+/** The server numbers every row it hands back; the cursor is the highest of them. */
+function numberedGraph() {
+  const graph = testGraph();
+  let revision = 0;
+  (Object.keys(graph) as (keyof typeof graph)[]).forEach((kind) => {
+    (graph[kind] as { revision: number }[]).forEach((record) => { record.revision = ++revision; });
+  });
+  return { graph, cursor: revision };
+}
+
 function signedIn() {
+  const { graph, cursor } = numberedGraph();
   vi.spyOn(backendSession, "restore").mockResolvedValue(SESSION);
-  vi.spyOn(backendSession, "fetchGraph").mockResolvedValue({ ...testGraph(), syncedAt: "2026-08-28T12:00:00.000Z" });
+  vi.spyOn(backendSession, "current").mockReturnValue(SESSION);
+  vi.spyOn(backendSession, "refresh").mockResolvedValue(SESSION);
+  vi.spyOn(backendSession, "pullGraph").mockResolvedValue({
+    schemaVersion: SCHEMA_VERSION, datasetId: DATASET, cursor,
+    serverTime: "2026-08-29T12:00:00.000Z", changes: graph
+  });
 }
 
 /** Renders the app and waits for the pulled replica to reach the word list. */
@@ -111,10 +129,10 @@ describe("Acervo application", () => {
   it("still opens on the stored replica when the server is unreachable", async () => {
     signedIn();
     await openList();
-    vi.spyOn(backendSession, "fetchGraph")
+    vi.spyOn(backendSession, "pullGraph")
       .mockRejectedValue(new AcervoApiError("The Acervo server could not be reached. Local vocabulary remains available.", 0, "offline"));
     render(<App />);
-    expect(await screen.findByText(/could not be reached/)).toBeInTheDocument();
+    expect((await screen.findAllByRole("button", { name: /Offline/ })).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /picar/ }).length).toBeGreaterThan(0);
   });
 
@@ -174,14 +192,33 @@ describe("Acervo application", () => {
     expect(await screen.findByText("Creating entries is not wired up yet")).toBeInTheDocument();
   });
 
-  it("deletes a word by writing a tombstone to this device", async () => {
+  it("deletes a word once the server has accepted the tombstone", async () => {
     signedIn();
     await openList();
+    vi.spyOn(backendSession, "pushGraph").mockImplementation(async (_device, changes) => ({
+      schemaVersion: SCHEMA_VERSION, datasetId: DATASET,
+      cursor: repository.snapshot().cursor + 1, serverTime: "2026-08-29T12:00:01.000Z",
+      records: Object.fromEntries(Object.entries(changes).map(([kind, records]) =>
+        [kind, (records ?? []).map((record, index) => ({ ...record, revision: repository.snapshot().cursor + 1 + index }))]))
+    }));
     fireEvent.click(screen.getByRole("button", { name: /la balsa/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
     expect(await screen.findByText(/tombstone/)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("button", { name: /la balsa/ })).not.toBeInTheDocument());
     expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemebalsa0001")?.deleted).toBe(true);
+  });
+
+  it("refuses to delete while offline, and changes nothing", async () => {
+    signedIn();
+    await openList();
+    vi.spyOn(backendSession, "pushGraph")
+      .mockRejectedValue(new AcervoApiError("The Acervo server could not be reached. Local vocabulary remains available.", 0, "offline"));
+    fireEvent.click(screen.getByRole("button", { name: /la balsa/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(await screen.findByText(/could not be reached/)).toBeInTheDocument();
+    // The entry is still open, still undeleted, and nothing was queued for later.
+    expect(screen.getByRole("heading", { name: /la balsa/ })).toBeInTheDocument();
+    expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemebalsa0001")?.deleted).toBe(false);
   });
 
   it("switches between the languages the replica holds", async () => {

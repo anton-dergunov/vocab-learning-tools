@@ -1,4 +1,5 @@
 const API_ROOT = "/api/acervo/v1";
+const SCHEMA_VERSION = 4;
 const DOWNLOAD_ROOT = "/api/acervo/downloads/";
 const RECORD_ID = /^[a-z0-9]{15}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -35,6 +36,16 @@ function respondError(event, error) {
 
 function body(event) {
   return event.requestInfo().body || {};
+}
+
+function query(event) {
+  return event.requestInfo().query || {};
+}
+
+/** `findFirstRecordByFilter` reports "not found" by throwing; absence is ordinary here. */
+function firstRecord(app, collection, filter, params) {
+  try { return app.findFirstRecordByFilter(collection, filter, params); }
+  catch (_) { return null; }
 }
 
 function releaseManifest() {
@@ -87,22 +98,45 @@ function syncFieldsOf(record) {
   };
 }
 
-function ownerRecords(app, collection, ownerId, project) {
-  return app.findAllRecords(collection, $dbx.hashExp({ owner: ownerId })).map((record) => {
-    const projected = project(record);
-    projected.id = record.id;
-    return Object.assign(projected, syncFieldsOf(record));
-  });
+function projected(record, project) {
+  const value = project(record);
+  value.id = record.id;
+  return Object.assign(value, syncFieldsOf(record));
 }
 
-function ownerGraph(app, ownerId) {
-  return {
-    topics: ownerRecords(app, "topics", ownerId, (record) => ({
+/** Everything this owner holds past `since`, in revision order. `since = 0` returns the lot. */
+function ownerRecords(app, collection, ownerId, since, project) {
+  return app.findRecordsByFilter(
+    collection, "owner = {:owner} && revision > {:since}", "revision", 0, 0,
+    { owner: ownerId, since: since }
+  ).map((record) => projected(record, project));
+}
+
+/* Storage <-> client mapping, in graph order: topics before lexemes, lexemes before senses and
+   attestations, those before examples and sense-linked image prompts. Applying a batch in this
+   order means a relation always resolves, so it is also the merge order the write route uses. */
+
+function setText(record, field, value) { record.set(field, trimmed(value)); }
+function setNumber(record, field, value) { record.set(field, Number(value) || 0); }
+function setList(record, field, value) { record.set(field, Array.isArray(value) ? value : []); }
+
+const COLLECTIONS = [
+  {
+    key: "topics", name: "topics",
+    project: (record) => ({
       name: record.getString("name"),
       icon: textOrNull(record, "icon"),
       order: Number(record.get("topic_order")) || 0,
-    })),
-    lexemes: ownerRecords(app, "lexemes", ownerId, (record) => ({
+    }),
+    assign: (record, value) => {
+      setText(record, "name", value.name);
+      setText(record, "icon", value.icon);
+      setNumber(record, "topic_order", value.order);
+    },
+  },
+  {
+    key: "lexemes", name: "lexemes",
+    project: (record) => ({
       language: record.getString("language"),
       headword: record.getString("headword"),
       lemma: record.getString("lemma"),
@@ -117,16 +151,46 @@ function ownerGraph(app, ownerId) {
       status: record.getString("status"),
       shortGloss: textOrNull(record, "short_gloss"),
       notes: jsonValue(record.get("notes")) || [],
-    })),
-    senses: ownerRecords(app, "senses", ownerId, (record) => ({
+    }),
+    assign: (record, value) => {
+      setText(record, "language", value.language);
+      setText(record, "headword", value.headword);
+      setText(record, "lemma", value.lemma);
+      setText(record, "reading", value.reading);
+      setText(record, "ipa", value.ipa);
+      setText(record, "pos", value.pos);
+      setText(record, "gender", value.gender);
+      setText(record, "register", value.register);
+      setText(record, "dialect", value.dialect);
+      setText(record, "emoji", value.emoji);
+      setList(record, "topics", value.topicIds);
+      setText(record, "status", value.status);
+      setText(record, "short_gloss", value.shortGloss);
+      setList(record, "notes", value.notes);
+    },
+  },
+  {
+    key: "senses", name: "senses",
+    project: (record) => ({
       lexemeId: record.getString("lexeme"),
       definition: record.getString("definition"),
       definitionLang: record.getString("definition_lang"),
       glosses: jsonValue(record.get("glosses")) || [],
       domain: textOrNull(record, "domain"),
       order: Number(record.get("sense_order")) || 0,
-    })),
-    attestations: ownerRecords(app, "attestations", ownerId, (record) => ({
+    }),
+    assign: (record, value) => {
+      setText(record, "lexeme", value.lexemeId);
+      setText(record, "definition", value.definition);
+      setText(record, "definition_lang", value.definitionLang);
+      setList(record, "glosses", value.glosses);
+      setText(record, "domain", value.domain);
+      setNumber(record, "sense_order", value.order);
+    },
+  },
+  {
+    key: "attestations", name: "attestations",
+    project: (record) => ({
       lexemeId: record.getString("lexeme"),
       text: record.getString("text"),
       translation: textOrNull(record, "translation"),
@@ -134,8 +198,20 @@ function ownerGraph(app, ownerId) {
       sourceTitle: textOrNull(record, "source_title"),
       sourceKind: record.getString("source_kind"),
       capturedAt: instantOrNull(record, "captured_at"),
-    })),
-    examples: ownerRecords(app, "examples", ownerId, (record) => {
+    }),
+    assign: (record, value) => {
+      setText(record, "lexeme", value.lexemeId);
+      setText(record, "text", value.text);
+      setText(record, "translation", value.translation);
+      setText(record, "source_url", value.sourceUrl);
+      setText(record, "source_title", value.sourceTitle);
+      setText(record, "source_kind", value.sourceKind);
+      setText(record, "captured_at", value.capturedAt);
+    },
+  },
+  {
+    key: "examples", name: "examples",
+    project: (record) => {
       const videoRef = textOrNull(record, "video_ref");
       return {
         senseId: record.getString("sense"),
@@ -156,8 +232,30 @@ function ownerGraph(app, ownerId) {
         matchedTranslationForm: textOrNull(record, "matched_translation_form"),
         approved: Boolean(record.get("approved")),
       };
-    }),
-    imagePrompts: ownerRecords(app, "image_prompts", ownerId, (record) => ({
+    },
+    assign: (record, value) => {
+      setText(record, "sense", value.senseId);
+      setText(record, "text", value.text);
+      setText(record, "text_lang", value.textLang);
+      setText(record, "translation", value.translation);
+      setText(record, "translation_lang", value.translationLang);
+      setText(record, "origin", value.origin);
+      setText(record, "source_attestation", value.sourceAttestationId);
+      setText(record, "model_id", value.modelId);
+      setText(record, "video_ref", value.videoRef);
+      setText(record, "video_title", value.videoTitle);
+      setNumber(record, "video_start", value.videoStart);
+      setText(record, "image_ref", value.imageRef);
+      setText(record, "audio_ref", value.audioRef);
+      setText(record, "note", value.note);
+      setText(record, "matched_form", value.matchedForm);
+      setText(record, "matched_translation_form", value.matchedTranslationForm);
+      record.set("approved", value.approved === true);
+    },
+  },
+  {
+    key: "imagePrompts", name: "image_prompts",
+    project: (record) => ({
       lexemeId: record.getString("lexeme"),
       senseId: textOrNull(record, "sense"),
       prompt: record.getString("prompt"),
@@ -167,8 +265,22 @@ function ownerGraph(app, ownerId) {
       promptVersion: record.getString("prompt_version"),
       imageRef: textOrNull(record, "image_ref"),
       imageModelId: textOrNull(record, "image_model_id"),
-    })),
-    studyStates: ownerRecords(app, "study_states", ownerId, (record) => ({
+    }),
+    assign: (record, value) => {
+      setText(record, "lexeme", value.lexemeId);
+      setText(record, "sense", value.senseId);
+      setText(record, "prompt", value.prompt);
+      setText(record, "style_id", value.styleId);
+      setNumber(record, "seed", value.seed);
+      setText(record, "model_id", value.modelId);
+      setText(record, "prompt_version", value.promptVersion);
+      setText(record, "image_ref", value.imageRef);
+      setText(record, "image_model_id", value.imageModelId);
+    },
+  },
+  {
+    key: "studyStates", name: "study_states",
+    project: (record) => ({
       lexemeId: record.getString("lexeme"),
       system: record.getString("system"),
       noteId: Number(record.get("note_id")) || null,
@@ -180,8 +292,177 @@ function ownerGraph(app, ownerId) {
       retrievability: Number(record.get("retrievability")) || 0,
       lastReview: instantOrNull(record, "last_review"),
       syncedAt: instantOrNull(record, "synced_at"),
-    })),
-  };
+    }),
+    assign: (record, value) => {
+      setText(record, "lexeme", value.lexemeId);
+      setText(record, "system", value.system);
+      setNumber(record, "note_id", value.noteId);
+      setList(record, "card_ids", value.cardIds);
+      setNumber(record, "reps", value.reps);
+      setNumber(record, "lapses", value.lapses);
+      setNumber(record, "stability", value.stability);
+      setNumber(record, "difficulty", value.difficulty);
+      setNumber(record, "retrievability", value.retrievability);
+      setText(record, "last_review", value.lastReview);
+      setText(record, "synced_at", value.syncedAt);
+    },
+  },
+];
+
+const COLLECTION_BY_KEY = {};
+COLLECTIONS.forEach((entry) => { COLLECTION_BY_KEY[entry.key] = entry; });
+
+function ownerGraph(app, ownerId, since) {
+  const graph = {};
+  COLLECTIONS.forEach((entry) => {
+    graph[entry.key] = ownerRecords(app, entry.name, ownerId, since, entry.project);
+  });
+  return graph;
+}
+
+/* ── replication ────────────────────────────────────────────────────────
+   One strictly increasing sequence per owner. Its record id is the dataset identity: rebuild the
+   database and every outstanding client cursor is invalidated, which is the only thing that stops
+   a client asking for revisions the new database has not reached yet. */
+
+function sequenceRecord(app, ownerId) {
+  const existing = firstRecord(app, "sync_state", "owner = {:owner}", { owner: ownerId });
+  if (existing) return existing;
+  const record = new Record(app.findCollectionByNameOrId("sync_state"));
+  record.set("owner", ownerId);
+  record.set("sequence", 0);
+  try {
+    app.save(record);
+  } catch (error) {
+    // Two first-ever requests for one account can both find nothing; the unique owner index
+    // decides which creates the row, and the loser reads what the winner wrote.
+    const raced = firstRecord(app, "sync_state", "owner = {:owner}", { owner: ownerId });
+    if (!raced) throw error;
+    return raced;
+  }
+  return record;
+}
+
+/**
+ * Takes the next revision for this owner. Called from the record save hooks rather than only from
+ * the write route, because the route is not the only writer: the seeder, the future generation
+ * flows and the Anki consumer all save records directly. A record saved with revision zero is
+ * invisible to every `revision > cursor` pull, permanently and silently.
+ */
+function allocateRevision(app, ownerId) {
+  const sequence = sequenceRecord(app, ownerId);
+  const next = sequence.getInt("sequence") + 1;
+  sequence.set("sequence", next);
+  app.save(sequence);
+  return next;
+}
+
+function requireOwner(event) {
+  if (!event.auth || event.auth.collection().name !== "users") {
+    throw apiError(401, "unauthenticated", "Sign in to continue.");
+  }
+  return event.auth.id;
+}
+
+function requireSchemaVersion(request) {
+  if (Number(request.schemaVersion) !== SCHEMA_VERSION) {
+    throw apiError(409, "schema_version_mismatch",
+      "This copy of Acervo is out of date and cannot synchronise. Update the app to continue.");
+  }
+}
+
+function requireDeviceId(value) {
+  const device = trimmed(value);
+  if (!/^[a-z0-9]{1,32}$/.test(device)) throw apiError(400, "invalid_input", "A valid device identifier is required.");
+  return device;
+}
+
+function requireInstant(value, label) {
+  const instant = trimmed(value);
+  if (!INSTANT.test(instant)) {
+    throw apiError(400, "invalid_input", label + " must be an ISO-8601 UTC timestamp with milliseconds.");
+  }
+  return instant;
+}
+
+/** The record this owner holds under `id`, or null. An id held by somebody else is a hard stop. */
+function ownedOrFree(app, collection, ownerId, id) {
+  const owned = firstRecord(app, collection, "id = {:id} && owner = {:owner}", { id: id, owner: ownerId });
+  if (owned) return owned;
+  const foreign = firstRecord(app, collection, "id = {:id}", { id: id });
+  if (foreign) throw apiError(400, "id_conflict", "That record identifier is already in use.");
+  return null;
+}
+
+/**
+ * Applies one client record. The whole batch is refused if anything here throws: a save is one
+ * article, and half an article is worse than none.
+ */
+function mergeRecord(app, entry, ownerId, device, value) {
+  const id = trimmed(value.id);
+  if (!RECORD_ID.test(id)) throw apiError(400, "invalid_input", "Record ids must be 15 lowercase letters or digits.");
+  const stored = ownedOrFree(app, entry.name, ownerId, id);
+  const claimed = Number(value.revision) || 0;
+  if (stored) {
+    if (claimed !== stored.getInt("revision")) {
+      throw apiError(409, "stale_record",
+        "This entry was changed somewhere else. Refresh to see the current version, then try again.");
+    }
+  } else if (claimed !== 0) {
+    // The client believes it is editing a record this database has never held. Nothing is ever
+    // hard-deleted, so this means its cursor belongs to a different database.
+    throw apiError(409, "stale_record", "This entry no longer exists on the server. Refresh and try again.");
+  }
+  const record = stored || new Record(app.findCollectionByNameOrId(entry.name));
+  if (!stored) {
+    record.set("id", id);
+    record.set("owner", ownerId);
+    record.set("created_at", requireInstant(value.createdAt, "Creation timestamp"));
+  }
+  entry.assign(record, value);
+  record.set("deleted", value.deleted === true);
+  record.set("edited_at", requireInstant(value.editedAt, "Change timestamp"));
+  record.set("edited_by", device);
+  try {
+    app.save(record);
+  } catch (error) {
+    // The record validation hook rejects malformed records by throwing. That is the caller's
+    // mistake, not the server's, and it must abort the whole batch: half an article is worse
+    // than none. Rolling back is what `runInTransaction` does with anything thrown here.
+    if (error.acervoStatus) throw error;
+    throw apiError(400, "invalid_record", entry.key + " " + id + ": " + String(error.message || error));
+  }
+  // Re-read inside the transaction: the revision was allocated by the save hook, and the response
+  // is what the client stores as the precondition for its next edit of this record.
+  return app.findRecordById(entry.name, id);
+}
+
+/** Applies a change set in graph order, so a record's relations always resolve before it lands. */
+function mergeGraph(app, ownerId, device, changes) {
+  const written = {};
+  COLLECTIONS.forEach((entry) => {
+    const incoming = Array.isArray(changes[entry.key]) ? changes[entry.key] : [];
+    written[entry.key] = incoming.map((value) => projected(mergeRecord(app, entry, ownerId, device, value), entry.project));
+  });
+  return written;
+}
+
+/** Tombstones everything this owner still holds. Rows are never removed; a reset stays undoable. */
+function tombstoneAll(app, ownerId, device) {
+  const at = new Date().toISOString();
+  let count = 0;
+  COLLECTIONS.slice().reverse().forEach((entry) => {
+    app.findRecordsByFilter(entry.name, "owner = {:owner}", "", 0, 0, { owner: ownerId })
+      .forEach((record) => {
+        if (record.getBool("deleted")) return;
+        record.set("deleted", true);
+        record.set("edited_at", at);
+        record.set("edited_by", device);
+        app.save(record);
+        count += 1;
+      });
+  });
+  return count;
 }
 
 function dispatch(event) {
@@ -194,7 +475,7 @@ function dispatch(event) {
         name: "Acervo",
         version: trimmed($os.getenv("ACERVO_APP_VERSION")) || "0.0.0",
         build: trimmed($os.getenv("ACERVO_APP_BUILD")) || "0",
-        schemaVersion: 3,
+        schemaVersion: SCHEMA_VERSION,
       });
     }
     if (method === "GET" && relative === "/mac-release") return respond(event, releaseManifest());
@@ -215,12 +496,65 @@ function dispatch(event) {
       return respond(event, { token: event.auth.newAuthToken(), user: { id: event.auth.id, email: event.auth.email() } });
     }
     if (method === "GET" && relative === "/graph") {
-      if (!event.auth || event.auth.collection().name !== "users") {
-        throw apiError(401, "unauthenticated", "Sign in to continue.");
+      const ownerId = requireOwner(event);
+      const parameters = query(event);
+      requireSchemaVersion(parameters);
+      const since = Math.max(0, Math.round(Number(parameters.since) || 0));
+      let result;
+      event.app.runInTransaction((tx) => {
+        const sequence = sequenceRecord(tx, ownerId);
+        result = {
+          schemaVersion: SCHEMA_VERSION,
+          datasetId: sequence.id,
+          cursor: sequence.getInt("sequence"),
+          serverTime: new Date().toISOString(),
+          changes: ownerGraph(tx, ownerId, since),
+        };
+      });
+      return respond(event, result);
+    }
+    if (method === "POST" && relative === "/graph") {
+      const ownerId = requireOwner(event);
+      const request = body(event);
+      requireSchemaVersion(request);
+      const device = requireDeviceId(request.deviceId);
+      let result;
+      event.app.runInTransaction((tx) => {
+        const records = mergeGraph(tx, ownerId, device, request.changes || {});
+        const sequence = sequenceRecord(tx, ownerId);
+        result = {
+          schemaVersion: SCHEMA_VERSION,
+          datasetId: sequence.id,
+          cursor: sequence.getInt("sequence"),
+          serverTime: new Date().toISOString(),
+          records: records,
+        };
+      });
+      return respond(event, result);
+    }
+    if (method === "POST" && relative === "/graph/reset") {
+      const ownerId = requireOwner(event);
+      const request = body(event);
+      requireSchemaVersion(request);
+      const device = requireDeviceId(request.deviceId);
+      // Deleting the whole vocabulary is the one genuinely dangerous call in this API. The
+      // interface asks for the word to be typed; the token is what stops a stray request.
+      if (trimmed(request.confirm) !== "delete-all-vocabulary") {
+        throw apiError(400, "confirmation_required", "This request must confirm that all vocabulary is to be deleted.");
       }
-      const graph = ownerGraph(event.app, event.auth.id);
-      graph.syncedAt = new Date().toISOString();
-      return respond(event, graph);
+      let result;
+      event.app.runInTransaction((tx) => {
+        const deleted = tombstoneAll(tx, ownerId, device);
+        const sequence = sequenceRecord(tx, ownerId);
+        result = {
+          schemaVersion: SCHEMA_VERSION,
+          datasetId: sequence.id,
+          cursor: sequence.getInt("sequence"),
+          serverTime: new Date().toISOString(),
+          deleted: deleted,
+        };
+      });
+      return respond(event, result);
     }
     throw apiError(404, "not_found", "The requested Acervo API route does not exist.");
   } catch (error) {
@@ -361,4 +695,4 @@ function validateRecord(app, record) {
   }
 }
 
-module.exports = { dispatch: dispatch, validateRecord: validateRecord };
+module.exports = { dispatch: dispatch, validateRecord: validateRecord, allocateRevision: allocateRevision };

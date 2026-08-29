@@ -3,7 +3,20 @@ import { normalizeServerURL, sessionStore, type StoredSession } from "./session"
 
 type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type LoginResponse = { token: string; user: { id: string; email: string } };
-export type GraphResponse = VocabularyGraph & { syncedAt: string };
+
+/** Shared with the server hook. A mismatch stops synchronisation until the app is updated. */
+export const SCHEMA_VERSION = 4;
+
+interface SyncEnvelope {
+  schemaVersion: number;
+  datasetId: string;
+  cursor: number;
+  serverTime: string;
+}
+export type PullResponse = SyncEnvelope & { changes: VocabularyGraph };
+export type PushResponse = SyncEnvelope & { records: Partial<VocabularyGraph> };
+export type ResetResponse = SyncEnvelope & { deleted: number };
+
 const API_PATH = "/api/acervo/v1";
 const REQUEST_TIMEOUT = 15_000;
 
@@ -17,9 +30,12 @@ function timeoutSignal(): AbortSignal | undefined {
 
 class ApiClient {
   private session: StoredSession | null = null;
+  private onUnauthorized: (() => void) | null = null;
 
   configure(session: StoredSession | null) { this.session = session; }
   current() { return this.session; }
+  /** Called when the server rejects the stored token. The replica is deliberately kept. */
+  handleUnauthorized(handler: (() => void) | null) { this.onUnauthorized = handler; }
 
   async call<T>(path: string, options: RequestInit = {}, anonymous = false): Promise<T> {
     if (!anonymous && !this.session?.token) throw new AcervoApiError("Sign in to continue.", 401, "unauthenticated");
@@ -35,6 +51,7 @@ class ApiClient {
     let envelope: Envelope<T> = {};
     try { envelope = await response.json() as Envelope<T>; } catch { /* diagnosed below */ }
     if (!response.ok || envelope.error || envelope.data === undefined) {
+      if (response.status === 401 && !anonymous) this.onUnauthorized?.();
       throw new AcervoApiError(envelope.error?.message || "The Acervo server returned an invalid response.", response.status, envelope.error?.code || "request_failed");
     }
     return envelope.data;
@@ -82,5 +99,22 @@ export const backendSession = {
     }
   },
   async logout() { client.configure(null); await sessionStore.clear(); },
-  fetchGraph(): Promise<GraphResponse> { return client.call<GraphResponse>("/graph"); }
+  /** Drops the token but keeps the replica: the vocabulary is still the owner's. */
+  async reject() { const current = client.current(); client.configure(null); if (current) await sessionStore.clear(); },
+  onUnauthorized(handler: (() => void) | null) { client.handleUnauthorized(handler); },
+
+  pullGraph(since: number): Promise<PullResponse> {
+    return client.call<PullResponse>(`/graph?schemaVersion=${SCHEMA_VERSION}&since=${since}`);
+  },
+  pushGraph(deviceId: string, changes: Partial<VocabularyGraph>): Promise<PushResponse> {
+    return client.call<PushResponse>("/graph", {
+      method: "POST", body: JSON.stringify({ schemaVersion: SCHEMA_VERSION, deviceId, changes })
+    });
+  },
+  resetGraph(deviceId: string): Promise<ResetResponse> {
+    return client.call<ResetResponse>("/graph/reset", {
+      method: "POST",
+      body: JSON.stringify({ schemaVersion: SCHEMA_VERSION, deviceId, confirm: "delete-all-vocabulary" })
+    });
+  }
 };

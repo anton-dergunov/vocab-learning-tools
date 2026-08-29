@@ -11,7 +11,6 @@ import {
   type Sense, type StudyState, type SyncFields, type Topic, type VocabularyGraph
 } from "./domain";
 import { glossLanguagesFor, languageOf, type LanguagePresentation } from "./languages";
-import { pendingKey } from "./localDatabase";
 
 export type SortKey = "recent" | "alpha" | "hard";
 /** A topic record id, or one of the two synthetic collections the rail offers. */
@@ -42,7 +41,6 @@ export interface Article {
   senses: ArticleSense[];
   attestations: Attestation[];
   study: StudyState | null;
-  synced: boolean;
 }
 
 export interface LanguageOption extends LanguagePresentation {
@@ -176,7 +174,7 @@ export function studyStateOf(graph: VocabularyGraph, lexemeId: string): StudySta
   return live(graph.studyStates).find((state) => state.lexemeId === lexemeId) ?? null;
 }
 
-export function articleFor(graph: VocabularyGraph, lexemeId: string, pending: string[]): Article | null {
+export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | null {
   const lexeme = live(graph.lexemes).find((candidate) => candidate.id === lexemeId);
   if (!lexeme) return null;
   const examples = live(graph.examples);
@@ -192,7 +190,6 @@ export function articleFor(graph: VocabularyGraph, lexemeId: string, pending: st
       images: images.filter((image) => image.senseId === sense.id)
     })),
     attestations: live(graph.attestations).filter((attestation) => attestation.lexemeId === lexemeId),
-    study: studyStateOf(graph, lexemeId),
-    synced: !pending.includes(pendingKey("lexemes", lexemeId))
+    study: studyStateOf(graph, lexemeId)
   };
 }

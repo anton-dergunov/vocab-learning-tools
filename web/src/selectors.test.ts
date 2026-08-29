@@ -40,8 +40,8 @@ describe("vocabulary selectors", () => {
     graph.lexemes[1].deleted = true;
     expect(visibleRows(graph, query).map((row) => row.headword)).toEqual(["picar"]);
     graph.senses[1].deleted = true;
-    expect(articleFor(graph, "lexemepicar0001", [])!.senses).toHaveLength(1);
-    expect(articleFor(graph, "lexemebalsa0001", [])).toBeNull();
+    expect(articleFor(graph, "lexemepicar0001")!.senses).toHaveLength(1);
+    expect(articleFor(graph, "lexemebalsa0001")).toBeNull();
   });
 
   it("derives the short form from the configured gloss language, honouring an override", () => {
@@ -68,7 +68,7 @@ describe("vocabulary selectors", () => {
   });
 
   it("assembles an article with its senses, examples, images, lineage and schedule", () => {
-    const article = articleFor(testGraph(), "lexemepicar0001", [])!;
+    const article = articleFor(testGraph(), "lexemepicar0001")!;
     expect(article.senses.map((entry) => entry.sense.order)).toEqual([0, 1]);
     expect(article.senses[0].examples[0].matchedForm).toBe("pica");
     expect(article.senses[0].images).toHaveLength(1);
@@ -76,12 +76,6 @@ describe("vocabulary selectors", () => {
     expect(article.topics.map((topic) => topic.name)).toEqual(["Food"]);
     expect(article.attestations).toHaveLength(1);
     expect(article.study?.reps).toBe(21);
-    expect(article.synced).toBe(true);
-  });
-
-  it("reports an unsent local write as not yet synced", () => {
-    const article = articleFor(testGraph(), "lexemepicar0001", ["lexemes:lexemepicar0001"])!;
-    expect(article.synced).toBe(false);
   });
 
   it("scales study strength from stability and leaves unscheduled words empty", () => {
