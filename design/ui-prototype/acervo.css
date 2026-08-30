@@ -457,6 +457,11 @@ details.fold .fold-body { padding: 4px 0 18px; }
   tab-size: 2;
 }
 .code-scroll textarea { min-height: 60vh; overflow: hidden; }
+/* The UA stylesheet declares `code { font-family: monospace }`, and a declaration beats an
+   inherited value — so the highlight layer rendered in the system mono face while the textarea
+   used IBM Plex Mono. Different metrics gave the pre a 21px line box against the textarea's 20px,
+   which drifted the caret a full line every twenty rows and made a selection land off its text. */
+.code-scroll pre code { font: inherit; }
 .y-key { color: var(--core); }
 .y-str { color: var(--ink); }
 .y-num { color: var(--corpus); }
