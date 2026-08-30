@@ -28,12 +28,37 @@ def test_highlight_layer_shares_the_textarea_font(stylesheet):
     assert ".code-scroll pre code { font: inherit; }" in stylesheet.read_text()
 
 
-@pytest.mark.parametrize("stylesheet", STYLESHEETS, ids=lambda path: path.name)
-def test_the_three_layers_declare_one_line_height(stylesheet):
-    """A single rule sets the metric for the gutter and for the pre/textarea pair. Two different
-    line heights is the same bug in a different place, so keep them declared together."""
+def _declared(stylesheet, selector, prop):
     text = stylesheet.read_text()
-    for selector in [".gutter {", ".code-scroll pre, .code-scroll textarea {"]:
-        start = text.index(selector)
-        block = text[start:text.index("}", start)]
-        assert "line-height: 20px" in block, f"{selector} no longer states the shared line height"
+    start = text.index(selector)
+    block = text[start:text.index("}", start)]
+    for declaration in block.split(";"):
+        name, _, value = declaration.partition(":")
+        if name.strip() == prop:
+            return value.strip()
+    raise AssertionError(f"{selector} in {stylesheet.name} no longer declares {prop}")
+
+
+EDITOR_LAYERS = [".gutter {", ".code-scroll pre, .code-scroll textarea {"]
+
+
+@pytest.mark.parametrize("stylesheet", STYLESHEETS, ids=lambda path: path.name)
+def test_the_three_layers_share_one_line_height(stylesheet):
+    """Whatever the value is, the gutter and the pre/textarea pair must state the same one. Two
+    different line heights is the same drift in a different place."""
+    values = {selector: _declared(stylesheet, selector, "line-height") for selector in EDITOR_LAYERS}
+    assert len(set(values.values())) == 1, f"the editor layers disagree on line-height: {values}"
+
+
+@pytest.mark.parametrize("stylesheet", STYLESHEETS, ids=lambda path: path.name)
+def test_the_line_box_stays_close_to_the_caret(stylesheet):
+    """The caret is drawn over the font's content area — about 1.26x the font size, and not
+    something CSS can resize — while the selection band is the full line box. Let the line box grow
+    far beyond the caret and the band starts reading as floating above the text it covers."""
+    line_height = float(_declared(stylesheet, EDITOR_LAYERS[1], "line-height").removesuffix("px"))
+    font_size = float(_declared(stylesheet, EDITOR_LAYERS[1], "font-size").removesuffix("px"))
+    caret = font_size * 1.26
+    assert caret <= line_height <= caret + 3, (
+        f"a {line_height}px line box around a ~{caret:.1f}px caret leaves "
+        f"{(line_height - caret) / 2:.1f}px of band on each side"
+    )
