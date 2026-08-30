@@ -630,29 +630,3 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   padding: 0; background: none; border: 0; cursor: pointer;
   font: inherit; color: inherit; font-weight: 700; text-decoration: underline;
 }
-
-/* ══════════════════════════ vocabularies & topics ══════════════════════════ */
-.config-section { display: grid; gap: 9px; }
-.config-section h3 { margin: 0; font-size: 14px; font-weight: 700; }
-.config-help { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-3); }
-.config-list { display: grid; gap: 7px; }
-.config-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface);
-}
-.config-icon { font-size: 19px; line-height: 1; }
-.config-main { display: grid; gap: 2px; flex: 1; min-width: 0; }
-.config-main strong { font-size: 14.5px; font-weight: 600; }
-.config-main span { font-size: 12.5px; color: var(--ink-3); overflow-wrap: anywhere; }
-.config-row .tb-btn { height: 28px; padding: 0 10px; font-size: 12.5px; }
-.config-row .icon-btn { padding: 4px 7px; font-size: 14px; line-height: 1; }
-.config-edit {
-  display: grid; gap: 6px; padding: 12px 13px;
-  border: 1px solid var(--core); border-radius: 8px; background: var(--surface-2);
-}
-.config-edit input {
-  padding: 9px 11px; border: 1px solid var(--rule); border-radius: 7px;
-  background: var(--surface); color: var(--ink); font-size: 14px;
-}
-.config-edit input:focus { border-color: var(--core); outline: none; }
-.config-edit .sync-actions { margin-top: 4px; }

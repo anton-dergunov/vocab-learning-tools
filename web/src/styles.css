@@ -610,19 +610,41 @@ details.fold .fold-body { padding: 4px 0 18px; }
   display: grid; place-items: center; padding: 20px;
   background: rgba(19,34,32,.34); backdrop-filter: blur(2px);
 }
+/* A column bounded by the window, so the body scrolls and the header and section tabs stay put.
+   Without the bound the dialog simply grew past the screen and its lower half was unreachable. */
 .settings {
-  width: min(440px, 100%); overflow: hidden;
+  width: min(560px, 100%); max-height: min(760px, 100%); overflow: hidden;
+  display: flex; flex-direction: column;
   background: var(--paper); border: 1px solid var(--rule); border-radius: 12px;
   box-shadow: var(--shadow);
 }
 .settings header {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; flex: none;
   padding: 16px 20px; border-bottom: 1px solid var(--rule-soft); background: var(--surface);
 }
+.settings-nav {
+  display: flex; flex: none; gap: 2px; padding: 0 12px; overflow-x: auto;
+  border-bottom: 1px solid var(--rule-soft); background: var(--surface);
+  scrollbar-width: none;
+}
+.settings-nav::-webkit-scrollbar { display: none; }
+.settings-nav button {
+  flex: none; padding: 11px 12px; background: none; border: 0; cursor: pointer;
+  font-size: 13.5px; font-weight: 600; color: var(--ink-3); white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.settings-nav button:hover { color: var(--ink); }
+.settings-nav button.on { color: var(--core); border-bottom-color: var(--core); }
 .settings h2 { font-family: var(--serif); font-size: 21px; font-weight: 700; margin: 0; letter-spacing: -.015em; }
 .close { font-size: 26px; line-height: 1; width: 32px; height: 32px; color: var(--ink-3); }
 .close:hover { color: var(--ink); }
-.settings-body { display: grid; gap: 14px; padding: 20px; }
+.settings-body {
+  display: grid; gap: 14px; padding: 20px;
+  align-content: start; overflow-y: auto; overscroll-behavior: contain;
+  /* `min-height: auto` is the default for a flex item, and it refuses to shrink below its content
+     — so the panel would grow the dialog past its bound and be clipped rather than scrolled. */
+  flex: 1 1 auto; min-height: 0;
+}
 .update-status, .update-action, .download-action { display: grid; gap: 4px; text-align: left; }
 .update-status strong, .update-action strong, .download-action strong { font-size: 15px; font-weight: 600; }
 .update-status span, .update-action span, .download-action span, .version {
@@ -727,11 +749,13 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .config-help { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-3); }
 .config-list { display: grid; gap: 7px; }
 .config-row {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface);
 }
 .config-icon { font-size: 19px; line-height: 1; }
-.config-main { display: grid; gap: 2px; flex: 1; min-width: 0; }
+/* The label takes the row on a narrow screen and the controls drop beneath it, rather than each
+   button squeezing until its text wraps mid-word. */
+.config-main { display: grid; gap: 2px; flex: 1 1 12rem; min-width: 0; }
 .config-main strong { font-size: 14.5px; font-weight: 600; }
 .config-main span { font-size: 12.5px; color: var(--ink-3); overflow-wrap: anywhere; }
 .config-row .tb-btn { height: 28px; padding: 0 10px; font-size: 12.5px; }

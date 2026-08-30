@@ -10,6 +10,8 @@ import { appVersionLabel } from "./version";
 /** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
 const CONFIRMATION = "DELETE";
 
+type Page = "general" | "vocabularies" | "topics" | "sync" | "data";
+
 export default function Settings({ update, email, status, snapshot, language, onSignOut, onClose, onNotify, onChanged }: {
   update?: UpdateStage;
   email: string;
@@ -28,6 +30,7 @@ export default function Settings({ update, email, status, snapshot, language, on
   const native = isNativeHost();
   const [macRelease, setMacRelease] = useState<MacRelease | null>();
   const [releaseError, setReleaseError] = useState(false);
+  const [page, setPage] = useState<Page>("general");
   const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState("");
   const [working, setWorking] = useState(false);
@@ -73,43 +76,66 @@ export default function Settings({ update, email, status, snapshot, language, on
     return () => controller.abort();
   }, [native]);
 
+  const pages: { id: Page; label: string }[] = [
+    { id: "general", label: "General" },
+    { id: "vocabularies", label: "Vocabularies" },
+    { id: "topics", label: "Topics" },
+    { id: "sync", label: "Sync" },
+    { id: "data", label: "Data" }
+  ];
+
   return <div className="modal-backdrop" role="presentation"
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="settings" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <header><h2 id="settings-title">Settings</h2><button className="close" onClick={onClose} aria-label="Close settings">×</button></header>
-      <div className="settings-body">
-        {!native && update === "ready" && <button className="update-action" onClick={() => void installUpdate()}><strong>Update Acervo</strong><span>The update is ready. Acervo will reopen with the new version.</span></button>}
-        {!native && update === "downloading" && <div className="update-status"><strong>Downloading an update…</strong><span>You can keep using Acervo while it finishes.</span></div>}
-        {!native && !update && <div className="update-status"><strong>Acervo is up to date</strong><span>This is the newest version available from this server.</span></div>}
-        <div className="update-status">
-          <strong>Signed in as {email}</strong>
-          <span>{liveLexemes} {liveLexemes === 1 ? "entry" : "entries"} across {liveTopics} {liveTopics === 1 ? "topic" : "topics"} on this device.</span>
-        </div>
-        <SyncPanel
+
+      {/* One page at a time. Everything here used to be one column, which grew past the window the
+          moment topics and vocabularies became editable — and the dialog could not scroll, so the
+          controls at the bottom were simply unreachable. */}
+      <nav className="settings-nav" role="tablist" aria-label="Settings sections">
+        {pages.map((entry) => <button
+          key={entry.id} role="tab" id={`settings-tab-${entry.id}`}
+          aria-selected={page === entry.id} aria-controls="settings-panel"
+          className={page === entry.id ? "on" : ""}
+          onClick={() => setPage(entry.id)}
+        >{entry.label}</button>)}
+      </nav>
+
+      <div className="settings-body" id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${page}`}>
+        {page === "general" && <>
+          <div className="update-status">
+            <strong>Signed in as {email}</strong>
+            <span>{liveLexemes} {liveLexemes === 1 ? "entry" : "entries"} across {liveTopics} {liveTopics === 1 ? "topic" : "topics"} on this device.</span>
+          </div>
+          {!native && update === "ready" && <button className="update-action" onClick={() => void installUpdate()}><strong>Update Acervo</strong><span>The update is ready. Acervo will reopen with the new version.</span></button>}
+          {!native && update === "downloading" && <div className="update-status"><strong>Downloading an update…</strong><span>You can keep using Acervo while it finishes.</span></div>}
+          {!native && !update && <div className="update-status"><strong>Acervo is up to date</strong><span>This is the newest version available from this server.</span></div>}
+          {!native && macRelease && <a className="download-action" href={macRelease.url} download={macRelease.file}>
+            <strong>Download Acervo for macOS</strong>
+            <span>Version {macRelease.version}, build {macRelease.build}</span>
+          </a>}
+          {!native && macRelease === null && <div className="update-status"><strong>macOS application</strong><span>No native release has been published by this server yet.</span></div>}
+          {!native && macRelease === undefined && !releaseError && <div className="update-status"><strong>macOS application</strong><span>Checking for a native release…</span></div>}
+          {!native && releaseError && <div className="update-status"><strong>macOS application</strong><span>The native release could not be checked right now.</span></div>}
+          {native && <div className="update-status">
+            <strong>Updates and server address</strong>
+            <span>Acervo ▸ Settings, in the menu bar.</span>
+          </div>}
+          <button className="tb-btn" onClick={onSignOut}>Sign out</button>
+          <p className="version">Version {appVersionLabel()}</p>
+        </>}
+
+        {page === "vocabularies" && snapshot && <VocabularyEditor snapshot={snapshot} onNotify={onNotify} onChanged={onChanged} />}
+        {page === "topics" && snapshot && <TopicEditor snapshot={snapshot} language={language} onNotify={onNotify} onChanged={onChanged} />}
+
+        {page === "sync" && <SyncPanel
           status={status}
           lexemeCount={liveLexemes}
           onSyncNow={() => void refresh()}
           onDownloadAgain={() => void run(() => syncEngine.downloadAgain(), "The vocabulary could not be downloaded again.")}
-        />
-        {!native && macRelease && <a className="download-action" href={macRelease.url} download={macRelease.file}>
-          <strong>Download Acervo for macOS</strong>
-          <span>Version {macRelease.version}, build {macRelease.build}</span>
-        </a>}
-        {!native && macRelease === null && <div className="update-status"><strong>macOS application</strong><span>No native release has been published by this server yet.</span></div>}
-        {!native && macRelease === undefined && !releaseError && <div className="update-status"><strong>macOS application</strong><span>Checking for a native release…</span></div>}
-        {!native && releaseError && <div className="update-status"><strong>macOS application</strong><span>The native release could not be checked right now.</span></div>}
-        {native && <div className="update-status">
-          <strong>Updates and server address</strong>
-          <span>Acervo ▸ Settings, in the menu bar.</span>
-        </div>}
-        {snapshot && <>
-          <VocabularyEditor snapshot={snapshot} onNotify={onNotify} onChanged={onChanged} />
-          <TopicEditor snapshot={snapshot} language={language} onNotify={onNotify} onChanged={onChanged} />
-        </>}
+        />}
 
-        <button className="tb-btn" onClick={onSignOut}>Sign out</button>
-
-        <div className="danger-zone">
+        {page === "data" && <div className="danger-zone">
           <h3>Delete all vocabulary</h3>
           {!confirming && <>
             <p>Removes every entry from the server and from every device you use. This needs a
@@ -135,9 +161,10 @@ export default function Settings({ update, email, status, snapshot, language, on
               >Delete everything</button>
             </div>
           </>}
-        </div>
+        </div>}
 
-        <p className="version">Version {appVersionLabel()}</p>
+        {(page === "vocabularies" || page === "topics") && !snapshot
+          && <p className="config-help">Opening your vocabulary…</p>}
       </div>
     </section>
   </div>;

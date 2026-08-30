@@ -191,13 +191,16 @@ describe("Acervo application", () => {
     fireEvent.click(screen.getByRole("button", { name: /Open settings/ }));
 
     const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
-    expect(settings.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
     expect(settings.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
-    expect(settings.getByRole("button", { name: /Delete all vocabulary/ })).toBeInTheDocument();
     // A second update control here would conflict with the one the host already owns.
     expect(settings.queryByText("Acervo is up to date")).not.toBeInTheDocument();
     expect(settings.queryByText(/Download Acervo for macOS/)).not.toBeInTheDocument();
     expect(settings.getByText("Updates and server address")).toBeInTheDocument();
+
+    fireEvent.click(settings.getByRole("tab", { name: "Sync" }));
+    expect(settings.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
+    fireEvent.click(settings.getByRole("tab", { name: "Data" }));
+    expect(settings.getByRole("button", { name: /Delete all vocabulary/ })).toBeInTheDocument();
   });
 
   it("adds a topic from settings and files it into the rail", async () => {
@@ -207,6 +210,7 @@ describe("Acervo application", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
 
     const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
+    fireEvent.click(settings.getByRole("tab", { name: "Topics" }));
     fireEvent.click(settings.getByRole("button", { name: "Add a topic…" }));
     fireEvent.change(settings.getByLabelText("Name"), { target: { value: "Slang" } });
     fireEvent.change(settings.getByLabelText("Icon"), { target: { value: "💬" } });
@@ -225,6 +229,7 @@ describe("Acervo application", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
 
     const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
+    fireEvent.click(settings.getByRole("tab", { name: "Vocabularies" }));
     const spanish = settings.getByText(/^es · defined in es/).closest(".config-row")!;
     fireEvent.click(within(spanish as HTMLElement).getByRole("button", { name: "Remove" }));
     // Nothing is deleted, but the words would lose the gloss preference they are rendered with.
