@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=1
+helper_protocol=2
 
 mode=
 target=
