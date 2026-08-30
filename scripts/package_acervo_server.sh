@@ -15,7 +15,7 @@ fi
 
 eval "$("$repo_root/scripts/version.sh")"
 mkdir -p "$output_dir" "$bundle"
-for directory in deploy docs requirements scripts src templates; do
+for directory in deploy docs prompts requirements scripts src templates; do
   mkdir -p "$bundle/$directory"
   rsync -a --exclude .DS_Store --exclude __pycache__ --exclude '*.pyc' \
     "$repo_root/$directory/" "$bundle/$directory/"
@@ -37,7 +37,7 @@ if [ "${ACERVO_INCLUDE_MACOS_RELEASE:-false}" = true ] && [ -f "$repo_root/build
   cp -R "$repo_root/build/macos-release/." "$bundle/downloads/"
 fi
 
-archive_entries="deploy docs requirements scripts src templates package.json version.json"
+archive_entries="deploy docs prompts requirements scripts src templates package.json version.json"
 [ ! -d "$bundle/downloads" ] || archive_entries="$archive_entries downloads"
 
 if [ "$(uname -s)" = Darwin ]; then
