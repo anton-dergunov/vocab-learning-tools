@@ -36,6 +36,16 @@ function signedIn() {
   });
 }
 
+/** A server that accepts every write and numbers the rows it hands back, as the real one does. */
+function acceptWrites() {
+  vi.spyOn(backendSession, "pushGraph").mockImplementation(async (_device, changes) => ({
+    schemaVersion: SCHEMA_VERSION, datasetId: DATASET,
+    cursor: repository.snapshot().cursor + 1, serverTime: "2026-08-29T12:00:01.000Z",
+    records: Object.fromEntries(Object.entries(changes).map(([kind, records]) =>
+      [kind, (records ?? []).map((record, index) => ({ ...record, revision: repository.snapshot().cursor + 1 + index }))]))
+  }));
+}
+
 /** Renders the app and waits for the pulled replica to reach the word list. */
 async function openList() {
   render(<App />);
@@ -178,29 +188,86 @@ describe("Acervo application", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
     expect(await screen.findByText("Audio is not wired up yet")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit as YAML" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
-    expect(await screen.findByText("Editing is not wired up yet")).toBeInTheDocument();
-
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.click(await screen.findByRole("button", { name: "Process" }));
     expect(await screen.findByText("Capture pipeline is not wired up yet")).toBeInTheDocument();
+  });
 
+  it("saves an article edited as YAML and shows the change", async () => {
+    signedIn();
+    await openList();
+    acceptWrites();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+
+    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: editor.value.replace("emoji: 🌶️", "emoji: 🫠") } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Saved to the server")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemepicar0001")!.emoji).toBe("🫠"));
+  });
+
+  it("keeps the draft and says what is wrong when the document does not parse", async () => {
+    signedIn();
+    await openList();
+    acceptWrites();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+
+    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: editor.value.replace("pos: verb", "pos: preposition") } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/must be one of/)).toBeInTheDocument();
+    // Still in the editor, with the rejected text intact rather than reverted.
+    expect((document.querySelector(".code-scroll textarea") as HTMLTextAreaElement).value)
+      .toContain("pos: preposition");
+    expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemepicar0001")!.pos).toBe("verb");
+  });
+
+  it("creates an entry from the YAML template and opens it", async () => {
+    signedIn();
+    await openList();
+    acceptWrites();
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     const sheet = within(screen.getByRole("dialog", { name: "Add a word" }));
     fireEvent.click(sheet.getByRole("button", { name: "YAML" }));
-    fireEvent.click(await sheet.findByRole("button", { name: "Validate & save" }));
-    expect(await screen.findByText("Creating entries is not wired up yet")).toBeInTheDocument();
+
+    const editor = document.querySelector(".sheet .code-scroll textarea") as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: editor.value
+      .replace('headword: ""', "headword: sobremesa")
+      .replace('definition: ""', "definition: Charla tras la comida.")
+      .replace('terms: [""]', "terms: [after-dinner talk]")
+      .replace('- text: ""', "- text: La sobremesa duró dos horas.")
+      .replace('translation: ""', "translation: The talk lasted two hours.") } });
+    fireEvent.click(sheet.getByRole("button", { name: "Validate & save" }));
+
+    expect(await screen.findByText("Added to your vocabulary")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /sobremesa/ })).toBeInTheDocument();
+  });
+
+  it("reports a refused save without changing anything locally", async () => {
+    signedIn();
+    await openList();
+    vi.spyOn(backendSession, "pushGraph")
+      .mockRejectedValue(new AcervoApiError("This entry was changed somewhere else.", 409, "stale_record"));
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+
+    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: editor.value.replace("headword: picar", "headword: picarse") } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/changed somewhere else/)).toBeInTheDocument();
+    expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemepicar0001")!.headword).toBe("picar");
   });
 
   it("deletes a word once the server has accepted the tombstone", async () => {
     signedIn();
     await openList();
-    vi.spyOn(backendSession, "pushGraph").mockImplementation(async (_device, changes) => ({
-      schemaVersion: SCHEMA_VERSION, datasetId: DATASET,
-      cursor: repository.snapshot().cursor + 1, serverTime: "2026-08-29T12:00:01.000Z",
-      records: Object.fromEntries(Object.entries(changes).map(([kind, records]) =>
-        [kind, (records ?? []).map((record, index) => ({ ...record, revision: repository.snapshot().cursor + 1 + index }))]))
-    }));
+    acceptWrites();
     fireEvent.click(screen.getByRole("button", { name: /la balsa/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
     expect(await screen.findByText(/tombstone/)).toBeInTheDocument();

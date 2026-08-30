@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { MemoryDatabase } from "./localDatabase";
 import { LocalAcervoRepository } from "./repository";
 import { fakeRemote } from "./testRemote";
+import { articleFor } from "./selectors";
+import { parseArticle, YAML_TEMPLATE, yamlFor } from "./yaml";
 
 const lexemeInput = {
   language: "es", headword: "desmayarse", lemma: "desmayarse", reading: null, ipa: null, pos: "verb" as const,
@@ -202,5 +204,142 @@ describe("the Acervo repository", () => {
       lexemes: [], cursor: 0, datasetId: "", deviceId: "device000000001", ownerId: "owner0000000001"
     });
     expect((await database.read()).meta.schemaVersion).toBe(4);
+  });
+});
+
+describe("saving an article edited as YAML", () => {
+  /** A repository holding one seeded entry, ready to be edited through its YAML projection. */
+  async function seeded() {
+    const database = new MemoryDatabase();
+    const repository = new LocalAcervoRepository(database);
+    await repository.load("owner0000000001");
+    const remote = fakeRemote();
+    repository.attachRemote(remote);
+    await repository.saveTopic({ name: "Health", icon: "🩺", order: 0 }, "topic0000000001");
+    await repository.saveLexeme({ ...lexemeInput, topicIds: ["topic0000000001"] }, "lexeme000000001");
+    await repository.saveSense({
+      lexemeId: "lexeme000000001", definition: "Perder el conocimiento.", definitionLang: "es",
+      glosses: [{ lang: "en", terms: ["to faint"] }], domain: null, order: 0
+    }, "sense0000000001");
+    await repository.saveExample({
+      senseId: "sense0000000001", text: "Me desmayé.", textLang: "es", translation: "I fainted.",
+      translationLang: "en", origin: "manual", sourceAttestationId: null, modelId: null,
+      videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+      note: null, matchedForm: null, matchedTranslationForm: null, approved: true
+    }, "example00000001");
+    const draft = () => parseArticle(yamlFor(articleFor(repository.snapshot(), "lexeme000000001")!));
+    return { database, repository, remote, draft };
+  }
+
+  it("sends an update, a creation and a removal as one batch", async () => {
+    const { repository, remote, draft } = await seeded();
+    const article = draft();
+    article.emoji = "🫠";
+    article.senses[0].examples[0].id = null;          // replaced rather than edited
+    article.senses.push({
+      id: null, order: 1, definition: "Sentir una emoción intensa.", definitionLang: "es",
+      glosses: [{ lang: "en", terms: ["to swoon"] }], domain: null, examples: [], images: []
+    });
+    const before = remote.sent.length;
+    await repository.saveArticle(article);
+
+    expect(remote.sent.length - before).toBe(1);
+    const snapshot = repository.snapshot();
+    expect(snapshot.lexemes[0].emoji).toBe("🫠");
+    expect(snapshot.senses.filter((sense) => !sense.deleted)).toHaveLength(2);
+    // The example whose id was dropped is replaced: a new row, and the old one tombstoned.
+    expect(snapshot.examples.find((example) => example.id === "example00000001")!.deleted).toBe(true);
+    expect(snapshot.examples.filter((example) => !example.deleted)).toHaveLength(1);
+  });
+
+  it("keeps every id it was given, so nothing is recreated by an ordinary edit", async () => {
+    const { repository, draft } = await seeded();
+    const created = repository.snapshot().lexemes[0].createdAt;
+    const article = draft();
+    article.headword = "desvanecerse";
+    await repository.saveArticle(article);
+
+    const snapshot = repository.snapshot();
+    // Not one tombstone between them: the ids the document carried are the ids that were written.
+    expect(snapshot.lexemes.map((lexeme) => lexeme.id)).toEqual(["lexeme000000001"]);
+    expect(snapshot.senses.map((sense) => sense.id)).toEqual(["sense0000000001"]);
+    expect(snapshot.examples.map((example) => example.id)).toEqual(["example00000001"]);
+    // The Anki join and the image seed hang off these, and provenance off createdAt.
+    expect(snapshot.lexemes[0].createdAt).toBe(created);
+    expect(snapshot.lexemes[0].headword).toBe("desvanecerse");
+  });
+
+  it("carries the examples of a removed sense away with it", async () => {
+    const { repository, draft } = await seeded();
+    const added = draft();
+    added.senses.push({
+      id: null, order: 1, definition: "Sentir una emoción intensa.", definitionLang: "es",
+      glosses: [{ lang: "en", terms: ["to swoon"] }], domain: null, images: [],
+      examples: [{
+        id: null, text: "Casi me desmayo de la emoción.", textLang: "es", translation: null,
+        translationLang: null, origin: "manual", sourceAttestationId: null, modelId: null,
+        videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+        note: null, matchedForm: null, matchedTranslationForm: null, approved: true
+      }]
+    });
+    await repository.saveArticle(added);
+
+    // Now drop the original sense. Its example is never mentioned again, and must not survive it.
+    const trimmed = draft();
+    trimmed.senses = trimmed.senses.filter((sense) => sense.id !== "sense0000000001");
+    await repository.saveArticle(trimmed);
+
+    const snapshot = repository.snapshot();
+    expect(snapshot.senses.find((sense) => sense.id === "sense0000000001")!.deleted).toBe(true);
+    expect(snapshot.examples.find((example) => example.id === "example00000001")!.deleted).toBe(true);
+    expect(snapshot.examples.filter((example) => !example.deleted)).toHaveLength(1);
+  });
+
+  it("creates a whole entry when the document carries no ids", async () => {
+    const { repository, remote } = await seeded();
+    const article = parseArticle(YAML_TEMPLATE
+      .replace('headword: ""', "headword: sobremesa")
+      .replace('topics: []', "topics: [Health]")
+      .replace('definition: ""', "definition: Charla tras la comida.")
+      .replace('terms: [""]', "terms: [after-dinner talk]")
+      .replace('- text: ""', "- text: La sobremesa duró dos horas.")
+      .replace('translation: ""', "translation: The talk lasted two hours."));
+    const before = remote.sent.length;
+    const id = await repository.saveArticle(article);
+
+    expect(remote.sent.length - before).toBe(1);
+    expect(id).toMatch(/^[a-z0-9]{15}$/);
+    const created = repository.snapshot().lexemes.find((lexeme) => lexeme.id === id)!;
+    expect(created.headword).toBe("sobremesa");
+    expect(created.topicIds).toEqual(["topic0000000001"]);
+  });
+
+  it("refuses a topic that does not exist, and names the ones that do", async () => {
+    const { repository, draft } = await seeded();
+    const article = draft();
+    article.topics = ["Cooking"];
+    await expect(repository.saveArticle(article)).rejects.toThrow('There is no topic called "Cooking"');
+    await expect(repository.saveArticle(article)).rejects.toThrow("Health");
+  });
+
+  it("refuses an id belonging to another entry rather than stealing the record", async () => {
+    const { repository, draft } = await seeded();
+    await repository.saveLexeme({ ...lexemeInput, headword: "mareo" }, "lexeme000000002");
+    const article = draft();
+    article.id = "lexeme000000002";
+    await expect(repository.saveArticle(article)).rejects.toThrow("belongs to a different entry");
+  });
+
+  it("changes nothing locally when the server refuses the batch", async () => {
+    const { database, repository, remote, draft } = await seeded();
+    const before = await database.read();
+    const article = draft();
+    article.headword = "desvanecerse";
+
+    remote.fail = new Error("This entry was changed somewhere else.");
+    await expect(repository.saveArticle(article)).rejects.toThrow("changed somewhere else");
+
+    expect(await database.read()).toEqual(before);
+    expect(repository.snapshot().lexemes[0].headword).toBe("desmayarse");
   });
 });

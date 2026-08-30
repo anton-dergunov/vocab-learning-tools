@@ -15,7 +15,8 @@
     "@vitejs/plugin-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "vite": "latest"
+    "vite": "latest",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "latest",

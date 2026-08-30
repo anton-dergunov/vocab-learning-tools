@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { CloseIcon } from "./icons";
-import { EditorSurface } from "./YamlPane";
-import { YAML_TEMPLATE } from "./yaml";
+import { EditorSurface, ValidationPanel } from "./YamlPane";
+import { YAML_TEMPLATE, type YamlProblem } from "./yaml";
 
 export type AddTab = "capture" | "yaml";
 
-export default function AddSheet({ tab, onTab, onClose, onUnsupported }: {
+export default function AddSheet({ tab, onTab, problems, busy, onClose, onCreate, onUnsupported }: {
   tab: AddTab;
   onTab(tab: AddTab): void;
+  problems: YamlProblem[];
+  busy: boolean;
   onClose(): void;
+  onCreate(draft: string): void;
   onUnsupported(message: string): void;
 }) {
   const [capture, setCapture] = useState("");
@@ -49,10 +52,13 @@ export default function AddSheet({ tab, onTab, onClose, onUnsupported }: {
             <div className="code-head"><span className="label">new-entry.yaml</span></div>
             <EditorSurface value={draft} onChange={setDraft} minHeight="44vh" />
           </div>
+          <ValidationPanel problems={problems} notice={null} />
           <div className="sheet-actions">
             <span className="spacer" />
             <button className="tb-btn" onClick={onClose}>Cancel</button>
-            <button className="tb-btn primary" onClick={() => onUnsupported("Creating entries is not wired up yet")}>Validate &amp; save</button>
+            <button className="tb-btn primary" disabled={busy} onClick={() => onCreate(draft)}>
+              {busy ? "Saving…" : "Validate & save"}
+            </button>
           </div>
         </>}
       </div>

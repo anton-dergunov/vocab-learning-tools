@@ -20,7 +20,7 @@ import SignIn from "./SignIn";
 import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
 import { SyncChip } from "./SyncStatus";
-import { yamlFor } from "./yaml";
+import { parseArticle, yamlFor, YamlProblems, type YamlProblem } from "./yaml";
 import { YamlEditor, YamlView } from "./YamlPane";
 import "./styles.css";
 
@@ -86,6 +86,8 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("read");
+  const [problems, setProblems] = useState<YamlProblem[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const [addTab, setAddTab] = useState<AddTab | null>(null);
   const [langMenu, setLangMenu] = useState(false);
@@ -171,6 +173,7 @@ export default function App() {
 
   const openLexeme = useCallback((id: string) => {
     setOpenId(id);
+    setProblems([]);
     setMode("read");
     if (main.current) main.current.scrollTop = 0;
   }, []);
@@ -196,6 +199,43 @@ export default function App() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [addTab, openId]);
+
+  /**
+   * The one path a YAML document takes, whether it came from the article editor or the add sheet.
+   * Parsing reports every problem at once; the repository decides what is a create, an update or a
+   * removal and sends the lot as one write. A refusal leaves both the replica and the draft alone,
+   * so nothing typed is lost to a failed save.
+   */
+  async function applyYaml(text: string): Promise<string | null> {
+    setSaving(true);
+    setProblems([]);
+    try {
+      const id = await repository.saveArticle(parseArticle(text));
+      setSnapshot(repository.snapshot());
+      return id;
+    } catch (error) {
+      if (error instanceof YamlProblems) setProblems(error.problems);
+      else setProblems([{ line: null, message: error instanceof Error ? error.message : String(error) }]);
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveArticleYaml(text: string) {
+    const id = await applyYaml(text);
+    if (!id) return;
+    setMode("read");
+    notify("Saved to the server");
+  }
+
+  async function createFromYaml(text: string) {
+    const id = await applyYaml(text);
+    if (!id) return;
+    setAddTab(null);
+    openLexeme(id);
+    notify("Added to your vocabulary");
+  }
 
   async function removeLexeme(id: string) {
     try {
@@ -322,16 +362,24 @@ export default function App() {
               : mode === "read" ? <LexemeArticle article={article} onUnsupported={notify} />
               : mode === "yaml" ? <YamlView name={article.lexeme.headword} yaml={yamlFor(article)} />
               : <YamlEditor
+                  // Remounts for a different entry, and only then: the draft must survive a sync.
+                  key={article.lexeme.id}
                   name={article.lexeme.headword} yaml={yamlFor(article)}
-                  onCancel={() => setMode("read")}
-                  onSave={() => notify("Editing is not wired up yet")}
+                  problems={problems} notice={null} busy={saving}
+                  onCancel={() => { setProblems([]); setMode("read"); }}
+                  onSave={(draft) => void saveArticleYaml(draft)}
                 />}
           </div>
         </main>
       </div>
     </div>
 
-    {addTab && <AddSheet tab={addTab} onTab={setAddTab} onClose={() => setAddTab(null)} onUnsupported={notify} />}
+    {addTab && <AddSheet
+      tab={addTab} onTab={setAddTab} problems={problems} busy={saving}
+      onClose={() => { setProblems([]); setAddTab(null); }}
+      onCreate={(draft) => void createFromYaml(draft)}
+      onUnsupported={notify}
+    />}
     {settings && <Settings
       update={update} email={session.email} status={syncStatus} snapshot={snapshot}
       onSignOut={() => void signOut()} onClose={() => setSettings(false)} onNotify={notify}

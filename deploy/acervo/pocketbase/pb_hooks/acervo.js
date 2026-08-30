@@ -29,7 +29,11 @@ function apiError(status, code, message) {
 
 function respondError(event, error) {
   const status = error.acervoStatus || 500;
-  const message = status >= 500 ? "The Acervo server could not complete the request." : String(error.message || error);
+  // An unhandled exception must not leak its internals, but an error this file raised deliberately
+  // carries a message written for the owner — including the ones that say what to do about it.
+  const message = status < 500 || error.acervoCode
+    ? String(error.message || error)
+    : "The Acervo server could not complete the request.";
   if (status >= 500) event.app.logger().error("Acervo API request failed", "error", error);
   return event.json(status, { error: { code: error.acervoCode || "server_error", message: message } });
 }
@@ -325,10 +329,25 @@ function ownerGraph(app, ownerId, since) {
    database and every outstanding client cursor is invalidated, which is the only thing that stops
    a client asking for revisions the new database has not reached yet. */
 
+/**
+ * A schema change is deployed by rewriting the bootstrap migration, and PocketBase records applied
+ * migrations by filename — so a database that predates the rewrite silently lacks the collection.
+ * Every graph route then failed with an anonymous 500 that the client reported as "offline", which
+ * is a long way from "this database must be rebuilt". Say which it is.
+ */
+function requireCollection(app, name) {
+  try { return app.findCollectionByNameOrId(name); }
+  catch (_) {
+    throw apiError(500, "schema_missing",
+      "The Acervo database is missing the '" + name + "' collection, so it predates this server's "
+      + "schema. Redeploy with --reset-pocketbase to rebuild it.");
+  }
+}
+
 function sequenceRecord(app, ownerId) {
   const existing = firstRecord(app, "sync_state", "owner = {:owner}", { owner: ownerId });
   if (existing) return existing;
-  const record = new Record(app.findCollectionByNameOrId("sync_state"));
+  const record = new Record(requireCollection(app, "sync_state"));
   record.set("owner", ownerId);
   record.set("sequence", 0);
   try {

@@ -12,7 +12,8 @@ const SYNC_INTERVAL = 60_000;
 /** A sync that finishes quickly should not flash a spinner on its way past. */
 const SYNCING_VISIBLE_AFTER = 600;
 
-export type SyncState = "signedOut" | "idle" | "syncing" | "offline" | "blocked" | "datasetChanged";
+export type SyncState =
+  "signedOut" | "idle" | "syncing" | "offline" | "serverError" | "blocked" | "datasetChanged";
 
 export interface SyncStatus {
   state: SyncState;
@@ -38,7 +39,7 @@ class SyncEngine implements RemoteGraph {
   private stops: (() => void)[] = [];
   private timer: number | undefined;
   private announce: number | undefined;
-  private running: Promise<void> | null = null;
+  private running: Promise<SyncStatus> | null = null;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -82,10 +83,15 @@ class SyncEngine implements RemoteGraph {
   /**
    * Single-flight across pulls and writes alike. Serialising them is what stops a pull that was
    * already in flight from landing on top of a record a write has since replaced.
+   *
+   * Resolves with the status the sync ended in rather than rejecting, because most callers are
+   * timers and listeners with nowhere to put a rejection. It has to resolve with *something*: a
+   * bare promise meant "Sync now" could not tell success from failure and silently did nothing
+   * visible, which is exactly how a broken server looked like a broken button.
    */
-  syncNow(immediate = false): Promise<void> {
+  syncNow(immediate = false): Promise<SyncStatus> {
     if (this.running) return this.running;
-    this.running = this.exchange(immediate).finally(() => {
+    this.running = this.exchange(immediate).then(() => this.status).finally(() => {
       window.clearTimeout(this.announce);
       this.announce = undefined;
       this.running = null;
@@ -181,9 +187,10 @@ class SyncEngine implements RemoteGraph {
     }
     if (error.code === "schema_version_mismatch") return { state: "blocked", message: error.message };
     if (error.status === 401) return { state: "signedOut", message: error.message };
-    // Anything else means the server cannot currently serve this device, which for the owner is
-    // the same situation as being offline: keep reading locally and try again later. The reason
-    // still travels, because the panel is where someone goes to find out why a device stopped.
+    // A server that answers and fails is not an unreachable one. Calling it "offline" sent a whole
+    // session looking at the network while PocketBase was refusing every request for a reason it
+    // was willing to state. Reading still falls back to the replica either way.
+    if (error.status >= 500) return { state: "serverError", message: error.message };
     return { state: "offline", message: error.message };
   }
 

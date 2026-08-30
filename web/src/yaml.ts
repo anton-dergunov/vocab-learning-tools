@@ -1,132 +1,659 @@
 /**
  * The YAML pane is a projection of the record, in the same spirit as the short form: one source,
- * two presentations. Serialisation only — nothing here parses YAML back into the graph.
+ * two presentations. Unlike the short form it is also an *input*, so both directions live here and
+ * both go through the same library — a hand-written serialiser paired with a parser drifts apart
+ * the first time someone adds a field to one of them.
+ *
+ * The contract the tests hold to: `parseArticle(yamlFor(article))` reproduces the article's
+ * editable fields exactly. That is what makes editing safe. A field this file forgets to write is
+ * a field the next save deletes.
+ *
+ * Pure: no storage, no network, no DOM. Generated YAML arrives here from a model on exactly the
+ * same footing as YAML someone typed.
  */
 
+import { Document, isMap, isNode, isSeq, LineCounter, parseDocument, Scalar } from "yaml";
+import {
+  EXAMPLE_ORIGINS, GENDERS, LEXEME_STATUSES, PARTS_OF_SPEECH, REGISTERS, SOURCE_KINDS,
+  type Example, type ExampleOrigin, type Gender, type Gloss, type ImagePrompt,
+  type LexemeStatus, type PartOfSpeech, type Register, type SourceKind
+} from "./domain";
 import { languageOf } from "./languages";
 import type { Article } from "./selectors";
 
-const PLAIN = /^[\w .,;:’'ºª/()-]+$/u;
+/* ── the draft ──────────────────────────────────────────────────────────
+   What a document means, before it is matched against anything stored. Ids are optional
+   throughout: an absent id is a record that does not exist yet. Topics are names, because a rail
+   label is what someone editing an article can actually see. */
 
-function scalar(value: string | number | boolean | null): string {
-  if (value === null || value === undefined) return "null";
-  if (typeof value !== "string") return String(value);
-  const reserved = /^(true|false|null|yes|no)$/i.test(value) || /^[\d.]+$/.test(value);
-  return PLAIN.test(value) && !reserved && !value.includes(": ") ? value : JSON.stringify(value);
+export interface ExampleDraft {
+  id: string | null;
+  text: string;
+  textLang: string;
+  translation: string | null;
+  translationLang: string | null;
+  origin: ExampleOrigin;
+  sourceAttestationId: string | null;
+  modelId: string | null;
+  videoRef: string | null;
+  videoTitle: string | null;
+  videoStart: number | null;
+  imageRef: string | null;
+  audioRef: string | null;
+  note: string | null;
+  matchedForm: string | null;
+  matchedTranslationForm: string | null;
+  approved: boolean;
+}
+
+export interface ImagePromptDraft {
+  id: string | null;
+  prompt: string;
+  styleId: string;
+  seed: number;
+  modelId: string;
+  promptVersion: string;
+  imageRef: string | null;
+  imageModelId: string | null;
+}
+
+export interface SenseDraft {
+  id: string | null;
+  order: number;
+  definition: string;
+  definitionLang: string;
+  glosses: Gloss[];
+  domain: string | null;
+  examples: ExampleDraft[];
+  images: ImagePromptDraft[];
+}
+
+export interface AttestationDraft {
+  id: string | null;
+  text: string;
+  translation: string | null;
+  sourceUrl: string | null;
+  sourceTitle: string | null;
+  sourceKind: SourceKind;
+  capturedAt: string;
+}
+
+export interface ArticleDraft {
+  id: string | null;
+  language: string;
+  headword: string;
+  lemma: string;
+  reading: string | null;
+  ipa: string | null;
+  pos: PartOfSpeech;
+  gender: Gender | null;
+  register: Register | null;
+  dialect: string | null;
+  emoji: string | null;
+  topics: string[];
+  status: LexemeStatus;
+  shortGloss: string | null;
+  notes: string[];
+  senses: SenseDraft[];
+  attestations: AttestationDraft[];
+  images: ImagePromptDraft[];
+}
+
+/** Where a problem is, so the panel can say "line 14" instead of "somewhere". */
+export interface YamlProblem {
+  line: number | null;
+  message: string;
+}
+
+export class YamlProblems extends Error {
+  constructor(readonly problems: YamlProblem[]) {
+    super(problems.map((problem) => problem.message).join("\n"));
+    this.name = "YamlProblems";
+  }
+}
+
+/* ── writing ────────────────────────────────────────────────────────────
+   Every non-null field is written. Absence therefore means null, which is what makes the round
+   trip exact rather than merely careful: there is no field the reader has to guess at. */
+
+type Plain = Record<string, unknown>;
+
+/** Drops nulls and empty lists so a sparse record reads as a short one, not as a wall of nulls. */
+function compact(fields: Plain): Plain {
+  const kept: Plain = {};
+  Object.entries(fields).forEach(([key, value]) => {
+    if (value === null || value === undefined) return;
+    if (Array.isArray(value) && value.length === 0) return;
+    kept[key] = value;
+  });
+  return kept;
+}
+
+function exampleFields(example: ExampleDraft): Plain {
+  return compact({
+    id: example.id,
+    text: example.text,
+    textLang: example.textLang,
+    translation: example.translation,
+    translationLang: example.translationLang,
+    origin: example.origin,
+    sourceAttestationId: example.sourceAttestationId,
+    modelId: example.modelId,
+    videoRef: example.videoRef,
+    videoTitle: example.videoTitle,
+    videoStart: example.videoStart,
+    imageRef: example.imageRef,
+    audioRef: example.audioRef,
+    note: example.note,
+    matchedForm: example.matchedForm,
+    matchedTranslationForm: example.matchedTranslationForm,
+    approved: example.approved
+  });
+}
+
+function promptFields(image: ImagePromptDraft): Plain {
+  return compact({
+    id: image.id,
+    prompt: image.prompt,
+    styleId: image.styleId,
+    seed: image.seed,
+    modelId: image.modelId,
+    promptVersion: image.promptVersion,
+    imageRef: image.imageRef,
+    imageModelId: image.imageModelId
+  });
+}
+
+/** An instant must survive as the string the validator expects, never as a parsed date. */
+function instant(value: string): Scalar {
+  const node = new Scalar(value);
+  node.type = Scalar.QUOTE_DOUBLE;
+  return node;
+}
+
+/* Field by field rather than by spread: a draft is only the editable half of a record, and a
+   spread would quietly carry ownership and revision into the document. */
+
+function exampleDraft(example: Example): ExampleDraft {
+  return {
+    id: example.id,
+    text: example.text,
+    textLang: example.textLang,
+    translation: example.translation,
+    translationLang: example.translationLang,
+    origin: example.origin,
+    sourceAttestationId: example.sourceAttestationId,
+    modelId: example.modelId,
+    videoRef: example.videoRef,
+    videoTitle: example.videoTitle,
+    videoStart: example.videoStart,
+    imageRef: example.imageRef,
+    audioRef: example.audioRef,
+    note: example.note,
+    matchedForm: example.matchedForm,
+    matchedTranslationForm: example.matchedTranslationForm,
+    approved: example.approved
+  };
+}
+
+function promptDraft(image: ImagePrompt): ImagePromptDraft {
+  return {
+    id: image.id,
+    prompt: image.prompt,
+    styleId: image.styleId,
+    seed: image.seed,
+    modelId: image.modelId,
+    promptVersion: image.promptVersion,
+    imageRef: image.imageRef,
+    imageModelId: image.imageModelId
+  };
+}
+
+export function draftFor(article: Article): ArticleDraft {
+  const { lexeme, topics, senses, attestations, images } = article;
+  return {
+    id: lexeme.id,
+    language: lexeme.language,
+    headword: lexeme.headword,
+    lemma: lexeme.lemma,
+    reading: lexeme.reading,
+    ipa: lexeme.ipa,
+    pos: lexeme.pos,
+    gender: lexeme.gender,
+    register: lexeme.register,
+    dialect: lexeme.dialect,
+    emoji: lexeme.emoji,
+    topics: topics.map((topic) => topic.name),
+    status: lexeme.status,
+    shortGloss: lexeme.shortGloss,
+    notes: [...lexeme.notes],
+    senses: senses.map(({ sense, examples, images: senseImages }) => ({
+      id: sense.id,
+      order: sense.order,
+      definition: sense.definition,
+      definitionLang: sense.definitionLang,
+      glosses: sense.glosses.map((gloss) => ({ lang: gloss.lang, terms: [...gloss.terms] })),
+      domain: sense.domain,
+      examples: examples.map(exampleDraft),
+      images: senseImages.map(promptDraft)
+    })),
+    attestations: attestations.map((attestation) => ({
+      id: attestation.id,
+      text: attestation.text,
+      translation: attestation.translation,
+      sourceUrl: attestation.sourceUrl,
+      sourceTitle: attestation.sourceTitle,
+      sourceKind: attestation.sourceKind,
+      capturedAt: attestation.capturedAt
+    })),
+    images: images.map(promptDraft)
+  };
 }
 
 export function yamlFor(article: Article): string {
-  const { lexeme, topics, senses, attestations, study } = article;
-  const lines: string[] = [];
-  lines.push(`# ${lexeme.headword} — ${languageOf(lexeme.language).name}`);
-  lines.push(`id: ${lexeme.id}`);
-  lines.push(`language: ${lexeme.language}`);
-  lines.push(`headword: ${scalar(lexeme.headword)}`);
-  lines.push(`lemma: ${scalar(lexeme.lemma)}`);
-  if (lexeme.reading) lines.push(`reading: ${scalar(lexeme.reading)}`);
-  if (lexeme.ipa) lines.push(`ipa: ${scalar(lexeme.ipa)}`);
-  lines.push(`pos: ${lexeme.pos}`);
-  if (lexeme.gender) lines.push(`gender: ${lexeme.gender}`);
-  lines.push(`register: ${lexeme.register ?? "null"}`);
-  if (lexeme.dialect) lines.push(`dialect: ${lexeme.dialect}`);
-  lines.push(`emoji: ${scalar(lexeme.emoji)}`);
-  lines.push(`status: ${lexeme.status}`);
-  lines.push(`topics: [${topics.map((topic) => scalar(topic.name)).join(", ")}]`);
-  lines.push(`shortGloss: ${lexeme.shortGloss ? scalar(lexeme.shortGloss) : "null            # null = derived from sense 1"}`);
-  if (lexeme.notes.length) {
-    lines.push("notes:");
-    lexeme.notes.forEach((note) => lines.push(`  - ${scalar(note)}`));
-  } else {
-    lines.push("notes: []");
-  }
+  const draft = draftFor(article);
+  const { lexeme, study } = article;
 
-  lines.push("senses:");
-  senses.forEach(({ sense, examples, images }) => {
-    lines.push(`  - order: ${sense.order}`);
-    lines.push(`    definition: ${scalar(sense.definition)}`);
-    lines.push(`    definitionLang: ${sense.definitionLang}`);
-    if (sense.domain) lines.push(`    domain: ${sense.domain}`);
-    lines.push("    glosses:");
-    sense.glosses.forEach((gloss) => {
-      lines.push(`      - { lang: ${gloss.lang}, terms: [${gloss.terms.map(scalar).join(", ")}] }`);
-    });
-    if (examples.length) {
-      lines.push("    examples:");
-      examples.forEach((example) => {
-        lines.push(`      - text: ${scalar(example.text)}`);
-        if (example.translation) lines.push(`        translation: ${scalar(example.translation)}`);
-        lines.push(`        origin: ${example.origin}`);
-        if (example.modelId) lines.push(`        modelId: ${example.modelId}`);
-        if (example.matchedForm) lines.push(`        matchedForm: ${scalar(example.matchedForm)}`);
-        if (example.videoRef) {
-          lines.push(`        videoRef: ${scalar(example.videoRef)}`);
-          if (example.videoTitle) lines.push(`        videoTitle: ${scalar(example.videoTitle)}`);
-          if (example.videoStart !== null) lines.push(`        videoStart: ${example.videoStart}`);
-        }
-        lines.push(`        approved: ${example.approved}`);
-      });
-    } else {
-      lines.push("    examples: []");
-    }
-    if (images.length) {
-      lines.push("    imagePrompts:");
-      images.forEach((image) => {
-        lines.push(`      - prompt: ${scalar(image.prompt)}`);
-        lines.push(`        styleId: ${image.styleId}`);
-        lines.push(`        seed: ${image.seed}`);
-        if (image.imageRef) lines.push(`        imageRef: ${scalar(image.imageRef)}`);
-      });
-    }
-  });
+  const document = new Document(compact({
+    id: draft.id,
+    language: draft.language,
+    headword: draft.headword,
+    lemma: draft.lemma,
+    reading: draft.reading,
+    ipa: draft.ipa,
+    pos: draft.pos,
+    gender: draft.gender,
+    register: draft.register,
+    dialect: draft.dialect,
+    emoji: draft.emoji,
+    status: draft.status,
+    topics: draft.topics,
+    shortGloss: draft.shortGloss,
+    notes: draft.notes,
+    senses: draft.senses.map((sense) => compact({
+      id: sense.id,
+      order: sense.order,
+      definition: sense.definition,
+      definitionLang: sense.definitionLang,
+      domain: sense.domain,
+      glosses: sense.glosses.map((gloss) => ({ lang: gloss.lang, terms: gloss.terms })),
+      examples: sense.examples.map(exampleFields),
+      imagePrompts: sense.images.map(promptFields)
+    })),
+    attestations: draft.attestations.map((attestation) => compact({
+      id: attestation.id,
+      text: attestation.text,
+      translation: attestation.translation,
+      sourceKind: attestation.sourceKind,
+      sourceTitle: attestation.sourceTitle,
+      sourceUrl: attestation.sourceUrl,
+      capturedAt: instant(attestation.capturedAt)
+    })),
+    imagePrompts: draft.images.map(promptFields)
+  }));
 
-  if (attestations.length) {
-    lines.push("attestations:");
-    attestations.forEach((attestation) => {
-      lines.push(`  - text: ${scalar(attestation.text)}          # verbatim, never rewritten`);
-      if (attestation.translation) lines.push(`    translation: ${scalar(attestation.translation)}`);
-      lines.push(`    sourceKind: ${attestation.sourceKind}`);
-      if (attestation.sourceTitle) lines.push(`    sourceTitle: ${scalar(attestation.sourceTitle)}`);
-      if (attestation.sourceUrl) lines.push(`    sourceUrl: ${attestation.sourceUrl}`);
-      lines.push(`    capturedAt: ${attestation.capturedAt}`);
+  document.commentBefore = ` ${lexeme.headword} — ${languageOf(lexeme.language).name}`
+    + "\n Every record keeps its id. Delete a block to remove it; omit an id to add something new.";
+
+  // Study state flows in from the scheduler and is never edited here (§10), so it is written as
+  // comments: visible where you would look for it, and impossible to save back by accident.
+  const notes = study
+    ? [
+      "",
+      ` study · ${study.system} · reps ${study.reps} · lapses ${study.lapses}`,
+      ` stability ${study.stability} · difficulty ${study.difficulty} · retrievability ${study.retrievability}`,
+      ` last review ${study.lastReview ?? "never"} — read-only, reported by the scheduler`
+    ].join("\n")
+    : null;
+  if (notes) document.comment = notes;
+
+  // Flow style for the small pairs, which are far more readable on one line than as four.
+  const senses = document.get("senses", true);
+  if (isSeq(senses)) {
+    senses.items.forEach((sense) => {
+      if (!isMap(sense)) return;
+      const glosses = sense.get("glosses", true);
+      if (isSeq(glosses)) glosses.items.forEach((gloss) => { if (isMap(gloss)) gloss.flow = true; });
     });
   }
+  const topicsNode = document.get("topics", true);
+  if (isSeq(topicsNode)) topicsNode.flow = true;
 
-  if (study) {
-    lines.push("study:");
-    lines.push(`  system: ${study.system}`);
-    lines.push(`  reps: ${study.reps}`);
-    lines.push(`  lapses: ${study.lapses}`);
-    lines.push(`  stability: ${study.stability}`);
-    lines.push(`  difficulty: ${study.difficulty}`);
-    lines.push(`  retrievability: ${study.retrievability}`);
-    lines.push(`  lastReview: ${study.lastReview ?? "null"}`);
-  }
-
-  return lines.join("\n");
+  return document.toString({ lineWidth: 0, singleQuote: false, flowCollectionPadding: false });
 }
 
-export const YAML_TEMPLATE = `# New entry — fill in what you know, leave the rest.
+/* ── reading ────────────────────────────────────────────────────────────
+   Every message names the field and, where the parser gives one, the line. A save is refused as a
+   whole: half an applied article is worse than none, which is the same rule the write route uses. */
+
+/** `senses[0].examples[1].text` → `["senses", 0, "examples", 1, "text"]`. */
+function pathSteps(path: string): (string | number)[] {
+  return path
+    .replace(/^document\.?/, "")
+    .split(".")
+    .filter(Boolean)
+    .flatMap((part) => {
+      const [name, ...indices] = part.split("[");
+      return [name, ...indices.map((index) => Number(index.replace("]", "")))];
+    });
+}
+
+class Reader {
+  readonly problems: YamlProblem[] = [];
+
+  constructor(
+    private readonly document: Document.Parsed,
+    private readonly lines: LineCounter
+  ) {}
+
+  /**
+   * Asked of the parsed tree rather than matched against the text, because a document has many
+   * lines reading `text:` and pointing at the wrong one is worse than pointing at none. Walks up
+   * the path until something exists, so a complaint about a field that is missing entirely still
+   * lands on the record it is missing from.
+   */
+  private lineOf(path: string): number | null {
+    const steps = pathSteps(path);
+    for (let depth = steps.length; depth > 0; depth -= 1) {
+      const node: unknown = this.document.getIn(steps.slice(0, depth), true);
+      const offset = isNode(node) ? node.range?.[0] : undefined;
+      if (offset !== undefined) return this.lines.linePos(offset).line;
+    }
+    return null;
+  }
+
+  fail(path: string, message: string): void {
+    this.problems.push({ line: this.lineOf(path), message: `${path}: ${message}` });
+  }
+
+  map(value: unknown, path: string): Plain | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value !== "object" || Array.isArray(value)) {
+      this.fail(path, "expected a block of fields.");
+      return null;
+    }
+    return value as Plain;
+  }
+
+  list(value: unknown, path: string): unknown[] {
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) { this.fail(path, "expected a list."); return []; }
+    return value;
+  }
+
+  text(value: unknown, path: string, fallback = ""): string {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    if (typeof value !== "string") { this.fail(path, "expected text."); return fallback; }
+    return value;
+  }
+
+  required(value: unknown, path: string): string {
+    const text = this.text(value, path);
+    if (!text.trim()) this.fail(path, "is required.");
+    return text;
+  }
+
+  optional(value: unknown, path: string): string | null {
+    if (value === null || value === undefined) return null;
+    const text = this.text(value, path);
+    return text.trim() ? text : null;
+  }
+
+  id(value: unknown, path: string): string | null {
+    const text = this.optional(value, path);
+    if (text === null) return null;
+    if (!/^[a-z0-9]{15}$/.test(text)) {
+      this.fail(path, "is not an Acervo id. Remove the line to create a new record instead.");
+      return null;
+    }
+    return text;
+  }
+
+  number(value: unknown, path: string, fallback: number): number {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      this.fail(path, "expected a number.");
+      return fallback;
+    }
+    return value;
+  }
+
+  optionalNumber(value: unknown, path: string): number | null {
+    if (value === null || value === undefined) return null;
+    return this.number(value, path, 0);
+  }
+
+  boolean(value: unknown, path: string, fallback: boolean): boolean {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value !== "boolean") { this.fail(path, "expected true or false."); return fallback; }
+    return value;
+  }
+
+  choice<T extends string>(value: unknown, path: string, allowed: readonly T[], fallback: T): T {
+    const text = this.text(value, path);
+    if (!text.trim()) return fallback;
+    if (!allowed.includes(text as T)) {
+      this.fail(path, `must be one of ${allowed.join(", ")} — found "${text}".`);
+      return fallback;
+    }
+    return text as T;
+  }
+
+  optionalChoice<T extends string>(value: unknown, path: string, allowed: readonly T[]): T | null {
+    if (value === null || value === undefined) return null;
+    const text = this.text(value, path);
+    if (!text.trim()) return null;
+    if (!allowed.includes(text as T)) {
+      this.fail(path, `must be one of ${allowed.join(", ")} — found "${text}".`);
+      return null;
+    }
+    return text as T;
+  }
+
+  strings(value: unknown, path: string): string[] {
+    return this.list(value, path)
+      .map((item, index) => this.text(item, `${path}[${index}]`))
+      .filter((item) => item.trim().length > 0);
+  }
+
+  /** Unknown keys are refused rather than ignored: a typo that silently does nothing is worse. */
+  keys(fields: Plain, path: string, allowed: string[]): void {
+    Object.keys(fields).forEach((key) => {
+      if (!allowed.includes(key)) {
+        this.fail(`${path}.${key}`, `is not a field Acervo knows. Expected one of ${allowed.join(", ")}.`);
+      }
+    });
+  }
+}
+
+const EXAMPLE_KEYS = [
+  "id", "text", "textLang", "translation", "translationLang", "origin", "sourceAttestationId",
+  "modelId", "videoRef", "videoTitle", "videoStart", "imageRef", "audioRef", "note",
+  "matchedForm", "matchedTranslationForm", "approved"
+];
+const PROMPT_KEYS = [
+  "id", "prompt", "styleId", "seed", "modelId", "promptVersion", "imageRef", "imageModelId"
+];
+const SENSE_KEYS = [
+  "id", "order", "definition", "definitionLang", "domain", "glosses", "examples", "imagePrompts"
+];
+const ATTESTATION_KEYS = [
+  "id", "text", "translation", "sourceKind", "sourceTitle", "sourceUrl", "capturedAt"
+];
+const ARTICLE_KEYS = [
+  "id", "language", "headword", "lemma", "reading", "ipa", "pos", "gender", "register", "dialect",
+  "emoji", "status", "topics", "shortGloss", "notes", "senses", "attestations", "imagePrompts"
+];
+
+function readExample(reader: Reader, raw: unknown, path: string, textLang: string): ExampleDraft | null {
+  const fields = reader.map(raw, path);
+  if (!fields) return null;
+  reader.keys(fields, path, EXAMPLE_KEYS);
+  return {
+    id: reader.id(fields.id, `${path}.id`),
+    text: reader.required(fields.text, `${path}.text`),
+    // An example is in the article's language unless it says otherwise, which is the only default
+    // in the format — and it is safe because writing always states it.
+    textLang: reader.text(fields.textLang, `${path}.textLang`, textLang) || textLang,
+    translation: reader.optional(fields.translation, `${path}.translation`),
+    translationLang: reader.optional(fields.translationLang, `${path}.translationLang`),
+    origin: reader.choice(fields.origin, `${path}.origin`, EXAMPLE_ORIGINS, "manual"),
+    sourceAttestationId: reader.id(fields.sourceAttestationId, `${path}.sourceAttestationId`),
+    modelId: reader.optional(fields.modelId, `${path}.modelId`),
+    videoRef: reader.optional(fields.videoRef, `${path}.videoRef`),
+    videoTitle: reader.optional(fields.videoTitle, `${path}.videoTitle`),
+    videoStart: reader.optionalNumber(fields.videoStart, `${path}.videoStart`),
+    imageRef: reader.optional(fields.imageRef, `${path}.imageRef`),
+    audioRef: reader.optional(fields.audioRef, `${path}.audioRef`),
+    note: reader.optional(fields.note, `${path}.note`),
+    matchedForm: reader.optional(fields.matchedForm, `${path}.matchedForm`),
+    matchedTranslationForm: reader.optional(fields.matchedTranslationForm, `${path}.matchedTranslationForm`),
+    approved: reader.boolean(fields.approved, `${path}.approved`, true)
+  };
+}
+
+function readPrompt(reader: Reader, raw: unknown, path: string): ImagePromptDraft | null {
+  const fields = reader.map(raw, path);
+  if (!fields) return null;
+  reader.keys(fields, path, PROMPT_KEYS);
+  return {
+    id: reader.id(fields.id, `${path}.id`),
+    prompt: reader.required(fields.prompt, `${path}.prompt`),
+    styleId: reader.required(fields.styleId, `${path}.styleId`),
+    seed: reader.number(fields.seed, `${path}.seed`, 0),
+    modelId: reader.text(fields.modelId, `${path}.modelId`),
+    promptVersion: reader.text(fields.promptVersion, `${path}.promptVersion`),
+    imageRef: reader.optional(fields.imageRef, `${path}.imageRef`),
+    imageModelId: reader.optional(fields.imageModelId, `${path}.imageModelId`)
+  };
+}
+
+function readGlosses(reader: Reader, raw: unknown, path: string): Gloss[] {
+  return reader.list(raw, path).flatMap((item, index) => {
+    const where = `${path}[${index}]`;
+    const fields = reader.map(item, where);
+    if (!fields) return [];
+    reader.keys(fields, where, ["lang", "terms"]);
+    return [{
+      lang: reader.required(fields.lang, `${where}.lang`),
+      terms: reader.strings(fields.terms, `${where}.terms`)
+    }];
+  });
+}
+
+/**
+ * Reads a document into a draft. Throws `YamlProblems` carrying every problem found, not only the
+ * first: someone correcting a hand-written article should see the whole list in one pass.
+ */
+export function parseArticle(text: string): ArticleDraft {
+  const lineCounter = new LineCounter();
+  const document = parseDocument(text, { prettyErrors: true, lineCounter });
+  const syntax: YamlProblem[] = document.errors.map((error) => ({
+    line: error.linePos?.[0]?.line ?? null,
+    message: error.message
+  }));
+  if (syntax.length) throw new YamlProblems(syntax);
+
+  const reader = new Reader(document, lineCounter);
+  const root = document.toJS({ maxAliasCount: 100 }) as unknown;
+  const fields = reader.map(root, "document");
+  if (!fields) throw new YamlProblems(reader.problems.length ? reader.problems : [
+    { line: null, message: "The document is empty." }
+  ]);
+  reader.keys(fields, "document", ARTICLE_KEYS);
+
+  const language = reader.required(fields.language, "language");
+  const draft: ArticleDraft = {
+    id: reader.id(fields.id, "id"),
+    language,
+    headword: reader.required(fields.headword, "headword"),
+    // Lemma defaults to the headword, which is what it is for every word that is not inflected.
+    lemma: reader.text(fields.lemma, "lemma") || reader.text(fields.headword, "headword"),
+    reading: reader.optional(fields.reading, "reading"),
+    ipa: reader.optional(fields.ipa, "ipa"),
+    pos: reader.choice(fields.pos, "pos", PARTS_OF_SPEECH, "noun"),
+    gender: reader.optionalChoice(fields.gender, "gender", GENDERS),
+    register: reader.optionalChoice(fields.register, "register", REGISTERS),
+    dialect: reader.optional(fields.dialect, "dialect"),
+    emoji: reader.optional(fields.emoji, "emoji"),
+    topics: reader.strings(fields.topics, "topics"),
+    status: reader.choice(fields.status, "status", LEXEME_STATUSES, "inbox"),
+    shortGloss: reader.optional(fields.shortGloss, "shortGloss"),
+    notes: reader.strings(fields.notes, "notes"),
+    senses: reader.list(fields.senses, "senses").flatMap((item, index) => {
+      const where = `senses[${index}]`;
+      const sense = reader.map(item, where);
+      if (!sense) return [];
+      reader.keys(sense, where, SENSE_KEYS);
+      return [{
+        id: reader.id(sense.id, `${where}.id`),
+        order: reader.number(sense.order, `${where}.order`, index),
+        definition: reader.required(sense.definition, `${where}.definition`),
+        definitionLang: reader.text(sense.definitionLang, `${where}.definitionLang`, language) || language,
+        glosses: readGlosses(reader, sense.glosses, `${where}.glosses`),
+        domain: reader.optional(sense.domain, `${where}.domain`),
+        examples: reader.list(sense.examples, `${where}.examples`)
+          .map((example, position) => readExample(reader, example, `${where}.examples[${position}]`, language))
+          .filter((example): example is ExampleDraft => example !== null),
+        images: reader.list(sense.imagePrompts, `${where}.imagePrompts`)
+          .map((image, position) => readPrompt(reader, image, `${where}.imagePrompts[${position}]`))
+          .filter((image): image is ImagePromptDraft => image !== null)
+      }];
+    }),
+    attestations: reader.list(fields.attestations, "attestations").flatMap((item, index) => {
+      const where = `attestations[${index}]`;
+      const attestation = reader.map(item, where);
+      if (!attestation) return [];
+      reader.keys(attestation, where, ATTESTATION_KEYS);
+      return [{
+        id: reader.id(attestation.id, `${where}.id`),
+        text: reader.required(attestation.text, `${where}.text`),
+        translation: reader.optional(attestation.translation, `${where}.translation`),
+        sourceUrl: reader.optional(attestation.sourceUrl, `${where}.sourceUrl`),
+        sourceTitle: reader.optional(attestation.sourceTitle, `${where}.sourceTitle`),
+        sourceKind: reader.choice(attestation.sourceKind, `${where}.sourceKind`, SOURCE_KINDS, "unknown"),
+        capturedAt: reader.text(attestation.capturedAt, `${where}.capturedAt`)
+      }];
+    }),
+    images: reader.list(fields.imagePrompts, "imagePrompts")
+      .map((image, index) => readPrompt(reader, image, `imagePrompts[${index}]`))
+      .filter((image): image is ImagePromptDraft => image !== null)
+  };
+
+  if (!draft.senses.length) reader.fail("senses", "an entry needs at least one sense.");
+  if (reader.problems.length) throw new YamlProblems(reader.problems);
+  return draft;
+}
+
+/**
+ * The starting point for a new entry. It carries no ids, so everything in it is created — which is
+ * the only difference between this and an edit. Asserted to parse, so the shape someone is invited
+ * to fill in can never fall behind the shape the reader accepts.
+ */
+export const YAML_TEMPLATE = `# New entry — fill in what you know and delete the rest.
+# No ids here: everything in this document is created when you save.
 language: es
 headword: ""
-lemma: ""
-pos: noun            # noun verb adj adv phrase idiom expression
-gender: null         # masculine feminine — Spanish nouns only
-register: neutral    # neutral formal colloquial slang vulgar
+lemma: ""              # leave empty to reuse the headword
+pos: noun              # noun verb adj adv phrase idiom expression
+register: neutral      # neutral formal colloquial slang vulgar
 emoji: ""
 status: inbox
-topics: []           # e.g. [Food, Travel]
-shortGloss: null     # null = derived from the first gloss below
+topics: []             # existing topic names, e.g. [Food, Travel]
+shortGloss: null       # null = derived from the first gloss below
 notes: []
 senses:
   - order: 0
-    definition: ""             # in the target language
+    definition: ""     # in the target language
     definitionLang: es
     glosses:
       - { lang: en, terms: [""] }
     examples:
       - text: ""
         translation: ""
+        translationLang: en
         origin: manual
         approved: true
-attestations: []     # the sentence you actually met it in, verbatim
+attestations: []       # the sentence you actually met it in, verbatim
 `;

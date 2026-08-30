@@ -11,6 +11,7 @@ target=
 acervo_root=
 configure=false
 reset_data=false
+reset_pocketbase=false
 remember=false
 bind_address=
 anki_port=
@@ -24,14 +25,18 @@ usage() {
 usage:
   ./deploy.sh --local [--root PATH] [--bind-address ADDRESS] [--port PORT]
               [--app-bind-address ADDRESS] [--app-port PORT]
-              [--configure-credentials] [--reset-data]
+              [--configure-credentials] [--reset-data] [--reset-pocketbase]
   ./deploy.sh [--target USER@HOST] [--root PATH] [--configure-credentials]
               [--bind-address ADDRESS] [--port PORT] [--remember-target]
               [--app-bind-address ADDRESS] [--app-port PORT]
-              [--https-port PORT] [--reset-data]
+              [--https-port PORT] [--reset-data] [--reset-pocketbase]
   ./deploy.sh [--target USER@HOST] [--remember-target] --install-helper
   ./deploy.sh [--target USER@HOST] [--https-port PORT] --configure-https
   ./deploy.sh [--local | --target USER@HOST] --status
+
+  --reset-data        replace the Anki sync server and robot collections
+  --reset-pocketbase  replace the vocabulary database, so a rewritten bootstrap
+                      migration is applied from scratch; Anki data is untouched
 EOF
   exit 2
 }
@@ -57,6 +62,7 @@ while [ "$#" -gt 0 ]; do
     --configure-https) choose_action configure-https; shift ;;
     --status) choose_action status; shift ;;
     --reset-data) reset_data=true; shift ;;
+    --reset-pocketbase) reset_pocketbase=true; shift ;;
     *) usage ;;
   esac
 done
@@ -156,11 +162,24 @@ if [ "$mode" = local ] && { [ "$action" = install-helper ] || [ "$action" = conf
 fi
 if [ "$configure" = true ] && [ "$action" != deploy ]; then usage; fi
 if [ "$reset_data" = true ] && [ "$action" != deploy ]; then usage; fi
+if [ "$reset_pocketbase" = true ] && [ "$action" != deploy ]; then usage; fi
 
 if [ "$reset_data" = true ]; then
   printf '%s' 'Type RESET ACERVO DATA to permanently replace server and robot data: '
   IFS= read -r reset_confirmation
   [ "$reset_confirmation" = 'RESET ACERVO DATA' ] || {
+    echo "Reset cancelled" >&2
+    exit 2
+  }
+fi
+
+if [ "$reset_pocketbase" = true ]; then
+  echo 'This replaces the vocabulary database. Every account, word and revision on the server is'
+  echo 'discarded; accounts must be recreated afterwards. Device replicas are not touched, and a'
+  echo 'copy of the old database is kept under the deployment backups directory.'
+  printf '%s' 'Type RESET ACERVO VOCABULARY to continue: '
+  IFS= read -r reset_pocketbase_confirmation
+  [ "$reset_pocketbase_confirmation" = 'RESET ACERVO VOCABULARY' ] || {
     echo "Reset cancelled" >&2
     exit 2
   }
@@ -242,6 +261,7 @@ if [ "$mode" = local ]; then
     --app-bind-address "$effective_app_bind_address" --app-port "$effective_app_port"
   [ -z "$credential_args" ] || set -- "$@" "$credential_args"
   [ "$reset_data" = false ] || set -- "$@" --reset-data
+  [ "$reset_pocketbase" = false ] || set -- "$@" --reset-pocketbase
   if [ -n "$credential_args" ]; then
     printf '%s\n%s\n%s\n%s\n' "$sync_username" "$sync_password" "$pb_superuser_email" "$pb_superuser_password" | "$repo_root/deploy/acervo/install.sh" "$@"
   else
@@ -335,6 +355,7 @@ installer_arguments=
 installer_arguments="$installer_arguments --bind-address $effective_bind_address --port $effective_anki_port"
 installer_arguments="$installer_arguments --app-bind-address $effective_app_bind_address --app-port $effective_app_port"
 [ "$reset_data" = false ] || installer_arguments="$installer_arguments --reset-data"
+[ "$reset_pocketbase" = false ] || installer_arguments="$installer_arguments --reset-pocketbase"
 
 if [ "$remote_mode" = helper ]; then
   echo "Streaming and installing with the passwordless Acervo launcher..."

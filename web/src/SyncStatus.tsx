@@ -9,7 +9,7 @@ const CONFIRMATION = "REPLACE";
 type Tone = "synced" | "syncing" | "offline" | "blocked";
 
 const TONES: Record<SyncStatus["state"], Tone> = {
-  idle: "synced", syncing: "syncing", offline: "offline",
+  idle: "synced", syncing: "syncing", offline: "offline", serverError: "blocked",
   blocked: "blocked", datasetChanged: "blocked", signedOut: "offline"
 };
 
@@ -17,6 +17,9 @@ const LABELS: Record<SyncStatus["state"], string> = {
   idle: "Up to date with the server",
   syncing: "Checking the server for changes",
   offline: "Offline — showing the copy stored on this device",
+  // Distinct from offline on purpose. The server answering and failing is a fault someone has to
+  // go and fix; calling it "offline" points the owner at their network instead of at the server.
+  serverError: "The server is reachable but returned an error",
   blocked: "Synchronisation stopped: this app needs updating",
   datasetChanged: "Synchronisation stopped: the server database changed",
   signedOut: "Not signed in"

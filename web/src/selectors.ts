@@ -40,6 +40,8 @@ export interface Article {
   topics: Topic[];
   senses: ArticleSense[];
   attestations: Attestation[];
+  /** Lexeme-level prompts — the card image, as opposed to a per-sense one. */
+  images: ImagePrompt[];
   study: StudyState | null;
 }
 
@@ -174,11 +176,20 @@ export function studyStateOf(graph: VocabularyGraph, lexemeId: string): StudySta
   return live(graph.studyStates).find((state) => state.lexemeId === lexemeId) ?? null;
 }
 
+/**
+ * Neither examples nor attestations carry an order field, so graph order would be whatever the last
+ * sync happened to deliver. The YAML projection is edited by hand and diffed against what was
+ * shown, so the sequence has to be the same every time it is rendered.
+ */
+const byAge = <T extends SyncFields & { id: string }>(records: T[]): T[] =>
+  [...records].sort((left, right) =>
+    left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+
 export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | null {
   const lexeme = live(graph.lexemes).find((candidate) => candidate.id === lexemeId);
   if (!lexeme) return null;
   const examples = live(graph.examples);
-  const images = live(graph.imagePrompts);
+  const images = live(graph.imagePrompts).filter((image) => image.lexemeId === lexemeId);
   return {
     lexeme,
     topics: lexeme.topicIds
@@ -186,10 +197,12 @@ export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | 
       .filter((topic): topic is Topic => Boolean(topic)),
     senses: sensesOf(graph, lexemeId).map((sense) => ({
       sense,
-      examples: examples.filter((example) => example.senseId === sense.id),
-      images: images.filter((image) => image.senseId === sense.id)
+      examples: byAge(examples.filter((example) => example.senseId === sense.id)),
+      images: byAge(images.filter((image) => image.senseId === sense.id))
     })),
-    attestations: live(graph.attestations).filter((attestation) => attestation.lexemeId === lexemeId),
+    attestations: byAge(live(graph.attestations).filter((attestation) => attestation.lexemeId === lexemeId)),
+    // Without these the card image is invisible in the projection, so saving would orphan it.
+    images: byAge(images.filter((image) => image.senseId === null)),
     study: studyStateOf(graph, lexemeId)
   };
 }

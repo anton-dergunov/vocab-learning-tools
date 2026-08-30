@@ -1461,11 +1461,22 @@ The §03 foundation is the only application model, and §04's protocol is now bu
 - LLM, TTS and vision providers remain reusable. The separate headless Anki robot remains a
   consumer and uses Acervo record IDs, but is not yet wired to the core.
 
-What the interface cannot do yet, it says so plainly rather than pretending: capture, entry
-creation and YAML editing report that they are not connected, and audio and clip playback have no
-media behind them. Deleting an entry is the one write path in use, and it exercises the whole
-route. Capture (§05), article chat (§06) and external dictionaries (§08) remain subsequent
-iterations. Markdown may return only as a generated export (§12), never as application storage.
+- An entry is created and edited through the YAML projection, which is now read in both
+  directions. Every record in the document carries its id, so a save is an exact diff rather than a
+  guess: a record with an id is updated, one without is created, and one the document no longer
+  mentions is tombstoned, with a removed sense taking its examples and prompts with it. Ids are
+  never recycled through an edit, which is what keeps the Anki note join (§10), the image seed
+  derived from the lexeme id (§09) and `createdAt` intact. The whole article is one batch through
+  the ordinary write route, refused as a unit, and a refusal leaves both the replica and the draft
+  untouched. The projection is lossless by test: every field a record carries is written, so
+  nothing can be silently dropped by a round trip. Study state is written as comments, because the
+  scheduler owns it.
+
+What the interface cannot do yet, it says so plainly rather than pretending: capture reports that
+it is not connected, and audio and clip playback have no media behind them. Capture (§05), article
+chat (§06) and external dictionaries (§08) remain subsequent iterations, and all three will reach
+the store through the same YAML reader and the same write route rather than a second path.
+Markdown may return only as a generated export (§12), never as application storage.
 
 ---
 

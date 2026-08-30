@@ -166,3 +166,15 @@ downloads
 Deployment preserves both directories, along with `data/anki-server`, `data/anki-robot`, inputs,
 and backups. `downloads` is deliberately outside PocketBase's public web directory so a phone's
 service worker never precaches the macOS archive.
+
+### Rebuilding the vocabulary database
+
+PocketBase records applied migrations by filename, and a schema change here is a rewrite of the one
+bootstrap migration — so an existing `data/pocketbase` never picks the rewrite up, and every graph
+route fails against a database that predates it. `./deploy.sh --reset-pocketbase` replaces that
+directory as part of the deployment, keeping a copy under `backups/`. It requires typing
+`RESET ACERVO VOCABULARY`, discards every account and word on the server, and leaves Anki data
+alone — `--reset-data` is the separate flag for that, and review history is not something a schema
+rebuild should take with it. Accounts must be recreated and the seeder re-run afterwards; device
+replicas are untouched, and each will notice the new dataset identity and stop rather than
+overwrite itself.

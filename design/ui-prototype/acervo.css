@@ -439,12 +439,16 @@ details.fold .fold-body { padding: 4px 0 18px; }
   position: sticky; left: 0; z-index: 1; font-variant-numeric: tabular-nums;
 }
 .editor-stack { position: relative; flex: 1; min-width: 0; display: flex; }
-.editor-stack .hl { position: absolute; inset: 0; pointer-events: none; }
+/* The textarea scrolls and the highlight does not, so the script keeps their offsets equal;
+   `overflow: hidden` here is what lets it be moved rather than fighting a second scrollbar. */
+.editor-stack .hl { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .code-scroll .editor-stack textarea {
   position: relative; z-index: 1; width: 100%;
   background: transparent; color: transparent; caret-color: var(--core);
 }
-.editor-stack textarea::selection { background: var(--core-soft); }
+/* Semi-transparent on purpose: the text being selected is painted on the layer underneath, so an
+   opaque selection hides the very characters it is meant to be highlighting. */
+.editor-stack textarea::selection { background: color-mix(in srgb, var(--core) 26%, transparent); }
 .code-scroll pre, .code-scroll textarea {
   flex: 1; margin: 0; padding: 14px 16px 18px;
   font-family: var(--mono); font-size: 12.5px; line-height: 20px;

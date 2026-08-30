@@ -7,7 +7,7 @@ PATH="$PATH:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/pa
 export PATH
 
 usage() {
-  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data]" >&2
+  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data] [--reset-pocketbase]" >&2
   exit 2
 }
 
@@ -16,6 +16,7 @@ archive=
 credentials_stdin=false
 credentials_file=
 reset_data=false
+reset_pocketbase=false
 requested_bind_address=
 requested_anki_port=
 requested_app_bind_address=
@@ -31,6 +32,7 @@ while [ "$#" -gt 0 ]; do
     --app-bind-address) [ "$#" -ge 2 ] || usage; requested_app_bind_address=$2; shift 2 ;;
     --app-port) [ "$#" -ge 2 ] || usage; requested_app_port=$2; shift 2 ;;
     --reset-data) reset_data=true; shift ;;
+    --reset-pocketbase) reset_pocketbase=true; shift ;;
     *) usage ;;
   esac
 done
@@ -201,6 +203,28 @@ elif [ -f "$acervo_root/downloads/release.json" ]; then
 fi
 
 compose_file="$release_dir/deploy/acervo/compose.yaml"
+
+# A schema change is deployed by rewriting the bootstrap migration, and PocketBase records applied
+# migrations by filename — so an existing database never picks the rewrite up. Rebuilding the
+# database is therefore the supported upgrade path (AGENTS.md), and this is it. Anki review history
+# lives under --reset-data instead: it is irreplaceable, and a schema rebuild must not take it out.
+if [ "$reset_pocketbase" = true ]; then
+  echo "Stopping PocketBase to replace its database..."
+  compose -p "$compose_project" \
+    --env-file "$acervo_root/deployment.env" \
+    --env-file "$acervo_root/secrets.env" \
+    -f "$compose_file" stop pocketbase >/dev/null 2>&1 || true
+  # Copied only once the container is stopped: copying a live WAL database is the classic route to
+  # a backup that looks fine until the day you need it.
+  if [ -d "$acervo_root/data/pocketbase" ]; then
+    mkdir -p "$backup_dir/pocketbase"
+    cp -R "$acervo_root/data/pocketbase/." "$backup_dir/pocketbase/" 2>/dev/null || true
+  fi
+  rm -rf -- "$acervo_root/data/pocketbase"
+  mkdir -p "$acervo_root/data/pocketbase"
+  echo "PocketBase database replaced; the previous one is in $backup_dir/pocketbase"
+fi
+
 compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
   --env-file "$acervo_root/secrets.env" \

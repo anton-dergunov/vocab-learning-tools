@@ -7,6 +7,7 @@ import {
 } from "./domain";
 import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase, type ReplicaMeta } from "./localDatabase";
 import { newDeviceId, newId, nowInstant } from "./ids";
+import type { ArticleDraft, ImagePromptDraft } from "./yaml";
 
 export const LOCAL_SCHEMA_VERSION = 4;
 
@@ -50,6 +51,7 @@ export interface AcervoRepository {
   attachRemote(remote: RemoteGraph | null): void;
   applyRemote(changes: Partial<VocabularyGraph>, cursor: number, datasetId: string): Promise<number>;
   writeGraph(changes: Partial<VocabularyGraph>): Promise<void>;
+  saveArticle(draft: ArticleDraft): Promise<string>;
   saveTopic(input: TopicInput, id?: string): Promise<Topic>;
   saveLexeme(input: LexemeInput, id?: string): Promise<Lexeme>;
   saveSense(input: SenseInput, id?: string): Promise<Sense>;
@@ -269,6 +271,200 @@ export class LocalAcervoRepository implements AcervoRepository {
   saveExample(input: ExampleInput, id?: string) { return this.save("examples", input, id) as Promise<Example>; }
   saveImagePrompt(input: ImagePromptInput, id?: string) { return this.save("imagePrompts", input, id) as Promise<ImagePrompt>; }
   saveStudyState(input: StudyStateInput, id?: string) { return this.save("studyStates", input, id) as Promise<StudyState>; }
+
+  /**
+   * Applies a whole article, edited as YAML, in one write.
+   *
+   * The document is the complete article, so the diff needs no content matching: a record carrying
+   * an id is the one it names, a record without one is new, and a stored record the document no
+   * longer mentions is removed. Nothing is recreated — ids stay put across an edit, which is what
+   * keeps the Anki note join (§10), the image seed derived from the lexeme id (§09) and `createdAt`
+   * from being reset every time a typo is fixed.
+   *
+   * One batch, one round trip, all or nothing: half an applied article is worse than none.
+   */
+  async saveArticle(draft: ArticleDraft): Promise<string> {
+    if (!this.ready) throw new Error("Load the Acervo repository before writing.");
+    const changed: Partial<VocabularyGraph> = {};
+    const change = <T extends Entity>(store: EntityKind, value: T) => {
+      const list = (changed[store] ?? []) as T[];
+      list.push(value);
+      changed[store] = list as never;
+    };
+    const live = <T extends Entity>(records: T[]): T[] => records.filter((record) => !record.deleted);
+    const find = <T extends Entity>(records: T[], id: string | null): T | undefined =>
+      id ? records.find((record) => record.id === id) : undefined;
+
+    const lexemeId = draft.id ?? newId();
+    const existingLexeme = find(this.graph.lexemes, draft.id);
+    if (draft.id && (!existingLexeme || existingLexeme.deleted)) {
+      throw new Error("This document names an entry that is not in your vocabulary, so it was not saved.");
+    }
+
+    const topicIds = draft.topics.map((name) => {
+      const topic = live(this.graph.topics)
+        .find((candidate) => candidate.name.toLowerCase() === name.trim().toLowerCase());
+      if (!topic) {
+        const known = live(this.graph.topics).map((candidate) => candidate.name).sort().join(", ");
+        throw new Error(
+          `There is no topic called "${name}". Topics are created deliberately; the ones you have are: ${known || "none yet"}.`
+        );
+      }
+      return topic.id;
+    });
+
+    change("lexemes", {
+      ...existingLexeme,
+      id: lexemeId,
+      language: draft.language,
+      headword: draft.headword,
+      lemma: draft.lemma,
+      reading: draft.reading,
+      ipa: draft.ipa,
+      pos: draft.pos,
+      gender: draft.gender,
+      register: draft.register,
+      dialect: draft.dialect,
+      emoji: draft.emoji,
+      topicIds,
+      status: draft.status,
+      shortGloss: draft.shortGloss,
+      notes: draft.notes,
+      ...this.stamp(existingLexeme)
+    } as Lexeme);
+
+    // An id in the document that belongs to a different entry would silently steal that record.
+    const claim = <T extends Entity>(records: T[], id: string | null, owner: (record: T) => boolean): T | undefined => {
+      const existing = find(records, id);
+      if (!existing) {
+        if (id) throw new Error(`This document names a record that is not in your vocabulary (${id}), so it was not saved.`);
+        return undefined;
+      }
+      if (!owner(existing)) {
+        throw new Error(`The id ${id} belongs to a different entry, so this document was not saved.`);
+      }
+      return existing;
+    };
+
+    const prompt = (image: ImagePromptDraft, senseId: string | null): string => {
+      const existing = claim(this.graph.imagePrompts, image.id, (record) => record.lexemeId === lexemeId);
+      const id = image.id ?? newId();
+      change("imagePrompts", {
+        ...existing,
+        id,
+        lexemeId,
+        senseId,
+        prompt: image.prompt,
+        styleId: image.styleId,
+        seed: image.seed,
+        modelId: image.modelId,
+        promptVersion: image.promptVersion,
+        imageRef: image.imageRef,
+        imageModelId: image.imageModelId,
+        ...this.stamp(existing)
+      } as ImagePrompt);
+      return id;
+    };
+
+    const keptSenses = new Set<string>();
+    const keptExamples = new Set<string>();
+    const keptAttestations = new Set<string>();
+    const keptPrompts = new Set<string>();
+
+    draft.attestations.forEach((attestation) => {
+      const existing = claim(this.graph.attestations, attestation.id, (record) => record.lexemeId === lexemeId);
+      const id = attestation.id ?? newId();
+      keptAttestations.add(id);
+      change("attestations", {
+        ...existing,
+        id,
+        lexemeId,
+        text: attestation.text,
+        translation: attestation.translation,
+        sourceUrl: attestation.sourceUrl,
+        sourceTitle: attestation.sourceTitle,
+        sourceKind: attestation.sourceKind,
+        // Editable like any other field; a new attestation that does not name one is captured now.
+        capturedAt: attestation.capturedAt.trim() || existing?.capturedAt || this.instant(),
+        ...this.stamp(existing)
+      } as Attestation);
+    });
+
+    draft.senses.forEach((sense) => {
+      const existing = claim(this.graph.senses, sense.id, (record) => record.lexemeId === lexemeId);
+      const senseId = sense.id ?? newId();
+      keptSenses.add(senseId);
+      change("senses", {
+        ...existing,
+        id: senseId,
+        lexemeId,
+        definition: sense.definition,
+        definitionLang: sense.definitionLang,
+        glosses: sense.glosses,
+        domain: sense.domain,
+        order: sense.order,
+        ...this.stamp(existing)
+      } as Sense);
+
+      sense.examples.forEach((example) => {
+        // An example belongs to this article when the sense it is stored under does. That also
+        // allows moving one between senses of the same entry: the id is kept, the parent changes.
+        const current = claim(this.graph.examples, example.id, (record) =>
+          this.graph.senses.some((candidate) => candidate.id === record.senseId && candidate.lexemeId === lexemeId));
+        const id = example.id ?? newId();
+        keptExamples.add(id);
+        change("examples", {
+          ...current,
+          id,
+          senseId,
+          text: example.text,
+          textLang: example.textLang,
+          translation: example.translation,
+          translationLang: example.translationLang,
+          origin: example.origin,
+          sourceAttestationId: example.sourceAttestationId,
+          modelId: example.modelId,
+          videoRef: example.videoRef,
+          videoTitle: example.videoTitle,
+          videoStart: example.videoStart,
+          imageRef: example.imageRef,
+          audioRef: example.audioRef,
+          note: example.note,
+          matchedForm: example.matchedForm,
+          matchedTranslationForm: example.matchedTranslationForm,
+          approved: example.approved,
+          ...this.stamp(current)
+        } as Example);
+      });
+
+      sense.images.forEach((image) => keptPrompts.add(prompt(image, senseId)));
+    });
+
+    draft.images.forEach((image) => keptPrompts.add(prompt(image, null)));
+
+    // Whatever the document stopped mentioning. A tombstone rather than a deletion, because a pull
+    // asks for `revision > cursor` and a row that is simply gone has no revision left to send.
+    const tombstone = <T extends Entity>(store: EntityKind, record: T) => {
+      change(store, { ...record, ...this.stamp(record), deleted: true } as T);
+    };
+    const senseIds = new Set(live(this.graph.senses).filter((record) => record.lexemeId === lexemeId).map((record) => record.id));
+    live(this.graph.senses)
+      .filter((record) => record.lexemeId === lexemeId && !keptSenses.has(record.id))
+      .forEach((record) => tombstone("senses", record));
+    live(this.graph.attestations)
+      .filter((record) => record.lexemeId === lexemeId && !keptAttestations.has(record.id))
+      .forEach((record) => tombstone("attestations", record));
+    // Covers both an example removed on its own and one carried away by its sense.
+    live(this.graph.examples)
+      .filter((record) => senseIds.has(record.senseId) && !keptExamples.has(record.id))
+      .forEach((record) => tombstone("examples", record));
+    live(this.graph.imagePrompts)
+      .filter((record) => record.lexemeId === lexemeId && !keptPrompts.has(record.id))
+      .forEach((record) => tombstone("imagePrompts", record));
+
+    await this.commit(changed);
+    return lexemeId;
+  }
 
   async delete(kind: EntityKind, id: string): Promise<void> {
     if (!this.ready) throw new Error("Load the Acervo repository before writing.");

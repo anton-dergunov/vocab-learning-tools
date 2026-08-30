@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PROTOCOL=1
+PROTOCOL=2
 HELPER_PATH=/usr/local/sbin/deploy-acervo
 SUDOERS_PATH=/etc/sudoers.d/deploy-acervo
 PATH="$PATH:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
@@ -128,6 +128,7 @@ deploy_release() {
   acervo_root=
   credentials_file=
   reset_data=false
+  reset_pocketbase=false
   bind_address=
   anki_port=
   app_bind_address=
@@ -141,6 +142,7 @@ deploy_release() {
       --app-bind-address) [ "$#" -ge 2 ] || exit 2; app_bind_address=$2; shift 2 ;;
       --app-port) [ "$#" -ge 2 ] || exit 2; app_port=$2; shift 2 ;;
       --reset-data) reset_data=true; shift ;;
+      --reset-pocketbase) reset_pocketbase=true; shift ;;
       *) echo "Unsupported deploy argument: $1" >&2; exit 2 ;;
     esac
   done
@@ -183,6 +185,7 @@ deploy_release() {
     set -- "$@" --credentials-file "$credentials_copy"
   fi
   [ "$reset_data" = false ] || set -- "$@" --reset-data
+  [ "$reset_pocketbase" = false ] || set -- "$@" --reset-pocketbase
   sh "$installer" "$@"
 }
 

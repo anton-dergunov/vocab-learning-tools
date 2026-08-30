@@ -417,7 +417,11 @@ function wireSurface(id) {
     area.style.height = "auto";
     area.style.height = `${area.scrollHeight}px`;
   };
-  area.addEventListener("input", sync);
+  // The textarea is the only layer that scrolls; without this the caret drifts away from the
+  // glyphs it sits between as soon as a line is long enough to scroll.
+  const follow = () => { hl.scrollLeft = area.scrollLeft; hl.scrollTop = area.scrollTop; };
+  area.addEventListener("input", () => { sync(); follow(); });
+  area.addEventListener("scroll", follow);
   sync();
   return area;
 }

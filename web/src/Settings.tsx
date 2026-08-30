@@ -34,6 +34,20 @@ export default function Settings({ update, email, status, snapshot, onSignOut, o
     finally { setWorking(false); }
   }
 
+  /**
+   * `syncNow` reports by resolving, not by throwing, so `run` would show nothing either way. On a
+   * server that fails every request the panel's text never changes, and the button looked broken.
+   */
+  async function refresh() {
+    setWorking(true);
+    try {
+      const result = await syncEngine.syncNow(true);
+      onNotify(result.state === "idle"
+        ? "Up to date with the server."
+        : result.message ?? "The vocabulary could not be refreshed.");
+    } finally { setWorking(false); }
+  }
+
   async function deleteEverything() {
     await run(() => syncEngine.resetVocabulary(), "The vocabulary could not be deleted.");
     setConfirming(false);
@@ -65,7 +79,7 @@ export default function Settings({ update, email, status, snapshot, onSignOut, o
         <SyncPanel
           status={status}
           lexemeCount={liveLexemes}
-          onSyncNow={() => void run(() => syncEngine.syncNow(true), "The vocabulary could not be refreshed.")}
+          onSyncNow={() => void refresh()}
           onDownloadAgain={() => void run(() => syncEngine.downloadAgain(), "The vocabulary could not be downloaded again.")}
         />
         {macRelease && <a className="download-action" href={macRelease.url} download={macRelease.file}>
