@@ -203,6 +203,12 @@ input, textarea { font: inherit; color: inherit; }
 
 /* ── main scroll region ── */
 .main { grid-area: main; overflow-y: auto; overscroll-behavior: contain; }
+/* A composer owns the height and does its own scrolling, so the region around it must not also
+   scroll — two scrollbars for one document, and the pinned bars would drift out of view.
+   Block rather than flex: a flex item sizes to its content, which collapsed the editor to the
+   width of its longest unwrapped line instead of letting it fill the column. */
+.main.composing { overflow: hidden; }
+.main.composing > * { height: 100%; }
 .pane { max-width: 780px; margin: 0 auto; padding: 30px 26px 120px; }
 
 /* ══════════════════════════ list view ══════════════════════════ */
@@ -453,9 +459,20 @@ details.fold .fold-body { padding: 4px 0 18px; }
   flex: 1; margin: 0; padding: 14px 16px 18px;
   font-family: var(--mono); font-size: 12.5px; line-height: 18px;
   background: none; border: none; resize: none; outline: none;
-  white-space: pre; overflow: visible; min-width: 0; color: var(--ink-2);
+  white-space: pre; min-width: 0; color: var(--ink-2);
   tab-size: 2;
 }
+/* Wrapping, the default. A definition or a note is prose and runs past any sensible column, so
+   the alternative is text you can only read by copying it somewhere else. Both layers must wrap
+   identically or the caret drifts from the glyphs it sits between — same rule as the font metric. */
+.code-scroll.wrap pre, .code-scroll.wrap textarea {
+  white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden;
+}
+/* Scrolling. `overflow: visible` on the textarea used to defeat its own scrolling, so a long line
+   was clipped with nothing left able to scroll it — not the wheel, not a selection, not the
+   keyboard. The textarea is the layer that scrolls and the highlight is moved to follow it. */
+.code-scroll:not(.wrap) textarea { overflow-x: auto; overflow-y: hidden; }
+.code-scroll:not(.wrap) pre { overflow: hidden; }
 .code-scroll textarea { min-height: 60vh; overflow: hidden; }
 /* The UA stylesheet declares `code { font-family: monospace }`, and a declaration beats an
    inherited value — so the highlight layer rendered in the system mono face while the textarea
@@ -474,25 +491,40 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .validation ul { margin: 7px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .validation code { font-family: var(--mono); font-size: 12px; }
 
-/* ══════════════════════════ add sheet ══════════════════════════ */
-.sheet-back {
-  position: fixed; inset: 0; z-index: 60; background: rgba(19,34,32,.34);
-  display: none; align-items: flex-start; justify-content: center; padding: 40px 20px;
-  backdrop-filter: blur(2px); overflow-y: auto;
+/* ══════════════════════════ composer ══════════════════════════ */
+/* Every surface you work in: a bounded column, a pinned head, one scroll region, pinned actions.
+   The add surface used to be an overlay that sized itself to its contents, which meant it had no
+   scroll region at all — it grew past the window and took its own title and save button with it. */
+.composer {
+  display: flex; flex-direction: column; height: 100%; min-height: 0;
+  width: min(920px, 100%); margin: 0 auto; padding: 0 26px;
 }
-.sheet-back.open { display: flex; }
-.sheet {
-  width: 100%; max-width: 700px; background: var(--paper);
-  border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow);
-  overflow: hidden;
+.composer-head {
+  flex: none; display: flex; align-items: center; gap: 12px;
+  padding: 18px 0 14px; border-bottom: 1px solid var(--rule-soft);
 }
-.sheet-head {
-  display: flex; align-items: center; gap: 12px;
-  padding: 16px 20px; border-bottom: 1px solid var(--rule-soft); background: var(--surface);
+.composer-head h2 {
+  font-family: var(--serif); font-size: 21px; font-weight: 700; margin: 0; letter-spacing: -.015em;
 }
-.sheet-head h2 { font-family: var(--serif); font-size: 21px; font-weight: 700; margin: 0; letter-spacing: -.015em; }
-.sheet-head .spacer { flex: 1; }
-.sheet-body { padding: 20px; }
+.composer-head .spacer { flex: 1; }
+.composer-body {
+  /* `min-height: auto` is the flex default and refuses to shrink below the content, so without
+     this the body grows the column past its bound and is clipped rather than scrolled. */
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain; padding: 18px 0;
+}
+/* The editor is already a scroll container — that is what keeps its gutter stuck through a long
+   line — so it takes the height instead of being wrapped in a second scrolling box. */
+.composer-body.fill { overflow: hidden; display: flex; }
+.composer-body.fill .code-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.composer-body.fill .code-scroll { flex: 1; min-height: 0; }
+.composer-actions {
+  flex: none; padding: 14px 0 max(18px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--rule-soft);
+}
+.composer-actions .validation { margin: 0 0 12px; }
+.composer-buttons { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.composer-buttons .spacer { flex: 1; }
 .capture-area {
   width: 100%; min-height: 118px; padding: 13px 15px;
   background: var(--surface); border: 1px solid var(--rule); border-radius: 8px;
@@ -500,8 +532,6 @@ details.fold .fold-body { padding: 4px 0 18px; }
 }
 .capture-area:focus { border-color: var(--core); outline: none; }
 .hint { font-size: 14px; color: var(--ink-3); margin: 10px 0 0; max-width: 60ch; }
-.sheet-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
-.sheet-actions .spacer { flex: 1; }
 
 /* ══════════════════════════ toast ══════════════════════════ */
 .toast {
@@ -600,6 +630,7 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   .tab.on::before { display: none; }
   .tab.on { border-color: transparent; }
   .pane { padding: 20px 16px 110px; }
+  .composer { padding: 0 16px; }
   .sec { grid-template-columns: minmax(0,1fr); gap: 0; padding: 24px 0 4px; }
   .sec > .rail-l .inner { position: static; }
   .sec .num { display: inline; margin-right: 8px; }

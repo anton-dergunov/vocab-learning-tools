@@ -39,15 +39,17 @@
   <nav class="rail" id="rail" aria-label="Topics"></nav>
 
   <main class="main" id="main">
-    <div class="pane">
+    <div class="pane" id="paneWrap">
       <div class="art-bar" id="artBar" style="display:none"></div>
       <div id="pane"></div>
     </div>
+    <!-- Composing replaces the list rather than covering it, so the surface owns the height and
+         can pin its own header and buttons. -->
+    <div id="composer" style="display:none"></div>
   </main>
 </div>
 </div>
 
-<div class="sheet-back" id="sheetBack"></div>
 <div class="toast" id="toast"></div>
 
 <div id="harness" title="Prototype only — preview at other screen sizes">

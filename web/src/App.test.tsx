@@ -370,15 +370,65 @@ describe("Acervo application", () => {
     expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemepicar0001")!.pos).toBe("verb");
   });
 
+  it("replaces the word list while composing, and puts it back on cancel", async () => {
+    signedIn();
+    await openList();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await screen.findByRole("region", { name: "Add a word" });
+    // The list is gone rather than covered, so the composer owns the height and can pin its own
+    // header and buttons — which is the whole reason it is a view and not a dialog.
+    expect(screen.queryByRole("button", { name: /picar/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(await screen.findByRole("button", { name: /picar/ })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Add a word" })).not.toBeInTheDocument();
+  });
+
+  it("edits an article in the same composer, not inside the scrolling pane", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+
+    // Same shell as Add, so the Save button cannot scroll away on a long entry.
+    const editor = within(await screen.findByRole("region", { name: /Edit picar/ }));
+    expect(editor.getByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(document.querySelector(".main.composing")).not.toBeNull();
+
+    fireEvent.click(editor.getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByRole("heading", { name: /picar/ })).toBeInTheDocument();
+    expect(document.querySelector(".main.composing")).toBeNull();
+  });
+
+  it("wraps long lines by default and drops the gutter that would misalign", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+
+    // Wrapping is the default: these documents are prose, and a clipped definition was unreadable
+    // and unscrollable both.
+    expect(document.querySelector(".code-scroll.wrap")).not.toBeNull();
+    expect(document.querySelector(".gutter")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Scroll" }));
+    // Numbers come back only when a line is one row tall, so the column cannot point at the wrong one.
+    expect(document.querySelector(".code-scroll.wrap")).toBeNull();
+    expect(document.querySelector(".gutter")).not.toBeNull();
+    expect(localStorage.getItem("acervo-editor-wrap")).toBe("off");
+  });
+
   it("creates an entry from the YAML template and opens it", async () => {
     signedIn();
     await openList();
     acceptWrites();
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    const sheet = within(screen.getByRole("dialog", { name: "Add a word" }));
+    // A region, not a dialog: composing replaces the list rather than covering it.
+    const sheet = within(screen.getByRole("region", { name: "Add a word" }));
     fireEvent.click(sheet.getByRole("button", { name: "YAML" }));
 
-    const editor = document.querySelector(".sheet .code-scroll textarea") as HTMLTextAreaElement;
+    const editor = document.querySelector(".composer .code-scroll textarea") as HTMLTextAreaElement;
     fireEvent.change(editor, { target: { value: editor.value
       .replace('headword: ""', "headword: sobremesa")
       .replace('definition: ""', "definition: Charla tras la comida.")

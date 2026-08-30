@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import AddSheet, { type AddTab } from "./AddSheet";
+import AddView, { type AddTab } from "./AddView";
 import { backendSession, type CaptureRequest } from "./api";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
 import LexemeArticle from "./LexemeArticle";
@@ -190,14 +190,16 @@ export default function App() {
         search.current?.focus();
         search.current?.select();
       }
+      // Innermost first: leave what you are composing before leaving the entry it belongs to.
       if (event.key === "Escape") {
-        if (addTab) setAddTab(null);
+        if (addTab) { setProblems([]); setAddTab(null); }
+        else if (mode === "edit") { setProblems([]); setMode("read"); }
         else if (openId) setOpenId(null);
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [addTab, openId]);
+  }, [addTab, mode, openId]);
 
   /**
    * The one path a YAML document takes, whether it came from the article editor or the add sheet.
@@ -277,6 +279,8 @@ export default function App() {
   if (session === null) return <SignIn onSignedIn={setSession} />;
 
   const active = languageOf(language || "en");
+  /** Both surfaces you compose in. The main region stops scrolling and hands that to the view. */
+  const composing = Boolean(addTab) || Boolean(article && mode === "edit");
   const inbox = snapshot && language ? inboxCount(snapshot, language) : 0;
   const currentTopic = topics.find((option) => option.id === topic);
   const topicLabel = topic === "all" ? "All words" : topic === "inbox" ? "Inbox" : currentTopic?.name ?? "Topic";
@@ -351,8 +355,24 @@ export default function App() {
           </button>)}
         </nav>
 
-        <main className="main" ref={main}>
-          <div className="pane">
+        {/* Composing replaces the list rather than covering it: the entry you are writing is the
+            work, the list behind it is not, and a bounded column is the only shape that keeps a
+            title and a save button on screen at every window size. */}
+        <main className={`main ${composing ? "composing" : ""}`} ref={main}>
+          {addTab ? <AddView
+            tab={addTab} onTab={setAddTab} problems={problems} busy={saving}
+            onClose={() => { setProblems([]); setAddTab(null); }}
+            onCreate={(draft) => void createFromYaml(draft)}
+            onCapture={captureText}
+            onOpenLexeme={(id) => { setProblems([]); setAddTab(null); openLexeme(id); }}
+          /> : article && mode === "edit" ? <YamlEditor
+            // Remounts for a different entry, and only then: the draft must survive a sync.
+            key={article.lexeme.id}
+            name={article.lexeme.headword} yaml={yamlFor(article)}
+            problems={problems} notice={null} busy={saving}
+            onCancel={() => { setProblems([]); setMode("read"); }}
+            onSave={(draft) => void saveArticleYaml(draft)}
+          /> : <div className="pane">
             {article && <div className="art-bar">
               <button className="icon-btn" aria-label="Back to the list" onClick={() => setOpenId(null)}><BackIcon /></button>
               <span className="label">{topicLabel}</span>
@@ -372,27 +392,13 @@ export default function App() {
                   onSort={setSort} onOpen={openLexeme}
                 />
               : mode === "read" ? <LexemeArticle article={article} onUnsupported={notify} />
-              : mode === "yaml" ? <YamlView name={article.lexeme.headword} yaml={yamlFor(article)} />
-              : <YamlEditor
-                  // Remounts for a different entry, and only then: the draft must survive a sync.
-                  key={article.lexeme.id}
-                  name={article.lexeme.headword} yaml={yamlFor(article)}
-                  problems={problems} notice={null} busy={saving}
-                  onCancel={() => { setProblems([]); setMode("read"); }}
-                  onSave={(draft) => void saveArticleYaml(draft)}
-                />}
-          </div>
+              // Editing is a composer above, so only reading and the read-only projection get here.
+              : <YamlView name={article.lexeme.headword} yaml={yamlFor(article)} />}
+          </div>}
         </main>
       </div>
     </div>
 
-    {addTab && <AddSheet
-      tab={addTab} onTab={setAddTab} problems={problems} busy={saving}
-      onClose={() => { setProblems([]); setAddTab(null); }}
-      onCreate={(draft) => void createFromYaml(draft)}
-      onCapture={captureText}
-      onOpenLexeme={(id) => { setProblems([]); setAddTab(null); openLexeme(id); }}
-    />}
     {settings && <Settings
       update={update} email={session.email} status={syncStatus} snapshot={snapshot} language={language}
       onSignOut={() => void signOut()} onClose={() => setSettings(false)} onNotify={notify}

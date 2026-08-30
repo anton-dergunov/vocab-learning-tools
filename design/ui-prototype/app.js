@@ -8,6 +8,7 @@ const state = {
   sort: "recent",
   query: "",
   openId: null,
+  add: false,       // composing a new entry, which replaces the list
   mode: "read"      // read | yaml | edit
 };
 
@@ -394,14 +395,26 @@ function renderYaml(x) {
     </div>`;
 }
 
-function editorSurface(id, text, minHeight) {
+/* Wrapping is the default: these documents are mostly prose, and a definition running off the
+   right edge could previously be neither read nor scrolled to. Numbers are dropped while wrapping,
+   because a wrapped line is several rows tall and the column would point at the wrong one. */
+let editorWrap = true;
+
+function wrapToggle() {
   return `
-    <div class="code-scroll">
-      <div class="gutter" id="${id}Gutter">${gutterFor(text)}</div>
+    <div class="seg">
+      <button data-wrap="on" class="${editorWrap ? "on" : ""}">Wrap</button>
+      <button data-wrap="off" class="${editorWrap ? "" : "on"}">Scroll</button>
+    </div>`;
+}
+
+function editorSurface(id, text) {
+  return `
+    <div class="code-scroll${editorWrap ? " wrap" : ""}">
+      ${editorWrap ? "" : `<div class="gutter" id="${id}Gutter">${gutterFor(text)}</div>`}
       <div class="editor-stack">
         <pre class="hl" id="${id}Hl" aria-hidden="true"><code>${highlight(text)}</code></pre>
-        <textarea id="${id}Area" spellcheck="false" autocapitalize="off" autocorrect="off"
-          style="min-height:${minHeight}">${esc(text)}</textarea>
+        <textarea id="${id}Area" spellcheck="false" autocapitalize="off" autocorrect="off">${esc(text)}</textarea>
       </div>
     </div>`;
 }
@@ -412,7 +425,7 @@ function wireSurface(id) {
   const gut  = document.getElementById(`${id}Gutter`);
   const hl   = document.getElementById(`${id}Hl`);
   const sync = () => {
-    gut.textContent = gutterFor(area.value);
+    if (gut) gut.textContent = gutterFor(area.value);
     hl.innerHTML = `<code>${highlight(area.value)}</code>`;
     area.style.height = "auto";
     area.style.height = `${area.scrollHeight}px`;
@@ -429,16 +442,26 @@ function wireSurface(id) {
 function renderEdit(x) {
   const yaml = yamlFor(x);
   return `
-    <div class="code-wrap">
-      <div class="code-head">
+    <section class="composer" aria-label="Edit ${esc(x.headword)}">
+      <div class="composer-head">
+        <h2>${esc(x.headword)}</h2>
         <span class="label">${esc(x.headword)}.yaml</span>
         <span class="spacer"></span>
-        <button class="tb-btn" id="cancelEdit" style="height:28px">Cancel</button>
-        <button class="tb-btn primary" id="saveEdit" style="height:28px">Save</button>
+        ${wrapToggle()}
+        <button class="icon-btn" id="closeEdit" aria-label="Close">${ICON.close}</button>
       </div>
-      ${editorSurface("edit", yaml, "40vh")}
-    </div>
-    <div id="validation"></div>`;
+      <div class="composer-body fill">
+        <div class="code-wrap">${editorSurface("edit", yaml)}</div>
+      </div>
+      <div class="composer-actions">
+        <div id="validation"></div>
+        <div class="composer-buttons">
+          <span class="spacer"></span>
+          <button class="tb-btn" id="cancelEdit">Cancel</button>
+          <button class="tb-btn primary" id="saveEdit">Save</button>
+        </div>
+      </div>
+    </section>`;
 }
 
 /* ── validation stub ─────────────────────────────────────────────────── */
@@ -475,10 +498,10 @@ let addTab = "capture";
 let captureDetails = false;
 
 function renderSheet() {
-  const back = $("#sheetBack");
-  back.innerHTML = `
-    <div class="sheet" role="dialog" aria-modal="true" aria-label="Add a word">
-      <div class="sheet-head">
+  const host = $("#composer");
+  host.innerHTML = `
+    <section class="composer" aria-label="Add a word">
+      <div class="composer-head">
         <h2>Add a word</h2>
         <span class="spacer"></span>
         <div class="seg">
@@ -487,8 +510,8 @@ function renderSheet() {
         </div>
         <button class="icon-btn" id="closeSheet" aria-label="Close">${ICON.close}</button>
       </div>
-      <div class="sheet-body">
         ${addTab === "capture" ? `
+      <div class="composer-body">
           <label class="label" for="captureText">Paste a word, or the sentence you met it in</label>
           <textarea class="capture-area" id="captureText" style="margin-top:8px" placeholder="Se pican las verduras en dados de un centímetro y se reservan."></textarea>
           <p class="hint">Share the whole sentence — the word is picked out for you, and the sentence is kept as the place you met it. The entry is built for review and lands in <b>Inbox</b>. Nothing is generated in this prototype.</p>
@@ -502,29 +525,39 @@ function renderSheet() {
               <label class="label" for="captureNote">Anything to ask the generator</label>
               <input id="captureNote" placeholder="contrast it with picante">
             </div>` : ""}
-          <div class="sheet-actions">
-            <span class="spacer"></span>
-            <button class="tb-btn" id="switchYaml">Write YAML instead</button>
-            <button class="tb-btn primary" id="processBtn">Process</button>
-          </div>`
-        : `
-          <div class="code-wrap">
-            <div class="code-head"><span class="label">new-entry.yaml</span></div>
-            ${editorSurface("new", YAML_TEMPLATE, "44vh")}
-          </div>
-          <div id="newValidation"></div>
-          <div class="sheet-actions">
-            <span class="spacer"></span>
-            <button class="tb-btn" id="closeSheet2">Cancel</button>
-            <button class="tb-btn primary" id="saveNew">Validate &amp; save</button>
-          </div>`}
       </div>
-    </div>`;
+      <div class="composer-actions">
+        <div class="composer-buttons">
+          <span class="spacer"></span>
+          <button class="tb-btn" id="switchYaml">Write YAML instead</button>
+          <button class="tb-btn primary" id="processBtn">Process</button>
+        </div>
+      </div>`
+        : `
+      <div class="composer-body fill">
+        <div class="code-wrap">
+          <div class="code-head">
+            <span class="label">new-entry.yaml</span>
+            <span class="spacer"></span>
+            ${wrapToggle()}
+          </div>
+          ${editorSurface("new", YAML_TEMPLATE)}
+        </div>
+      </div>
+      <div class="composer-actions">
+        <div id="newValidation"></div>
+        <div class="composer-buttons">
+          <span class="spacer"></span>
+          <button class="tb-btn" id="closeSheet2">Cancel</button>
+          <button class="tb-btn primary" id="saveNew">Validate &amp; save</button>
+        </div>
+      </div>`}
+    </section>`;
   wireSheet();
 }
 
-function openSheet(tab) { addTab = tab || "capture"; captureDetails = false; $("#sheetBack").classList.add("open"); renderSheet(); }
-function closeSheet()   { $("#sheetBack").classList.remove("open"); $("#sheetBack").innerHTML = ""; }
+function openSheet(tab) { addTab = tab || "capture"; captureDetails = false; state.add = true; render(); }
+function closeSheet()   { state.add = false; $("#composer").innerHTML = ""; render(); }
 
 /* ── toast ───────────────────────────────────────────────────────────── */
 
@@ -544,6 +577,20 @@ function render() {
   const main = $("#pane");
   const x = state.openId ? LEXEMES.find((y) => y.id === state.openId) : null;
 
+  // A composer owns the height and scrolls itself, so the region around it must not also scroll.
+  const composing = state.add || Boolean(x && state.mode === "edit");
+  $("#main").classList.toggle("composing", composing);
+  $("#paneWrap").style.display = composing ? "none" : "";
+  $("#composer").style.display = composing ? "" : "none";
+  if (state.add) { renderSheet(); document.title = "Add a word — Acervo"; return; }
+  if (x && state.mode === "edit") {
+    $("#composer").innerHTML = renderEdit(x);
+    wireEditor();
+    document.title = `${x.headword} — Acervo`;
+    return;
+  }
+  $("#composer").innerHTML = "";
+
   if (!x) {
     $("#artBar").style.display = "none";
     main.innerHTML = renderList();
@@ -559,8 +606,8 @@ function render() {
       </div>
       <button class="icon-btn" id="editBtn" aria-label="Edit as YAML" title="Edit as YAML">${ICON.pencil}</button>
       <button class="icon-btn" id="delBtn" aria-label="Delete" title="Delete">${ICON.trash}</button>`;
-    main.innerHTML = state.mode === "read" ? renderArticle(x) : state.mode === "yaml" ? renderYaml(x) : renderEdit(x);
-    if (state.mode === "edit") wireEditor();
+    // Editing is a composer above, so only reading and the read-only projection get here.
+    main.innerHTML = state.mode === "read" ? renderArticle(x) : renderYaml(x);
   }
   document.title = x ? `${x.headword} — Acervo` : "Acervo";
 }
@@ -569,31 +616,25 @@ function render() {
 
 function wireEditor() {
   const area = wireSurface("edit");
-  $("#cancelEdit").onclick = () => { state.mode = "read"; /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
-
-render(); };
+  wireWrapToggle();
+  $("#closeEdit").onclick = () => { state.mode = "read"; render(); };
+  $("#cancelEdit").onclick = () => { state.mode = "read"; render(); };
   $("#saveEdit").onclick = () => {
     const ok = showValidation("#validation", validate(area.value));
     if (ok) { toast("Saved — prototype only, nothing was written"); state.mode = "read"; setTimeout(render, 250); }
   };
 }
 
+/* The choice is shared by every editing surface, so it survives switching between them. */
+function wireWrapToggle() {
+  document.querySelectorAll("[data-wrap]").forEach((b) => {
+    b.onclick = () => { editorWrap = b.dataset.wrap === "on"; render(); };
+  });
+}
+
 function wireSheet() {
-  $("#sheetBack").querySelectorAll("[data-tab]").forEach((b) => { b.onclick = () => { addTab = b.dataset.tab; renderSheet(); }; });
+  wireWrapToggle();
+  $("#composer").querySelectorAll("[data-tab]").forEach((b) => { b.onclick = () => { addTab = b.dataset.tab; renderSheet(); }; });
   const close = () => closeSheet();
   const c1 = $("#closeSheet"), c2 = $("#closeSheet2");
   if (c1) c1.onclick = close;
@@ -615,116 +656,20 @@ document.addEventListener("click", (ev) => {
   const hit = (sel) => t.closest(sel);
 
   const topicBtn = hit("[data-topic]");
-  if (topicBtn) { state.topic = topicBtn.dataset.topic; state.openId = null; state.query = ""; $("#q").value = ""; $("#search").classList.remove("searching"); /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
-
-render(); return; }
+  if (topicBtn) { state.topic = topicBtn.dataset.topic; state.openId = null; state.query = ""; $("#q").value = ""; $("#search").classList.remove("searching"); render(); return; }
 
   const sortBtn = hit("[data-sort]");
-  if (sortBtn) { state.sort = sortBtn.dataset.sort; /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
-
-render(); return; }
+  if (sortBtn) { state.sort = sortBtn.dataset.sort; render(); return; }
 
   const openBtn = hit("[data-open]");
-  if (openBtn) { state.openId = openBtn.dataset.open; state.mode = "read"; /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
+  if (openBtn) { state.openId = openBtn.dataset.open; state.mode = "read"; render(); $("#main").scrollTop = 0; return; }
 
-render(); $("#main").scrollTop = 0; return; }
-
-  if (hit("#backBtn")) { state.openId = null; /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
-
-render(); return; }
+  if (hit("#backBtn")) { state.openId = null; render(); return; }
 
   const modeBtn = hit("[data-mode]");
-  if (modeBtn) { state.mode = modeBtn.dataset.mode; /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
+  if (modeBtn) { state.mode = modeBtn.dataset.mode; render(); return; }
 
-render(); return; }
-
-  if (hit("#editBtn")) { state.mode = "edit"; /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
-
-render(); return; }
+  if (hit("#editBtn")) { state.mode = "edit"; render(); return; }
   if (hit("#delBtn"))  { toast("Delete writes a tombstone — not wired up in the prototype"); return; }
 
   const say = hit("[data-say]");
@@ -737,29 +682,12 @@ render(); return; }
   if (hit("[data-clip]")) { toast("Clip playback lands with the corpus"); return; }
 
   if (hit("#addBtn")) { openSheet("capture"); return; }
-  if (t.id === "sheetBack") { closeSheet(); return; }
 
   if (hit("#langBtn")) { $("#langMenu").classList.toggle("open"); return; }
   const langItem = hit("[data-lang]");
   if (langItem) {
     state.lang = langItem.dataset.lang; state.topic = "all"; state.openId = null;
-    $("#langMenu").classList.remove("open"); /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
-
-render(); return;
+    $("#langMenu").classList.remove("open"); render(); return;
   }
   $("#langMenu").classList.remove("open");
 });
@@ -768,46 +696,17 @@ $("#q").addEventListener("input", (ev) => {
   state.query = ev.target.value;
   state.openId = null;
   $("#search").classList.toggle("searching", state.query.trim().length > 0);
-  /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
-
+  
 render();
 });
 
 document.addEventListener("keydown", (ev) => {
   if ((ev.metaKey || ev.ctrlKey) && ev.key === "k") { ev.preventDefault(); $("#q").focus(); $("#q").select(); }
+  // Innermost first: leave what you are composing before leaving the entry it belongs to.
   if (ev.key === "Escape") {
-    if ($("#sheetBack").classList.contains("open")) closeSheet();
-    else if (state.openId) { state.openId = null; /* deep link — ?open=<id|headword>&mode=read|yaml keeps screenshots reproducible */
-const params = new URLSearchParams(location.search);
-if (params.get("open")) {
-  const want = params.get("open").toLowerCase();
-  const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
-}
-if (params.get("topic")) state.topic = params.get("topic");
-if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("add")) openSheet(params.get("add"));
-if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
-  const f = params.get("frame");
-  document.body.className = `framed ${f}`;
-  document.querySelectorAll("#harness button").forEach((b) => b.classList.toggle("on", b.dataset.frame === f));
-}
-
-render(); }
+    if (state.add) closeSheet();
+    else if (state.mode === "edit") { state.mode = "read"; render(); }
+    else if (state.openId) { state.openId = null; render(); }
   }
 });
 
@@ -835,9 +734,11 @@ const params = new URLSearchParams(location.search);
 if (params.get("open")) {
   const want = params.get("open").toLowerCase();
   const hit = LEXEMES.find((x) => x.id === want || x.headword.toLowerCase() === want || x.lemma.toLowerCase() === want);
-  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = params.get("mode") === "yaml" ? "yaml" : "read"; }
+  const mode = params.get("mode");
+  if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = mode === "yaml" || mode === "edit" ? mode : "read"; }
 }
 if (params.get("topic")) state.topic = params.get("topic");
+if (params.get("wrap") === "off") editorWrap = false;
 if (params.get("theme")) setTheme(params.get("theme"));
 if (params.get("add")) openSheet(params.get("add"));
 if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
