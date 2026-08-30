@@ -1,20 +1,13 @@
-import { Fragment, useEffect, useState } from "react";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { yaml as yamlLanguage } from "@codemirror/lang-yaml";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { Compartment, EditorState } from "@codemirror/state";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { useEffect, useRef, useState } from "react";
 import Composer from "./Composer";
 import { CloseIcon } from "./icons";
 import type { YamlProblem } from "./yaml";
-
-const escapeHtml = (value: string) =>
-  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
-/** Minimal YAML colouring for the read and edit surfaces. Input is escaped first. */
-export function highlightYaml(text: string): string {
-  return escapeHtml(text)
-    .replace(/(#.*)$/gm, '<span class="y-com">$1</span>')
-    .replace(/^(\s*)(-?\s*)([A-Za-z_][\w]*)(:)/gm, '$1<span class="y-dash">$2</span><span class="y-key">$3</span>$4')
-    .replace(/(:\s)(&quot;[^&]*?&quot;)/g, '$1<span class="y-str">$2</span>')
-    .replace(/(:\s)(-?\d+(?:\.\d+)?)$/gm, '$1<span class="y-num">$2</span>');
-}
 
 /**
  * How the YAML surfaces present text, remembered per device.
@@ -66,39 +59,111 @@ export function useEditorPreferences(): EditorPreferences {
   return preferences;
 }
 
-/**
- * The editing surface: a highlighted copy of the text with a transparent textarea laid over it.
- *
- * Both layers live in one grid, occupying the same cells, so the *content* decides the height and
- * the textarea stretches to it. That is the whole trick, and it is what the previous version got
- * wrong: it measured `scrollHeight` and set the height in an effect keyed on the text, so resizing
- * the window rewrapped the content without rewrapping the box around it. The highlight was then
- * clipped to a stale height — invisible text you could still select, because the textarea above it
- * had laid out correctly all along.
- *
- * One line per row means a wrapped line is a row several lines tall, so a number beside it points
- * at the line it belongs to whether the text wraps or scrolls.
- */
+/* ── the editing surface ────────────────────────────────────────────────
+   CodeMirror owns the caret and the glyphs together, which is the whole reason it is here.
+
+   This was hand-written before: a transparent `<textarea>` laid over a separately rendered copy of
+   the same text. Two independent layouts had to agree pixel for pixel, and every way they could
+   disagree was a bug you could see — text drawn over text, a selection that stopped short, typing
+   that landed in the wrong place. Three attempts fixed three symptoms without fixing the cause. */
+
+/** The document's own colours, mapped onto the palette the rest of the interface uses. */
+const YAML_COLOURS = HighlightStyle.define([
+  { tag: [tags.definition(tags.propertyName), tags.propertyName], color: "var(--core)" },
+  { tag: [tags.string, tags.special(tags.string)], color: "var(--ink)" },
+  { tag: [tags.number, tags.bool, tags.null], color: "var(--corpus)" },
+  { tag: tags.comment, color: "var(--ink-3)", fontStyle: "italic" },
+  { tag: [tags.punctuation, tags.separator, tags.bracket], color: "var(--ink-3)" }
+]);
+
+const THEME = EditorView.theme({
+  "&": { color: "var(--ink-2)", backgroundColor: "transparent", height: "100%" },
+  "&.cm-focused": { outline: "none" },
+  ".cm-scroller": {
+    fontFamily: "var(--mono)", fontSize: "12.5px", lineHeight: "18px",
+    overflow: "auto", overscrollBehavior: "contain"
+  },
+  ".cm-content": { padding: "14px 0 18px", caretColor: "var(--core)" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--core)" },
+  ".cm-gutters": {
+    backgroundColor: "var(--code-bg)", color: "var(--ink-3)", opacity: ".55",
+    // Declared here rather than in the stylesheet: a theme rule outranks it, so the divider set
+    // outside would be silently overridden by this block's own border.
+    border: "none", borderRight: "1px solid var(--rule-soft)"
+  },
+  ".cm-lineNumbers .cm-gutterElement": { padding: "0 10px 0 16px", fontVariantNumeric: "tabular-nums" },
+  ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "transparent" },
+  // Semi-transparent on purpose: an opaque band hides the characters it is meant to be marking.
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+    backgroundColor: "color-mix(in srgb, var(--core) 26%, transparent)"
+  },
+  ".cm-line": { padding: "0 16px" }
+});
+
+/* Reconfigured in place rather than by rebuilding the editor, so changing a preference does not
+   throw away the undo history or the caret. */
+const wrapping = new Compartment();
+const numbering = new Compartment();
+const editable = new Compartment();
+
 export function EditorSurface({ value, onChange, wrap = true, numbers = false, readOnly = false }: {
   value: string; onChange(value: string): void; wrap?: boolean; numbers?: boolean; readOnly?: boolean;
 }) {
-  const lines = value.split("\n");
-  return <div className={`code-scroll${wrap ? " wrap" : ""}${numbers ? " numbered" : ""}`}>
-    <div className="editor-grid">
-      {lines.map((line, index) => <Fragment key={index}>
-        {numbers && <span className="ln-no" style={{ gridRow: index + 1 }}>{index + 1}</span>}
-        <div
-          className="ln" aria-hidden="true" style={{ gridRow: index + 1 }}
-          dangerouslySetInnerHTML={{ __html: highlightYaml(line) }}
-        />
-      </Fragment>)}
-      <textarea
-        value={value} spellCheck={false} autoCapitalize="off" autoCorrect="off" readOnly={readOnly}
-        style={{ gridRow: `1 / ${lines.length + 1}`, gridColumn: numbers ? 2 : 1 }}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
-  </div>;
+  const host = useRef<HTMLDivElement>(null);
+  const view = useRef<EditorView | null>(null);
+  // Read through a ref so the editor is created once: rebuilding it on every keystroke would drop
+  // the selection and the undo history with it.
+  const notify = useRef(onChange);
+  notify.current = onChange;
+
+  useEffect(() => {
+    if (!host.current) return;
+    const editor = new EditorView({
+      parent: host.current,
+      state: EditorState.create({
+        doc: value,
+        extensions: [
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap]),
+          yamlLanguage(),
+          syntaxHighlighting(YAML_COLOURS),
+          THEME,
+          wrapping.of(wrap ? EditorView.lineWrapping : []),
+          numbering.of(numbers ? lineNumbers() : []),
+          editable.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) notify.current(update.state.doc.toString());
+          })
+        ]
+      })
+    });
+    view.current = editor;
+    return () => { editor.destroy(); view.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: wrapping.reconfigure(wrap ? EditorView.lineWrapping : []) });
+  }, [wrap]);
+  useEffect(() => {
+    view.current?.dispatch({ effects: numbering.reconfigure(numbers ? lineNumbers() : []) });
+  }, [numbers]);
+  useEffect(() => {
+    view.current?.dispatch({ effects: editable.reconfigure([
+      EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)
+    ]) });
+  }, [readOnly]);
+
+  /* The document belongs to whoever is typing. It follows the prop only when the two have actually
+     diverged — a projection recomputed from the replica after a sync must not wipe a draft or throw
+     the caret to the end. */
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor || editor.state.doc.toString() === value) return;
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value } });
+  }, [value]);
+
+  return <div className="code-scroll" ref={host} />;
 }
 
 export function YamlView({ name, yaml }: { name: string; yaml: string }) {

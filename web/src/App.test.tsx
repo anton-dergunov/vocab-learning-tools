@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { EditorView } from "@codemirror/view";
 import App from "./App";
 import { AcervoApiError, backendSession, SCHEMA_VERSION } from "./api";
 import { UPDATE_EVENT } from "./pwa";
@@ -44,6 +45,26 @@ function acceptWrites() {
     records: Object.fromEntries(Object.entries(changes).map(([kind, records]) =>
       [kind, (records ?? []).map((record, index) => ({ ...record, revision: repository.snapshot().cursor + 1 + index }))]))
   }));
+}
+
+/**
+ * The editing surface is CodeMirror, so a test drives the real editor rather than a textarea:
+ * `findFromDOM` hands back the live view and a dispatch is exactly what typing does.
+ */
+function editorView(): EditorView {
+  const dom = document.querySelector(".code-scroll .cm-editor") as HTMLElement;
+  const view = EditorView.findFromDOM(dom);
+  if (!view) throw new Error("no editor is mounted");
+  return view;
+}
+
+const editorText = () => editorView().state.doc.toString();
+
+function replaceInEditor(find: string, replacement: string) {
+  const view = editorView();
+  act(() => {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: view.state.doc.toString().replace(find, replacement) } });
+  });
 }
 
 /** Renders the app and waits for the pulled replica to reach the word list. */
@@ -178,7 +199,7 @@ describe("Acervo application", () => {
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "YAML" }));
     expect(await screen.findByText("picar.yaml")).toBeInTheDocument();
-    expect((document.querySelector(".code-scroll textarea") as HTMLTextAreaElement).value).toContain("id: lexemepicar0001");
+    expect(editorText()).toContain("id: lexemepicar0001");
   });
 
   it("reaches sync, sign-out and delete on the native host, without its update controls", async () => {
@@ -320,8 +341,8 @@ describe("Acervo application", () => {
     // rather than on "a textbox" matters: the capture box is itself one, and is still mounted.
     await screen.findByText("new-entry.yaml");
     const editor = screen.getByRole("textbox");
-    expect((editor as HTMLTextAreaElement).value).toContain("headword: el garfio");
-    expect((editor as HTMLTextAreaElement).value).toContain("origin: attestation");
+    expect(editorText()).toContain("headword: el garfio");
+    expect(editorText()).toContain("origin: attestation");
 
     fireEvent.click(screen.getByRole("button", { name: "Validate & save" }));
     expect(await screen.findByRole("heading", { name: /garfio/ })).toBeInTheDocument();
@@ -343,8 +364,7 @@ describe("Acervo application", () => {
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
 
-    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
-    fireEvent.change(editor, { target: { value: editor.value.replace("emoji: 🌶️", "emoji: 🫠") } });
+    replaceInEditor("emoji: 🌶️", "emoji: 🫠");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Saved to the server")).toBeInTheDocument();
@@ -359,13 +379,12 @@ describe("Acervo application", () => {
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
 
-    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
-    fireEvent.change(editor, { target: { value: editor.value.replace("pos: verb", "pos: preposition") } });
+    replaceInEditor("pos: verb", "pos: preposition");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText(/must be one of/)).toBeInTheDocument();
     // Still in the editor, with the rejected text intact rather than reverted.
-    expect((document.querySelector(".code-scroll textarea") as HTMLTextAreaElement).value)
+    expect(editorText())
       .toContain("pos: preposition");
     expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemepicar0001")!.pos).toBe("verb");
   });
@@ -401,19 +420,17 @@ describe("Acervo application", () => {
     expect(document.querySelector(".main.composing")).toBeNull();
   });
 
-  it("wraps long lines by default, and gives every line its own row", async () => {
+  it("wraps long lines by default, and keeps line numbers off", async () => {
     signedIn();
     await openList();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
 
     // Wrapping is the default: these documents are prose, and a clipped definition was unreadable
-    // and unscrollable both.
-    expect(document.querySelector(".code-scroll.wrap")).not.toBeNull();
-    // One row per logical line is what lets a number sit beside a line that wraps.
-    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
-    expect(document.querySelectorAll(".editor-grid .ln")).toHaveLength(editor.value.split("\n").length);
-    expect(document.querySelector(".ln-no")).toBeNull();
+    // and unscrollable both. The class is what the editor actually applies to wrap its lines.
+    expect(document.querySelector(".cm-content")!.classList.contains("cm-lineWrapping")).toBe(true);
+    // Numbers are off by default, and the gutter is absent rather than empty.
+    expect(document.querySelector(".cm-lineNumbers")).toBeNull();
   });
 
   it("turns on line numbers from settings, and the editor picks them up", async () => {
@@ -430,9 +447,9 @@ describe("Acervo application", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
-    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
-    // One number per logical line, whatever each line wraps to.
-    expect(document.querySelectorAll(".ln-no")).toHaveLength(editor.value.split("\n").length);
+    // The editor draws a number per line and keeps it beside a line that wraps — which is the
+    // reason numbers are worth offering at all.
+    expect(document.querySelector(".cm-lineNumbers")).not.toBeNull();
     expect(localStorage.getItem("acervo-editor-numbers")).toBe("on");
   });
 
@@ -445,13 +462,15 @@ describe("Acervo application", () => {
     const sheet = within(screen.getByRole("region", { name: "Add a word" }));
     fireEvent.click(sheet.getByRole("button", { name: "YAML" }));
 
-    const editor = document.querySelector(".composer .code-scroll textarea") as HTMLTextAreaElement;
-    fireEvent.change(editor, { target: { value: editor.value
-      .replace('headword: ""', "headword: sobremesa")
-      .replace('definition: ""', "definition: Charla tras la comida.")
-      .replace('terms: [""]', "terms: [after-dinner talk]")
-      .replace('- text: ""', "- text: La sobremesa duró dos horas.")
-      .replace('translation: ""', "translation: The talk lasted two hours.") } });
+    const view = editorView();
+    act(() => {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: view.state.doc.toString()
+        .replace('headword: ""', "headword: sobremesa")
+        .replace('definition: ""', "definition: Charla tras la comida.")
+        .replace('terms: [""]', "terms: [after-dinner talk]")
+        .replace('- text: ""', "- text: La sobremesa duró dos horas.")
+        .replace('translation: ""', "translation: The talk lasted two hours.") } });
+    });
     fireEvent.click(sheet.getByRole("button", { name: "Validate & save" }));
 
     expect(await screen.findByText("Added to your vocabulary")).toBeInTheDocument();
@@ -466,8 +485,7 @@ describe("Acervo application", () => {
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
 
-    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
-    fireEvent.change(editor, { target: { value: editor.value.replace("headword: picar", "headword: picarse") } });
+    replaceInEditor("headword: picar", "headword: picarse");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText(/changed somewhere else/)).toBeInTheDocument();

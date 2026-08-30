@@ -397,38 +397,26 @@ function renderYaml(x) {
 let editorWrap = true;
 let editorNumbers = false;
 
-/* One grid, one row per logical line, both layers in the same cells. The content decides the
-   height, so a resize rewraps the box along with the text — and a number stays beside the line it
-   belongs to however many times that line wraps. */
+/* The application edits with CodeMirror, which needs a bundler this prototype deliberately does not
+   have. So this is a *picture* of that editor — the same palette, the same mono measure, the same
+   gutter — and not an editable one. Typing is the one thing you cannot try here; everything the
+   prototype exists to show, you can. */
 function editorSurface(id, text) {
   const lines = text.split("\n");
-  const rows = lines.map((line, i) => `
-      ${editorNumbers ? `<span class="ln-no" style="grid-row:${i + 1}">${i + 1}</span>` : ""}
-      <div class="ln" aria-hidden="true" style="grid-row:${i + 1}">${highlight(line)}</div>`).join("");
   return `
-    <div class="code-scroll${editorWrap ? " wrap" : ""}${editorNumbers ? " numbered" : ""}">
-      <div class="editor-grid" id="${id}Grid">${rows}
-        <textarea id="${id}Area" spellcheck="false" autocapitalize="off" autocorrect="off"
-          style="grid-row:1 / ${lines.length + 1};grid-column:${editorNumbers ? 2 : 1}">${esc(text)}</textarea>
+    <div class="code-scroll${editorWrap ? " wrap" : ""}${editorNumbers ? " numbered" : ""}" id="${id}Surface">
+      <div class="cm-mock">
+        ${editorNumbers ? `<div class="cm-mock-gutter">${lines.map((_, i) => `<span>${i + 1}</span>`).join("")}</div>` : ""}
+        <div class="cm-mock-content">${lines.map((line) => `<div class="cm-mock-line">${highlight(line) || "&nbsp;"}</div>`).join("")}</div>
       </div>
     </div>`;
 }
 
 /* keeps the gutter, the highlight layer and the textarea in lockstep */
-/* Repaints the highlighted rows under the caret. No heights are measured and nothing is scrolled
-   in step: the grid gives both layers the same cells, so they cannot drift apart. */
+/* Nothing to keep in step: the surface is a picture, so it reports its own text and no more. */
 function wireSurface(id) {
-  const area = document.getElementById(`${id}Area`);
-  const grid = document.getElementById(`${id}Grid`);
-  area.addEventListener("input", () => {
-    const lines = area.value.split("\n");
-    grid.querySelectorAll(".ln, .ln-no").forEach((n) => n.remove());
-    area.style.gridRow = `1 / ${lines.length + 1}`;
-    grid.insertAdjacentHTML("afterbegin", lines.map((line, i) => `
-      ${editorNumbers ? `<span class="ln-no" style="grid-row:${i + 1}">${i + 1}</span>` : ""}
-      <div class="ln" aria-hidden="true" style="grid-row:${i + 1}">${highlight(line)}</div>`).join(""));
-  });
-  return area;
+  const surface = document.getElementById(`${id}Surface`);
+  return { get value() { return [...surface.querySelectorAll(".cm-mock-line")].map((n) => n.textContent).join("\n"); } };
 }
 
 function renderEdit(x) {

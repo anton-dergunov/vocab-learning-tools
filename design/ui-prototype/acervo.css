@@ -436,46 +436,24 @@ details.fold .fold-body { padding: 4px 0 18px; }
   padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--rule);
 }
 .code-head .spacer { flex: 1; }
-.code-scroll { overflow: auto; max-height: none; }
-/* One grid, one row per logical line, both layers in the same cells. The content decides the
-   height and the textarea stretches to it, so a resize rewraps the box along with the text —
-   the previous version set the height from `scrollHeight` in an effect keyed on the text, and a
-   resize left the highlight clipped to a stale box while the textarea above it laid out fine. */
-.editor-grid { display: grid; min-width: 100%; padding: 14px 16px 18px; }
-.code-scroll.wrap .editor-grid { grid-template-columns: minmax(0, 1fr); }
-.code-scroll.wrap.numbered .editor-grid { grid-template-columns: auto minmax(0, 1fr); }
-/* Wider than the container is the point here: it is what `.code-scroll` scrolls across. */
-.code-scroll:not(.wrap) .editor-grid { grid-template-columns: max-content; width: max-content; }
-.code-scroll:not(.wrap).numbered .editor-grid { grid-template-columns: auto max-content; }
-
-/* Every layer on one text metric. The UA stylesheet declares `code { font-family: monospace }` and
-   a declaration beats an inherited value, which once gave the highlight a 21px line box against
-   the textarea's 20px: the caret drifted a full line every twenty rows. Declaring both together is
-   what keeps that impossible. */
-.editor-grid .ln, .editor-grid textarea, .editor-grid .ln-no {
-  font-family: var(--mono); font-size: 12.5px; line-height: 18px; tab-size: 2;
+/* The application edits with CodeMirror, themed onto these variables and this mono measure. The
+   prototype has no bundler, so what follows paints the same picture without the editor behind it —
+   the numbers below must stay in step with the theme in `web/src/YamlPane.tsx`. */
+.code-scroll { overflow: auto; height: 100%; min-height: 0; }
+.cm-mock { display: flex; min-height: 100%; min-width: 100%; width: max-content; }
+.code-scroll.wrap .cm-mock { width: auto; }
+.cm-mock-gutter {
+  flex: none; display: flex; flex-direction: column; padding: 14px 10px 18px 16px;
+  text-align: right; color: var(--ink-3); opacity: .55; background: var(--code-bg);
+  border-right: 1px solid var(--rule-soft); user-select: none;
+  font-variant-numeric: tabular-nums;
 }
-.editor-grid .ln, .editor-grid textarea {
-  grid-column: 1; margin: 0; padding: 0; border: none; outline: none; resize: none;
-  background: none; white-space: pre; min-width: 0; min-height: 18px;
-}
-.code-scroll.wrap .ln, .code-scroll.wrap textarea { white-space: pre-wrap; overflow-wrap: anywhere; }
-.code-scroll.numbered .ln { grid-column: 2; }
-.editor-grid .ln { color: var(--ink-2); pointer-events: none; }
-.editor-grid textarea {
-  z-index: 1; width: 100%; height: 100%; overflow: hidden;
-  color: transparent; caret-color: var(--core);
-}
-/* Semi-transparent on purpose: the text being selected is painted on the layer underneath, so an
-   opaque selection hides the very characters it is meant to be highlighting. */
-.editor-grid textarea::selection { background: color-mix(in srgb, var(--core) 26%, transparent); }
-/* A number belongs to its line's row, so it stays beside it however many times that line wraps. */
-.ln-no {
-  grid-column: 1; padding-right: 14px; text-align: right;
-  color: var(--ink-3); opacity: .55; background: var(--code-bg);
-  user-select: none; font-variant-numeric: tabular-nums;
-  position: sticky; left: 0; z-index: 2;
-}
+.cm-mock-content { flex: 1; min-width: 0; padding: 14px 16px 18px; }
+.cm-mock-gutter, .cm-mock-content { font-family: var(--mono); font-size: 12.5px; line-height: 18px; }
+.cm-mock-line { white-space: pre; min-height: 18px; color: var(--ink-2); }
+.code-scroll.wrap .cm-mock-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The prototype's own colouring. The application gets these same colours from the CodeMirror
+   theme in `web/src/YamlPane.tsx`, which is where a palette change has to be made too. */
 .y-key { color: var(--core); }
 .y-str { color: var(--ink); }
 .y-num { color: var(--corpus); }

@@ -1,65 +1,67 @@
-"""The YAML editor lays a transparent `<textarea>` over a highlighted copy of the same text, beside
-a column of line numbers. All three must share one text metric.
+"""The YAML editor is CodeMirror, and it must look like the rest of Acervo.
 
-Nothing in the DOM forces them to agree, and when they disagreed the failure was quiet rather than
-obvious. The UA stylesheet declares `code { font-family: monospace }`, and a declaration beats an
-inherited value, so the highlight rendered in the system mono face while the textarea used IBM Plex
-Mono. Measured in Chrome that gave the highlight a 21px line box against the textarea's 20px: the
-caret drifted a full line every twenty rows and selections landed off the text they covered.
+It replaced a hand-written surface: a transparent `<textarea>` laid over a separately rendered copy
+of the same text. Two independent layouts had to agree pixel for pixel, and every way they could
+disagree was a visible bug — text drawn over text, a selection that stopped short, typing that
+landed somewhere else. CodeMirror draws the caret and the glyphs together, so that class of failure
+is gone by construction rather than by a rule that has to be maintained.
 
-Declaring every layer in one rule is what makes that impossible rather than merely fixed. The
-application and the prototype must both carry it, per the rule that they change together.
+What still has to be maintained is the look. The editor arrives with its own default theme, and
+nothing forces it to use Acervo's palette or its mono face — so the theme is asserted here rather
+than left to be noticed later, when the editor quietly stops matching the interface around it.
 """
 
 import pathlib
-
-import pytest
+import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-STYLESHEETS = [
-    ROOT / "web" / "src" / "styles.css",
-    ROOT / "design" / "ui-prototype" / "acervo.css",
-]
-LAYERS = ".editor-grid .ln, .editor-grid textarea, .editor-grid .ln-no"
+PANE = ROOT / "web" / "src" / "YamlPane.tsx"
+STYLES = ROOT / "web" / "src" / "styles.css"
 
 
-def _declared(stylesheet, selector, prop):
-    text = stylesheet.read_text()
-    # Anchored on the opening brace: one selector is a prefix of another here, and matching the
-    # bare text would read the wrong rule and quietly report the wrong value.
-    start = text.index(f"\n{selector} {{")
-    block = text[text.index("{", start) + 1:text.index("}", start)]
-    for declaration in block.split(";"):
-        name, _, value = declaration.partition(":")
-        if name.strip() == prop:
-            return value.strip()
-    raise AssertionError(f"{selector} in {stylesheet.name} no longer declares {prop}")
+def theme() -> str:
+    source = PANE.read_text()
+    start = source.index("const THEME = EditorView.theme(")
+    return source[start:source.index("\n});", start)]
 
 
-@pytest.mark.parametrize("stylesheet", STYLESHEETS, ids=lambda path: path.name)
-def test_every_layer_is_declared_on_one_metric(stylesheet):
-    """One rule for all three, so a change cannot reach one layer and miss another."""
-    assert LAYERS in stylesheet.read_text(), "the editor layers no longer share one declaration"
-    for prop in ("font-family", "font-size", "line-height"):
-        assert _declared(stylesheet, LAYERS, prop), f"{prop} is no longer stated for every layer"
+def test_the_editor_uses_the_interface_font_and_measure():
+    """The same mono face and line box as every other code surface. CodeMirror's default is a
+    generic monospace at a different size, which reads as a different application."""
+    scroller = theme()
+    assert 'fontFamily: "var(--mono)"' in scroller
+    assert 'fontSize: "12.5px"' in scroller
+    assert 'lineHeight: "18px"' in scroller
 
 
-@pytest.mark.parametrize("stylesheet", STYLESHEETS, ids=lambda path: path.name)
-def test_the_line_box_stays_close_to_the_caret(stylesheet):
-    """The caret is drawn over the font's content area — about 1.26x the font size, and not
-    something CSS can resize — while the selection band is the full line box. Let the line box grow
-    far beyond the caret and the band starts reading as floating above the text it covers."""
-    line_height = float(_declared(stylesheet, LAYERS, "line-height").removesuffix("px"))
-    font_size = float(_declared(stylesheet, LAYERS, "font-size").removesuffix("px"))
-    caret = font_size * 1.26
-    assert caret <= line_height <= caret + 3, (
-        f"a {line_height}px line box around a ~{caret:.1f}px caret leaves "
-        f"{(line_height - caret) / 2:.1f}px of band on each side"
-    )
+def test_the_document_colours_come_from_the_palette():
+    """Keys, strings, numbers and comments in Acervo's colours, not CodeMirror's defaults."""
+    source = PANE.read_text()
+    start = source.index("const YAML_COLOURS = HighlightStyle.define(")
+    colours = source[start:source.index("\n]);", start)]
+    for token in ("propertyName", "tags.string", "tags.number", "tags.comment"):
+        assert token in colours, f"{token} is no longer given a colour"
+    # Every colour is a variable, so a palette change reaches the editor with everything else.
+    for value in re.findall(r'color: "([^"]+)"', colours):
+        assert value.startswith("var(--"), f"{value} is a literal, so the editor will drift from the theme"
 
 
-@pytest.mark.parametrize("stylesheet", STYLESHEETS, ids=lambda path: path.name)
-def test_an_empty_line_still_occupies_its_row(stylesheet):
-    """A blank line is an empty element. Without a floor it collapses to nothing and every line
-    below it sits one row higher than the caret that belongs to it."""
-    assert _declared(stylesheet, ".editor-grid .ln, .editor-grid textarea", "min-height") == "18px"
+def test_the_caret_and_selection_are_the_accent_colour():
+    marked = theme()
+    assert 'caretColor: "var(--core)"' in marked
+    # Semi-transparent on purpose: an opaque band hides the characters it is meant to be marking.
+    assert "color-mix(in srgb, var(--core) 26%, transparent)" in marked
+
+
+def test_the_editor_fills_the_surface_that_bounds_it():
+    """A composer gives the editor a bounded height; the editor has to take it, or it grows to its
+    content and the pinned save bar is pushed off the screen again."""
+    css = STYLES.read_text()
+    assert ".code-scroll .cm-editor { height: 100%; }" in css
+    assert 'height: "100%"' in theme()
+
+
+def test_the_gutter_divider_is_declared_where_it_wins():
+    """A CodeMirror theme rule outranks the stylesheet, so a divider set outside this block is
+    overridden by the block's own `border: none` and simply never appears."""
+    assert 'borderRight: "1px solid var(--rule-soft)"' in theme()
