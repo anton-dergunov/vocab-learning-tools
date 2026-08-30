@@ -377,7 +377,6 @@ function highlight(yaml) {
     .replace(/(:\s)(-?\d+(?:\.\d+)?)$/gm, '$1<span class="y-num">$2</span>');
 }
 
-function gutterFor(text) { return text.split("\n").map((_, i) => i + 1).join("\n"); }
 
 function renderYaml(x) {
   const yaml = yamlFor(x);
@@ -388,54 +387,47 @@ function renderYaml(x) {
         <span class="spacer"></span>
         <span class="label">read-only — press Edit to change</span>
       </div>
-      <div class="code-scroll">
-        <div class="gutter">${gutterFor(yaml)}</div>
-        <pre><code>${highlight(yaml)}</code></pre>
-      </div>
+      ${editorSurface("view", yaml)}
     </div>`;
 }
 
-/* Wrapping is the default: these documents are mostly prose, and a definition running off the
-   right edge could previously be neither read nor scrolled to. Numbers are dropped while wrapping,
-   because a wrapped line is several rows tall and the column would point at the wrong one. */
+/* Set in Settings in the application; here they are prototype switches so both looks can be seen.
+   Wrapping is the default: these documents are mostly prose, and a definition running off the right
+   edge could previously be neither read nor scrolled to. */
 let editorWrap = true;
+let editorNumbers = false;
 
-function wrapToggle() {
-  return `
-    <div class="seg">
-      <button data-wrap="on" class="${editorWrap ? "on" : ""}">Wrap</button>
-      <button data-wrap="off" class="${editorWrap ? "" : "on"}">Scroll</button>
-    </div>`;
-}
-
+/* One grid, one row per logical line, both layers in the same cells. The content decides the
+   height, so a resize rewraps the box along with the text — and a number stays beside the line it
+   belongs to however many times that line wraps. */
 function editorSurface(id, text) {
+  const lines = text.split("\n");
+  const rows = lines.map((line, i) => `
+      ${editorNumbers ? `<span class="ln-no" style="grid-row:${i + 1}">${i + 1}</span>` : ""}
+      <div class="ln" aria-hidden="true" style="grid-row:${i + 1}">${highlight(line)}</div>`).join("");
   return `
-    <div class="code-scroll${editorWrap ? " wrap" : ""}">
-      ${editorWrap ? "" : `<div class="gutter" id="${id}Gutter">${gutterFor(text)}</div>`}
-      <div class="editor-stack">
-        <pre class="hl" id="${id}Hl" aria-hidden="true"><code>${highlight(text)}</code></pre>
-        <textarea id="${id}Area" spellcheck="false" autocapitalize="off" autocorrect="off">${esc(text)}</textarea>
+    <div class="code-scroll${editorWrap ? " wrap" : ""}${editorNumbers ? " numbered" : ""}">
+      <div class="editor-grid" id="${id}Grid">${rows}
+        <textarea id="${id}Area" spellcheck="false" autocapitalize="off" autocorrect="off"
+          style="grid-row:1 / ${lines.length + 1};grid-column:${editorNumbers ? 2 : 1}">${esc(text)}</textarea>
       </div>
     </div>`;
 }
 
 /* keeps the gutter, the highlight layer and the textarea in lockstep */
+/* Repaints the highlighted rows under the caret. No heights are measured and nothing is scrolled
+   in step: the grid gives both layers the same cells, so they cannot drift apart. */
 function wireSurface(id) {
   const area = document.getElementById(`${id}Area`);
-  const gut  = document.getElementById(`${id}Gutter`);
-  const hl   = document.getElementById(`${id}Hl`);
-  const sync = () => {
-    if (gut) gut.textContent = gutterFor(area.value);
-    hl.innerHTML = `<code>${highlight(area.value)}</code>`;
-    area.style.height = "auto";
-    area.style.height = `${area.scrollHeight}px`;
-  };
-  // The textarea is the only layer that scrolls; without this the caret drifts away from the
-  // glyphs it sits between as soon as a line is long enough to scroll.
-  const follow = () => { hl.scrollLeft = area.scrollLeft; hl.scrollTop = area.scrollTop; };
-  area.addEventListener("input", () => { sync(); follow(); });
-  area.addEventListener("scroll", follow);
-  sync();
+  const grid = document.getElementById(`${id}Grid`);
+  area.addEventListener("input", () => {
+    const lines = area.value.split("\n");
+    grid.querySelectorAll(".ln, .ln-no").forEach((n) => n.remove());
+    area.style.gridRow = `1 / ${lines.length + 1}`;
+    grid.insertAdjacentHTML("afterbegin", lines.map((line, i) => `
+      ${editorNumbers ? `<span class="ln-no" style="grid-row:${i + 1}">${i + 1}</span>` : ""}
+      <div class="ln" aria-hidden="true" style="grid-row:${i + 1}">${highlight(line)}</div>`).join(""));
+  });
   return area;
 }
 
@@ -447,7 +439,6 @@ function renderEdit(x) {
         <h2>${esc(x.headword)}</h2>
         <span class="label">${esc(x.headword)}.yaml</span>
         <span class="spacer"></span>
-        ${wrapToggle()}
         <button class="icon-btn" id="closeEdit" aria-label="Close">${ICON.close}</button>
       </div>
       <div class="composer-body fill">
@@ -536,11 +527,7 @@ function renderSheet() {
         : `
       <div class="composer-body fill">
         <div class="code-wrap">
-          <div class="code-head">
-            <span class="label">new-entry.yaml</span>
-            <span class="spacer"></span>
-            ${wrapToggle()}
-          </div>
+          <div class="code-head"><span class="label">new-entry.yaml</span></div>
           ${editorSurface("new", YAML_TEMPLATE)}
         </div>
       </div>
@@ -616,7 +603,6 @@ function render() {
 
 function wireEditor() {
   const area = wireSurface("edit");
-  wireWrapToggle();
   $("#closeEdit").onclick = () => { state.mode = "read"; render(); };
   $("#cancelEdit").onclick = () => { state.mode = "read"; render(); };
   $("#saveEdit").onclick = () => {
@@ -625,15 +611,7 @@ function wireEditor() {
   };
 }
 
-/* The choice is shared by every editing surface, so it survives switching between them. */
-function wireWrapToggle() {
-  document.querySelectorAll("[data-wrap]").forEach((b) => {
-    b.onclick = () => { editorWrap = b.dataset.wrap === "on"; render(); };
-  });
-}
-
 function wireSheet() {
-  wireWrapToggle();
   $("#composer").querySelectorAll("[data-tab]").forEach((b) => { b.onclick = () => { addTab = b.dataset.tab; renderSheet(); }; });
   const close = () => closeSheet();
   const c1 = $("#closeSheet"), c2 = $("#closeSheet2");
@@ -739,6 +717,7 @@ if (params.get("open")) {
 }
 if (params.get("topic")) state.topic = params.get("topic");
 if (params.get("wrap") === "off") editorWrap = false;
+if (params.get("numbers") === "on") editorNumbers = true;
 if (params.get("theme")) setTheme(params.get("theme"));
 if (params.get("add")) openSheet(params.get("add"));
 if (params.get("frame") === "phone" || params.get("frame") === "tablet") {

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Composer from "./Composer";
 import { CloseIcon } from "./icons";
 import type { YamlProblem } from "./yaml";
@@ -16,94 +16,102 @@ export function highlightYaml(text: string): string {
     .replace(/(:\s)(-?\d+(?:\.\d+)?)$/gm, '$1<span class="y-num">$2</span>');
 }
 
-const gutterFor = (text: string) => text.split("\n").map((_, index) => index + 1).join("\n");
-
-const WRAP_KEY = "acervo-editor-wrap";
-
 /**
- * Whether long lines wrap or scroll, remembered across surfaces and sessions.
+ * How the YAML surfaces present text, remembered per device.
  *
- * Wrapping is the default because these documents are mostly prose — definitions, examples, notes —
- * and a definition running off the right edge is the common case, not the exception. Scrolling stays
- * available because YAML indentation is meaningful and wrapping hides it.
+ * These describe this screen, not the vocabulary — a phone and a desktop want different answers —
+ * so they live in local storage rather than the replicated graph, and they are set in Settings
+ * rather than above the editor, where they were controls you had to step over on the way to work.
+ *
+ * Wrapping is the default: these documents are mostly prose, and a definition running off the right
+ * edge is the common case. Scrolling stays available because YAML indentation is meaningful.
  */
-export function useEditorWrap(): [boolean, (next: boolean) => void] {
-  const [wrap, setWrap] = useState(() => {
-    try { return localStorage.getItem(WRAP_KEY) !== "off"; } catch { return true; }
-  });
-  return [wrap, (next: boolean) => {
-    setWrap(next);
-    try { localStorage.setItem(WRAP_KEY, next ? "on" : "off"); } catch { /* a preference, not data */ }
-  }];
+export interface EditorPreferences {
+  wrap: boolean;
+  numbers: boolean;
 }
 
-/** The control that switches between them, shared by both editing surfaces. */
-export function WrapToggle({ wrap, onWrap }: { wrap: boolean; onWrap(next: boolean): void }) {
-  return <div className="seg">
-    <button className={wrap ? "on" : ""} onClick={() => onWrap(true)}>Wrap</button>
-    <button className={wrap ? "" : "on"} onClick={() => onWrap(false)}>Scroll</button>
-  </div>;
+const PREFERENCE_KEYS = { wrap: "acervo-editor-wrap", numbers: "acervo-editor-numbers" } as const;
+const PREFERENCES_EVENT = "acervo-editor-preferences";
+
+function readPreference(key: string, fallback: boolean): boolean {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored === null ? fallback : stored === "on";
+  } catch {
+    return fallback;
+  }
 }
 
-/**
- * Gutter, highlight layer and textarea kept in lockstep, as in the prototype.
- *
- * The textarea grows to its own content and never scrolls; the surrounding `.code-scroll` is the
- * scroll region, which is what lets the gutter stay stuck to the left through a long line. Its
- * height therefore belongs to whatever contains it — a composer bounds it, and it fills that.
- */
-export function EditorSurface({ value, onChange, wrap = true }: {
-  value: string; onChange(value: string): void; wrap?: boolean;
-}) {
-  const area = useRef<HTMLTextAreaElement>(null);
-  const highlight = useRef<HTMLPreElement>(null);
-  useLayoutEffect(() => {
-    const element = area.current;
-    if (!element) return;
-    element.style.height = "auto";
-    element.style.height = `${element.scrollHeight}px`;
-  }, [value]);
-  /**
-   * The textarea is the only layer that scrolls — it is on top, and it clips. The highlight beneath
-   * it does not, so on any line long enough to scroll, the caret drifts away from the glyphs it is
-   * supposed to sit between. Moving the two together is what keeps them in register.
-   */
-  const follow = () => {
-    const element = area.current;
-    const painted = highlight.current;
-    if (!element || !painted) return;
-    painted.scrollLeft = element.scrollLeft;
-    painted.scrollTop = element.scrollTop;
+export function editorPreferences(): EditorPreferences {
+  return {
+    wrap: readPreference(PREFERENCE_KEYS.wrap, true),
+    numbers: readPreference(PREFERENCE_KEYS.numbers, false)
   };
-  return <div className={`code-scroll${wrap ? " wrap" : ""}`}>
-    {/* Numbers are dropped while wrapping, because a wrapped line is several rows tall and the
-        column would silently point at the wrong one. Validation still reports a line number, and
-        switching to Scroll is what you do to go find it. */}
-    {!wrap && <div className="gutter">{gutterFor(value)}</div>}
-    <div className="editor-stack">
-      <pre className="hl" ref={highlight} aria-hidden="true"><code dangerouslySetInnerHTML={{ __html: highlightYaml(value) }} /></pre>
+}
+
+export function setEditorPreference(name: keyof EditorPreferences, value: boolean): void {
+  try { localStorage.setItem(PREFERENCE_KEYS[name], value ? "on" : "off"); } catch { /* a preference, not data */ }
+  // Settings and the editor are different trees, so a change in one has to reach the other.
+  window.dispatchEvent(new CustomEvent(PREFERENCES_EVENT));
+}
+
+export function useEditorPreferences(): EditorPreferences {
+  const [preferences, setPreferences] = useState(editorPreferences);
+  useEffect(() => {
+    const refresh = () => setPreferences(editorPreferences());
+    window.addEventListener(PREFERENCES_EVENT, refresh);
+    return () => window.removeEventListener(PREFERENCES_EVENT, refresh);
+  }, []);
+  return preferences;
+}
+
+/**
+ * The editing surface: a highlighted copy of the text with a transparent textarea laid over it.
+ *
+ * Both layers live in one grid, occupying the same cells, so the *content* decides the height and
+ * the textarea stretches to it. That is the whole trick, and it is what the previous version got
+ * wrong: it measured `scrollHeight` and set the height in an effect keyed on the text, so resizing
+ * the window rewrapped the content without rewrapping the box around it. The highlight was then
+ * clipped to a stale height — invisible text you could still select, because the textarea above it
+ * had laid out correctly all along.
+ *
+ * One line per row means a wrapped line is a row several lines tall, so a number beside it points
+ * at the line it belongs to whether the text wraps or scrolls.
+ */
+export function EditorSurface({ value, onChange, wrap = true, numbers = false, readOnly = false }: {
+  value: string; onChange(value: string): void; wrap?: boolean; numbers?: boolean; readOnly?: boolean;
+}) {
+  const lines = value.split("\n");
+  return <div className={`code-scroll${wrap ? " wrap" : ""}${numbers ? " numbered" : ""}`}>
+    <div className="editor-grid">
+      {lines.map((line, index) => <Fragment key={index}>
+        {numbers && <span className="ln-no" style={{ gridRow: index + 1 }}>{index + 1}</span>}
+        <div
+          className="ln" aria-hidden="true" style={{ gridRow: index + 1 }}
+          dangerouslySetInnerHTML={{ __html: highlightYaml(line) }}
+        />
+      </Fragment>)}
       <textarea
-        ref={area} value={value} spellCheck={false} autoCapitalize="off" autoCorrect="off"
-        onScroll={follow}
-        onChange={(event) => { onChange(event.target.value); follow(); }}
+        value={value} spellCheck={false} autoCapitalize="off" autoCorrect="off" readOnly={readOnly}
+        style={{ gridRow: `1 / ${lines.length + 1}`, gridColumn: numbers ? 2 : 1 }}
+        onChange={(event) => onChange(event.target.value)}
       />
     </div>
   </div>;
 }
 
 export function YamlView({ name, yaml }: { name: string; yaml: string }) {
-  const [wrap, setWrap] = useEditorWrap();
+  const { wrap, numbers } = useEditorPreferences();
   return <div className="code-wrap">
     <div className="code-head">
       <span className="label">{name}.yaml</span>
       <span className="spacer" />
-      <WrapToggle wrap={wrap} onWrap={setWrap} />
       <span className="label">read-only — press Edit to change</span>
     </div>
-    <div className={`code-scroll${wrap ? " wrap" : ""}`}>
-      {!wrap && <div className="gutter">{gutterFor(yaml)}</div>}
-      <pre><code dangerouslySetInnerHTML={{ __html: highlightYaml(yaml) }} /></pre>
-    </div>
+    {/* The same surface as the editor, so the projection you read and the one you edit cannot
+        disagree about how a long line is shown. */}
+    <EditorSurface value={yaml} onChange={() => undefined} wrap={wrap} numbers={numbers} readOnly />
   </div>;
 }
 
@@ -140,7 +148,7 @@ export function YamlEditor({ name, yaml, problems, notice, busy, onCancel, onSav
   onSave(draft: string): void;
 }) {
   const [draft, setDraft] = useState(yaml);
-  const [wrap, setWrap] = useEditorWrap();
+  const { wrap, numbers } = useEditorPreferences();
   return <Composer
     label={`Edit ${name}`}
     fill
@@ -148,7 +156,6 @@ export function YamlEditor({ name, yaml, problems, notice, busy, onCancel, onSav
       <h2>{name}</h2>
       <span className="label">{name}.yaml</span>
       <span className="spacer" />
-      <WrapToggle wrap={wrap} onWrap={setWrap} />
       <button className="icon-btn" aria-label="Close" onClick={onCancel}><CloseIcon /></button>
     </>}
     actions={<>
@@ -163,7 +170,7 @@ export function YamlEditor({ name, yaml, problems, notice, busy, onCancel, onSav
     </>}
   >
     <div className="code-wrap">
-      <EditorSurface value={draft} onChange={setDraft} wrap={wrap} />
+      <EditorSurface value={draft} onChange={setDraft} wrap={wrap} numbers={numbers} />
     </div>
   </Composer>;
 }

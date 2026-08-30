@@ -6,11 +6,12 @@ import type { ReplicaSnapshot } from "./repository";
 import { syncEngine, type SyncStatus } from "./sync";
 import { SyncPanel } from "./SyncStatus";
 import { appVersionLabel } from "./version";
+import { editorPreferences, setEditorPreference, type EditorPreferences } from "./YamlPane";
 
 /** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
 const CONFIRMATION = "DELETE";
 
-type Page = "general" | "vocabularies" | "topics" | "sync" | "data";
+type Page = "general" | "vocabularies" | "topics" | "editor" | "sync" | "data";
 
 export default function Settings({ update, email, status, snapshot, language, onSignOut, onClose, onNotify, onChanged }: {
   update?: UpdateStage;
@@ -31,6 +32,13 @@ export default function Settings({ update, email, status, snapshot, language, on
   const [macRelease, setMacRelease] = useState<MacRelease | null>();
   const [releaseError, setReleaseError] = useState(false);
   const [page, setPage] = useState<Page>("general");
+  const [editor, setEditor] = useState(editorPreferences);
+
+  function changeEditor(name: keyof EditorPreferences, value: boolean) {
+    setEditorPreference(name, value);
+    setEditor(editorPreferences());
+  }
+
   const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState("");
   const [working, setWorking] = useState(false);
@@ -80,6 +88,7 @@ export default function Settings({ update, email, status, snapshot, language, on
     { id: "general", label: "General" },
     { id: "vocabularies", label: "Vocabularies" },
     { id: "topics", label: "Topics" },
+    { id: "editor", label: "Editor" },
     { id: "sync", label: "Sync" },
     { id: "data", label: "Data" }
   ];
@@ -124,6 +133,34 @@ export default function Settings({ update, email, status, snapshot, language, on
           <button className="tb-btn" onClick={onSignOut}>Sign out</button>
           <p className="version">Version {appVersionLabel()}</p>
         </>}
+
+        {page === "editor" && <section className="config-section">
+          <h3>YAML editor</h3>
+          <p className="config-help">
+            How entries are shown when you read or edit them as YAML. These describe this device,
+            not your vocabulary, so they are not shared with your other devices.
+          </p>
+          <label className="config-switch">
+            <input
+              type="checkbox" checked={editor.wrap}
+              onChange={(event) => changeEditor("wrap", event.target.checked)}
+            />
+            <span>
+              <strong>Wrap long lines</strong>
+              <span>Off, a long definition runs past the edge and the editor scrolls sideways to it.</span>
+            </span>
+          </label>
+          <label className="config-switch">
+            <input
+              type="checkbox" checked={editor.numbers}
+              onChange={(event) => changeEditor("numbers", event.target.checked)}
+            />
+            <span>
+              <strong>Show line numbers</strong>
+              <span>Useful when a document is refused: the reason names the line it is on.</span>
+            </span>
+          </label>
+        </section>}
 
         {page === "vocabularies" && snapshot && <VocabularyEditor snapshot={snapshot} onNotify={onNotify} onChanged={onChanged} />}
         {page === "topics" && snapshot && <TopicEditor snapshot={snapshot} language={language} onNotify={onNotify} onChanged={onChanged} />}

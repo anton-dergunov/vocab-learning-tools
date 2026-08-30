@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { CaptureRequest, CaptureResult } from "./api";
 import Composer from "./Composer";
 import { CloseIcon } from "./icons";
-import { EditorSurface, useEditorWrap, ValidationPanel, WrapToggle } from "./YamlPane";
+import { EditorSurface, useEditorPreferences, ValidationPanel } from "./YamlPane";
 import { YAML_TEMPLATE, yamlForDraft, type YamlProblem } from "./yaml";
 
 export type AddTab = "capture" | "yaml";
@@ -37,7 +37,7 @@ export default function AddView({ tab, onTab, problems, busy, onClose, onCreate,
   const [failure, setFailure] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<CaptureResult["duplicates"]>([]);
   const [details, setDetails] = useState(false);
-  const [wrap, setWrap] = useEditorWrap();
+  const { wrap, numbers } = useEditorPreferences();
 
   async function process() {
     setWorking(true);
@@ -155,12 +155,8 @@ export default function AddView({ tab, onTab, problems, busy, onClose, onCreate,
     </>}
   >
     <div className="code-wrap">
-      <div className="code-head">
-        <span className="label">new-entry.yaml</span>
-        <span className="spacer" />
-        <WrapToggle wrap={wrap} onWrap={setWrap} />
-      </div>
-      <EditorSurface value={draft} onChange={setDraft} wrap={wrap} />
+      <div className="code-head"><span className="label">new-entry.yaml</span></div>
+      <EditorSurface value={draft} onChange={setDraft} wrap={wrap} numbers={numbers} />
     </div>
   </Composer>;
 }

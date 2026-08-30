@@ -178,7 +178,7 @@ describe("Acervo application", () => {
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "YAML" }));
     expect(await screen.findByText("picar.yaml")).toBeInTheDocument();
-    expect(document.querySelector(".code-scroll code")!.textContent).toContain("id: lexemepicar0001");
+    expect((document.querySelector(".code-scroll textarea") as HTMLTextAreaElement).value).toContain("id: lexemepicar0001");
   });
 
   it("reaches sync, sign-out and delete on the native host, without its update controls", async () => {
@@ -401,7 +401,7 @@ describe("Acervo application", () => {
     expect(document.querySelector(".main.composing")).toBeNull();
   });
 
-  it("wraps long lines by default and drops the gutter that would misalign", async () => {
+  it("wraps long lines by default, and gives every line its own row", async () => {
     signedIn();
     await openList();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
@@ -410,13 +410,30 @@ describe("Acervo application", () => {
     // Wrapping is the default: these documents are prose, and a clipped definition was unreadable
     // and unscrollable both.
     expect(document.querySelector(".code-scroll.wrap")).not.toBeNull();
-    expect(document.querySelector(".gutter")).toBeNull();
+    // One row per logical line is what lets a number sit beside a line that wraps.
+    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
+    expect(document.querySelectorAll(".editor-grid .ln")).toHaveLength(editor.value.split("\n").length);
+    expect(document.querySelector(".ln-no")).toBeNull();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Scroll" }));
-    // Numbers come back only when a line is one row tall, so the column cannot point at the wrong one.
-    expect(document.querySelector(".code-scroll.wrap")).toBeNull();
-    expect(document.querySelector(".gutter")).not.toBeNull();
-    expect(localStorage.getItem("acervo-editor-wrap")).toBe("off");
+  it("turns on line numbers from settings, and the editor picks them up", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+
+    // Wrap and numbers describe this screen, not the vocabulary, so they live in settings rather
+    // than as controls you step over on the way to the editor.
+    const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
+    fireEvent.click(settings.getByRole("tab", { name: "Editor" }));
+    fireEvent.click(settings.getByRole("checkbox", { name: /Show line numbers/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    const editor = document.querySelector(".code-scroll textarea") as HTMLTextAreaElement;
+    // One number per logical line, whatever each line wraps to.
+    expect(document.querySelectorAll(".ln-no")).toHaveLength(editor.value.split("\n").length);
+    expect(localStorage.getItem("acervo-editor-numbers")).toBe("on");
   });
 
   it("creates an entry from the YAML template and opens it", async () => {
