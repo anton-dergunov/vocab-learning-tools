@@ -1,5 +1,5 @@
 const API_ROOT = "/api/acervo/v1";
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const DOWNLOAD_ROOT = "/api/acervo/downloads/";
 const RECORD_ID = /^[a-z0-9]{15}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -125,6 +125,25 @@ function setNumber(record, field, value) { record.set(field, Number(value) || 0)
 function setList(record, field, value) { record.set(field, Array.isArray(value) ? value : []); }
 
 const COLLECTIONS = [
+  {
+    key: "vocabularies", name: "vocabularies",
+    project: (record) => ({
+      language: record.getString("language"),
+      definitionLang: record.getString("definition_lang"),
+      glossLangs: jsonValue(record.get("gloss_langs")) || [],
+      displayName: textOrNull(record, "display_name"),
+      flag: textOrNull(record, "flag"),
+      order: Number(record.get("vocab_order")) || 0,
+    }),
+    assign: (record, value) => {
+      setText(record, "language", value.language);
+      setText(record, "definition_lang", value.definitionLang);
+      setList(record, "gloss_langs", value.glossLangs);
+      setText(record, "display_name", value.displayName);
+      setText(record, "flag", value.flag);
+      setNumber(record, "vocab_order", value.order);
+    },
+  },
   {
     key: "topics", name: "topics",
     project: (record) => ({
@@ -484,6 +503,521 @@ function tombstoneAll(app, ownerId, device) {
   return count;
 }
 
+/* ── capture ────────────────────────────────────────────────────────────
+   One ingest endpoint, several thin transports (§05). Everything intelligent lives here, so a
+   transport is a single authenticated POST: an iOS Shortcut, an Android share target or the
+   Obsidian ingest script all submit text and get back either an entry or a reason there is none.
+
+   Two model calls, deliberately. The first decides what the text is *about* — which word, which
+   language, which of the sentences are the learner's — and that answer is what makes the duplicate
+   check and the file walk possible at all. Only then is an article worth generating. */
+
+const LLM_TIMEOUT_SECONDS = 120;
+const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+const PROMPT_CACHE = {};
+
+function llmSettings() {
+  const endpoint = trimmed($os.getenv("ACERVO_LLM_ENDPOINT")) || "https://generativelanguage.googleapis.com";
+  return {
+    key: trimmed($os.getenv("GEMINI_API_KEY")),
+    model: trimmed($os.getenv("ACERVO_LLM_MODEL")) || "gemini-3.1-flash-lite",
+    endpoint: endpoint.replace(/\/+$/, ""),
+  };
+}
+
+function captureAvailable() {
+  return Boolean(llmSettings().key);
+}
+
+/** 15 lowercase alphanumerics, the one id format §03 allows, minted the same way everywhere. */
+function newRecordId() {
+  let id = "";
+  try {
+    id = trimmed($security.randomStringWithAlphabet(15, ID_ALPHABET));
+  } catch (_) {
+    id = "";
+  }
+  if (!RECORD_ID.test(id)) {
+    // Fall back to the general random string, folded into the alphabet ids are allowed to use.
+    const source = String($security.randomString(40)).toLowerCase().replace(/[^a-z0-9]/g, "");
+    id = source.slice(0, 15);
+  }
+  if (!RECORD_ID.test(id)) throw apiError(500, "id_generation_failed", "The Acervo server could not mint a record identifier.");
+  return id;
+}
+
+function promptText(name) {
+  if (PROMPT_CACHE[name]) return PROMPT_CACHE[name];
+  const directory = trimmed($os.getenv("ACERVO_PROMPTS_PATH")) || "/pb/pb_hooks/prompts";
+  let text;
+  try {
+    text = trimmed(toString($os.readFile(directory + "/" + name + ".txt")));
+  } catch (_) {
+    text = "";
+  }
+  if (!text) {
+    throw apiError(500, "prompt_missing",
+      "The Acervo server is missing its '" + name + "' prompt, so it cannot build entries.");
+  }
+  PROMPT_CACHE[name] = text;
+  return text;
+}
+
+/** Models wrap JSON in ``` often enough that not handling it would be the top cause of failure. */
+function unfenced(text) {
+  const value = trimmed(text);
+  const fenced = value.match(/^```[a-zA-Z]*\s*\n([\s\S]*?)\n?```$/);
+  return fenced ? trimmed(fenced[1]) : value;
+}
+
+function llmJson(system, user) {
+  const settings = llmSettings();
+  if (!settings.key) {
+    throw apiError(503, "capture_unavailable",
+      "This Acervo server has no language model configured, so it cannot build entries.");
+  }
+  let response;
+  try {
+    response = $http.send({
+      url: settings.endpoint + "/v1beta/models/" + encodeURIComponent(settings.model) + ":generateContent",
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": settings.key },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
+      }),
+      timeout: LLM_TIMEOUT_SECONDS,
+    });
+  } catch (error) {
+    throw apiError(502, "llm_unreachable", "The language model could not be reached, so nothing was created.");
+  }
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw apiError(502, "llm_failed",
+      "The language model refused the request (HTTP " + response.statusCode + "), so nothing was created.");
+  }
+  const payload = response.json || jsonValue(response.body);
+  const candidate = payload && payload.candidates && payload.candidates[0];
+  const parts = candidate && candidate.content && candidate.content.parts;
+  const text = parts && parts.length ? String(parts[0].text || "") : "";
+  if (!trimmed(text)) throw apiError(502, "llm_empty", "The language model returned nothing, so nothing was created.");
+  try {
+    return JSON.parse(unfenced(text));
+  } catch (_) {
+    throw apiError(502, "llm_unusable", "The language model did not return a usable answer, so nothing was created.");
+  }
+}
+
+/* ── reading the model's answer ─────────────────────────────────────────
+   Everything below treats the response as untrusted input. A model that mislabels a part of speech
+   or marks a form that is not in its own sentence would otherwise fail record validation, and the
+   whole capture would surface to the owner as an anonymous refusal. Coerce what can be coerced,
+   drop what cannot, and never let a bad field abort an otherwise good entry. */
+
+function pickChoice(value, allowed, fallback) {
+  const text = trimmed(value).toLowerCase();
+  for (let index = 0; index < allowed.length; index += 1) {
+    if (allowed[index] === text) return allowed[index];
+  }
+  return fallback;
+}
+
+function pickOptionalChoice(value, allowed) {
+  return pickChoice(value, allowed, null);
+}
+
+function textList(value) {
+  if (!Array.isArray(value)) return [];
+  const kept = [];
+  value.forEach((item) => {
+    const text = trimmed(item);
+    if (text && kept.indexOf(text) < 0) kept.push(text);
+  });
+  return kept;
+}
+
+function languageOrNull(value) {
+  const text = trimmed(value);
+  return LANGUAGE.test(text) ? text : null;
+}
+
+const POS_VALUES = ["noun", "verb", "adj", "adv", "phrase", "idiom", "expression"];
+const GENDER_VALUES = ["masculine", "feminine", "common", "neuter"];
+const REGISTER_VALUES = ["neutral", "formal", "colloquial", "slang", "vulgar"];
+const SOURCE_KIND_VALUES = ["web", "book", "conversation", "video", "lesson", "unknown"];
+
+function ownerVocabularies(app, ownerId) {
+  return app.findRecordsByFilter("vocabularies", "owner = {:owner} && deleted = false", "vocab_order", 0, 0, { owner: ownerId })
+    .map((record) => ({
+      language: record.getString("language"),
+      definitionLang: record.getString("definition_lang"),
+      glossLangs: jsonValue(record.get("gloss_langs")) || [],
+      displayName: textOrNull(record, "display_name"),
+    }));
+}
+
+function ownerTopics(app, ownerId) {
+  return app.findRecordsByFilter("topics", "owner = {:owner} && deleted = false", "topic_order", 0, 0, { owner: ownerId })
+    .map((record) => ({ id: record.id, name: record.getString("name") }));
+}
+
+/** Case-insensitive, because the learner types `picar` and the store holds `Picar` just as often. */
+function duplicateLexemes(app, ownerId, language, headword, lemma) {
+  const found = {};
+  const matches = [];
+  [headword, lemma].forEach((form) => {
+    const needle = trimmed(form).toLowerCase();
+    if (!needle) return;
+    app.findRecordsByFilter(
+      "lexemes",
+      "owner = {:owner} && language = {:language} && deleted = false && (headword ~ {:form} || lemma ~ {:form})",
+      "", 0, 0, { owner: ownerId, language: language, form: needle }
+    ).forEach((record) => {
+      if (found[record.id]) return;
+      if (record.getString("headword").toLowerCase() !== needle && record.getString("lemma").toLowerCase() !== needle) return;
+      found[record.id] = true;
+      matches.push({
+        id: record.id,
+        headword: record.getString("headword"),
+        shortGloss: textOrNull(record, "short_gloss"),
+      });
+    });
+  });
+  return matches;
+}
+
+function resolveCapture(app, ownerId, request) {
+  const stream = trimmed(request.mode) === "stream";
+  const vocabularies = ownerVocabularies(app, ownerId);
+  const known = vocabularies.map((entry) => entry.language + (entry.displayName ? " (" + entry.displayName + ")" : ""));
+  const lines = String(request.text).split("\n");
+  const user = [
+    "Mode: " + (stream ? "stream" : "single"),
+    "Languages this learner studies: " + (known.length ? known.join(", ") : "none configured yet"),
+    trimmed(request.language) ? "The caller believes this is " + trimmed(request.language) + "; verify it." : "",
+    "",
+    "Input (" + lines.length + " lines):",
+    "```",
+    String(request.text),
+    "```",
+  ].filter((line) => line !== "").join("\n");
+
+  const answer = llmJson(promptText("acervo_resolve"), user);
+  if (answer && trimmed(answer.error)) {
+    throw apiError(422, "unreadable_input",
+      "That text could not be read as a word to learn, so nothing was created.");
+  }
+  const language = languageOrNull(answer && answer.language);
+  const headword = trimmed(answer && answer.headword);
+  if (!language || !headword) {
+    throw apiError(422, "unreadable_input",
+      "That text could not be read as a word to learn, so nothing was created.");
+  }
+  const consumed = Math.round(Number(answer.consumedLines) || 0);
+  const sentences = [];
+  if (Array.isArray(answer.sentences)) {
+    answer.sentences.forEach((item) => {
+      const text = trimmed(item && item.text);
+      if (!text) return;
+      sentences.push({ text: text, translation: trimmed(item.translation) || null });
+    });
+  }
+  return {
+    language: language,
+    headword: headword,
+    lemma: trimmed(answer.lemma) || headword,
+    pos: pickChoice(answer.pos, POS_VALUES, "noun"),
+    sentences: sentences,
+    note: trimmed(answer.note) || null,
+    // At least one line, always: a walk that consumes nothing loops on the same block forever.
+    consumedLines: stream ? Math.max(1, Math.min(consumed || 1, lines.length)) : lines.length,
+    consumedText: trimmed(answer.consumedText) || null,
+  };
+}
+
+function composeArticle(app, ownerId, resolution, request, vocabulary, topics) {
+  const names = {};
+  topics.forEach((topic) => { names[topic.name.toLowerCase()] = topic.name; });
+  const preferred = textList(request.topics).map((name) => names[name.toLowerCase()]).filter((name) => Boolean(name));
+  const user = [
+    "Language: " + resolution.language,
+    "Headword: " + resolution.headword,
+    "Lemma: " + resolution.lemma,
+    "Part of speech: " + resolution.pos,
+    "Define senses in: " + vocabulary.definitionLang,
+    "Gloss into: " + vocabulary.glossLangs.join(", "),
+    "Topics to choose from: " + (topics.length ? topics.map((topic) => topic.name).join(" | ") : "(none — return an empty list)"),
+    // A file of notes already filed under one heading knows its own topic better than the model
+    // can infer it from a single word, so say so — as a preference, not an instruction.
+    preferred.length ? "The learner already files these under: " + preferred.join(", ") + ". Prefer that unless it is plainly wrong." : "",
+    "",
+    "Sentences the learner supplied (index them from 0 for `fromSentence`):",
+    resolution.sentences.length
+      ? resolution.sentences.map((item, index) =>
+          index + ": " + item.text + (item.translation ? "  —  " + item.translation : "")).join("\n")
+      : "(none)",
+    trimmed(request.note) ? "\nThe learner asks specifically: " + trimmed(request.note) : "",
+  ].filter((line) => line !== "").join("\n");
+
+  const answer = llmJson(promptText("acervo_compose"), user);
+  if (!answer || typeof answer !== "object") {
+    throw apiError(502, "llm_unusable", "The language model did not return an entry, so nothing was created.");
+  }
+  return answer;
+}
+
+/**
+ * Turns the model's answer into an ArticleDraft — the exact shape `web/src/yaml.ts` reads, so the
+ * review surface renders a generated entry through the same serialiser as a stored one.
+ *
+ * Ids are minted here rather than left absent, because an example has to name the attestation it
+ * was drawn from and both are created by the same save.
+ */
+function draftFrom(answer, resolution, request, vocabulary, topics, modelId) {
+  const capturedAt = new Date().toISOString();
+  const topicNames = {};
+  topics.forEach((topic) => { topicNames[topic.name.toLowerCase()] = topic.name; });
+
+  const sourceUrl = trimmed(request.sourceUrl) || null;
+  const attestations = resolution.sentences.map((sentence) => ({
+    id: newRecordId(),
+    text: sentence.text,
+    translation: sentence.translation,
+    sourceUrl: sourceUrl,
+    sourceTitle: trimmed(request.sourceTitle) || null,
+    sourceKind: pickChoice(request.sourceKind, SOURCE_KIND_VALUES, sourceUrl ? "web" : "unknown"),
+    capturedAt: capturedAt,
+  }));
+
+  const glossLangs = vocabulary.glossLangs;
+  const senses = [];
+  const rawSenses = Array.isArray(answer.senses) ? answer.senses : [];
+  rawSenses.forEach((raw, index) => {
+    const definition = trimmed(raw && raw.definition);
+    if (!definition) return;
+    const glosses = [];
+    const seenLangs = {};
+    (Array.isArray(raw.glosses) ? raw.glosses : []).forEach((gloss) => {
+      const lang = languageOrNull(gloss && gloss.lang);
+      const terms = textList(gloss && gloss.terms);
+      if (!lang || !terms.length || seenLangs[lang]) return;
+      seenLangs[lang] = true;
+      glosses.push({ lang: lang, terms: terms });
+    });
+    // A sense without a gloss is refused by the record validator, so rather than lose the sense,
+    // fall back to the headword in the language the learner asked to be glossed into.
+    if (!glosses.length) glosses.push({ lang: glossLangs[0] || "en", terms: [resolution.headword] });
+
+    const examples = [];
+    (Array.isArray(raw.examples) ? raw.examples : []).forEach((example) => {
+      const text = trimmed(example && example.text);
+      if (!text) return;
+      const translation = trimmed(example.translation) || null;
+      // `Number(null)` is 0, so a plain `Number()` here would read "I invented this" as "this is
+      // sentence 0" and quietly credit the learner with every example the model wrote.
+      const claimed = example.fromSentence;
+      const fromSentence = claimed === null || claimed === undefined || claimed === "" ? -1 : Number(claimed);
+      const attestation = Number.isInteger(fromSentence) && fromSentence >= 0 && attestations[fromSentence]
+        ? attestations[fromSentence] : null;
+      const matchedForm = trimmed(example.matchedForm) || null;
+      const matchedTranslationForm = trimmed(example.matchedTranslationForm) || null;
+      examples.push({
+        id: newRecordId(),
+        text: text,
+        textLang: resolution.language,
+        translation: translation,
+        translationLang: translation ? (glossLangs[0] || "en") : null,
+        // What makes an example the learner's own rather than the model's, and what §12's Obsidian
+        // export reads to mark it as such. A generated one carries the model that wrote it instead.
+        origin: attestation ? "attestation" : "llm",
+        sourceAttestationId: attestation ? attestation.id : null,
+        modelId: attestation ? null : modelId,
+        videoRef: null,
+        videoTitle: null,
+        videoStart: null,
+        imageRef: null,
+        audioRef: null,
+        note: trimmed(example.note) || null,
+        // The validator requires these to occur verbatim in the text they mark. A model that
+        // retypes an inflected form instead of copying it would otherwise refuse the whole batch.
+        matchedForm: matchedForm && text.indexOf(matchedForm) >= 0 ? matchedForm : null,
+        matchedTranslationForm:
+          matchedTranslationForm && translation && translation.indexOf(matchedTranslationForm) >= 0
+            ? matchedTranslationForm : null,
+        approved: false,
+      });
+    });
+
+    senses.push({
+      id: newRecordId(),
+      order: index,
+      definition: definition,
+      definitionLang: languageOrNull(raw.definitionLang) || vocabulary.definitionLang,
+      glosses: glosses,
+      domain: trimmed(raw.domain) || null,
+      examples: examples,
+      images: [],
+    });
+  });
+
+  if (!senses.length) {
+    throw apiError(502, "llm_unusable", "The language model returned an entry with no meanings, so nothing was created.");
+  }
+
+  const reading = trimmed(answer.reading) || null;
+  // Chinese records are refused without a reading (§03). Saying which field is missing beats
+  // letting the save fail later with a validation message about a field nobody was shown.
+  if (resolution.language.toLowerCase().indexOf("zh") === 0 && !reading) {
+    throw apiError(502, "llm_unusable",
+      "The language model returned a Chinese entry with no reading, so nothing was created.");
+  }
+  return {
+    id: null,
+    language: resolution.language,
+    headword: trimmed(answer.headword) || resolution.headword,
+    lemma: trimmed(answer.lemma) || resolution.lemma,
+    reading: reading,
+    ipa: trimmed(answer.ipa) || null,
+    pos: pickChoice(answer.pos, POS_VALUES, resolution.pos),
+    gender: pickOptionalChoice(answer.gender, GENDER_VALUES),
+    register: pickOptionalChoice(answer.register, REGISTER_VALUES),
+    dialect: languageOrNull(answer.dialect),
+    emoji: trimmed(answer.emoji).slice(0, 32) || null,
+    // Only topics this owner actually holds. `saveArticle` refuses an unknown name, and inventing
+    // one here would turn a good entry into an error the learner has to decode.
+    topics: textList(answer.topics)
+      .map((name) => topicNames[name.toLowerCase()])
+      .filter((name) => Boolean(name)),
+    status: "inbox",
+    shortGloss: trimmed(answer.shortGloss) || null,
+    notes: textList(answer.notes),
+    senses: senses,
+    attestations: attestations,
+    images: [],
+  };
+}
+
+/** The draft as a change set, for the transports that have no replica to diff against. */
+function applyDraft(app, ownerId, device, draft, topics) {
+  const at = new Date().toISOString();
+  const stamp = { deleted: false, createdAt: at, editedAt: at, editedBy: device, revision: 0 };
+  const topicIds = {};
+  topics.forEach((topic) => { topicIds[topic.name.toLowerCase()] = topic.id; });
+  const lexemeId = newRecordId();
+
+  const changes = { topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: [] };
+  changes.lexemes.push(Object.assign({
+    id: lexemeId,
+    language: draft.language,
+    headword: draft.headword,
+    lemma: draft.lemma,
+    reading: draft.reading,
+    ipa: draft.ipa,
+    pos: draft.pos,
+    gender: draft.gender,
+    register: draft.register,
+    dialect: draft.dialect,
+    emoji: draft.emoji,
+    topicIds: draft.topics.map((name) => topicIds[name.toLowerCase()]).filter((id) => Boolean(id)),
+    status: draft.status,
+    shortGloss: draft.shortGloss,
+    notes: draft.notes,
+  }, stamp));
+
+  draft.attestations.forEach((attestation) => {
+    changes.attestations.push(Object.assign({
+      id: attestation.id,
+      lexemeId: lexemeId,
+      text: attestation.text,
+      translation: attestation.translation,
+      sourceUrl: attestation.sourceUrl,
+      sourceTitle: attestation.sourceTitle,
+      sourceKind: attestation.sourceKind,
+      capturedAt: attestation.capturedAt,
+    }, stamp));
+  });
+
+  draft.senses.forEach((sense) => {
+    changes.senses.push(Object.assign({
+      id: sense.id,
+      lexemeId: lexemeId,
+      definition: sense.definition,
+      definitionLang: sense.definitionLang,
+      glosses: sense.glosses,
+      domain: sense.domain,
+      order: sense.order,
+    }, stamp));
+    sense.examples.forEach((example) => {
+      changes.examples.push(Object.assign({}, example, { senseId: sense.id }, stamp));
+    });
+  });
+
+  // The same route every other writer uses: same validation, same revision allocation, same
+  // transaction. Nothing about capture gets a private way into the store.
+  mergeGraph(app, ownerId, device, changes);
+  return lexemeId;
+}
+
+function captureRoute(event) {
+  const ownerId = requireOwner(event);
+  const request = body(event);
+  requireSchemaVersion(request);
+  const device = requireDeviceId(request.deviceId);
+  const text = String(request.text == null ? "" : request.text);
+  if (!trimmed(text)) throw apiError(400, "invalid_input", "There is nothing to capture.");
+  if (text.length > 20000) throw apiError(400, "invalid_input", "That capture is too long to process in one request.");
+
+  const resolution = resolveCapture(event.app, ownerId, request);
+
+  const vocabularies = ownerVocabularies(event.app, ownerId);
+  let vocabulary = null;
+  vocabularies.forEach((entry) => { if (entry.language === resolution.language) vocabulary = entry; });
+  if (!vocabulary) {
+    // Deliberately before generation: building an article for a language the owner does not keep
+    // would spend a model call on something with nowhere to go.
+    throw apiError(409, "language_not_configured",
+      "This looks like " + resolution.language + ", which you have no vocabulary for yet. "
+      + "Add it in Settings, then capture this again.");
+  }
+  if (!Array.isArray(vocabulary.glossLangs) || !vocabulary.glossLangs.length) {
+    throw apiError(409, "language_not_configured",
+      "Your " + resolution.language + " vocabulary has no translation language set, so an entry cannot be built. "
+      + "Choose one in Settings.");
+  }
+
+  const duplicates = duplicateLexemes(event.app, ownerId, resolution.language, resolution.headword, resolution.lemma);
+  if (duplicates.length) {
+    // Merging a repeat capture into the entry it belongs to is §06's job, and it needs the article
+    // conversation to do it well. Until then, say so plainly rather than making a near-duplicate.
+    return respond(event, {
+      resolution: resolution,
+      duplicates: duplicates,
+      draft: null,
+      applied: null,
+    });
+  }
+
+  const topics = ownerTopics(event.app, ownerId);
+  const modelId = llmSettings().model;
+  const answer = composeArticle(event.app, ownerId, resolution, request, vocabulary, topics);
+  const draft = draftFrom(answer, resolution, request, vocabulary, topics, modelId);
+
+  let applied = null;
+  if (request.apply === true) {
+    let lexemeId;
+    event.app.runInTransaction((tx) => {
+      lexemeId = applyDraft(tx, ownerId, device, draft, topics);
+    });
+    applied = { lexemeId: lexemeId };
+  }
+  return respond(event, {
+    resolution: resolution,
+    duplicates: [],
+    draft: draft,
+    applied: applied,
+  });
+}
+
 function dispatch(event) {
   const path = String(event.request.url.path || "");
   const relative = path.indexOf(API_ROOT) === 0 ? path.slice(API_ROOT.length) || "/" : path;
@@ -495,6 +1029,9 @@ function dispatch(event) {
         version: trimmed($os.getenv("ACERVO_APP_VERSION")) || "0.0.0",
         build: trimmed($os.getenv("ACERVO_APP_BUILD")) || "0",
         schemaVersion: SCHEMA_VERSION,
+        // Whether this server can build entries at all, so the app can say why the button is off
+        // rather than failing at the moment someone finally uses it.
+        capture: captureAvailable(),
       });
     }
     if (method === "GET" && relative === "/mac-release") return respond(event, releaseManifest());
@@ -551,6 +1088,7 @@ function dispatch(event) {
       });
       return respond(event, result);
     }
+    if (method === "POST" && relative === "/capture") return captureRoute(event);
     if (method === "POST" && relative === "/graph/reset") {
       const ownerId = requireOwner(event);
       const request = body(event);
@@ -634,6 +1172,15 @@ function sameOwner(record, parent, label) {
 function validateRecord(app, record) {
   const collection = record.collection().name;
   syncRecord(record);
+  if (collection === "vocabularies") {
+    validLanguage(record.getString("language"), "Vocabulary language");
+    validLanguage(record.getString("definition_lang"), "Vocabulary definition language");
+    const glossLangs = jsonValue(record.get("gloss_langs"));
+    stringArray(glossLangs, "Vocabulary gloss languages");
+    if (!Array.isArray(glossLangs) || glossLangs.length === 0) invalid("A vocabulary needs at least one gloss language.");
+    glossLangs.forEach((code) => validLanguage(code, "Vocabulary gloss language"));
+    return;
+  }
   if (collection === "topics") {
     if (!trimmed(record.getString("name"))) invalid("Topic name is required.");
     return;

@@ -236,7 +236,7 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
     root = tmp_path / "acervo"
     credential_file = tmp_path / "credentials"
     credential_file.write_text(
-        "sync-user\ntest-password\nadmin@account.example.com\npb-password\n",
+        "sync-user\ntest-password\nadmin@account.example.com\npb-password\nmodel-key\n",
         encoding="utf-8",
     )
     credential_file.chmod(0o600)
@@ -272,6 +272,7 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
         "ACERVO_ANKI_SYNC_PASSWORD='test-password'\n"
         "ACERVO_PB_SUPERUSER_EMAIL='admin@account.example.com'\n"
         "ACERVO_PB_SUPERUSER_PASSWORD='pb-password'\n"
+        "GEMINI_API_KEY='model-key'\n"
     )
     deployment = (root / "deployment.env").read_text(encoding="utf-8")
     assert "ACERVO_BIND_ADDRESS=0.0.0.0\n" in deployment

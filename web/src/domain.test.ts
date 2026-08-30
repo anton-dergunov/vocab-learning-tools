@@ -18,7 +18,7 @@ function graph(): VocabularyGraph {
     id: "sense0000000001", lexemeId: lexeme.id, definition: "Una embarcación sencilla.", definitionLang: "es",
     glosses: [{ lang: "en", terms: ["raft"] }, { lang: "ru", terms: ["плот"] }], domain: null, order: 0, ...sync
   };
-  return { topics: [topic], lexemes: [lexeme], senses: [sense], attestations: [], examples: [], imagePrompts: [], studyStates: [] };
+  return { vocabularies: [], topics: [topic], lexemes: [lexeme], senses: [sense], attestations: [], examples: [], imagePrompts: [], studyStates: [] };
 }
 
 describe("Acervo domain", () => {

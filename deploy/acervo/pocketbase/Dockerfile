@@ -17,6 +17,9 @@ RUN apk add --no-cache ca-certificates unzip wget \
 
 WORKDIR /pb
 COPY deploy/acervo/pocketbase/pb_hooks /pb/pb_hooks
+# The capture prompts are content, not code: tracked once at the repository root and read at
+# request time, so changing what an entry says never means changing the hook that builds it.
+COPY prompts /pb/pb_hooks/prompts
 COPY deploy/acervo/pocketbase/pb_migrations /pb/pb_migrations
 COPY deploy/acervo/pocketbase/pb_public /pb/pb_public
 RUN mkdir -p /pb/downloads /pb/pb_data \

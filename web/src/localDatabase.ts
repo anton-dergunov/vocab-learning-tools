@@ -1,8 +1,8 @@
 import type { VocabularyGraph } from "./domain";
 
 const DATABASE_NAME = "acervo";
-const DATABASE_VERSION = 3;
-export const RECORD_STORES = ["topics", "lexemes", "senses", "attestations", "examples", "imagePrompts", "studyStates"] as const;
+const DATABASE_VERSION = 4;
+export const RECORD_STORES = ["vocabularies", "topics", "lexemes", "senses", "attestations", "examples", "imagePrompts", "studyStates"] as const;
 const STORES = [...RECORD_STORES, "meta"] as const;
 /** Stores from superseded schemas. Opening the database drops them rather than reading around them. */
 const RETIRED_STORES = ["pending"] as const;
@@ -78,16 +78,11 @@ class IndexedDatabase implements LocalDatabase {
     ]);
     const meta: Record<string, unknown> = {};
     metaKeys.forEach((key, index) => { meta[String(key)] = metaValues[index]; });
-    return {
-      topics: records[0] as VocabularyGraph["topics"],
-      lexemes: records[1] as VocabularyGraph["lexemes"],
-      senses: records[2] as VocabularyGraph["senses"],
-      attestations: records[3] as VocabularyGraph["attestations"],
-      examples: records[4] as VocabularyGraph["examples"],
-      imagePrompts: records[5] as VocabularyGraph["imagePrompts"],
-      studyStates: records[6] as VocabularyGraph["studyStates"],
-      meta: meta as Partial<ReplicaMeta>
-    };
+    // Assembled by name rather than by position: reading `records[4]` as the examples is correct
+    // only until a store is added, and then it is wrong everywhere at once and silently.
+    const contents = EMPTY_CONTENTS();
+    RECORD_STORES.forEach((store, index) => { contents[store] = records[index] as never; });
+    return { ...contents, meta: meta as Partial<ReplicaMeta> };
   }
 
   async write(changes: DatabaseWrite): Promise<void> {
@@ -117,7 +112,8 @@ class IndexedDatabase implements LocalDatabase {
 }
 
 const EMPTY_CONTENTS = (): DatabaseContents => ({
-  topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: [], meta: {}
+  vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [],
+  imagePrompts: [], studyStates: [], meta: {}
 });
 
 export class MemoryDatabase implements LocalDatabase {

@@ -4,13 +4,16 @@ Acervo is a self-hosted, offline-first store for vocabulary chosen by one learne
 the durable owner-scoped copy; the PWA and native macOS host keep a complete IndexedDB replica so
 vocabulary remains readable and editable without a network connection.
 
-The current iteration provides the core data model and persistence foundation. The vocabulary UI,
-device synchronization, and capture workflow are separate later stages.
+Words are added by pasting a word, or the sentence it was met in: the entry is written for you,
+shown for review, and kept in an inbox until you approve it. A word already in the store is
+recognised as one rather than added twice. The same route walks a file of unstructured notes into
+the inbox an entry at a time.
 
 ## Core model
 
-The canonical graph separates seven records with different lifetimes:
+The canonical graph separates eight records with different lifetimes:
 
+- `vocabulary` — a language being studied, and the languages to translate it into;
 - `topic` — an editable grouping label with an optional symbolic icon;
 - `lexeme` — the word or phrase being learned;
 - `sense` — one ordered meaning with target-language definition and multilingual glosses;

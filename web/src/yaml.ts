@@ -16,7 +16,7 @@ import { Document, isMap, isNode, isSeq, LineCounter, parseDocument, Scalar } fr
 import {
   EXAMPLE_ORIGINS, GENDERS, LEXEME_STATUSES, PARTS_OF_SPEECH, REGISTERS, SOURCE_KINDS,
   type Example, type ExampleOrigin, type Gender, type Gloss, type ImagePrompt,
-  type LexemeStatus, type PartOfSpeech, type Register, type SourceKind
+  type LexemeStatus, type PartOfSpeech, type Register, type SourceKind, type StudyState
 } from "./domain";
 import { languageOf } from "./languages";
 import type { Article } from "./selectors";
@@ -251,9 +251,17 @@ export function draftFor(article: Article): ArticleDraft {
 }
 
 export function yamlFor(article: Article): string {
-  const draft = draftFor(article);
-  const { lexeme, study } = article;
+  return yamlForDraft(draftFor(article), article.study);
+}
 
+/**
+ * The same document, from a draft that may never have been stored.
+ *
+ * Generation produces a draft directly, and it must reach the review surface through this
+ * serialiser rather than a second one — a hand-written writer for generated articles would drift
+ * from the reader the moment a field is added, which is the failure this file exists to prevent.
+ */
+export function yamlForDraft(draft: ArticleDraft, study: StudyState | null = null): string {
   const document = new Document(compact({
     id: draft.id,
     language: draft.language,
@@ -292,7 +300,7 @@ export function yamlFor(article: Article): string {
     imagePrompts: draft.images.map(promptFields)
   }));
 
-  document.commentBefore = ` ${lexeme.headword} — ${languageOf(lexeme.language).name}`
+  document.commentBefore = ` ${draft.headword} — ${languageOf(draft.language).name}`
     + "\n Every record keeps its id. Delete a block to remove it; omit an id to add something new.";
 
   // Study state flows in from the scheduler and is never edited here (§10), so it is written as

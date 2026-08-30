@@ -223,6 +223,19 @@ prompt_credentials() {
     echo "PocketBase superuser email and password are required" >&2
     exit 2
   }
+  # Optional: without it the server simply reports that it cannot build entries, and every other
+  # part of Acervo works exactly as before.
+  printf '%s' 'Gemini API key for capture (blank to disable capture): ' >&2
+  if [ -t 0 ]; then
+    stty -echo
+    trap 'stty echo' EXIT HUP INT TERM
+    IFS= read -r gemini_api_key
+    stty echo
+    trap - EXIT HUP INT TERM
+  else
+    IFS= read -r gemini_api_key || gemini_api_key=""
+  fi
+  printf '\n' >&2
 }
 
 build_release_archive() {
@@ -263,7 +276,7 @@ if [ "$mode" = local ]; then
   [ "$reset_data" = false ] || set -- "$@" --reset-data
   [ "$reset_pocketbase" = false ] || set -- "$@" --reset-pocketbase
   if [ -n "$credential_args" ]; then
-    printf '%s\n%s\n%s\n%s\n' "$sync_username" "$sync_password" "$pb_superuser_email" "$pb_superuser_password" | "$repo_root/deploy/acervo/install.sh" "$@"
+    printf '%s\n%s\n%s\n%s\n%s\n' "$sync_username" "$sync_password" "$pb_superuser_email" "$pb_superuser_password" "$gemini_api_key" | "$repo_root/deploy/acervo/install.sh" "$@"
   else
     "$repo_root/deploy/acervo/install.sh" "$@"
   fi

@@ -7,12 +7,14 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 from collections import Counter
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -23,7 +25,7 @@ from scripts.seed_acervo_demo import demo_records
 ROOT = Path(__file__).resolve().parents[2]
 API = "/api/acervo/v1"
 # Kept in step with web/src/api.ts and pb_hooks/acervo.js; a mismatch is a 409 by design.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 GRAPH = f"{API}/graph?schemaVersion={SCHEMA_VERSION}&since=0"
 
 
@@ -56,6 +58,43 @@ def get_bytes(url: str, *, range_header: str | None = None) -> tuple[int, bytes]
 
 
 @pytest.mark.integration
+class ModelStub:
+    """A Gemini-shaped endpoint the container can reach, so capture is exercised without quota.
+
+    The two calls are told apart by their system prompt, which is the same thing that makes them
+    two calls: one decides what the text is about, the other writes the entry.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+        handler_self = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args):  # noqa: N802
+                pass
+
+            def do_POST(self):  # noqa: N802
+                payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                handler_self.calls.append(payload)
+                system = payload["systemInstruction"]["parts"][0]["text"]
+                answer = handler_self.resolution if "You decide what a learner" in system else handler_self.article
+                body = json.dumps({"candidates": [{"content": {"parts": [{"text": json.dumps(answer)}]}}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        self.server = ThreadingHTTPServer(("0.0.0.0", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.resolution: dict = {}
+        self.article: dict = {}
+
+    def stop(self) -> None:
+        self.server.shutdown()
+
+
 def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) -> None:
     if os.environ.get("RUN_DOCKER_INTEGRATION_TESTS", "").lower() != "true":
         pytest.skip("set RUN_DOCKER_INTEGRATION_TESTS=true to run Docker validation")
@@ -86,12 +125,17 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         "/pb/pocketbase", "superuser", "create", admin_email, admin_password, "--dir", "/pb/pb_data",
     ], check=True, capture_output=True)
 
+    model = ModelStub()
+
     def start() -> None:
         subprocess.run([
             "docker", "run", "-d", "--rm", "--name", name,
             "-p", f"127.0.0.1:{port}:8090",
+            "--add-host", "host.docker.internal:host-gateway",
             "-e", "ACERVO_APP_VERSION=0.1.0", "-e", "ACERVO_APP_BUILD=202608280000",
             "-e", "ACERVO_DOWNLOADS_PATH=/pb/downloads",
+            "-e", "GEMINI_API_KEY=stub-key", "-e", "ACERVO_LLM_MODEL=stub-model",
+            "-e", f"ACERVO_LLM_ENDPOINT=http://host.docker.internal:{model.port}",
             "-v", f"{data}:/pb/pb_data", "-v", f"{downloads}:/pb/downloads:ro", image,
         ], check=True, capture_output=True)
         for _ in range(60):
@@ -107,12 +151,19 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
     def stop() -> None:
         subprocess.run(["docker", "stop", name], check=False, capture_output=True)
 
+    def capture(text: str, **extra) -> tuple[int, dict]:
+        return request(base, "POST", f"{API}/capture", {
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integration001",
+            "mode": "single", "text": text, **extra,
+        }, user_token)
+
     try:
         start()
         status, health = request(base, "GET", "/api/acervo/v1/health")
         assert status == 200
         assert health["data"] == {
-                "name": "Acervo", "version": "0.1.0", "build": "202608280000", "schemaVersion": SCHEMA_VERSION
+                "name": "Acervo", "version": "0.1.0", "build": "202608280000",
+                "schemaVersion": SCHEMA_VERSION, "capture": True,
         }
         assert b"<title>Acervo</title>" in get_bytes(base + "/")[1]
 
@@ -155,7 +206,7 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         seeded = demo_records(owners[0]["id"])
         expected = Counter(collection for collection, _ in seeded)
         counts = {}
-        for collection in ("topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"):
+        for collection in ("vocabularies", "topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"):
             owner_filter = urllib.parse.quote(f'owner="{owners[0]["id"]}"')
             status, result = request(base, "GET", f"/api/collections/{collection}/records?perPage=200&filter={owner_filter}", token=admin_token)
             assert status == 200, result
@@ -164,7 +215,7 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
 
         # Every seeded record must carry a server-allocated revision, or no cursor pull would
         # ever deliver it. This is the trap that makes the save hook load-bearing.
-        for collection in ("topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"):
+        for collection in ("vocabularies", "topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"):
             owner_filter = urllib.parse.quote(f'owner="{owners[0]["id"]}"')
             status, result = request(base, "GET", f"/api/collections/{collection}/records?perPage=200&filter={owner_filter}", token=admin_token)
             assert status == 200, result
@@ -180,7 +231,8 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         assert dataset_id and cursor > 0
         graph = envelope["changes"]
         assert {key: len(graph[key]) for key in
-                ("topics", "lexemes", "senses", "attestations", "examples", "imagePrompts", "studyStates")} == {
+                ("vocabularies", "topics", "lexemes", "senses", "attestations", "examples", "imagePrompts", "studyStates")} == {
+            "vocabularies": expected["vocabularies"],
             "topics": expected["topics"], "lexemes": expected["lexemes"], "senses": expected["senses"],
             "attestations": expected["attestations"], "examples": expected["examples"],
             "imagePrompts": expected["image_prompts"], "studyStates": expected["study_states"],
@@ -198,7 +250,80 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         assert plain["videoTitle"] is None and plain["videoStart"] is None
         assert graph["topics"][0]["order"] is not None
         assert graph["senses"][0]["order"] is not None
+
+        # ── capture (§05) ───────────────────────────────────────────────────
+        # A word the account already holds must not become a second entry, and must not spend a
+        # generation call finding that out.
+        model.resolution = {
+            "language": "es", "headword": "picar", "lemma": "picar", "pos": "verb",
+            "sentences": [], "consumedLines": 1, "consumedText": "picar",
+        }
+        before = len(model.calls)
+        status, repeated = capture("¿Te pica mucho la salsa?")
+        assert status == 200, repeated
+        assert [item["headword"] for item in repeated["data"]["duplicates"]] == ["picar"]
+        assert repeated["data"]["draft"] is None
+        assert len(model.calls) - before == 1
+
+        # A language with no vocabulary record is refused before anything is generated.
+        model.resolution = {**model.resolution, "language": "de", "headword": "Wanderlust"}
+        before = len(model.calls)
+        status, refused = capture("Fernweh und Wanderlust")
+        assert status == 409 and refused["error"]["code"] == "language_not_configured"
+        assert len(model.calls) - before == 1
+
+        # And a new word is built, applied, and reaches the cursor pull like any other write.
+        model.resolution = {
+            "language": "es", "headword": "el garfio", "lemma": "garfio", "pos": "noun",
+            "sentences": [{"text": "El disfraz de pirata viene con un garfio.", "translation": None}],
+            "consumedLines": 1, "consumedText": "El disfraz de pirata viene con un garfio.",
+        }
+        model.article = {
+            "headword": "el garfio", "lemma": "garfio", "pos": "noun", "gender": "masculine",
+            "register": "neutral", "emoji": "🪝", "topics": ["Culture"], "shortGloss": "hook",
+            "notes": ["Not the same as el gancho."],
+            "senses": [{
+                "definition": "Gancho de metal curvo y puntiagudo.",
+                "glosses": [{"lang": "en", "terms": ["hook"]}],
+                "examples": [
+                    {"text": "El disfraz de pirata viene con un garfio.",
+                     "translation": "The pirate costume comes with a hook.",
+                     "matchedForm": "un garfio", "matchedTranslationForm": "hook", "fromSentence": 0},
+                    # A form the model retyped rather than copied: dropped, not allowed to refuse
+                    # the whole entry.
+                    {"text": "Perdió la mano y le pusieron un garfio.",
+                     "translation": "He lost his hand and they gave him a hook.",
+                     "matchedForm": "el garfio", "fromSentence": None},
+                ],
+            }],
+        }
+        status, built = capture("El disfraz de pirata viene con un garfio.", apply=True)
+        assert status == 200, built
+        built = built["data"]
+        assert built["duplicates"] == []
+        assert built["draft"]["status"] == "inbox"
+        assert built["draft"]["topics"] == ["Culture"]
+        assert built["applied"]["lexemeId"]
+
+        examples = built["draft"]["senses"][0]["examples"]
+        # The learner's own sentence is kept as its own record and the example says where it came
+        # from; the model's own example is marked as the model's.
+        assert examples[0]["origin"] == "attestation"
+        assert examples[0]["sourceAttestationId"] == built["draft"]["attestations"][0]["id"]
+        assert examples[1]["origin"] == "llm" and examples[1]["modelId"] == "stub-model"
+        assert examples[1]["matchedForm"] is None
+
+        status, after = request(base, "GET", f"{API}/graph?schemaVersion={SCHEMA_VERSION}&since={cursor}", token=user_token)
+        assert status == 200, after
+        arrived = after["data"]["changes"]
+        assert [record["headword"] for record in arrived["lexemes"]] == ["el garfio"]
+        assert all(record["revision"] > cursor for record in arrived["lexemes"])
+        assert len(arrived["attestations"]) == 1 and len(arrived["examples"]) == 2
         assert graph["attestations"][0]["capturedAt"].endswith("Z") and "T" in graph["attestations"][0]["capturedAt"]
+        # Capture wrote records, so the replica is now caught up to a later cursor than the seed's,
+        # and the account holds more than the seed put in it.
+        cursor = after["data"]["cursor"]
+        captured = {key: len(records) for key, records in arrived.items()}
 
         # A caught-up cursor returns nothing at all: the steady-state poll is nearly free.
         status, caught_up = request(base, "GET", f"{API}/graph?schemaVersion={SCHEMA_VERSION}&since={cursor}", token=user_token)
@@ -288,7 +413,7 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         status, reset = request(base, "POST", "/api/acervo/v1/graph/reset", {
             "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "confirm": "delete-all-vocabulary",
         }, user_token)
-        assert status == 200 and reset["data"]["deleted"] == sum(expected.values()), reset
+        assert status == 200 and reset["data"]["deleted"] == sum(expected.values()) + sum(captured.values()), reset
         assert reset["data"]["datasetId"] == dataset_id
 
         # Nothing is removed: a full pull still carries every row, now as a tombstone. That is
@@ -296,7 +421,7 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         status, after = request(base, "GET", GRAPH, token=user_token)
         assert status == 200
         emptied = after["data"]["changes"]
-        assert len(emptied["lexemes"]) == expected["lexemes"]
+        assert len(emptied["lexemes"]) == expected["lexemes"] + captured["lexemes"]
         assert all(record["deleted"] for record in emptied["lexemes"])
         assert all(record["deleted"] for record in emptied["senses"])
         # A second reset has nothing left to tombstone.
@@ -329,4 +454,5 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         assert status == 206 and piece == b"te"
     finally:
         stop()
+        model.stop()
         subprocess.run(["docker", "image", "rm", image], check=False, capture_output=True)

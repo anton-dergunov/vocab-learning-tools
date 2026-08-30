@@ -26,7 +26,8 @@ def test_demo_ids_are_stable_owner_scoped_and_pocketbase_compatible():
 def test_demo_graph_covers_every_core_collection():
     counts = Counter(collection for collection, _ in records())
     assert set(counts) == {
-        "topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"
+        "vocabularies", "topics", "lexemes", "senses", "attestations", "examples",
+        "image_prompts", "study_states",
     }
     assert counts["topics"] == 13
     assert counts["lexemes"] == 15
@@ -35,6 +36,14 @@ def test_demo_graph_covers_every_core_collection():
     assert any(r["status"] == "inbox" for r in by_collection("lexemes"))
     # Three vocabulary languages, so the language switcher has something to switch between.
     assert {r["language"] for r in by_collection("lexemes")} == {"es", "en", "zh-Hans"}
+
+
+def test_every_seeded_word_has_a_vocabulary_behind_it():
+    """A word in a language the account is not configured for cannot be captured or glossed."""
+    configured = {r["language"]: r for r in by_collection("vocabularies")}
+    assert {r["language"] for r in by_collection("lexemes")} <= set(configured)
+    assert all(r["gloss_langs"] for r in configured.values())
+    assert configured["zh-Hans"]["gloss_langs"] == ["ru", "en"]
 
 
 def test_starter_topics_carry_an_explicit_rail_order():

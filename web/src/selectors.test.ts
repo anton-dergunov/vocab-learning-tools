@@ -12,6 +12,28 @@ describe("vocabulary selectors", () => {
     expect(() => validateGraph(testGraph())).not.toThrow();
   });
 
+  it("offers a configured language that holds no words yet", () => {
+    const graph = testGraph();
+    graph.vocabularies.push({
+      ...graph.vocabularies[0], id: "vocabru00000001", language: "ru", definitionLang: "ru",
+      glossLangs: ["en"], order: 2
+    });
+    const options = languageOptions(graph);
+    // Without this a vocabulary could never be filled: there would be nowhere to switch to before
+    // its first word, and capture is the thing that would have created that word.
+    const russian = options.find((option) => option.code === "ru");
+    expect(russian).toMatchObject({ count: 0, configured: true, name: "Russian" });
+    // Configured languages keep the owner's order rather than being ranked by size.
+    expect(options.map((option) => option.code)).toEqual(["es", "en", "ru"]);
+  });
+
+  it("keeps showing a language whose vocabulary record has been removed", () => {
+    const graph = testGraph();
+    graph.vocabularies = graph.vocabularies.filter((entry) => entry.language !== "en");
+    const options = languageOptions(graph);
+    expect(options.find((option) => option.code === "en")).toMatchObject({ configured: false });
+  });
+
   it("lists one language at a time and keeps the inbox out of the filed collections", () => {
     const graph = testGraph();
     expect(visibleRows(graph, query).map((row) => row.headword)).toEqual(["picar", "la balsa"]);

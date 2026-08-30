@@ -1,11 +1,12 @@
-import type { VocabularyGraph } from "./domain";
+import type { PartOfSpeech, VocabularyGraph } from "./domain";
 import { normalizeServerURL, sessionStore, type StoredSession } from "./session";
+import type { ArticleDraft } from "./yaml";
 
 type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type LoginResponse = { token: string; user: { id: string; email: string } };
 
 /** Shared with the server hook. A mismatch stops synchronisation until the app is updated. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 interface SyncEnvelope {
   schemaVersion: number;
@@ -19,13 +20,58 @@ export type ResetResponse = SyncEnvelope & { deleted: number };
 
 const API_PATH = "/api/acervo/v1";
 const REQUEST_TIMEOUT = 15_000;
+/** Capture is two model calls deep, so the sync timeout would abort a request that is working. */
+const CAPTURE_TIMEOUT = 120_000;
+
+/* ── capture ────────────────────────────────────────────────────────────
+   The ingest endpoint of design §05. What comes back is a *proposal*: a draft the interface renders
+   for review and then saves through the repository like any other article. Nothing here writes. */
+
+export interface CaptureSentence {
+  text: string;
+  translation: string | null;
+}
+
+export interface CaptureResolution {
+  language: string;
+  headword: string;
+  lemma: string;
+  pos: PartOfSpeech;
+  sentences: CaptureSentence[];
+  note: string | null;
+  /** How many leading lines of the submitted text the entry covered. Only meaningful in a stream. */
+  consumedLines: number;
+  consumedText: string | null;
+}
+
+/** An entry this word already has. Merging into it is §06's job; here it is a signpost. */
+export interface CaptureDuplicate {
+  id: string;
+  headword: string;
+  shortGloss: string | null;
+}
+
+export interface CaptureResult {
+  resolution: CaptureResolution;
+  duplicates: CaptureDuplicate[];
+  draft: ArticleDraft | null;
+  applied: { lexemeId: string } | null;
+}
+
+export interface CaptureRequest {
+  text: string;
+  sourceUrl?: string | null;
+  sourceTitle?: string | null;
+  /** A free-text nudge for the generator — §05's "regenerate with a note". */
+  note?: string | null;
+}
 
 export class AcervoApiError extends Error {
   constructor(message: string, readonly status: number, readonly code: string) { super(message); }
 }
 
-function timeoutSignal(): AbortSignal | undefined {
-  return typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(REQUEST_TIMEOUT) : undefined;
+function timeoutSignal(milliseconds: number): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(milliseconds) : undefined;
 }
 
 class ApiClient {
@@ -37,7 +83,7 @@ class ApiClient {
   /** Called when the server rejects the stored token. The replica is deliberately kept. */
   handleUnauthorized(handler: (() => void) | null) { this.onUnauthorized = handler; }
 
-  async call<T>(path: string, options: RequestInit = {}, anonymous = false): Promise<T> {
+  async call<T>(path: string, options: RequestInit = {}, anonymous = false, timeout = REQUEST_TIMEOUT): Promise<T> {
     if (!anonymous && !this.session?.token) throw new AcervoApiError("Sign in to continue.", 401, "unauthenticated");
     const baseUrl = this.session?.baseUrl;
     if (!baseUrl) throw new AcervoApiError("Configure the Acervo server first.", 0, "not_configured");
@@ -46,7 +92,7 @@ class ApiClient {
     if (options.body) headers.set("Content-Type", "application/json");
     if (!anonymous && this.session?.token) headers.set("Authorization", `Bearer ${this.session.token}`);
     let response: Response;
-    try { response = await fetch(`${baseUrl}${API_PATH}${path}`, { ...options, headers, cache: "no-store", signal: timeoutSignal() }); }
+    try { response = await fetch(`${baseUrl}${API_PATH}${path}`, { ...options, headers, cache: "no-store", signal: timeoutSignal(timeout) }); }
     catch { throw new AcervoApiError("The Acervo server could not be reached. Local vocabulary remains available.", 0, "offline"); }
     let envelope: Envelope<T> = {};
     try { envelope = await response.json() as Envelope<T>; } catch { /* diagnosed below */ }
@@ -110,6 +156,28 @@ export const backendSession = {
     return client.call<PushResponse>("/graph", {
       method: "POST", body: JSON.stringify({ schemaVersion: SCHEMA_VERSION, deviceId, changes })
     });
+  },
+  /**
+   * Submits text to the ingest endpoint and returns what it made of it.
+   *
+   * `apply` is deliberately never set from here: the interface reviews a draft and then writes it
+   * through the repository, so capture gets no private path into the store. The headless transports
+   * are the ones that ask the server to apply.
+   */
+  captureText(deviceId: string, request: CaptureRequest): Promise<CaptureResult> {
+    return client.call<CaptureResult>("/capture", {
+      method: "POST",
+      body: JSON.stringify({
+        schemaVersion: SCHEMA_VERSION,
+        deviceId,
+        mode: "single",
+        apply: false,
+        text: request.text,
+        sourceUrl: request.sourceUrl ?? null,
+        sourceTitle: request.sourceTitle ?? null,
+        note: request.note ?? null
+      })
+    }, false, CAPTURE_TIMEOUT);
   },
   resetGraph(deviceId: string): Promise<ResetResponse> {
     return client.call<ResetResponse>("/graph/reset", {

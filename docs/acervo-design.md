@@ -1426,9 +1426,16 @@ affects whether it pushes over SSH or HTTPS.
 
 The §03 foundation is the only application model, and §04's protocol is now built on it:
 
-- PocketBase owns locked, owner-scoped `topics`, `lexemes`, `senses`, `attestations`, `examples`,
-  `image_prompts` and `study_states`, plus a `sync_state` row per owner that is never replicated.
-  Accounts are administrator-created; the app API provides password login and token refresh.
+- PocketBase owns locked, owner-scoped `vocabularies`, `topics`, `lexemes`, `senses`,
+  `attestations`, `examples`, `image_prompts` and `study_states`, plus a `sync_state` row per owner
+  that is never replicated. Accounts are administrator-created; the app API provides password login
+  and token refresh.
+- The `languages` block of §03 is owner data rather than a configuration file: a `vocabularies`
+  record per language studied, carrying its definition language, its gloss languages and its
+  presentation. It replicates like any other record, so the interface reads it offline and the
+  generation prompts are assembled from it. A configured language appears in the switcher before it
+  holds a single word, which is what makes a new vocabulary fillable at all. `reveal`, tokenizer,
+  lemmatizer and TTS remain unbuilt and therefore unmodelled.
 - IDs are generated offline in PocketBase's native 15-character format and stored unchanged in
   every relation and consumer manifest. `revision` is allocated by a save hook on every replicated
   collection, so the seeder, a future flow and the graph route all number their writes identically
@@ -1472,11 +1479,40 @@ The §03 foundation is the only application model, and §04's protocol is now bu
   nothing can be silently dropped by a round trip. Study state is written as comments, because the
   scheduler owns it.
 
-What the interface cannot do yet, it says so plainly rather than pretending: capture reports that
-it is not connected, and audio and clip playback have no media behind them. Capture (§05), article
-chat (§06) and external dictionaries (§08) remain subsequent iterations, and all three will reach
-the store through the same YAML reader and the same write route rather than a second path.
-Markdown may return only as a generated export (§12), never as application storage.
+- Capture (§05) is one authenticated route, `POST /graph`'s neighbour: submit text, get back an
+  entry. Two model calls, assembled server-side from prompts the server holds. The first decides
+  what the text is about — which word, which language, which of the sentences are the learner's,
+  and, walking a file, how many leading lines that entry occupied. That answer is what makes the
+  rest possible: a language with no vocabulary is refused before anything is generated, and a word
+  the account already holds returns the entry it has rather than a near-duplicate. Only then does
+  the second call write the article, choosing from the owner's real topics and glossing into the
+  languages their vocabulary asks for.
+- What comes back is a *proposal*, never a stored record. The interface renders it through the same
+  YAML projection it renders a stored article with, and saves it through the same repository, the
+  same diff and the same write route — so a generated entry and a typed one are indistinguishable
+  downstream, and review is the ordinary editor rather than a second surface. The route will also
+  apply what it built, for the transports that have no replica to diff against; that path assembles
+  a change set and puts it through the same merge, so capture has no private way into the store.
+  Everything lands in the Inbox, because review is non-negotiable.
+- Provenance is carried by the model rather than a flag: the learner's own sentence is kept verbatim
+  as an `attestation`, and the example drawn from it says so and names it. An example the model
+  invented carries the model that wrote it instead. Both are created by one save, which is why a
+  document that names no stored entry may carry ids its producer minted.
+- Transports are thin by construction. A script walks a notes file into the Inbox one entry at a
+  time, advancing by exactly what the server says it consumed, checkpointed outside the notes and
+  leaving them untouched unless told to cut. The share-sheet and browser transports of §05 are the
+  same single POST and remain unbuilt.
+- Vocabularies and topics are edited in Settings, because neither the generator nor a save can file
+  a word under a topic that does not exist.
+
+What the interface cannot do yet, it says so plainly rather than pretending: audio and clip playback
+have no media behind them. Article chat (§06) and external dictionaries (§08) remain subsequent
+iterations, and both will reach the store through the same YAML reader and the same write route
+rather than a second path. Merging a repeat capture into the entry it belongs to waits for §06,
+which is why capture stops at the duplicate rather than guessing. Whether generation should be
+grounded on external sources at all is an open question with a spike planned for it
+(`docs/acervo-grounding-spike.md`), not a settled part of §09. Markdown may return only as a
+generated export (§12), never as application storage.
 
 ---
 

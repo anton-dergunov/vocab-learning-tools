@@ -8,9 +8,9 @@
 import {
   effectiveShortGloss,
   type Attestation, type Example, type ImagePrompt, type Lexeme, type LexemeStatus,
-  type Sense, type StudyState, type SyncFields, type Topic, type VocabularyGraph
+  type Sense, type StudyState, type SyncFields, type Topic, type Vocabulary, type VocabularyGraph
 } from "./domain";
-import { glossLanguagesFor, languageOf, type LanguagePresentation } from "./languages";
+import { glossLanguagesFor, languageOf, presentationOf, type LanguagePresentation } from "./languages";
 
 export type SortKey = "recent" | "alpha" | "hard";
 /** A topic record id, or one of the two synthetic collections the rail offers. */
@@ -47,6 +47,8 @@ export interface Article {
 
 export interface LanguageOption extends LanguagePresentation {
   count: number;
+  /** False for a language that has words but no vocabulary record behind it any more. */
+  configured: boolean;
 }
 
 export interface TopicOption {
@@ -73,12 +75,36 @@ export function lexemesIn(graph: VocabularyGraph, language: string): Lexeme[] {
   return live(graph.lexemes).filter((lexeme) => lexeme.language === language);
 }
 
+export function vocabularies(graph: VocabularyGraph): Vocabulary[] {
+  return live(graph.vocabularies)
+    .slice()
+    .sort((left, right) => left.order - right.order || left.language.localeCompare(right.language));
+}
+
+export function vocabularyFor(graph: VocabularyGraph, language: string): Vocabulary | null {
+  return live(graph.vocabularies).find((entry) => entry.language === language) ?? null;
+}
+
+/**
+ * Every language the switcher offers: the ones configured, in the owner's order, plus any that
+ * still hold words without a record behind them.
+ *
+ * A configured language with no words has to appear, or a vocabulary could never be filled — there
+ * would be nowhere to switch to before the first capture. That is why this is no longer derived
+ * from the lexemes alone.
+ */
 export function languageOptions(graph: VocabularyGraph): LanguageOption[] {
   const counts = new Map<string, number>();
   live(graph.lexemes).forEach((lexeme) => counts.set(lexeme.language, (counts.get(lexeme.language) ?? 0) + 1));
-  return [...counts.entries()]
-    .map(([code, count]) => ({ ...languageOf(code), count }))
+  const configured = vocabularies(graph).map((entry) => ({
+    ...presentationOf(entry), count: counts.get(entry.language) ?? 0, configured: true
+  }));
+  const known = new Set(configured.map((option) => option.code));
+  const orphaned = [...counts.entries()]
+    .filter(([code]) => !known.has(code))
+    .map(([code, count]) => ({ ...languageOf(code), count, configured: false }))
     .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
+  return [...configured, ...orphaned];
 }
 
 export function inboxCount(graph: VocabularyGraph, language: string): number {
@@ -112,7 +138,7 @@ export function shortGlossOf(graph: VocabularyGraph, lexeme: Lexeme): string {
   if (lexeme.shortGloss?.trim()) return lexeme.shortGloss.trim();
   const sense = sensesOf(graph, lexeme.id)[0];
   if (sense) {
-    const preferred = glossLanguagesFor(lexeme.language)
+    const preferred = glossLanguagesFor(lexeme.language, graph.vocabularies)
       .map((lang) => sense.glosses.find((gloss) => gloss.lang === lang))
       .find(Boolean);
     const gloss = preferred ?? sense.glosses[0];

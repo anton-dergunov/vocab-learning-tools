@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AddSheet, { type AddTab } from "./AddSheet";
-import { backendSession } from "./api";
+import { backendSession, type CaptureRequest } from "./api";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
 import LexemeArticle from "./LexemeArticle";
 import LexemeList from "./LexemeList";
@@ -236,6 +236,15 @@ export default function App() {
     notify("Added to your vocabulary");
   }
 
+  /**
+   * Capture submits text and gets back a proposal — never a stored record. Everything that saves
+   * still goes through `createFromYaml`, so a generated entry and a typed one are the same write.
+   */
+  const captureText = useCallback((request: CaptureRequest) => {
+    const deviceId = repository.snapshot().deviceId;
+    return backendSession.captureText(deviceId, request);
+  }, []);
+
   async function removeLexeme(id: string) {
     try {
       await repository.delete("lexemes", id);
@@ -381,11 +390,13 @@ export default function App() {
       tab={addTab} onTab={setAddTab} problems={problems} busy={saving}
       onClose={() => { setProblems([]); setAddTab(null); }}
       onCreate={(draft) => void createFromYaml(draft)}
-      onUnsupported={notify}
+      onCapture={captureText}
+      onOpenLexeme={(id) => { setProblems([]); setAddTab(null); openLexeme(id); }}
     />}
     {settings && <Settings
-      update={update} email={session.email} status={syncStatus} snapshot={snapshot}
+      update={update} email={session.email} status={syncStatus} snapshot={snapshot} language={language}
       onSignOut={() => void signOut()} onClose={() => setSettings(false)} onNotify={notify}
+      onChanged={() => setSnapshot(repository.snapshot())}
     />}
     <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
   </>;

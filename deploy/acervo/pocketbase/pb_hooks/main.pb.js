@@ -1,4 +1,4 @@
-const REPLICATED = ["topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"];
+const REPLICATED = ["vocabularies", "topics", "lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"];
 
 routerAdd("GET", "/api/acervo/v1/{path...}", (event) => require(`${__hooks}/acervo.js`).dispatch(event));
 routerAdd("POST", "/api/acervo/v1/{path...}", (event) => require(`${__hooks}/acervo.js`).dispatch(event));

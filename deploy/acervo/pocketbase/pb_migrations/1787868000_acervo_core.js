@@ -50,6 +50,31 @@ migrate((app) => {
   });
   app.save(syncState);
 
+  // The languages this owner studies, and how they want each presented. Replicated like any other
+  // record and deliberately without a unique index on `language`: §04 forbids uniqueness on a
+  // replicated collection, because it is exactly the constraint two offline devices can each
+  // satisfy on their own. The client refuses a duplicate at graph level instead.
+  const vocabularies = new Collection({
+    type: "base",
+    name: "vocabularies",
+    ...locked,
+    fields: [
+      ownerField(),
+      { type: "text", name: "language", required: true, min: 2, max: 35, pattern: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" },
+      { type: "text", name: "definition_lang", required: true, min: 2, max: 35, pattern: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" },
+      { type: "json", name: "gloss_langs" },
+      { type: "text", name: "display_name", max: 120 },
+      { type: "text", name: "flag", max: 32 },
+      { type: "number", name: "vocab_order", min: 0, onlyInt: true },
+      ...syncFields,
+    ],
+    indexes: [
+      "CREATE INDEX idx_vocabularies_owner_revision ON vocabularies (owner, revision)",
+      "CREATE INDEX idx_vocabularies_owner_language ON vocabularies (owner, language)",
+    ],
+  });
+  app.save(vocabularies);
+
   const topics = new Collection({
     type: "base",
     name: "topics",
@@ -224,7 +249,7 @@ migrate((app) => {
   });
   app.save(studyStates);
 }, (app) => {
-  ["study_states", "image_prompts", "examples", "attestations", "senses", "lexemes", "topics", "sync_state"].forEach((name) => {
+  ["study_states", "image_prompts", "examples", "attestations", "senses", "lexemes", "topics", "vocabularies", "sync_state"].forEach((name) => {
     try { app.delete(app.findCollectionByNameOrId(name)); } catch (_) { /* already absent */ }
   });
 });

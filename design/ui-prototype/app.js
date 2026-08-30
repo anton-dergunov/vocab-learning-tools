@@ -472,6 +472,7 @@ function showValidation(target, problems) {
 /* ── add sheet ───────────────────────────────────────────────────────── */
 
 let addTab = "capture";
+let captureDetails = false;
 
 function renderSheet() {
   const back = $("#sheetBack");
@@ -490,9 +491,18 @@ function renderSheet() {
         ${addTab === "capture" ? `
           <label class="label" for="captureText">Paste a word, or the sentence you met it in</label>
           <textarea class="capture-area" id="captureText" style="margin-top:8px" placeholder="Se pican las verduras en dados de un centímetro y se reservan."></textarea>
-          <p class="hint">Share the sentence and pick the word here; the entry is generated in the background and lands in <b>Inbox</b> ready for review. Nothing is generated in this prototype.</p>
+          <p class="hint">Share the whole sentence — the word is picked out for you, and the sentence is kept as the place you met it. The entry is built for review and lands in <b>Inbox</b>. Nothing is generated in this prototype.</p>
+          <button class="capture-more" id="captureMore" aria-expanded="${captureDetails}">${captureDetails ? "Fewer options" : "Where it came from, and what to ask for"}</button>
+          ${captureDetails ? `
+            <div class="capture-details">
+              <label class="label" for="captureUrl">Source link</label>
+              <input id="captureUrl" placeholder="https://example.com/receta">
+              <label class="label" for="captureTitle">Where it came from</label>
+              <input id="captureTitle" placeholder="Receta — pisto manchego">
+              <label class="label" for="captureNote">Anything to ask the generator</label>
+              <input id="captureNote" placeholder="contrast it with picante">
+            </div>` : ""}
           <div class="sheet-actions">
-            <span class="stub">stub</span>
             <span class="spacer"></span>
             <button class="tb-btn" id="switchYaml">Write YAML instead</button>
             <button class="tb-btn primary" id="processBtn">Process</button>
@@ -513,7 +523,7 @@ function renderSheet() {
   wireSheet();
 }
 
-function openSheet(tab) { addTab = tab || "capture"; $("#sheetBack").classList.add("open"); renderSheet(); }
+function openSheet(tab) { addTab = tab || "capture"; captureDetails = false; $("#sheetBack").classList.add("open"); renderSheet(); }
 function closeSheet()   { $("#sheetBack").classList.remove("open"); $("#sheetBack").innerHTML = ""; }
 
 /* ── toast ───────────────────────────────────────────────────────────── */
@@ -588,6 +598,7 @@ function wireSheet() {
   const c1 = $("#closeSheet"), c2 = $("#closeSheet2");
   if (c1) c1.onclick = close;
   if (c2) c2.onclick = close;
+  const more = $("#captureMore"); if (more) more.onclick = () => { captureDetails = !captureDetails; renderSheet(); };
   const sw = $("#switchYaml"); if (sw) sw.onclick = () => { addTab = "yaml"; renderSheet(); };
   const pb = $("#processBtn");
   if (pb) pb.onclick = () => { toast("Capture pipeline is not wired up yet"); };

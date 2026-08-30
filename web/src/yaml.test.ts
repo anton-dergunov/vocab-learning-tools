@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { articleFor } from "./selectors";
 import { testGraph } from "./testGraph";
-import { draftFor, parseArticle, YAML_TEMPLATE, YamlProblems, yamlFor } from "./yaml";
+import { draftFor, parseArticle, YAML_TEMPLATE, YamlProblems, yamlFor, yamlForDraft, type ArticleDraft } from "./yaml";
 
 const articles = () => {
   const graph = testGraph();
@@ -130,6 +130,35 @@ describe("the new-entry template", () => {
       "senses[0].definition: is required.",
       "senses[0].examples[0].text: is required."
     ]);
+  });
+
+  it("renders a generated draft through the same serialiser, ids and all", () => {
+    // What the ingest endpoint returns: no lexeme id, because the entry is new, but minted ids on
+    // the records that have to reference each other before anything is stored.
+    const generated: ArticleDraft = {
+      id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null, ipa: null,
+      pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "🪝",
+      topics: ["Travel"], status: "inbox", shortGloss: "hook", notes: ["Not the same as el gancho."],
+      senses: [{
+        id: "sense0000000091", order: 0, definition: "Gancho de metal curvo.", definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["hook"] }], domain: null, images: [],
+        examples: [{
+          id: "example00000091", text: "El disfraz de pirata viene con un garfio.", textLang: "es",
+          translation: "The pirate costume comes with a hook.", translationLang: "en",
+          origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
+          videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+          note: null, matchedForm: "un garfio", matchedTranslationForm: "hook", approved: false
+        }]
+      }],
+      attestations: [{
+        id: "attest000000091", text: "El disfraz de pirata viene con un garfio.", translation: null,
+        sourceUrl: null, sourceTitle: null, sourceKind: "unknown",
+        capturedAt: "2026-08-29T12:00:00.000Z"
+      }],
+      images: []
+    };
+    // The contract that makes review safe: what the model proposed is exactly what a save applies.
+    expect(parseArticle(yamlForDraft(generated))).toEqual(generated);
   });
 
   it("parses once filled in, and creates everything it describes", () => {

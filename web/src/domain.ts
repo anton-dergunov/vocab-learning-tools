@@ -11,7 +11,7 @@ export type Register = typeof REGISTERS[number];
 export type LexemeStatus = typeof LEXEME_STATUSES[number];
 export type SourceKind = typeof SOURCE_KINDS[number];
 export type ExampleOrigin = typeof EXAMPLE_ORIGINS[number];
-export type EntityKind = "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "studyStates";
+export type EntityKind = "vocabularies" | "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "studyStates";
 
 export interface SyncFields {
   deleted: boolean;
@@ -28,6 +28,25 @@ export interface OwnedFields {
 export interface Gloss {
   lang: string;
   terms: string[];
+}
+
+/**
+ * One language this owner studies, and how they want it presented (design §03).
+ *
+ * A vocabulary exists independently of whether it holds any words yet — that is the whole point,
+ * since a language has to be configured before its first word can be captured. `languages.ts`
+ * supplies the flag and name when the record leaves them empty.
+ */
+export interface Vocabulary extends SyncFields, OwnedFields {
+  id: string;
+  language: string;
+  /** The language a sense is defined in — usually the target language itself. */
+  definitionLang: string;
+  /** The languages to translate into, most preferred first. Never empty. */
+  glossLangs: string[];
+  displayName: string | null;
+  flag: string | null;
+  order: number;
 }
 
 export interface Topic extends SyncFields, OwnedFields {
@@ -126,6 +145,7 @@ export interface StudyState extends SyncFields, OwnedFields {
 }
 
 export interface VocabularyGraph {
+  vocabularies: Vocabulary[];
   topics: Topic[];
   lexemes: Lexeme[];
   senses: Sense[];
@@ -135,6 +155,7 @@ export interface VocabularyGraph {
   studyStates: StudyState[];
 }
 
+export type VocabularyInput = Omit<Vocabulary, "id" | keyof SyncFields | keyof OwnedFields>;
 export type TopicInput = Omit<Topic, "id" | keyof SyncFields | keyof OwnedFields>;
 export type LexemeInput = Omit<Lexeme, "id" | keyof SyncFields | keyof OwnedFields>;
 export type SenseInput = Omit<Sense, "id" | keyof SyncFields | keyof OwnedFields>;
@@ -197,6 +218,24 @@ export function validateGraph(graph: VocabularyGraph): void {
     invariant(!ids.has(record.id), `Duplicate record id ${record.id}.`);
     ids.add(record.id);
   };
+  const vocabularyLanguages = new Set<string>();
+  graph.vocabularies.forEach((record) => {
+    remember(record);
+    language(record.language, "Vocabulary language");
+    language(record.definitionLang, "Vocabulary definition language");
+    stringArray(record.glossLangs, "Vocabulary gloss languages", false);
+    record.glossLangs.forEach((code) => language(code, "Vocabulary gloss language"));
+    optionalString(record.displayName, "Vocabulary name");
+    optionalString(record.flag, "Vocabulary flag");
+    invariant(Number.isSafeInteger(record.order) && record.order >= 0, "Vocabulary order is invalid.");
+    // Not a storage constraint (§04 forbids those on replicated collections) — a graph-level one,
+    // so two devices that each added the same language offline cannot both be believed at once.
+    if (!record.deleted) {
+      invariant(!vocabularyLanguages.has(record.language), `Two vocabularies claim ${record.language}.`);
+      vocabularyLanguages.add(record.language);
+    }
+  });
+
   const topics = new Map<string, Topic>();
   graph.topics.forEach((record) => {
     remember(record);

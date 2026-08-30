@@ -14,6 +14,16 @@ export const TEST_OWNER = OWNER;
 
 export function testGraph(): VocabularyGraph {
   return {
+    vocabularies: [
+      {
+        id: "vocabes00000001", language: "es", definitionLang: "es", glossLangs: ["en"],
+        displayName: null, flag: null, order: 0, ...sync("01-05")
+      },
+      {
+        id: "vocaben00000001", language: "en", definitionLang: "en", glossLangs: ["ru"],
+        displayName: null, flag: null, order: 1, ...sync("01-05")
+      }
+    ],
     topics: [
       { id: "topicfood000001", name: "Food", icon: "🍽️", order: 0, ...sync("01-05") },
       { id: "topictravel0001", name: "Travel", icon: "🧭", order: 1, ...sync("01-05") }

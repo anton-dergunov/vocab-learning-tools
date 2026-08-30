@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MemoryDatabase } from "./localDatabase";
-import { LocalAcervoRepository } from "./repository";
+import { LOCAL_SCHEMA_VERSION, LocalAcervoRepository } from "./repository";
 import { fakeRemote } from "./testRemote";
 import { articleFor } from "./selectors";
 import { parseArticle, YAML_TEMPLATE, yamlFor } from "./yaml";
@@ -203,7 +203,7 @@ describe("the Acervo repository", () => {
     expect(repository.snapshot()).toMatchObject({
       lexemes: [], cursor: 0, datasetId: "", deviceId: "device000000001", ownerId: "owner0000000001"
     });
-    expect((await database.read()).meta.schemaVersion).toBe(4);
+    expect((await database.read()).meta.schemaVersion).toBe(LOCAL_SCHEMA_VERSION);
   });
 });
 
@@ -312,6 +312,49 @@ describe("saving an article edited as YAML", () => {
     const created = repository.snapshot().lexemes.find((lexeme) => lexeme.id === id)!;
     expect(created.headword).toBe("sobremesa");
     expect(created.topicIds).toEqual(["topic0000000001"]);
+  });
+
+  it("creates the ids a generated document minted, so an example can name its attestation", async () => {
+    const { repository, remote } = await seeded();
+    const before = remote.sent.length;
+    // What the ingest endpoint proposes: a new entry whose example points at an attestation that
+    // does not exist yet, because both are created by this one save.
+    const id = await repository.saveArticle({
+      id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null, ipa: null,
+      pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "\u{1FA9D}",
+      topics: ["Health"], status: "inbox", shortGloss: "hook", notes: [], images: [],
+      senses: [{
+        id: "sense0000000091", order: 0, definition: "Gancho de metal curvo.", definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["hook"] }], domain: null, images: [],
+        examples: [{
+          id: "example00000091", text: "Viene con un garfio.", textLang: "es",
+          translation: "It comes with a hook.", translationLang: "en", origin: "attestation",
+          sourceAttestationId: "attest000000091", modelId: null, videoRef: null, videoTitle: null,
+          videoStart: null, imageRef: null, audioRef: null, note: null, matchedForm: null,
+          matchedTranslationForm: null, approved: false
+        }]
+      }],
+      attestations: [{
+        id: "attest000000091", text: "Viene con un garfio.", translation: null, sourceUrl: null,
+        sourceTitle: null, sourceKind: "unknown", capturedAt: "2026-08-29T12:00:00.000Z"
+      }]
+    });
+
+    expect(remote.sent.length - before).toBe(1);
+    const saved = repository.snapshot();
+    expect(saved.senses.find((sense) => sense.id === "sense0000000091")?.lexemeId).toBe(id);
+    expect(saved.attestations.find((record) => record.id === "attest000000091")?.lexemeId).toBe(id);
+    expect(saved.examples.find((record) => record.id === "example00000091")?.sourceAttestationId)
+      .toBe("attest000000091");
+  });
+
+  it("still refuses an unknown id when the document edits an entry that exists", async () => {
+    const { repository, draft } = await seeded();
+    const article = draft();
+    // The article is stored, so every id in it should name a stored record. One that names nothing
+    // is a typo or a paste from elsewhere, and silently creating a record under it would hide that.
+    article.senses[0].id = "sense0000000099";
+    await expect(repository.saveArticle(article)).rejects.toThrow("not in your vocabulary");
   });
 
   it("refuses a topic that does not exist, and names the ones that do", async () => {

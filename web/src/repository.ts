@@ -3,20 +3,20 @@ import {
   type Attestation, type AttestationInput, type EntityKind, type Example, type ExampleInput,
   type ImagePrompt, type ImagePromptInput, type Lexeme, type LexemeInput, type Sense, type SenseInput,
   type OwnedFields, type StudyState, type StudyStateInput, type SyncFields, type Topic, type TopicInput,
-  type VocabularyGraph
+  type Vocabulary, type VocabularyInput, type VocabularyGraph
 } from "./domain";
 import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase, type ReplicaMeta } from "./localDatabase";
 import { newDeviceId, newId, nowInstant } from "./ids";
 import type { ArticleDraft, ImagePromptDraft } from "./yaml";
 
-export const LOCAL_SCHEMA_VERSION = 4;
+export const LOCAL_SCHEMA_VERSION = 5;
 
 const EMPTY_GRAPH = (): VocabularyGraph => ({
-  topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
+  vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
 });
 
-type Entity = Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | StudyState;
-type EntityInput = TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput;
+type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | StudyState;
+type EntityInput = VocabularyInput | TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput;
 
 /** What the server returns for a batch of applied records. */
 export interface RemoteWrite {
@@ -52,6 +52,7 @@ export interface AcervoRepository {
   applyRemote(changes: Partial<VocabularyGraph>, cursor: number, datasetId: string): Promise<number>;
   writeGraph(changes: Partial<VocabularyGraph>): Promise<void>;
   saveArticle(draft: ArticleDraft): Promise<string>;
+  saveVocabulary(input: VocabularyInput, id?: string): Promise<Vocabulary>;
   saveTopic(input: TopicInput, id?: string): Promise<Topic>;
   saveLexeme(input: LexemeInput, id?: string): Promise<Lexeme>;
   saveSense(input: SenseInput, id?: string): Promise<Sense>;
@@ -99,6 +100,7 @@ export class LocalAcervoRepository implements AcervoRepository {
       await this.database.write({ meta: this.meta });
     } else {
       const graph: VocabularyGraph = {
+        vocabularies: contents.vocabularies,
         topics: contents.topics,
         lexemes: contents.lexemes,
         senses: contents.senses,
@@ -109,7 +111,7 @@ export class LocalAcervoRepository implements AcervoRepository {
       };
       validateGraph(graph);
       const allRecords: Entity[][] = [
-        graph.topics, graph.lexemes, graph.senses, graph.attestations, graph.examples, graph.imagePrompts, graph.studyStates
+        graph.vocabularies, graph.topics, graph.lexemes, graph.senses, graph.attestations, graph.examples, graph.imagePrompts, graph.studyStates
       ];
       const hasForeignRecord = allRecords.some((records) => records.some((record) => record.ownerId !== ownerId));
       if (hasForeignRecord) throw new Error("Replica records do not belong to the authenticated owner.");
@@ -264,6 +266,7 @@ export class LocalAcervoRepository implements AcervoRepository {
     return (this.graph[kind] as Entity[]).find((candidate) => candidate.id === record.id) ?? record;
   }
 
+  saveVocabulary(input: VocabularyInput, id?: string) { return this.save("vocabularies", input, id) as Promise<Vocabulary>; }
   saveTopic(input: TopicInput, id?: string) { return this.save("topics", input, id) as Promise<Topic>; }
   saveLexeme(input: LexemeInput, id?: string) { return this.save("lexemes", input, id) as Promise<Lexeme>; }
   saveSense(input: SenseInput, id?: string) { return this.save("senses", input, id) as Promise<Sense>; }
@@ -333,11 +336,20 @@ export class LocalAcervoRepository implements AcervoRepository {
       ...this.stamp(existingLexeme)
     } as Lexeme);
 
-    // An id in the document that belongs to a different entry would silently steal that record.
+    /**
+     * An id in the document that belongs to a different entry would silently steal that record.
+     *
+     * An id naming nothing at all is refused for the same reason — with one exception. A brand-new
+     * article cannot legitimately reference a stored child, so every id such a document carries is
+     * one its producer minted, and generation needs exactly that: an example that names the
+     * attestation it was drawn from, both created by the same save. The server still refuses an id
+     * another account holds, so this cannot reach anyone else's record.
+     */
+    const minting = draft.id === null;
     const claim = <T extends Entity>(records: T[], id: string | null, owner: (record: T) => boolean): T | undefined => {
       const existing = find(records, id);
       if (!existing) {
-        if (id) throw new Error(`This document names a record that is not in your vocabulary (${id}), so it was not saved.`);
+        if (id && !minting) throw new Error(`This document names a record that is not in your vocabulary (${id}), so it was not saved.`);
         return undefined;
       }
       if (!owner(existing)) {

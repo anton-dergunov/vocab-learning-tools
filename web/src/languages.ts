@@ -1,11 +1,13 @@
 /**
  * Presentation for the languages a replica happens to contain.
  *
- * This is configuration, not schema — it mirrors the `languages` block described in design §03 and
- * carries only what the interface needs: a label, a flag for the switcher, and the gloss languages
- * to prefer when deriving a one-line short form. Tags with no entry fall back to the platform's
- * own display names, so an unexpected language still renders sensibly.
+ * Configuration now lives in the owner's `vocabularies` records (design §03), so this table is only
+ * the *defaults* a record falls back on: the flag and name to offer when someone adds a language,
+ * and the gloss languages to assume for a lexeme whose language has no record at all. Tags absent
+ * from both fall back to the platform's own display names, so nothing renders as a bare tag.
  */
+
+import type { Vocabulary } from "./domain";
 
 export interface LanguagePresentation {
   code: string;
@@ -36,6 +38,28 @@ export function languageOf(code: string): LanguagePresentation {
   return { code, flag: "🏳️", name: displayName(code), glossLangs: [] };
 }
 
-export function glossLanguagesFor(code: string): string[] {
+/** What a configured vocabulary looks like in the switcher: its own labels, defaults behind them. */
+export function presentationOf(vocabulary: Vocabulary): LanguagePresentation {
+  const fallback = languageOf(vocabulary.language);
+  return {
+    code: vocabulary.language,
+    flag: vocabulary.flag ?? fallback.flag,
+    name: vocabulary.displayName ?? fallback.name,
+    glossLangs: vocabulary.glossLangs
+  };
+}
+
+/**
+ * Which languages to reach for when reducing a sense to one line. The owner's own preference wins;
+ * the table is what answers for a lexeme in a language they have since removed.
+ */
+export function glossLanguagesFor(code: string, vocabularies: Vocabulary[] = []): string[] {
+  const configured = vocabularies.find((entry) => !entry.deleted && entry.language === code);
+  if (configured) return configured.glossLangs;
   return languageOf(code).glossLangs;
+}
+
+/** The definition language for a new sense: the owner's choice, else the target language itself. */
+export function definitionLanguageFor(code: string, vocabularies: Vocabulary[] = []): string {
+  return vocabularies.find((entry) => !entry.deleted && entry.language === code)?.definitionLang ?? code;
 }

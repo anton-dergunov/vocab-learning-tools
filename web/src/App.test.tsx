@@ -200,16 +200,135 @@ describe("Acervo application", () => {
     expect(settings.getByText("Updates and server address")).toBeInTheDocument();
   });
 
+  it("adds a topic from settings and files it into the rail", async () => {
+    signedIn();
+    await openList();
+    acceptWrites();
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+
+    const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
+    fireEvent.click(settings.getByRole("button", { name: "Add a topic…" }));
+    fireEvent.change(settings.getByLabelText("Name"), { target: { value: "Slang" } });
+    fireEvent.change(settings.getByLabelText("Icon"), { target: { value: "💬" } });
+    fireEvent.click(settings.getByRole("button", { name: "Add topic" }));
+
+    // Generated entries can only be filed under topics that exist, so this is what unblocks capture
+    // on an account that was not seeded.
+    expect(await settings.findByText("Slang")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+    expect(await screen.findByRole("button", { name: /Slang/ })).toBeInTheDocument();
+  });
+
+  it("refuses to remove a vocabulary that still holds words", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+
+    const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
+    const spanish = settings.getByText(/^es · defined in es/).closest(".config-row")!;
+    fireEvent.click(within(spanish as HTMLElement).getByRole("button", { name: "Remove" }));
+    // Nothing is deleted, but the words would lose the gloss preference they are rendered with.
+    expect(await screen.findByText(/still has 3 words/)).toBeInTheDocument();
+    expect(repository.snapshot().vocabularies.filter((entry) => !entry.deleted)).toHaveLength(2);
+  });
+
   it("says plainly which actions are not connected yet", async () => {
     signedIn();
     await openList();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
     expect(await screen.findByText("Audio is not wired up yet")).toBeInTheDocument();
+  });
+
+  it("refuses to build a second entry for a word already in the vocabulary", async () => {
+    signedIn();
+    await openList();
+    const capture = vi.spyOn(backendSession, "captureText").mockResolvedValue({
+      resolution: {
+        language: "es", headword: "picar", lemma: "picar", pos: "verb",
+        sentences: [], note: null, consumedLines: 1, consumedText: null
+      },
+      duplicates: [{ id: "lexemepicar0001", headword: "picar", shortGloss: "to itch; to chop" }],
+      draft: null,
+      applied: null
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Process" }));
-    expect(await screen.findByText("Capture pipeline is not wired up yet")).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText(/Paste a word/), {
+      target: { value: "¿Te pica mucho la salsa?" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Process" }));
+
+    expect(await screen.findByText("You already have this word.")).toBeInTheDocument();
+    // Nothing was generated and nothing was written; the entry it already has is one tap away.
+    expect(capture).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "picar" }));
+    expect(await screen.findByRole("button", { name: "Edit as YAML" })).toBeInTheDocument();
+  });
+
+  it("captures a sentence, reviews the generated entry as YAML and saves it", async () => {
+    signedIn();
+    await openList();
+    acceptWrites();
+    vi.spyOn(backendSession, "captureText").mockResolvedValue({
+      resolution: {
+        language: "es", headword: "el garfio", lemma: "garfio", pos: "noun",
+        sentences: [{ text: "El disfraz de pirata viene con un garfio.", translation: null }],
+        note: null, consumedLines: 1, consumedText: null
+      },
+      duplicates: [],
+      applied: null,
+      draft: {
+        id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null,
+        ipa: null, pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "🪝",
+        topics: ["Travel"], status: "inbox", shortGloss: "hook", notes: [],
+        senses: [{
+          id: "sense0000000091", order: 0, definition: "Gancho de metal curvo y puntiagudo.",
+          definitionLang: "es", glosses: [{ lang: "en", terms: ["hook", "grappling hook"] }],
+          domain: null, images: [],
+          examples: [{
+            id: "example00000091", text: "El disfraz de pirata viene con un garfio.", textLang: "es",
+            translation: "The pirate costume comes with a hook.", translationLang: "en",
+            // The learner's own sentence, linked to the attestation created by the same save.
+            origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
+            videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+            note: null, matchedForm: "un garfio", matchedTranslationForm: "hook",
+            approved: false
+          }]
+        }],
+        attestations: [{
+          id: "attest000000091", text: "El disfraz de pirata viene con un garfio.", translation: null,
+          sourceUrl: null, sourceTitle: null, sourceKind: "unknown",
+          capturedAt: "2026-08-29T12:00:00.000Z"
+        }],
+        images: []
+      }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.change(await screen.findByLabelText(/Paste a word/), {
+      target: { value: "El disfraz de pirata viene con un garfio." }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Process" }));
+
+    // The proposal arrives in the YAML tab as an ordinary editable document. Waiting on the tab
+    // rather than on "a textbox" matters: the capture box is itself one, and is still mounted.
+    await screen.findByText("new-entry.yaml");
+    const editor = screen.getByRole("textbox");
+    expect((editor as HTMLTextAreaElement).value).toContain("headword: el garfio");
+    expect((editor as HTMLTextAreaElement).value).toContain("origin: attestation");
+
+    fireEvent.click(screen.getByRole("button", { name: "Validate & save" }));
+    expect(await screen.findByRole("heading", { name: /garfio/ })).toBeInTheDocument();
+
+    const saved = repository.snapshot();
+    const lexeme = saved.lexemes.find((record) => record.headword === "el garfio");
+    expect(lexeme?.status).toBe("inbox");
+    const attestation = saved.attestations.find((record) => record.lexemeId === lexeme?.id);
+    const example = saved.examples.find((record) => record.text.startsWith("El disfraz"));
+    // Provenance is the point: the sentence survives as its own record, and the example says so.
+    expect(example?.origin).toBe("attestation");
+    expect(example?.sourceAttestationId).toBe(attestation?.id);
   });
 
   it("saves an article edited as YAML and shows the change", async () => {

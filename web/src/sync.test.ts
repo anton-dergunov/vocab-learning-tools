@@ -7,7 +7,7 @@ import { TEST_OWNER, testGraph } from "./testGraph";
 
 const DATASET = "dataset00000001";
 const EMPTY = (): VocabularyGraph => ({
-  topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
+  vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
 });
 
 /** The server numbers every row it hands back; the cursor is the highest of them. */

@@ -11,6 +11,10 @@ services:
       ACERVO_APP_VERSION: "${ACERVO_APP_VERSION:-}"
       ACERVO_APP_BUILD: "${ACERVO_APP_BUILD:-}"
       ACERVO_DOWNLOADS_PATH: /pb/downloads
+      ACERVO_PROMPTS_PATH: /pb/pb_hooks/prompts
+      ACERVO_LLM_MODEL: "${ACERVO_LLM_MODEL:-gemini-3.1-flash-lite}"
+      ACERVO_LLM_ENDPOINT: "${ACERVO_LLM_ENDPOINT:-https://generativelanguage.googleapis.com}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
     ports:
       - "${ACERVO_APP_BIND_ADDRESS:-127.0.0.1}:${ACERVO_APP_PORT:-27702}:8090"
     volumes:

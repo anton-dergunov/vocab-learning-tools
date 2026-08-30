@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { TopicEditor, VocabularyEditor } from "./Configuration";
 import { fetchMacRelease, type MacRelease } from "./macRelease";
 import { installUpdate, isNativeHost, type UpdateStage } from "./pwa";
 import type { ReplicaSnapshot } from "./repository";
@@ -9,14 +10,17 @@ import { appVersionLabel } from "./version";
 /** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
 const CONFIRMATION = "DELETE";
 
-export default function Settings({ update, email, status, snapshot, onSignOut, onClose, onNotify }: {
+export default function Settings({ update, email, status, snapshot, language, onSignOut, onClose, onNotify, onChanged }: {
   update?: UpdateStage;
   email: string;
   status: SyncStatus;
   snapshot: ReplicaSnapshot | null;
+  /** Which vocabulary the topic counts are shown for — the one the list is currently filtered to. */
+  language: string;
   onSignOut(): void;
   onClose(): void;
   onNotify(message: string): void;
+  onChanged(): void;
 }) {
   /* On the Mac the app updates itself and remembers its own server address, so repeating either
      here would offer a second, conflicting control for something this window does not own. What
@@ -98,6 +102,11 @@ export default function Settings({ update, email, status, snapshot, onSignOut, o
           <strong>Updates and server address</strong>
           <span>Acervo ▸ Settings, in the menu bar.</span>
         </div>}
+        {snapshot && <>
+          <VocabularyEditor snapshot={snapshot} onNotify={onNotify} onChanged={onChanged} />
+          <TopicEditor snapshot={snapshot} language={language} onNotify={onNotify} onChanged={onChanged} />
+        </>}
+
         <button className="tb-btn" onClick={onSignOut}>Sign out</button>
 
         <div className="danger-zone">
