@@ -360,11 +360,12 @@ export default function App() {
             title and a save button on screen at every window size. */}
         <main className={`main ${composing ? "composing" : ""}`} ref={main}>
           {addTab ? <AddView
-            tab={addTab} onTab={setAddTab} problems={problems} busy={saving}
+            tab={addTab} onTab={setAddTab} graph={snapshot} problems={problems} busy={saving}
             onClose={() => { setProblems([]); setAddTab(null); }}
             onCreate={(draft) => void createFromYaml(draft)}
             onCapture={captureText}
             onOpenLexeme={(id) => { setProblems([]); setAddTab(null); openLexeme(id); }}
+            onNotify={notify}
           /> : article && mode === "edit" ? <YamlEditor
             // Remounts for a different entry, and only then: the draft must survive a sync.
             key={article.lexeme.id}

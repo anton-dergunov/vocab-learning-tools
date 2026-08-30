@@ -8,9 +8,13 @@
 import {
   effectiveShortGloss,
   type Attestation, type Example, type ImagePrompt, type Lexeme, type LexemeStatus,
-  type Sense, type StudyState, type SyncFields, type Topic, type Vocabulary, type VocabularyGraph
+  type OwnedFields, type Sense, type StudyState, type SyncFields, type Topic, type Vocabulary,
+  type VocabularyGraph
 } from "./domain";
 import { glossLanguagesFor, languageOf, presentationOf, type LanguagePresentation } from "./languages";
+// Type-only, so it is erased at build time and the cycle with `yaml.ts` — which imports `Article`
+// from here — never exists at runtime.
+import type { ArticleDraft } from "./yaml";
 
 export type SortKey = "recent" | "alpha" | "hard";
 /** A topic record id, or one of the two synthetic collections the rail offers. */
@@ -230,5 +234,130 @@ export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | 
     // Without these the card image is invisible in the projection, so saving would orphan it.
     images: byAge(images.filter((image) => image.senseId === null)),
     study: studyStateOf(graph, lexemeId)
+  };
+}
+
+/* ── the second feeder ──────────────────────────────────────────────────
+   An article the store has never seen — what capture proposes, or what you have typed into the
+   editor and not saved — assembled into the same view model a stored one produces, so there is one
+   renderer rather than a second surface for reviewing a proposal (design §16).
+
+   The output is RENDER-ONLY. It is not a graph, it is not validated, and it must never be written:
+   the one writer is `repository.saveArticle(parseArticle(text))`, which reads the document again
+   rather than trusting anything assembled here. The placeholder ids below carry a `draft:` prefix
+   precisely so a leak fails loudly — no record id is allowed to look like that. */
+
+/** What a record that has never been stored knows about itself: nothing. */
+const UNSAVED: SyncFields & OwnedFields = {
+  ownerId: "", deleted: false, createdAt: "", editedAt: "", editedBy: "", revision: 0
+};
+
+/** A React key for a record the document did not name, stable across re-parses of the same text. */
+const placeholder = (path: string) => `draft:${path}`;
+
+function topicsFromNames(graph: VocabularyGraph, names: string[]): Topic[] {
+  const stored = live(graph.topics);
+  return names.map((name) => {
+    const match = stored.find((topic) => topic.name.toLowerCase() === name.toLowerCase());
+    // A name that matches nothing is still shown. The preview's job is to say what the document
+    // says; refusing an unknown topic is `saveArticle`'s job, and it does it on the way out.
+    return match ?? { ...UNSAVED, id: placeholder(`topic:${name}`), name, icon: null, order: 0 };
+  });
+}
+
+export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): Article {
+  const lexemeId = draft.id ?? placeholder("lexeme");
+  const topics = topicsFromNames(graph, draft.topics);
+  const lexeme: Lexeme = {
+    ...UNSAVED,
+    id: lexemeId,
+    language: draft.language,
+    headword: draft.headword,
+    lemma: draft.lemma,
+    reading: draft.reading,
+    ipa: draft.ipa,
+    pos: draft.pos,
+    gender: draft.gender,
+    register: draft.register,
+    dialect: draft.dialect,
+    emoji: draft.emoji,
+    topicIds: topics.map((topic) => topic.id),
+    status: draft.status,
+    shortGloss: draft.shortGloss,
+    notes: draft.notes
+  };
+
+  const promptsOf = (drafts: ArticleDraft["images"], senseId: string | null, path: string): ImagePrompt[] =>
+    drafts.map((image, index) => ({
+      ...UNSAVED,
+      id: image.id ?? placeholder(`${path}:${index}`),
+      lexemeId,
+      senseId,
+      prompt: image.prompt,
+      styleId: image.styleId,
+      seed: image.seed,
+      modelId: image.modelId,
+      promptVersion: image.promptVersion,
+      imageRef: image.imageRef,
+      imageModelId: image.imageModelId
+    }));
+
+  return {
+    lexeme,
+    topics,
+    // Document order throughout, not `byAge`: the placeholder timestamps are all equal, and the
+    // order you wrote is the order you are reviewing.
+    senses: draft.senses.map((senseDraft, senseIndex) => {
+      const senseId = senseDraft.id ?? placeholder(`sense:${senseIndex}`);
+      const sense: Sense = {
+        ...UNSAVED,
+        id: senseId,
+        lexemeId,
+        definition: senseDraft.definition,
+        definitionLang: senseDraft.definitionLang,
+        glosses: senseDraft.glosses,
+        domain: senseDraft.domain,
+        order: senseDraft.order
+      };
+      return {
+        sense,
+        examples: senseDraft.examples.map((example, index): Example => ({
+          ...UNSAVED,
+          id: example.id ?? placeholder(`example:${senseIndex}:${index}`),
+          senseId,
+          text: example.text,
+          textLang: example.textLang,
+          translation: example.translation,
+          translationLang: example.translationLang,
+          origin: example.origin,
+          sourceAttestationId: example.sourceAttestationId,
+          modelId: example.modelId,
+          videoRef: example.videoRef,
+          videoTitle: example.videoTitle,
+          videoStart: example.videoStart,
+          imageRef: example.imageRef,
+          audioRef: example.audioRef,
+          note: example.note,
+          matchedForm: example.matchedForm,
+          matchedTranslationForm: example.matchedTranslationForm,
+          approved: example.approved
+        })),
+        images: promptsOf(senseDraft.images, senseId, `senseImage:${senseIndex}`)
+      };
+    }),
+    attestations: draft.attestations.map((attestation, index): Attestation => ({
+      ...UNSAVED,
+      id: attestation.id ?? placeholder(`attestation:${index}`),
+      lexemeId,
+      text: attestation.text,
+      translation: attestation.translation,
+      sourceUrl: attestation.sourceUrl,
+      sourceTitle: attestation.sourceTitle,
+      sourceKind: attestation.sourceKind,
+      capturedAt: attestation.capturedAt
+    })),
+    images: promptsOf(draft.images, null, "image"),
+    // A document cannot carry study state, so a proposal never has any to show.
+    study: null
   };
 }

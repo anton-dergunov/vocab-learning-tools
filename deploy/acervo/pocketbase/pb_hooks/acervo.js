@@ -695,6 +695,7 @@ function resolveCapture(app, ownerId, request) {
     "Mode: " + (stream ? "stream" : "single"),
     "Languages this learner studies: " + (known.length ? known.join(", ") : "none configured yet"),
     trimmed(request.language) ? "The caller believes this is " + trimmed(request.language) + "; verify it." : "",
+    trimmed(request.headword) ? "The learner says the word is: " + trimmed(request.headword) : "",
     "",
     "Input (" + lines.length + " lines):",
     "```",

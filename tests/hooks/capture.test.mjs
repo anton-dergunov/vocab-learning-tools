@@ -210,6 +210,22 @@ describe("the capture endpoint", () => {
     assert.equal(llm.calls.length, 1);
   });
 
+  it("passes on the word the submitter named, and says nothing when they did not", () => {
+    seed();
+    llm.resolution = RESOLUTION;
+    llm.article = ARTICLE;
+    capture({ text: "El disfraz de pirata viene con un garfio.", headword: "garfio" });
+    // A hint for the resolver, not a bypass of it: the model still fixes the spelling, adds the
+    // article and picks the lemma, so a named word and a picked one reach the article the same way.
+    assert.match(llm.calls[0].contents[0].parts[0].text, /The learner says the word is: garfio/);
+
+    seed();
+    llm.resolution = RESOLUTION;
+    llm.article = ARTICLE;
+    capture({ text: "El disfraz de pirata viene con un garfio." });
+    assert.doesNotMatch(llm.calls[0].contents[0].parts[0].text, /The learner says the word is/);
+  });
+
   it("refuses a language with no vocabulary, and does not generate for it", () => {
     seed();
     llm.resolution = { ...RESOLUTION, language: "de", headword: "Wanderlust" };

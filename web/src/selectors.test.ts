@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { validateGraph } from "./domain";
 import {
-  articleFor, inboxCount, languageOptions, shortGlossOf, strengthOf, topicOptions, visibleRows
+  articleFor, articleFromDraft, inboxCount, languageOptions, shortGlossOf, strengthOf, topicOptions,
+  visibleRows
 } from "./selectors";
 import { testGraph } from "./testGraph";
+import { draftFor, parseArticle, yamlFor } from "./yaml";
 
 const query = { language: "es", topic: "all" as const, query: "", sort: "recent" as const };
 
@@ -98,6 +100,45 @@ describe("vocabulary selectors", () => {
     expect(article.topics.map((topic) => topic.name)).toEqual(["Food"]);
     expect(article.attestations).toHaveLength(1);
     expect(article.study?.reps).toBe(21);
+  });
+
+  it("assembles an article the store has never seen, so a proposal renders like an entry", () => {
+    const graph = testGraph();
+    const draft = draftFor(articleFor(graph, "lexemepicar0001")!);
+    // What capture returns: no lexeme id, a topic the owner keeps, and one the owner does not.
+    const proposal = { ...draft, id: null, topics: ["food", "Cetrería"] };
+
+    const article = articleFromDraft(graph, proposal);
+    expect(article.lexeme.headword).toBe("picar");
+    // Topic names are matched the way a save matches them, so what you review is what will be filed.
+    expect(article.topics.map((topic) => topic.id)).toEqual(["topicfood000001", "draft:topic:Cetrería"]);
+    expect(article.topics.map((topic) => topic.name)).toEqual(["Food", "Cetrería"]);
+    // Senses keep the parentage the document expressed by nesting, and their order.
+    expect(article.senses.map((entry) => entry.sense.order)).toEqual([0, 1]);
+    expect(article.senses[0].examples.every((example) => example.senseId === article.senses[0].sense.id))
+      .toBe(true);
+    expect(article.senses[0].images.every((image) => image.lexemeId === article.lexeme.id)).toBe(true);
+    // A document cannot carry study state, so a proposal never claims to have any.
+    expect(article.study).toBeNull();
+  });
+
+  it("keeps a proposal's placeholder ids out of the shape the server accepts", () => {
+    const graph = testGraph();
+    const stripped = { ...draftFor(articleFor(graph, "lexemepicar0001")!), id: null };
+    const lexemeId = articleFromDraft(graph, stripped).lexeme.id;
+    // Render-only: nothing assembled here may be written, and a leak has to fail loudly rather
+    // than land in the store, so a placeholder is deliberately not a valid record id.
+    expect(lexemeId).toBe("draft:lexeme");
+    expect(lexemeId).not.toMatch(/^[a-z0-9]{15}$/);
+  });
+
+  it("shows exactly what the document says, so approving the preview approves the save", () => {
+    const graph = testGraph();
+    const document = yamlFor(articleFor(graph, "lexemepicar0001")!);
+    const draft = parseArticle(document);
+    // The preview is a lossless reading of the document — the other half of the round trip
+    // `yaml.test.ts` pins — which is what makes reviewing the article equivalent to reviewing YAML.
+    expect(draftFor(articleFromDraft(graph, draft))).toEqual(draft);
   });
 
   it("scales study strength from stability and leaves unscheduled words empty", () => {

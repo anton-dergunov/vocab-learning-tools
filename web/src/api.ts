@@ -60,6 +60,12 @@ export interface CaptureResult {
 
 export interface CaptureRequest {
   text: string;
+  /**
+   * The word the submitter means, when they know it. A hint, not an instruction: the server still
+   * corrects spelling and picks the lemma, and still overrides it if the text plainly says otherwise.
+   * Absent is the ordinary case — a shared sentence carries no way to point at a word.
+   */
+  headword?: string | null;
   sourceUrl?: string | null;
   sourceTitle?: string | null;
   /** A free-text nudge for the generator — §05's "regenerate with a note". */
@@ -173,6 +179,7 @@ export const backendSession = {
         mode: "single",
         apply: false,
         text: request.text,
+        headword: request.headword?.trim() || null,
         sourceUrl: request.sourceUrl ?? null,
         sourceTitle: request.sourceTitle ?? null,
         note: request.note ?? null

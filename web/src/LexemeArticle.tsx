@@ -95,8 +95,13 @@ function SenseSection({ entry, index, onUnsupported }: {
   </section>;
 }
 
-export default function LexemeArticle({ article, onUnsupported }: {
-  article: Article; onUnsupported(message: string): void;
+/**
+ * `meta` off drops the storage footer, which is what an unsaved proposal wants: id, added, edited
+ * and rev are facts about a stored record, and a generated entry under review has none of them yet.
+ * Everything above it is identical, because a proposal and the entry it becomes are the same thing.
+ */
+export default function LexemeArticle({ article, onUnsupported, meta = true }: {
+  article: Article; onUnsupported(message: string): void; meta?: boolean;
 }) {
   const { lexeme, topics, senses, attestations, study } = article;
   return <>
@@ -157,11 +162,11 @@ export default function LexemeArticle({ article, onUnsupported }: {
       </div>
     </section>}
 
-    <div className="meta-foot">
+    {meta && <div className="meta-foot">
       <span>id <b>{lexeme.id}</b></span>
       <span>added <b>{formatDay(lexeme.createdAt)}</b></span>
       <span>edited <b>{formatDay(lexeme.editedAt)}</b></span>
       <span>rev <b>{lexeme.revision}</b></span>
-    </div>
+    </div>}
   </>;
 }

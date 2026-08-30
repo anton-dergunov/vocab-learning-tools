@@ -67,6 +67,47 @@ function replaceInEditor(find: string, replacement: string) {
   });
 }
 
+/**
+ * A capture the server answered with a full proposal: one sense, the learner's own sentence kept as
+ * an attestation, and the example that draws on it naming that attestation.
+ */
+function mockGarfioCapture() {
+  vi.spyOn(backendSession, "captureText").mockResolvedValue({
+    resolution: {
+      language: "es", headword: "el garfio", lemma: "garfio", pos: "noun",
+      sentences: [{ text: "El disfraz de pirata viene con un garfio.", translation: null }],
+      note: null, consumedLines: 1, consumedText: null
+    },
+    duplicates: [],
+    applied: null,
+    draft: {
+      id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null,
+      ipa: null, pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "🪝",
+      topics: ["Travel"], status: "inbox", shortGloss: "hook", notes: [],
+      senses: [{
+        id: "sense0000000091", order: 0, definition: "Gancho de metal curvo y puntiagudo.",
+        definitionLang: "es", glosses: [{ lang: "en", terms: ["hook", "grappling hook"] }],
+        domain: null, images: [],
+        examples: [{
+          id: "example00000091", text: "El disfraz de pirata viene con un garfio.", textLang: "es",
+          translation: "The pirate costume comes with a hook.", translationLang: "en",
+          // The learner's own sentence, linked to the attestation created by the same save.
+          origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
+          videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+          note: null, matchedForm: "un garfio", matchedTranslationForm: "hook",
+          approved: false
+        }]
+      }],
+      attestations: [{
+        id: "attest000000091", text: "El disfraz de pirata viene con un garfio.", translation: null,
+        sourceUrl: null, sourceTitle: null, sourceKind: "unknown",
+        capturedAt: "2026-08-29T12:00:00.000Z"
+      }],
+      images: []
+    }
+  });
+}
+
 /** Renders the app and waits for the pulled replica to reach the word list. */
 async function openList() {
   render(<App />);
@@ -292,44 +333,11 @@ describe("Acervo application", () => {
     expect(await screen.findByRole("button", { name: "Edit as YAML" })).toBeInTheDocument();
   });
 
-  it("captures a sentence, reviews the generated entry as YAML and saves it", async () => {
+  it("captures a sentence, reviews the generated entry as an article and saves it", async () => {
     signedIn();
     await openList();
     acceptWrites();
-    vi.spyOn(backendSession, "captureText").mockResolvedValue({
-      resolution: {
-        language: "es", headword: "el garfio", lemma: "garfio", pos: "noun",
-        sentences: [{ text: "El disfraz de pirata viene con un garfio.", translation: null }],
-        note: null, consumedLines: 1, consumedText: null
-      },
-      duplicates: [],
-      applied: null,
-      draft: {
-        id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null,
-        ipa: null, pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "🪝",
-        topics: ["Travel"], status: "inbox", shortGloss: "hook", notes: [],
-        senses: [{
-          id: "sense0000000091", order: 0, definition: "Gancho de metal curvo y puntiagudo.",
-          definitionLang: "es", glosses: [{ lang: "en", terms: ["hook", "grappling hook"] }],
-          domain: null, images: [],
-          examples: [{
-            id: "example00000091", text: "El disfraz de pirata viene con un garfio.", textLang: "es",
-            translation: "The pirate costume comes with a hook.", translationLang: "en",
-            // The learner's own sentence, linked to the attestation created by the same save.
-            origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
-            videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
-            note: null, matchedForm: "un garfio", matchedTranslationForm: "hook",
-            approved: false
-          }]
-        }],
-        attestations: [{
-          id: "attest000000091", text: "El disfraz de pirata viene con un garfio.", translation: null,
-          sourceUrl: null, sourceTitle: null, sourceKind: "unknown",
-          capturedAt: "2026-08-29T12:00:00.000Z"
-        }],
-        images: []
-      }
-    });
+    mockGarfioCapture();
 
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.change(await screen.findByLabelText(/Paste a word/), {
@@ -337,10 +345,24 @@ describe("Acervo application", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Process" }));
 
-    // The proposal arrives in the YAML tab as an ordinary editable document. Waiting on the tab
-    // rather than on "a textbox" matters: the capture box is itself one, and is still mounted.
+    // The proposal arrives rendered, not serialized: reviewing a generated entry is reading the
+    // thing you are about to get, in the component a stored entry uses.
+    expect(await screen.findByRole("heading", { name: "el garfio" })).toBeInTheDocument();
+    expect(screen.getByText("Gancho de metal curvo y puntiagudo.")).toBeInTheDocument();
+    expect(screen.getByText("grappling hook")).toBeInTheDocument();
+    // Provenance is on the face of it, which is what makes the review worth doing.
+    expect(screen.getByText("attestation")).toBeInTheDocument();
+    // Nothing is stored, so there is no id, revision or date to claim there is.
+    expect(document.querySelector(".meta-foot")).toBeNull();
+
+    // Going back to the capture keeps what was submitted, so the text can be adjusted and re-run
+    // rather than retyped.
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    expect(await screen.findByLabelText(/Paste a word/))
+      .toHaveValue("El disfraz de pirata viene con un garfio.");
+
+    fireEvent.click(screen.getByRole("button", { name: "YAML" }));
     await screen.findByText("new-entry.yaml");
-    const editor = screen.getByRole("textbox");
     expect(editorText()).toContain("headword: el garfio");
     expect(editorText()).toContain("origin: attestation");
 
@@ -355,6 +377,57 @@ describe("Acervo application", () => {
     // Provenance is the point: the sentence survives as its own record, and the example says so.
     expect(example?.origin).toBe("attestation");
     expect(example?.sourceAttestationId).toBe(attestation?.id);
+  });
+
+  it("renders the proposal from the document, so a YAML edit shows in the article", async () => {
+    signedIn();
+    await openList();
+    mockGarfioCapture();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.change(await screen.findByLabelText(/Paste a word/), {
+      target: { value: "El disfraz de pirata viene con un garfio." }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Process" }));
+    await screen.findByRole("heading", { name: "el garfio" });
+
+    // The preview is derived from the editor text rather than kept beside it, so the two cannot
+    // disagree about what is being approved.
+    fireEvent.click(screen.getByRole("button", { name: "YAML" }));
+    await screen.findByText("new-entry.yaml");
+    replaceInEditor("headword: el garfio", "headword: el gancho");
+    fireEvent.click(screen.getByRole("button", { name: "Article" }));
+    expect(await screen.findByRole("heading", { name: "el gancho" })).toBeInTheDocument();
+
+    // A document that cannot be read has nothing to show and nothing to approve.
+    fireEvent.click(screen.getByRole("button", { name: "YAML" }));
+    replaceInEditor("pos: noun", "pos: preposition");
+    fireEvent.click(screen.getByRole("button", { name: "Article" }));
+    expect(await screen.findByText(/must be one of/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("takes the word on its own, and says which one it is when the sentence does not", async () => {
+    signedIn();
+    await openList();
+    const capture = vi.spyOn(backendSession, "captureText").mockResolvedValue({
+      resolution: {
+        language: "es", headword: "picar", lemma: "picar", pos: "verb",
+        sentences: [], note: null, consumedLines: 1, consumedText: null
+      },
+      duplicates: [{ id: "lexemepicar0001", headword: "picar", shortGloss: "to itch; to chop" }],
+      draft: null,
+      applied: null
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.change(await screen.findByLabelText(/Which word/), { target: { value: "  picar  " } });
+    // The sentence is empty, so the word is the whole capture — one request shape, not two.
+    fireEvent.click(screen.getByRole("button", { name: "Process" }));
+
+    await screen.findByText("You already have this word.");
+    expect(capture).toHaveBeenCalledWith(
+      expect.any(String), expect.objectContaining({ text: "picar", headword: "picar" }));
   });
 
   it("saves an article edited as YAML and shows the change", async () => {

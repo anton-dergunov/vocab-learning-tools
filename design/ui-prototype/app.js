@@ -216,7 +216,8 @@ function senseSection(s, i, x) {
     </section>`;
 }
 
-function renderArticle(x) {
+function renderArticle(x, opts) {
+  const meta = !opts || opts.meta !== false;
   const attest = x.attestations.length ? `
     <section class="sec">
       <div class="rail-l"><div class="inner"><span class="num">✳</span><span class="label">Where you<br>met it</span></div></div>
@@ -275,13 +276,14 @@ function renderArticle(x) {
     </div>
     ${x.senses.map((s, i) => senseSection(s, i, x)).join("")}
     ${attest}${notes}${study}
+    ${meta ? `
     <div class="meta-foot">
       <span>id <b>${x.id}</b></span>
       <span>added <b>${x.createdAt}</b></span>
       <span>edited <b>${x.editedAt}</b></span>
       <span>rev <b>${x.revision}</b></span>
       <span>synced <b>yes</b></span>
-    </div>`;
+    </div>` : ""}`;
 }
 
 /* ── YAML projection ─────────────────────────────────────────────────── */
@@ -474,7 +476,9 @@ function showValidation(target, problems) {
 /* ── add sheet ───────────────────────────────────────────────────────── */
 
 let addTab = "capture";
-let captureDetails = false;
+/* What the last Process produced. Null until something has been proposed — the Article tab has
+   nothing to render before that, and says so rather than showing an empty entry. */
+let addDraft = null;
 
 function renderSheet() {
   const host = $("#composer");
@@ -485,6 +489,7 @@ function renderSheet() {
         <span class="spacer"></span>
         <div class="seg">
           <button data-tab="capture" class="${addTab === "capture" ? "on" : ""}">Capture</button>
+          <button data-tab="article" class="${addTab === "article" ? "on" : ""}">Article</button>
           <button data-tab="yaml" class="${addTab === "yaml" ? "on" : ""}">YAML</button>
         </div>
         <button class="icon-btn" id="closeSheet" aria-label="Close">${ICON.close}</button>
@@ -493,23 +498,43 @@ function renderSheet() {
       <div class="composer-body">
           <label class="label" for="captureText">Paste a word, or the sentence you met it in</label>
           <textarea class="capture-area" id="captureText" style="margin-top:8px" placeholder="Se pican las verduras en dados de un centímetro y se reservan."></textarea>
-          <p class="hint">Share the whole sentence — the word is picked out for you, and the sentence is kept as the place you met it. The entry is built for review and lands in <b>Inbox</b>. Nothing is generated in this prototype.</p>
-          <button class="capture-more" id="captureMore" aria-expanded="${captureDetails}">${captureDetails ? "Fewer options" : "Where it came from, and what to ask for"}</button>
-          ${captureDetails ? `
-            <div class="capture-details">
+
+          <label class="label" for="captureWord" style="margin-top:14px">Which word? <span class="opt">optional</span></label>
+          <input class="capture-word" id="captureWord" placeholder="picar">
+
+          <p class="hint">Share the whole sentence — the word is picked out for you unless you name it above, and the sentence is kept as the place you met it. The entry is built for review and lands in <b>Inbox</b>. Nothing is generated in this prototype.</p>
+
+          <details class="fold capture-fold">
+            <summary><span class="caret">${ICON.caret}</span><span class="label">Where it came from, and what to ask for</span></summary>
+            <div class="fold-body capture-details">
               <label class="label" for="captureUrl">Source link</label>
               <input id="captureUrl" placeholder="https://example.com/receta">
               <label class="label" for="captureTitle">Where it came from</label>
               <input id="captureTitle" placeholder="Receta — pisto manchego">
               <label class="label" for="captureNote">Anything to ask the generator</label>
               <input id="captureNote" placeholder="contrast it with picante">
-            </div>` : ""}
+            </div>
+          </details>
       </div>
       <div class="composer-actions">
         <div class="composer-buttons">
           <span class="spacer"></span>
           <button class="tb-btn" id="switchYaml">Write YAML instead</button>
           <button class="tb-btn primary" id="processBtn">Process</button>
+        </div>
+      </div>`
+        : addTab === "article" ? `
+      <div class="composer-body">
+        ${addDraft
+          ? `<div class="article-preview">${renderArticle(addDraft, { meta: false })}</div>`
+          : `<p class="empty">Nothing to preview yet — process a capture, or write the document yourself.</p>`}
+      </div>
+      <div class="composer-actions">
+        <div class="composer-buttons">
+          <span class="spacer"></span>
+          <button class="tb-btn" id="closeSheet2">Cancel</button>
+          <button class="tb-btn" id="switchYaml">Edit YAML</button>
+          <button class="tb-btn primary" id="saveDraft" ${addDraft ? "" : "disabled"}>Save</button>
         </div>
       </div>`
         : `
@@ -531,7 +556,7 @@ function renderSheet() {
   wireSheet();
 }
 
-function openSheet(tab) { addTab = tab || "capture"; captureDetails = false; state.add = true; render(); }
+function openSheet(tab) { addTab = tab || "capture"; addDraft = null; state.add = true; render(); }
 function closeSheet()   { state.add = false; $("#composer").innerHTML = ""; render(); }
 
 /* ── toast ───────────────────────────────────────────────────────────── */
@@ -605,10 +630,18 @@ function wireSheet() {
   const c1 = $("#closeSheet"), c2 = $("#closeSheet2");
   if (c1) c1.onclick = close;
   if (c2) c2.onclick = close;
-  const more = $("#captureMore"); if (more) more.onclick = () => { captureDetails = !captureDetails; renderSheet(); };
   const sw = $("#switchYaml"); if (sw) sw.onclick = () => { addTab = "yaml"; renderSheet(); };
   const pb = $("#processBtn");
-  if (pb) pb.onclick = () => { toast("Capture pipeline is not wired up yet"); };
+  // The real app calls the capture route and lands on the rendered proposal. Here there is nothing
+  // to call, so a canned entry stands in for one — the point being the surface, not the generation.
+  if (pb) pb.onclick = () => {
+    addDraft = LEXEMES[0];
+    addTab = "article";
+    renderSheet();
+    toast("Generation is not wired up in this prototype — showing a stand-in entry");
+  };
+  const sd = $("#saveDraft");
+  if (sd) sd.onclick = () => { toast("Saved to Inbox — prototype only"); setTimeout(closeSheet, 500); };
   if ($("#newArea")) {
     const na = wireSurface("new");
     $("#saveNew").onclick = () => {

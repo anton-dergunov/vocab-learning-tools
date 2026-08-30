@@ -488,6 +488,10 @@ details.fold .fold-body { padding: 4px 0 18px; }
   font-family: var(--serif); font-size: 16.5px; line-height: 1.5; resize: vertical;
 }
 .capture-area:focus { border-color: var(--core); outline: none; }
+/* A proposal is rendered by the article component, so it must also be measured like an article:
+   `.pane` is 780px and the composer column is 920px, and without this the preview would be wider
+   than the entry it is a preview of. */
+.article-preview { max-width: 780px; margin: 0 auto; }
 .hint { font-size: 14px; color: var(--ink-3); margin: 10px 0 0; max-width: 60ch; }
 
 /* ══════════════════════════ toast ══════════════════════════ */
@@ -527,6 +531,10 @@ details.fold .fold-body { padding: 4px 0 18px; }
   .tab.on { border-color: transparent; }
   .pane { padding: 20px 16px 110px; }
   .composer { padding: 0 16px; }
+  /* Three segments, a title and a close button do not fit a phone at full size. */
+  .composer-head { gap: 8px; }
+  .composer-head h2 { font-size: 18px; }
+  .composer-head .seg button { padding: 5px 8px; letter-spacing: .06em; }
   /* An interruption on a phone takes the screen rather than becoming a cramped centred box. */
   .modal-backdrop { padding: 0; }
   .settings { width: 100%; max-height: 100%; border-radius: 0; border: none; }
@@ -716,13 +724,19 @@ details.fold .fold-body { padding: 4px 0 18px; }
 
 /* ══════════════════════════ capture ══════════════════════════ */
 /* Source and nudge are folded away: most captures are a sentence and nothing else, and three empty
-   fields above the button would make the common case look like paperwork. */
-.capture-more {
-  margin-top: 12px; padding: 0; background: none; border: 0;
-  font-size: 13px; color: var(--core); cursor: pointer; text-align: left;
+   fields above the button would make the common case look like paperwork. It is the same disclosure
+   the article uses for its images — a caret you have already learned to open, rather than a line of
+   small blue text that reads as a sentence and hides three fields behind it. */
+.capture-fold { margin-top: 4px; }
+.capture-word {
+  width: 100%; margin-top: 8px; padding: 9px 11px;
+  border: 1px solid var(--rule); border-radius: 7px;
+  background: var(--surface); color: var(--ink); font-family: var(--serif); font-size: 15px;
 }
-.capture-more:hover { text-decoration: underline; }
-.capture-details { display: grid; gap: 6px; margin-top: 12px; }
+.capture-word:focus { border-color: var(--core); outline: none; }
+/* "optional" has to read as an aside to the label, not as part of the question. */
+.label .opt { text-transform: none; letter-spacing: .02em; font-style: italic; opacity: .75; }
+.capture-details { display: grid; gap: 6px; }
 .capture-details .label { margin-top: 6px; }
 .capture-details input {
   padding: 9px 11px; border: 1px solid var(--rule); border-radius: 7px;

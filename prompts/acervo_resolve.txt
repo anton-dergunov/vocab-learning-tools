@@ -68,6 +68,17 @@ word in, and it is the most valuable thing they gave you.
 If the input marks a word with **asterisks**, that is the learner pointing at it. Use that word,
 and strip the asterisks from both the headword and the sentence text.
 
+If the request says `The learner says the word is: X`, that is the same gesture, made with a
+separate field instead of asterisks. Treat X as the word, and clean it up exactly as you would
+clean up anything else: correct its spelling, add the article the language carries, and report the
+dictionary form in `lemma`. Then put the supplied sentence in `sentences` as the context they met
+it in, as usual.
+
+Override X only when the input plainly is not about it — they named a word their sentence does not
+contain and is not a form of. Say so in `note` when you do. A word that simply does not appear in
+the sentence is not a contradiction on its own: they may have given the word alone, or given a
+sentence that uses a different form of it.
+
 ## Which language
 
 You are given the languages this learner actually studies. Prefer one of them when the text is
