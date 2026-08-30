@@ -618,10 +618,23 @@ def main() -> int:
         "identity": admin_email, "password": admin_password,
     })
     client.token = auth["token"]
-    owner_filter = urllib.parse.quote(f'email="{args.owner_email.strip()}"')
+    owner_email = args.owner_email.strip()
+    owner_filter = urllib.parse.quote(f'email="{owner_email}"')
     owners = client.request("GET", f"/api/collections/users/records?perPage=2&filter={owner_filter}").get("items", [])
-    if len(owners) != 1:
-        raise RuntimeError("The owner email must identify exactly one existing Acervo account.")
+    if len(owners) > 1:
+        raise RuntimeError(f"{owner_email} matches more than one account, so the seeder cannot choose.")
+    if not owners:
+        # Rebuilding the database empties `users` along with everything else, so this is the first
+        # thing every reset runs into. Saying only "no such account" leaves you to work out that
+        # accounts are administrator-created and that nothing here creates one.
+        existing = [item["email"] for item in
+                    client.request("GET", "/api/collections/users/records?perPage=20").get("items", [])]
+        held = ", ".join(existing) if existing else "no accounts at all"
+        raise RuntimeError(
+            f"No Acervo account for {owner_email}. This server holds: {held}. "
+            "Accounts are created by an administrator, not by this seeder — make one with "
+            f"scripts/create_acervo_account.py, or at {server}/_/ under Collections > users."
+        )
 
     created = 0
     skipped = 0
