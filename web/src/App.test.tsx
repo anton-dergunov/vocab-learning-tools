@@ -181,6 +181,25 @@ describe("Acervo application", () => {
     expect(document.querySelector(".code-scroll code")!.textContent).toContain("id: lexemepicar0001");
   });
 
+  it("reaches sync, sign-out and delete on the native host, without its update controls", async () => {
+    // The Mac window owns the server address and the app's own updates. Everything about the
+    // vocabulary is here — and hiding the whole pane to keep the update controls out left none of
+    // it reachable on macOS at all.
+    window.webkit = { messageHandlers: { acervo: { postMessage: vi.fn() } } };
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /Open settings/ }));
+
+    const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
+    expect(settings.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
+    expect(settings.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(settings.getByRole("button", { name: /Delete all vocabulary/ })).toBeInTheDocument();
+    // A second update control here would conflict with the one the host already owns.
+    expect(settings.queryByText("Acervo is up to date")).not.toBeInTheDocument();
+    expect(settings.queryByText(/Download Acervo for macOS/)).not.toBeInTheDocument();
+    expect(settings.getByText("Updates and server address")).toBeInTheDocument();
+  });
+
   it("says plainly which actions are not connected yet", async () => {
     signedIn();
     await openList();
@@ -321,13 +340,5 @@ describe("Acervo application", () => {
     const link = await screen.findByRole("link", { name: /Download Acervo for macOS/ });
     expect(link).toHaveAttribute("href", "/api/acervo/downloads/Acervo.zip");
     expect(link).toHaveAttribute("download", "Acervo.zip");
-  });
-
-  it("keeps browser update controls out of the native host", async () => {
-    window.webkit = { messageHandlers: { acervo: { postMessage: vi.fn() } } };
-    signedIn();
-    await openList();
-    expect(screen.queryByRole("button", { name: /Open settings/ })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("navigation")).getByRole("button", { name: /All/ })).toBeInTheDocument();
   });
 });

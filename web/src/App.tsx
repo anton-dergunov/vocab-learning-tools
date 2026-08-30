@@ -7,7 +7,7 @@ import LexemeList from "./LexemeList";
 import { languageOf } from "./languages";
 import {
   alreadyInstalledOnThisDevice, canPromptInstall, detectedInstallPlatform,
-  INSTALL_AVAILABLE_EVENT, INSTALLED_EVENT, isNativeHost, promptInstall,
+  INSTALL_AVAILABLE_EVENT, INSTALLED_EVENT, promptInstall,
   shouldOfferMobileInstall, UPDATE_EVENT, updateStage, type UpdateStage
 } from "./pwa";
 import { repository, type ReplicaSnapshot } from "./repository";
@@ -74,7 +74,6 @@ function InstallGate({ onContinue }: { onContinue(): void }) {
 }
 
 export default function App() {
-  const native = isNativeHost();
   const [showInstall, setShowInstall] = useState(() => shouldOfferMobileInstall()
     && sessionStorage.getItem("acervo-install-dismissed") !== "true");
   const [session, setSession] = useState<StoredSession | null | undefined>(undefined);
@@ -295,13 +294,17 @@ export default function App() {
             <PlusIcon /><span className="wide-only">Add</span>
           </button>
 
-          {!native && <SyncChip status={syncStatus} onOpen={() => setSettings(true)} />}
+          {/* Shown on the native host too. The Mac window owns where the server is and how the
+              app updates; sync status, signing out and deleting the vocabulary are operations on
+              the vocabulary, which the host deliberately does not own — so they live here, and
+              without this they were unreachable on macOS altogether. */}
+          <SyncChip status={syncStatus} onOpen={() => setSettings(true)} />
 
-          {!native && <button
+          <button
             className={`icon-btn gear ${update === "ready" ? "has-update" : ""}`}
             onClick={() => setSettings(true)}
             aria-label={update === "ready" ? "Open settings; an update is ready" : "Open settings"}
-          ><GearIcon /></button>}
+          ><GearIcon /></button>
 
           <button
             className="tb-btn lang-btn" aria-haspopup="menu" aria-label="Vocabulary language"
