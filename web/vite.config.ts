@@ -23,6 +23,7 @@ export default defineConfig({
       "apple-touch-icon.png"
     ],
     manifest: {
+      id: "/acervo-app",
       name: "Acervo",
       short_name: "Acervo",
       description: "A personal vocabulary workspace.",

@@ -609,6 +609,9 @@ describe("Acervo application", () => {
   });
 
   it("offers the native macOS release from browser settings", async () => {
+    vi.stubGlobal("navigator", {
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platform: "MacIntel", maxTouchPoints: 0
+    });
     signedIn();
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,

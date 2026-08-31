@@ -74,7 +74,7 @@ describe("mobile installation detection", () => {
     });
   }
 
-  it("recognises iOS, iPad desktop mode, and Android", async () => {
+  it("recognises iOS, iPad desktop mode, Android, and macOS", async () => {
     const pwa = await import("./pwa");
     pretend("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)", "iPhone");
     expect(pwa.detectedInstallPlatform()).toBe("ios");
@@ -84,6 +84,22 @@ describe("mobile installation detection", () => {
 
     pretend("Mozilla/5.0 (Linux; Android 15)", "Linux armv8l", 5);
     expect(pwa.detectedInstallPlatform()).toBe("android");
+
+    pretend("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "MacIntel", 0);
+    expect(pwa.detectedInstallPlatform()).toBe("macos");
+  });
+
+  it("offers the macOS application only in a macOS browser outside the native host", async () => {
+    pretend("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "MacIntel", 0);
+    const pwa = await import("./pwa");
+    expect(pwa.shouldOfferMacApplication()).toBe(true);
+
+    window.webkit = { messageHandlers: { acervo: { postMessage: vi.fn() } } };
+    expect(pwa.shouldOfferMacApplication()).toBe(false);
+    delete window.webkit;
+
+    pretend("Mozilla/5.0 (Linux; Android 15)", "Linux armv8l", 5);
+    expect(pwa.shouldOfferMacApplication()).toBe(false);
   });
 
   it("offers the gate only in a mobile browser that is not already installed", async () => {

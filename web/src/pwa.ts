@@ -13,7 +13,7 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
-export type InstallPlatform = "ios" | "android" | "other";
+export type InstallPlatform = "ios" | "android" | "macos" | "other";
 
 export function detectedInstallPlatform(): InstallPlatform {
   const userAgent = navigator.userAgent || "";
@@ -22,6 +22,7 @@ export function detectedInstallPlatform(): InstallPlatform {
   const isIPadDesktopMode = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
   if (/iPad|iPhone|iPod/i.test(userAgent) || isIPadDesktopMode) return "ios";
   if (/Android/i.test(userAgent)) return "android";
+  if (/Mac/i.test(navigator.platform || userAgent)) return "macos";
   return "other";
 }
 
@@ -34,6 +35,10 @@ export function isInstalledApp(): boolean {
 export function shouldOfferMobileInstall(): boolean {
   const platform = detectedInstallPlatform();
   return (platform === "ios" || platform === "android") && !isInstalledApp();
+}
+
+export function shouldOfferMacApplication(): boolean {
+  return detectedInstallPlatform() === "macos" && !isNativeHost();
 }
 
 /**

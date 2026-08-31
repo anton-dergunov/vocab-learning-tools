@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { TopicEditor, VocabularyEditor } from "./Configuration";
 import { fetchMacRelease, type MacRelease } from "./macRelease";
-import { installUpdate, isNativeHost, type UpdateStage } from "./pwa";
+import { installUpdate, isNativeHost, shouldOfferMacApplication, type UpdateStage } from "./pwa";
 import type { ReplicaSnapshot } from "./repository";
 import { syncEngine, type SyncStatus } from "./sync";
 import { SyncPanel } from "./SyncStatus";
@@ -29,6 +29,7 @@ export default function Settings({ update, email, status, snapshot, language, on
      here would offer a second, conflicting control for something this window does not own. What
      stays is everything about the vocabulary, which the native host deliberately does not own. */
   const native = isNativeHost();
+  const offerMacApplication = shouldOfferMacApplication();
   const [macRelease, setMacRelease] = useState<MacRelease | null>();
   const [releaseError, setReleaseError] = useState(false);
   const [page, setPage] = useState<Page>("general");
@@ -74,7 +75,7 @@ export default function Settings({ update, email, status, snapshot, language, on
   }
 
   useEffect(() => {
-    if (native) return;
+    if (!offerMacApplication) return;
     const controller = new AbortController();
     void fetchMacRelease(controller.signal)
       .then(setMacRelease)
@@ -82,7 +83,7 @@ export default function Settings({ update, email, status, snapshot, language, on
         if ((error as { name?: string }).name !== "AbortError") setReleaseError(true);
       });
     return () => controller.abort();
-  }, [native]);
+  }, [offerMacApplication]);
 
   const pages: { id: Page; label: string }[] = [
     { id: "general", label: "General" },
@@ -119,13 +120,13 @@ export default function Settings({ update, email, status, snapshot, language, on
           {!native && update === "ready" && <button className="update-action" onClick={() => void installUpdate()}><strong>Update Acervo</strong><span>The update is ready. Acervo will reopen with the new version.</span></button>}
           {!native && update === "downloading" && <div className="update-status"><strong>Downloading an update…</strong><span>You can keep using Acervo while it finishes.</span></div>}
           {!native && !update && <div className="update-status"><strong>Acervo is up to date</strong><span>This is the newest version available from this server.</span></div>}
-          {!native && macRelease && <a className="download-action" href={macRelease.url} download={macRelease.file}>
+          {offerMacApplication && macRelease && <a className="download-action" href={macRelease.url} download={macRelease.file}>
             <strong>Download Acervo for macOS</strong>
             <span>Version {macRelease.version}, build {macRelease.build}</span>
           </a>}
-          {!native && macRelease === null && <div className="update-status"><strong>macOS application</strong><span>No native release has been published by this server yet.</span></div>}
-          {!native && macRelease === undefined && !releaseError && <div className="update-status"><strong>macOS application</strong><span>Checking for a native release…</span></div>}
-          {!native && releaseError && <div className="update-status"><strong>macOS application</strong><span>The native release could not be checked right now.</span></div>}
+          {offerMacApplication && macRelease === null && <div className="update-status"><strong>macOS application</strong><span>No native release has been published by this server yet.</span></div>}
+          {offerMacApplication && macRelease === undefined && !releaseError && <div className="update-status"><strong>macOS application</strong><span>Checking for a native release…</span></div>}
+          {offerMacApplication && releaseError && <div className="update-status"><strong>macOS application</strong><span>The native release could not be checked right now.</span></div>}
           {native && <div className="update-status">
             <strong>Updates and server address</strong>
             <span>Acervo ▸ Settings, in the menu bar.</span>
