@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 import App from "./App";
 import { AcervoApiError, backendSession, SCHEMA_VERSION } from "./api";
-import { UPDATE_EVENT } from "./pwa";
+import { INSTALLED_EVENT, UPDATE_EVENT } from "./pwa";
 import { repository } from "./repository";
 import { TEST_OWNER, testGraph } from "./testGraph";
 
@@ -170,6 +170,26 @@ describe("Acervo application", () => {
     expect(await screen.findByRole("heading", { name: "Install the app" })).toBeInTheDocument();
     expect(screen.getByText(/offers Install app when Acervo is not installed yet/i)).toBeInTheDocument();
     expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Continue in browser" }));
+    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
+  });
+
+  it("stays on the install screen once installed, rather than falling through to signing in", async () => {
+    // Landing on the browser's sign-in form the moment the app is installed reads as though the
+    // installation went nowhere, and signs you in somewhere other than the app you just added.
+    vi.stubGlobal("navigator", {
+      userAgent: "Mozilla/5.0 (Linux; Android 15)", platform: "Linux armv8l", maxTouchPoints: 5
+    });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    vi.spyOn(backendSession, "restore").mockResolvedValue(null);
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Install the app" })).toBeInTheDocument();
+
+    act(() => { window.dispatchEvent(new CustomEvent(INSTALLED_EVENT)); });
+
+    expect(await screen.findByRole("heading", { name: "Acervo is installed" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+    // Continuing in the browser stays available, as the deliberate choice it already was.
     fireEvent.click(screen.getByRole("button", { name: "Continue in browser" }));
     expect(await screen.findByLabelText("Email")).toBeInTheDocument();
   });

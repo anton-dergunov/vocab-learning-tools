@@ -30,6 +30,7 @@ function InstallGate({ onContinue }: { onContinue(): void }) {
   const platform = detectedInstallPlatform();
   const [promptAvailable, setPromptAvailable] = useState(canPromptInstall());
   const [installedHere, setInstalledHere] = useState(false);
+  const [justInstalled, setJustInstalled] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -38,21 +39,37 @@ function InstallGate({ onContinue }: { onContinue(): void }) {
   }, []);
 
   useEffect(() => {
+    /* Chrome can fire its install event before this subscription exists, and the event is offered
+       once. Re-reading the captured one here closes that gap; without it the button silently never
+       appears and the only way in is Chrome's own menu. */
+    setPromptAvailable(canPromptInstall());
     const available = () => setPromptAvailable(true);
-    const installed = () => onContinue();
+    const installed = () => setJustInstalled(true);
     window.addEventListener(INSTALL_AVAILABLE_EVENT, available);
     window.addEventListener(INSTALLED_EVENT, installed);
     return () => {
       window.removeEventListener(INSTALL_AVAILABLE_EVENT, available);
       window.removeEventListener(INSTALLED_EVENT, installed);
     };
-  }, [onContinue]);
+  }, []);
 
   const install = async () => {
     const accepted = await promptInstall();
     setPromptAvailable(false);
-    if (accepted) onContinue();
+    if (accepted) setJustInstalled(true);
   };
+
+  /* Installing and then landing on the browser's sign-in form reads as though the installation
+     went nowhere. The app that was just added is the place to sign in, so this stops here and
+     leaves continuing in the browser as the deliberate choice it was on the previous screen. */
+  if (justInstalled) {
+    return <div className="install-page"><section className="install-card" aria-labelledby="install-title">
+      <p className="install-kicker">Acervo</p>
+      <h1 id="install-title">Acervo is installed</h1>
+      <p className="install-copy">Open Acervo from your home screen to sign in there.</p>
+      <button className="continue-browser" onClick={onContinue}>Continue in browser</button>
+    </section></div>;
+  }
 
   return <div className="install-page"><section className="install-card" aria-labelledby="install-title">
     <p className="install-kicker">Acervo</p>
