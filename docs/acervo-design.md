@@ -1304,6 +1304,22 @@ session is not.
 There is deliberately no import bridge from historical Markdown or JSON formats. Existing data is
 disposable during the greenfield phase; canonical records are created through the current model.
 
+**What ships.** Settings ▸ Data exports a zip built entirely from the local replica — so it works
+with the server unreachable, like every other read. Inside, a manifest, the vocabulary and topic
+records, one YAML document per word under its language directory, and the markdown mirror under
+`markdown/`. The markdown files are named `Spanish vocab - Food.md`: the language belongs in the
+name and not only in the directory, because Obsidian is searched by note name and two languages with
+a Technology topic would otherwise be two notes called Technology, neither distinguishable from an
+ordinary note about technology. A word is filed under each of its topics, an unfiled one under
+`Misc`, and one still waiting under `Inbox`, mirroring what the rail does.
+
+**Importing Acervo's own export is not that bridge.** A bundle is the current model, written by this
+application, and it is read back through the same `parseArticle` and written through the same
+`saveArticle` a typed document is. That is the §17 layer-0 rebuild path made real: export before a
+schema change, import into the rebuilt server. A word already held is skipped, never overwritten —
+an import must not cost curation done after the export — and every id is re-minted on the way in, so
+a bundle carries no account with it and can be handed to someone else.
+
 ---
 
 ## §13 · Build order
@@ -1568,13 +1584,20 @@ discard its replica, because that replica may be the most complete copy left.
 *different representation*: it survives a schema bug that corrupts the database, it is offsite and
 versioned by a third party, and it restores without any of this software working.
 
-Format matters. **One JSON file per lexeme**, in a tree by language:
+Format matters. **One file per lexeme**, in a tree by language:
 
 ```text
-es/desmayarse.json
-es/que-se-mejoren.json
-en/turmoil.json
+es/desmayarse.yaml
+es/que-se-mejoren.yaml
+en/turmoil.yaml
 ```
+
+YAML rather than JSON, and the application's own article document rather than a second shape: the
+one place that understands this format already both writes and reads it, so an export cannot drift
+from what the editor accepts. The file is named after the *lemma*, latinised — accents stripped,
+Cyrillic transliterated, and a script with no Latin form falling back to the reading, which Chinese
+lexemes already carry as pinyin. The lemma rather than the headword, or half a Spanish vocabulary
+files under `el-` and `la-`.
 
 One file per word rather than one blob, because then `git log -- es/desmayarse.json` gives the
 **complete edit history of a single word** — which no database backup provides — and
@@ -1583,6 +1606,9 @@ vanish, you see it in a diff rather than discovering it in November.
 
 Export the Obsidian markdown (§12) into the same repository, and both machine-readable and
 human-readable forms live together.
+
+This tier is now half-built: Settings ▸ Data writes exactly this tree (§12), by hand. What is still
+missing is the automation — a scheduled exporter that commits it.
 
 Cadence: debounced after any sync that changed something, **plus a daily commit even when nothing
 changed**. The heartbeat is what proves the exporter is alive — a silently dead exporter is the real

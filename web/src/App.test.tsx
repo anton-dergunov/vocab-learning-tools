@@ -285,6 +285,30 @@ describe("Acervo application", () => {
     expect(settings.getByRole("button", { name: /Delete all vocabulary/ })).toBeInTheDocument();
   });
 
+  it("puts export, import and deletion together on the Data page", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+
+    const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
+    fireEvent.click(settings.getByRole("tab", { name: "Data" }));
+    expect(settings.getByRole("button", { name: "Export…" })).toBeInTheDocument();
+    expect(settings.getByRole("combobox")).toHaveValue("all");
+    expect(settings.getByRole("heading", { name: "Import" })).toBeInTheDocument();
+    expect(settings.getByRole("button", { name: /Delete all vocabulary/ })).toBeInTheDocument();
+  });
+
+  it("opens the Data page armed for deletion when the Mac menu asks", async () => {
+    signedIn();
+    await openList();
+    window.acervo!.command("delete");
+
+    const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
+    // The menu item ends in an ellipsis, so it owes the reader a confirmation rather than a page.
+    expect(settings.getByLabelText(/Type DELETE to confirm/)).toBeInTheDocument();
+    expect(settings.getByRole("button", { name: "Export…" })).toBeInTheDocument();
+  });
+
   it("adds a topic from settings and files it into the rail", async () => {
     signedIn();
     await openList();

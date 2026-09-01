@@ -13,7 +13,11 @@ declare module "virtual:pwa-register" {
   export function registerSW(options?: RegisterSWOptions): (reloadPage?: boolean) => Promise<void>;
 }
 
+/** What the macOS menu bar can ask the interface to open. */
+type AcervoCommand = "export" | "import" | "delete";
+
 interface Window {
+  acervo?: { command(name: AcervoCommand): void };
   webkit?: {
     messageHandlers?: {
       acervo?: { postMessage(message: unknown): Promise<unknown> };

@@ -5,21 +5,26 @@ import { installUpdate, isNativeHost, shouldOfferMacApplication, type UpdateStag
 import type { ReplicaSnapshot } from "./repository";
 import { syncEngine, type SyncStatus } from "./sync";
 import { SyncPanel } from "./SyncStatus";
+import { ExportPanel, ImportPanel } from "./TransferPanel";
 import { appVersionLabel } from "./version";
 import { editorPreferences, setEditorPreference, type EditorPreferences } from "./YamlPane";
 
 /** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
 const CONFIRMATION = "DELETE";
 
-type Page = "general" | "vocabularies" | "topics" | "editor" | "sync" | "data";
+export type Page = "general" | "vocabularies" | "topics" | "editor" | "sync" | "data";
 
-export default function Settings({ update, email, status, snapshot, language, onSignOut, onClose, onNotify, onChanged }: {
+export default function Settings({ update, email, status, snapshot, language, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
   update?: UpdateStage;
   email: string;
   status: SyncStatus;
   snapshot: ReplicaSnapshot | null;
   /** Which vocabulary the topic counts are shown for — the one the list is currently filtered to. */
   language: string;
+  /** Which section to open on, so the Mac menu can point straight at the one it names. */
+  page?: Page;
+  /** A menu item ending in "…" promises a dialog, so Delete All Vocabulary opens its own. */
+  arm?: "delete" | null;
   onSignOut(): void;
   onClose(): void;
   onNotify(message: string): void;
@@ -32,7 +37,7 @@ export default function Settings({ update, email, status, snapshot, language, on
   const offerMacApplication = shouldOfferMacApplication();
   const [macRelease, setMacRelease] = useState<MacRelease | null>();
   const [releaseError, setReleaseError] = useState(false);
-  const [page, setPage] = useState<Page>("general");
+  const [page, setPage] = useState<Page>(opensOn ?? "general");
   const [editor, setEditor] = useState(editorPreferences);
 
   function changeEditor(name: keyof EditorPreferences, value: boolean) {
@@ -40,7 +45,7 @@ export default function Settings({ update, email, status, snapshot, language, on
     setEditor(editorPreferences());
   }
 
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState(arm === "delete");
   const [typed, setTyped] = useState("");
   const [working, setWorking] = useState(false);
 
@@ -173,7 +178,10 @@ export default function Settings({ update, email, status, snapshot, language, on
           onDownloadAgain={() => void run(() => syncEngine.downloadAgain(), "The vocabulary could not be downloaded again.")}
         />}
 
-        {page === "data" && <div className="danger-zone">
+        {page === "data" && <>
+          {snapshot && <ExportPanel snapshot={snapshot} />}
+          <ImportPanel onChanged={onChanged} />
+          <div className="danger-zone">
           <h3>Delete all vocabulary</h3>
           {!confirming && <>
             <p>Removes every entry from the server and from every device you use. This needs a
@@ -185,6 +193,9 @@ export default function Settings({ update, email, status, snapshot, language, on
               This deletes <strong>{liveLexemes} {liveLexemes === 1 ? "entry" : "entries"}</strong> and
               everything attached to them — senses, examples, the sentences you captured, and study
               history. Your other devices are emptied the next time they sync.
+            </p>
+            <p role="alert">
+              Export first if you have not already. Syncing again cannot bring any of this back.
             </p>
             <label htmlFor="delete-confirmation">Type {CONFIRMATION} to confirm</label>
             <input
@@ -199,7 +210,8 @@ export default function Settings({ update, email, status, snapshot, language, on
               >Delete everything</button>
             </div>
           </>}
-        </div>}
+          </div>
+        </>}
 
         {(page === "vocabularies" || page === "topics") && !snapshot
           && <p className="config-help">Opening your vocabulary…</p>}

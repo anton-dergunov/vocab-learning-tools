@@ -51,6 +51,20 @@ final class StubURLProtocol: URLProtocol {
 }
 
 final class AcervoTests: XCTestCase {
+    @MainActor
+    func testVocabularyMenuOffersTransferAndDeletion() {
+        let menu = makeVocabularyMenu(target: nil)
+        XCTAssertEqual(
+            menu.items.map(\.title),
+            ["Export Vocabulary…", "Import Vocabulary…", "", "Delete All Vocabulary…"]
+        )
+        // Deleting has no shortcut on purpose: it is the one action re-syncing cannot undo.
+        XCTAssertEqual(menu.items[0].keyEquivalent, "e")
+        XCTAssertEqual(menu.items[0].keyEquivalentModifierMask, [.command, .shift])
+        XCTAssertEqual(menu.items[1].keyEquivalent, "i")
+        XCTAssertEqual(menu.items[3].keyEquivalent, "")
+    }
+
     func testReleaseComparisonUsesBuildStamp() {
         let release = MacRelease(version: "0.1.0", build: "202608271230", file: "a.zip", size: 1, sha256: "x", url: "/a.zip")
         XCTAssertTrue(release.isNewer(than: "202608271229"))

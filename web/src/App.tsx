@@ -15,7 +15,7 @@ import {
   articleFor, inboxCount, languageOptions, topicOptions, visibleRows,
   type SortKey, type TopicSelection
 } from "./selectors";
-import Settings from "./Settings";
+import Settings, { type Page as SettingsPage } from "./Settings";
 import SignIn from "./SignIn";
 import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
@@ -107,7 +107,10 @@ export default function App() {
 
   const [addTab, setAddTab] = useState<AddTab | null>(null);
   const [langMenu, setLangMenu] = useState(false);
-  const [settings, setSettings] = useState(false);
+  /* Which settings section is open, or null for closed. The native menu names a section, so
+     "open settings" is not a boolean here. */
+  const [settings, setSettings] = useState<SettingsPage | null>(null);
+  const [armed, setArmed] = useState<"delete" | null>(null);
   const [toast, setToast] = useState("");
   const [update, setUpdate] = useState<UpdateStage | undefined>(() => updateStage());
 
@@ -125,6 +128,18 @@ export default function App() {
     const changed = (event: Event) => setUpdate((event as CustomEvent<UpdateStage | undefined>).detail);
     window.addEventListener(UPDATE_EVENT, changed);
     return () => window.removeEventListener(UPDATE_EVENT, changed);
+  }, []);
+
+  /* What the Mac menu bar calls. The native host owns a menu, not a second implementation: every
+     one of these lands on the surface that already does the work, with its confirmations intact. */
+  useEffect(() => {
+    window.acervo = {
+      command(name) {
+        setSettings("data");
+        setArmed(name === "delete" ? "delete" : null);
+      }
+    };
+    return () => { delete window.acervo; };
   }, []);
 
   const syncStatus = useSyncExternalStore(syncEngine.subscribe, syncEngine.getStatus);
@@ -282,7 +297,7 @@ export default function App() {
     await backendSession.logout();
     await repository.clear();
     setSnapshot(null);
-    setSettings(false);
+    setSettings(null);
     setSession(null);
   }
 
@@ -328,11 +343,11 @@ export default function App() {
               app updates; sync status, signing out and deleting the vocabulary are operations on
               the vocabulary, which the host deliberately does not own — so they live here, and
               without this they were unreachable on macOS altogether. */}
-          <SyncChip status={syncStatus} onOpen={() => setSettings(true)} />
+          <SyncChip status={syncStatus} onOpen={() => setSettings("general")} />
 
           <button
             className={`icon-btn gear ${update === "ready" ? "has-update" : ""}`}
-            onClick={() => setSettings(true)}
+            onClick={() => setSettings("general")}
             aria-label={update === "ready" ? "Open settings; an update is ready" : "Open settings"}
           ><GearIcon /></button>
 
@@ -418,8 +433,14 @@ export default function App() {
     </div>
 
     {settings && <Settings
+      // Directing the dialog at a section is a fresh open, not a prop change: the section and the
+      // armed confirmation are where it starts, and it navigates itself from there.
+      key={`${settings}:${armed ?? ""}`}
       update={update} email={session.email} status={syncStatus} snapshot={snapshot} language={language}
-      onSignOut={() => void signOut()} onClose={() => setSettings(false)} onNotify={notify}
+      page={settings} arm={armed}
+      onSignOut={() => void signOut()}
+      onClose={() => { setSettings(null); setArmed(null); }}
+      onNotify={notify}
       onChanged={() => setSnapshot(repository.snapshot())}
     />}
     <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>

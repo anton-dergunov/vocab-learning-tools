@@ -300,8 +300,13 @@ export function yamlForDraft(draft: ArticleDraft, study: StudyState | null = nul
     imagePrompts: draft.images.map(promptFields)
   }));
 
-  document.commentBefore = ` ${draft.headword} — ${languageOf(draft.language).name}`
-    + "\n Every record keeps its id. Delete a block to remove it; omit an id to add something new.";
+  // What the ids mean depends on whether the document names a stored entry. An edit keeps them; a
+  // document that names nothing — a proposal, or an exported file — has none to keep, and telling
+  // its reader to preserve ids it does not carry is worse than saying nothing.
+  document.commentBefore = ` ${draft.headword} — ${languageOf(draft.language).name}\n `
+    + (draft.id
+      ? "Every record keeps its id. Delete a block to remove it; omit an id to add something new."
+      : "No ids here: everything in this document is created when you save.");
 
   // Study state flows in from the scheduler and is never edited here (§10), so it is written as
   // comments: visible where you would look for it, and impossible to save back by accident.

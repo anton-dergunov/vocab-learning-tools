@@ -784,3 +784,39 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .config-switch > span { display: grid; gap: 3px; }
 .config-switch strong { font-size: 14.5px; font-weight: 600; }
 .config-switch > span > span { font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
+
+/* ══════════════════════════ export & import ══════════════════════════ */
+.config-field { display: grid; gap: 5px; font-size: 13px; color: var(--ink-3); }
+.config-field select {
+  padding: 9px 11px; border: 1px solid var(--rule); border-radius: 7px;
+  background: var(--surface); color: var(--ink); font-size: 14px;
+}
+.config-field select:focus { border-color: var(--core); outline: none; }
+.transfer-file {
+  padding: 10px 12px; border: 1px dashed var(--rule); border-radius: 8px;
+  background: var(--surface); color: var(--ink-2); font-size: 13px; width: 100%;
+}
+.transfer-file::file-selector-button {
+  margin-right: 10px; padding: 6px 11px; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--surface-2); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+}
+.transfer-summary {
+  display: grid; gap: 3px; padding: 11px 13px;
+  border: 1px solid var(--rule); border-radius: 8px; background: var(--surface-2);
+}
+.transfer-summary strong { font-size: 14.5px; font-weight: 600; }
+.transfer-summary > span { font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
+.transfer-problem { margin: 0; font-size: 13px; line-height: 1.45; color: var(--warn); }
+/* The settings dialog cannot scroll, so a report of four hundred entries has to scroll itself. */
+.transfer-report {
+  border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); font-size: 13px;
+}
+.transfer-report summary {
+  padding: 10px 12px; cursor: pointer; font-weight: 600; color: var(--ink-2);
+}
+.transfer-report ul {
+  margin: 0; padding: 0 12px 10px 28px; max-height: 190px; overflow-y: auto;
+  display: grid; gap: 5px;
+}
+.transfer-report li { font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.transfer-report li span { color: var(--ink-3); }
