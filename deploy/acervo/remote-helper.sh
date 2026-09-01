@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PROTOCOL=2
+PROTOCOL=3
 HELPER_PATH=/usr/local/sbin/deploy-acervo
 SUDOERS_PATH=/etc/sudoers.d/deploy-acervo
 PATH="$PATH:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
@@ -57,17 +57,85 @@ show_status() {
   "$docker" port acervo-pocketbase-1 8090
 }
 
+validate_service() {
+  case "$1" in
+    ''|*[!a-z0-9-]*)
+      echo "Service name must use lowercase letters, digits and hyphens" >&2
+      exit 2
+      ;;
+  esac
+}
+
+# A service listener lives on the service's own virtual IP, so 443 here is not the host's 443: it
+# cannot collide with another application, with an unrelated Serve mapping, or with a second
+# service. That is the whole reason to prefer this over a shared host port -- Android mints a
+# WebAPK only for a default port, and two apps separated by port alone collide as one installed
+# app. The elaborate guard the port path needs below exists because host ports are shared; a
+# service named for Acervo is Acervo's by definition, so this path only has to stay idempotent.
+# Services arrived in 1.86.0. An older client rejects --service with a bare "flag provided but not
+# defined" and its whole usage screen, which reads like a mistake in this script rather than a
+# server that needs updating.
+require_service_support() {
+  version=$("$tailscale" version 2>/dev/null | head -n 1 | tr -d '\r')
+  version=${version%% *}
+  major=${version%%.*}
+  rest=${version#*.}
+  minor=${rest%%.*}
+  case "$major.$minor" in
+    ''|*[!0-9.]*|.*|*.)
+      echo "Could not read the Tailscale version; hosting a service needs 1.86.0 or later" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$major" -lt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -lt 86 ]; }; then
+    echo "Tailscale $version cannot host a service; 1.86.0 or later is required." >&2
+    echo "Update Tailscale on this server, or publish on a machine port with --https-port." >&2
+    exit 1
+  fi
+}
+
+configure_service_https() {
+  require_service_support
+  serve_status=$("$tailscale" serve status --json 2>/dev/null || true)
+  # A containment check, not a parse: the server may have no JSON parser installed. It can only
+  # skip a redundant no-op, so an imprecise match here costs nothing either way.
+  case "$serve_status" in
+    *"svc:$service"*)
+      case "$serve_status" in
+        *"$expected_target"*)
+          echo "Acervo service mapping already exists; no Tailscale configuration changed."
+          return 0
+          ;;
+      esac
+      ;;
+  esac
+
+  "$tailscale" serve --service="svc:$service" --yes --https=443 "$expected_target"
+
+  updated_status=$("$tailscale" serve status --json 2>/dev/null || true)
+  case "$updated_status" in
+    *"svc:$service"*) ;;
+    *) echo "Tailscale did not report the requested Acervo service" >&2; exit 1 ;;
+  esac
+  case "$updated_status" in
+    *"$expected_target"*) ;;
+    *) echo "Tailscale did not report the requested Acervo backend" >&2; exit 1 ;;
+  esac
+  echo "Configured Acervo only: svc:$service on HTTPS 443 -> $expected_target"
+}
+
 configure_https() {
   https_port=
   app_port=
+  service=
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --https-port) [ "$#" -ge 2 ] || exit 2; https_port=$2; shift 2 ;;
       --app-port) [ "$#" -ge 2 ] || exit 2; app_port=$2; shift 2 ;;
+      --service) [ "$#" -ge 2 ] || exit 2; service=$2; shift 2 ;;
       *) echo "Unsupported configure-https argument: $1" >&2; exit 2 ;;
     esac
   done
-  validate_port "HTTPS port" "$https_port"
   validate_port "App port" "$app_port"
 
   tailscale=/var/packages/Tailscale/target/bin/tailscale
@@ -76,6 +144,15 @@ configure_https() {
     echo "Tailscale is unavailable on this server" >&2
     exit 1
   }
+  expected_target="http://127.0.0.1:$app_port"
+
+  if [ -n "$service" ]; then
+    validate_service "$service"
+    configure_service_https
+    return 0
+  fi
+
+  validate_port "HTTPS port" "$https_port"
   serve_status=$($tailscale serve status)
   listener=$(printf '%s\n' "$serve_status" | awk -v port="$https_port" '
     /^[a-z]+:\/\// {
@@ -94,7 +171,6 @@ configure_https() {
     }
     active && /\|-- \/ proxy / { sub(/^.*proxy /, ""); print; exit }
   ')
-  expected_target="http://127.0.0.1:$app_port"
   if [ -n "$listener" ] && [ "$current_target" != "$expected_target" ]; then
     echo "Refusing to replace the existing listener on port $https_port:" >&2
     printf '%s\n' "$listener" >&2

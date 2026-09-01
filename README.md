@@ -81,4 +81,7 @@ glosses, phrases, attestations, generated examples, prompts, study statistics, a
 - `macos/` — native host for the shared web interface.
 
 Deployment is designed for shared hosts and uses dedicated configurable listeners. It never assumes
-ownership of ports 80/443 or unrelated proxy, Tailscale, firewall, or Docker configuration.
+ownership of ports 80/443 or unrelated proxy, Tailscale, firewall, or Docker configuration. On a
+tailnet, Acervo is published as its own Tailscale service, which gives it a hostname and a 443 of
+its own without touching the host's — what Android requires to install it alongside another
+self-hosted app.

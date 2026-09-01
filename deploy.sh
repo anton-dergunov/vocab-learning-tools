@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=2
+helper_protocol=3
 
 mode=
 target=
@@ -18,6 +18,7 @@ anki_port=
 app_bind_address=
 app_port=
 https_port=
+service=
 action=deploy
 
 usage() {
@@ -29,11 +30,15 @@ usage:
   ./deploy.sh [--target USER@HOST] [--root PATH] [--configure-credentials]
               [--bind-address ADDRESS] [--port PORT] [--remember-target]
               [--app-bind-address ADDRESS] [--app-port PORT]
-              [--https-port PORT] [--reset-data] [--reset-pocketbase]
+              [--https-port PORT] [--service NAME] [--reset-data] [--reset-pocketbase]
   ./deploy.sh [--target USER@HOST] [--remember-target] --install-helper
-  ./deploy.sh [--target USER@HOST] [--https-port PORT] --configure-https
+  ./deploy.sh [--target USER@HOST] [--https-port PORT | --service NAME] --configure-https
   ./deploy.sh [--local | --target USER@HOST] --status
 
+  --service NAME      publish through the Tailscale service svc:NAME on its own
+                      hostname and its own 443, instead of a host port. Needed
+                      for Android to install this app alongside another PWA on
+                      the same machine; takes precedence over --https-port
   --reset-data        replace the Anki sync server and robot collections
   --reset-pocketbase  replace the vocabulary database, so a rewritten bootstrap
                       migration is applied from scratch; Anki data is untouched
@@ -58,6 +63,7 @@ while [ "$#" -gt 0 ]; do
     --app-bind-address) [ "$#" -ge 2 ] || usage; app_bind_address=$2; shift 2 ;;
     --app-port) [ "$#" -ge 2 ] || usage; app_port=$2; shift 2 ;;
     --https-port) [ "$#" -ge 2 ] || usage; https_port=$2; shift 2 ;;
+    --service) [ "$#" -ge 2 ] || usage; service=$2; shift 2 ;;
     --install-helper) choose_action install-helper; shift ;;
     --configure-https) choose_action configure-https; shift ;;
     --status) choose_action status; shift ;;
@@ -82,6 +88,7 @@ read_profile() {
           ACERVO_APP_BIND_ADDRESS) profile_app_bind_address=$value ;;
           ACERVO_APP_PORT) profile_app_port=$value ;;
           ACERVO_HTTPS_PORT) profile_https_port=$value ;;
+          ACERVO_SERVICE) profile_service=$value ;;
           *) echo "Unknown setting in .acervo-deploy: $key" >&2; exit 2 ;;
         esac
       done <"$profile"
@@ -120,6 +127,7 @@ write_profile() {
     printf 'ACERVO_APP_BIND_ADDRESS=%s\n' "$effective_app_bind_address"
     printf 'ACERVO_APP_PORT=%s\n' "$effective_app_port"
     printf 'ACERVO_HTTPS_PORT=%s\n' "$effective_https_port"
+    printf 'ACERVO_SERVICE=%s\n' "$service"
   } >"$profile"
   chmod 600 "$profile"
 }
@@ -131,6 +139,7 @@ profile_anki_port=
 profile_app_bind_address=
 profile_app_port=
 profile_https_port=
+profile_service=
 if [ "$mode" != local ]; then
   read_profile
   target=${target:-$profile_target}
@@ -140,6 +149,7 @@ if [ "$mode" != local ]; then
   app_bind_address=${app_bind_address:-$profile_app_bind_address}
   app_port=${app_port:-$profile_app_port}
   https_port=${https_port:-$profile_https_port}
+  service=${service:-$profile_service}
 fi
 
 effective_bind_address=${bind_address:-127.0.0.1}
@@ -152,6 +162,17 @@ validate_address "app bind address" "$effective_app_bind_address"
 validate_port "Anki port" "$effective_anki_port"
 validate_port "App port" "$effective_app_port"
 validate_port "HTTPS port" "$effective_https_port"
+# A Tailscale service listens on its own virtual IP, so its 443 is not the host's 443 and cannot
+# collide with another application. Android only mints a WebAPK for a default port, so a service is
+# what lets Acervo install alongside another self-hosted PWA rather than replacing it.
+if [ -n "$service" ]; then
+  case "$service" in
+    ''|*[!a-z0-9-]*)
+      echo "The service name must use lowercase letters, digits and hyphens" >&2
+      exit 2
+      ;;
+  esac
+fi
 [ "$effective_anki_port" != "$effective_app_port" ] || {
   echo "The Acervo app/PocketBase port must differ from the Anki sync port" >&2
   exit 2
@@ -331,12 +352,20 @@ if [ "$action" = status ]; then
 fi
 
 if [ "$action" = configure-https ]; then
+  # The service and the host-port listener are alternatives, not layers. A configured service owns
+  # the public address, and the remembered HTTPS port is left unused rather than mapped as well.
+  if [ -n "$service" ]; then
+    https_arguments="--service $service"
+    echo "Configuring the Tailscale service svc:$service (HTTPS 443)."
+  else
+    https_arguments="--https-port $effective_https_port"
+  fi
   if [ "$remote_mode" = root ]; then
-    ssh -T "$target" "sh -s -- configure-https --https-port $effective_https_port --app-port $effective_app_port" \
+    ssh -T "$target" "sh -s -- configure-https $https_arguments --app-port $effective_app_port" \
       <"$repo_root/deploy/acervo/remote-helper.sh"
   else
     ssh -T "$target" \
-      "sudo -n $helper_path configure-https --https-port $effective_https_port --app-port $effective_app_port"
+      "sudo -n $helper_path configure-https $https_arguments --app-port $effective_app_port"
   fi
   exit 0
 fi
@@ -384,4 +413,8 @@ fi
 
 echo "Acervo deployment completed."
 echo "Internal HTTP backend: http://$effective_app_bind_address:$effective_app_port"
-echo "Dedicated Tailscale HTTPS listener: port $effective_https_port (configure explicitly with ./deploy.sh --configure-https)"
+if [ -n "$service" ]; then
+  echo "Dedicated Tailscale service: svc:$service on HTTPS 443 (configure explicitly with ./deploy.sh --configure-https)"
+else
+  echo "Dedicated Tailscale HTTPS listener: port $effective_https_port (configure explicitly with ./deploy.sh --configure-https)"
+fi

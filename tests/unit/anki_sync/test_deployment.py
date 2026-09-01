@@ -42,6 +42,32 @@ def fake_tailscale_path(tmp_path: Path, initial_status: str) -> tuple[Path, Path
     return bin_dir, state, log
 
 
+def fake_tailscale_service_path(
+    tmp_path: Path, initial_status: str, version: str = "1.86.0"
+) -> tuple[Path, Path, Path]:
+    """A Tailscale that speaks the service form of `serve`, which reports through `status --json`."""
+    bin_dir = tmp_path / "tailscale-service-bin"
+    bin_dir.mkdir()
+    state = tmp_path / "tailscale-service-status"
+    state.write_text(initial_status, encoding="utf-8")
+    log = tmp_path / "tailscale-service-log"
+    tailscale = bin_dir / "tailscale"
+    tailscale.write_text(
+        "#!/bin/sh\n"
+        f"if [ \"$1\" = version ]; then printf '{version}\\n  commit: abc\\n'; exit 0; fi\n"
+        "if [ \"$1 $2\" = 'serve status' ]; then cat \"$ACERVO_TEST_TS_STATE\"; exit 0; fi\n"
+        "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_TS_LOG\"\n"
+        "case \"$2\" in\n"
+        "  --service=svc:*) service=${2#--service=} ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n"
+        "printf '{\"%s\":{\"proxy\":\"%s\"}}\\n' \"$service\" \"$5\" >>\"$ACERVO_TEST_TS_STATE\"\n",
+        encoding="utf-8",
+    )
+    tailscale.chmod(0o755)
+    return bin_dir, state, log
+
+
 def fake_docker_path(tmp_path: Path) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -508,6 +534,7 @@ def test_deploy_profile_supports_legacy_format_defaults_and_cli_precedence(tmp_p
         "ACERVO_APP_BIND_ADDRESS=127.0.0.1\n"
         "ACERVO_APP_PORT=27702\n"
         "ACERVO_HTTPS_PORT=27903\n"
+        "ACERVO_SERVICE=\n"
     )
 
 
@@ -566,6 +593,102 @@ def test_configure_https_is_additive_idempotent_and_collision_safe(tmp_path: Pat
     assert occupied.returncode == 1
     assert "Refusing to replace" in occupied.stderr
     assert log.read_text(encoding="utf-8") == ""
+
+
+def test_configure_https_publishes_a_service_on_its_own_443(tmp_path: Path) -> None:
+    """A service's 443 is its own virtual IP's, so it neither claims the host's nor collides with
+    another service. This is what lets Android mint a WebAPK and install Acervo alongside another
+    self-hosted app rather than replacing it."""
+    helper = runnable_remote_helper(tmp_path)
+    neighbour = '{"svc:calorie-logger":{"proxy":"http://127.0.0.1:8090"}}\n'
+    bin_dir, state, log = fake_tailscale_service_path(tmp_path, neighbour)
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "ACERVO_TEST_TS_STATE": str(state),
+            "ACERVO_TEST_TS_LOG": str(log),
+        }
+    )
+
+    added = subprocess.run(
+        [str(helper), "configure-https", "--service", "acervo", "--app-port", "27702"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert added.returncode == 0, added.stderr
+    assert log.read_text(encoding="utf-8") == (
+        "serve --service=svc:acervo --yes --https=443 http://127.0.0.1:27702\n"
+    )
+    # The neighbouring service is left exactly as it was.
+    assert state.read_text(encoding="utf-8").startswith(neighbour)
+
+    log.write_text("", encoding="utf-8")
+    repeated = subprocess.run(
+        [str(helper), "configure-https", "--service", "acervo", "--app-port", "27702"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert repeated.returncode == 0, repeated.stderr
+    assert "already exists" in repeated.stdout
+    assert log.read_text(encoding="utf-8") == ""
+
+
+def test_configure_https_refuses_a_service_name_that_is_not_a_bare_label(tmp_path: Path) -> None:
+    """`svc:` is reference syntax for the policy file and the CLI, never part of the name itself."""
+    helper = runnable_remote_helper(tmp_path)
+    bin_dir, state, log = fake_tailscale_service_path(tmp_path, "{}\n")
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "ACERVO_TEST_TS_STATE": str(state),
+            "ACERVO_TEST_TS_LOG": str(log),
+        }
+    )
+
+    for rejected in ("svc:acervo", "Acervo", "acervo app", ""):
+        result = subprocess.run(
+            [str(helper), "configure-https", "--service", rejected, "--app-port", "27702"],
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 2, rejected
+        # Rejected before Tailscale is invoked at all, so the log is never even created.
+        assert not log.exists()
+
+
+def test_configure_https_reports_a_tailscale_too_old_to_host_a_service(tmp_path: Path) -> None:
+    """Services arrived in 1.86.0. An older client answers --service with its whole usage screen,
+    which reads like a bug here rather than a server that needs updating."""
+    helper = runnable_remote_helper(tmp_path)
+    bin_dir, state, log = fake_tailscale_service_path(tmp_path, "{}\n", version="1.78.1")
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "ACERVO_TEST_TS_STATE": str(state),
+            "ACERVO_TEST_TS_LOG": str(log),
+        }
+    )
+
+    stale = subprocess.run(
+        [str(helper), "configure-https", "--service", "acervo", "--app-port", "27702"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert stale.returncode == 1
+    assert "1.86.0 or later is required" in stale.stderr
+    assert "--https-port" in stale.stderr
+    assert not log.exists()
 
 
 def test_explicit_port_443_is_allowed_but_cannot_replace_an_existing_service(tmp_path: Path) -> None:

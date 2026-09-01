@@ -43,46 +43,112 @@ only after **Update Acervo** is selected. Browser Settings also offers **Downloa
 when the server has a native release; a server packaged without one says that no release is
 currently published.
 
-## HTTPS with Tailscale Serve on Synology (recommended for a private tailnet)
+## HTTPS with a Tailscale service (recommended for a private tailnet)
 
-Use Tailscale Serve when Acervo should be reachable only by devices in the same tailnet. Serve
-terminates browser-trusted HTTPS on a dedicated Tailscale listener and proxies it to Acervo's
-localhost HTTP backend. The default mapping is HTTPS `27702` to HTTP `127.0.0.1:27702`; using the
-same number is safe because the listeners bind different addresses and speak different protocols.
-Do not browse directly to the backend before the Serve mapping exists.
+Use Tailscale when Acervo should be reachable only by devices in the same tailnet. Serve terminates
+browser-trusted HTTPS and proxies it to Acervo's localhost HTTP backend. Do not browse directly to
+the backend before the mapping exists.
+
+Give Acervo its **own service**, which means its own hostname and its own port 443, rather than a
+port on the machine's shared hostname. This is not cosmetic. Android mints a WebAPK — a real
+installed app — only for a site on the default port; on a non-standard port Chrome silently falls
+back to a home-screen shortcut, and that fallback does not distinguish two apps that share a
+hostname. Hosting Acervo and another self-hosted PWA as ports on one hostname therefore makes them
+collide: installing one makes the other's page offer "Open <the first app>" instead of "Install
+app", and only one of the two can be installed at a time. Separate hostnames fix it; separate paths
+on one origin do not, and would additionally put both apps' browser storage in one bucket, where
+uninstalling either offers to erase the other's data.
+
+A service's 443 is bound on the service's own virtual IP, so it is not the host's 443 and cannot
+collide with another application, another service, or an unrelated Serve mapping.
+
+Hosting a service needs **Tailscale 1.86.0 or later** on the server; earlier clients have no
+`--service` flag at all. Check with `tailscale version`, and update the Synology package before
+starting if it is older. `--configure-https` refuses with this requirement rather than letting the
+old client print its usage screen.
 
 1. Keep the default backend bind address `127.0.0.1` and app port `27702`, or save host-specific
    choices in the ignored `.acervo-deploy` profile.
 2. In the Tailscale admin console's **DNS** page, enable **MagicDNS** and **HTTPS Certificates** if
    needed. Enabling certificates publishes the generated machine and tailnet DNS names to the
    public certificate-transparency ledger, although access remains private to the tailnet.
-3. Install the restricted Acervo launcher once. This is the only routine setup command that asks
-   for the NAS account's sudo password:
+3. On the admin console's **Services** page, **Advertised** tab, choose **Define a Service**:
+
+   - **Service name**: `acervo` — the bare name, with no `svc:` prefix. The field accepts only
+     letters, digits and dashes, and its contents become the hostname, so naming it `svc-acervo`
+     would publish `svc-acervo.<tailnet-name>.ts.net` and have to be referenced as
+     `svc:svc-acervo`. The `svc:` prefix belongs only in the policy file and the CLI.
+   - **Ports**: `443`, in the field already prefixed with `tcp:`. Not `433`.
+   - **Description** and **Service tags** are optional
+
+4. Grant access to the service. Without a grant the name resolves but nothing connects. On the
+   **Access Controls** page choose **Add rule** and set:
+
+   - **Source**: `autogroup:member`
+   - **Destination**: `svc:acervo` — here the `svc:` prefix is correct, and the console adds it to
+     the bare name from the previous step
+   - **Port and protocol**: `443` only. Remove **All ports and protocols** if the form offers it;
+     leaving it in grants every port on the service, which the app does not need.
+
+   The form's JSON preview is the rule it will save, and the policy file can be edited directly
+   instead if you prefer:
+
+   ```json
+   {
+     "src": ["autogroup:member"],
+     "dst": ["svc:acervo"],
+     "ip": ["443"]
+   }
+   ```
+
+5. Install the restricted Acervo launcher once. This is the only routine setup command that asks
+   for the NAS account's sudo password, and it is also how the launcher is refreshed after its
+   protocol changes:
 
    ```bash
    ./deploy.sh --install-helper
    ```
 
-4. Add only Acervo's configured listener:
+6. Add only Acervo's own service listener, and remember the choice:
 
    ```bash
-   ./deploy.sh --configure-https
+   ./deploy.sh --service acervo --configure-https --remember-target
    ```
 
-   The command inspects every existing Serve listener first. It does nothing when the exact mapping
-   exists, refuses to replace a port used by another service, and never resets the Serve
-   configuration. To choose a different listener explicitly, use `--https-port PORT` and save it
-   with `--remember-target`. Port 443 is accepted only when explicitly selected and currently free
-   (or already mapped to this exact Acervo backend); it is never Acervo's default.
-5. Verify the application and API through the dedicated HTTPS port:
+   The command touches nothing but `svc:acervo` and never resets the Serve configuration. It
+   reports that nothing changed when the mapping already exists. Unless an auto-approval policy
+   covers the host, approve it once from the **Services** page; the service then reads
+   **Connected**.
+
+7. Verify the application and API on the service's own hostname, with no port:
 
    ```text
-   https://server.example.com:27702/
-   https://server.example.com:27702/api/acervo/v1/health
+   https://acervo.<tailnet-name>.ts.net/
+   https://acervo.<tailnet-name>.ts.net/api/acervo/v1/health
    ```
 
-6. Enter the first address, without `/api/...`, in the Acervo macOS Settings window. The native
+8. Enter the first address, without `/api/...`, in the Acervo macOS Settings window. The native
    updater derives its manifest and download addresses from that base URL.
+
+Inspect what the host is serving, including every other service, with:
+
+```bash
+sudo /var/packages/Tailscale/target/bin/tailscale serve status
+```
+
+### Alternative: a port on the machine's own hostname
+
+Where Tailscale Services is unavailable, Acervo can still take a dedicated port on the machine's
+hostname. Use `--https-port PORT` instead of `--service NAME`; the default mapping is HTTPS `27702`
+to HTTP `127.0.0.1:27702`, and using the same number is safe because the listeners bind different
+addresses and speak different protocols. The command inspects every existing Serve listener first,
+does nothing when the exact mapping exists, and refuses to replace a port used by another service.
+Port 443 is accepted only when explicitly selected and currently free (or already mapped to this
+exact Acervo backend); it is never Acervo's default. A configured `--service` takes precedence, and
+the remembered HTTPS port is then left unused rather than mapped as well.
+
+Expect the Android installation limitation described above when two PWAs on this machine are
+separated only by port.
 
 Serve mappings configured in the background persist across Tailscale restarts. Inspect the complete
 shared-host configuration before making changes:
