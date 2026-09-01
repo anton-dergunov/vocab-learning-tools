@@ -62,10 +62,54 @@ uninstalling either offers to erase the other's data.
 A service's 443 is bound on the service's own virtual IP, so it is not the host's 443 and cannot
 collide with another application, another service, or an unrelated Serve mapping.
 
-Hosting a service needs **Tailscale 1.86.0 or later** on the server; earlier clients have no
-`--service` flag at all. Check with `tailscale version`, and update the Synology package before
-starting if it is older. `--configure-https` refuses with this requirement rather than letting the
-old client print its usage screen.
+### Two server prerequisites
+
+**Tailscale 1.86.0 or later.** Earlier clients have no `--service` flag at all and answer it with
+their usage screen; `--configure-https` refuses with this requirement rather than letting that
+happen. Check with `tailscale version`. Synology's Package Center channel lags far behind — it may
+still offer 1.58 — so install the current package by hand from
+[pkgs.tailscale.com](https://pkgs.tailscale.com/stable/#spks), choosing the `-dsm7` file matching
+the architecture that `uname -m` reports (`x86_64`, `aarch64` → `armv8`, `armv7l` → `armv7`). Use
+**Package Center > Manual Install** *over* the running package. Do not uninstall first: that drops
+the node key, so the NAS leaves the tailnet and every existing Serve mapping goes with it. An
+in-place upgrade keeps them. `tailscale set --auto-update` is not supported on Synology, so this
+stays a manual step to repeat.
+
+**A tag-based identity for the server.** Tailscale refuses a service host that is authenticated as
+a person — `tailscale serve --service=…` answers `service hosts must be tagged nodes`. Tagging
+*replaces* the device's user authentication: the Tailscale IP stays the same and a new node key is
+issued, but the machine stops belonging to the account that logged it in. On a shared host this
+affects everything else that machine serves, so grant the tag access before applying it:
+
+1. Declare who may own the tag. A tag cannot be created from any form: the visual policy editor
+   writes access rules only, so this has to go in the policy file itself. In the admin console
+   sidebar expand **Access controls** and open the **JSON editor**, then merge a `tagOwners`
+   section into the existing document rather than replacing it:
+
+   ```json
+   "tagOwners": {
+     "tag:service-host": ["autogroup:admin"]
+   }
+   ```
+
+2. Make sure a rule still admits the machine under its new identity. A tailnet left with the
+   default "all users and devices, all ports" rule already covers tagged devices and needs nothing
+   here. Where that rule has been narrowed, add this *before* tagging, or every application on the
+   host becomes unreachable at once:
+
+   ```json
+   {
+     "src": ["autogroup:member"],
+     "dst": ["tag:service-host"],
+     "ip": ["*"]
+   }
+   ```
+
+3. On the **Machines** page, open the server's `⋯` menu, choose **Edit ACL tags**, add
+   `tag:service-host`, and save. The tag must already exist in the policy file, and this needs
+   Owner, Admin, or Network admin. Confirm the machine's other addresses still answer afterwards.
+
+Then:
 
 1. Keep the default backend bind address `127.0.0.1` and app port `27702`, or save host-specific
    choices in the ignored `.acervo-deploy` profile.

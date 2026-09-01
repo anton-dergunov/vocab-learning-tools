@@ -110,7 +110,9 @@ configure_service_https() {
       ;;
   esac
 
-  "$tailscale" serve --service="svc:$service" --yes --https=443 "$expected_target"
+  # --bg is not optional: without it serve runs in the foreground, which over SSH hangs the
+  # deployment and discards the mapping the moment the command is interrupted.
+  "$tailscale" serve --service="svc:$service" --bg --yes --https=443 "$expected_target"
 
   updated_status=$("$tailscale" serve status --json 2>/dev/null || true)
   case "$updated_status" in

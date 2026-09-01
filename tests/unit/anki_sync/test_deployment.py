@@ -61,7 +61,9 @@ def fake_tailscale_service_path(
         "  --service=svc:*) service=${2#--service=} ;;\n"
         "  *) exit 2 ;;\n"
         "esac\n"
-        "printf '{\"%s\":{\"proxy\":\"%s\"}}\\n' \"$service\" \"$5\" >>\"$ACERVO_TEST_TS_STATE\"\n",
+        # The proxy target is the final argument, wherever the flags before it land.
+        "for target; do :; done\n"
+        "printf '{\"%s\":{\"proxy\":\"%s\"}}\\n' \"$service\" \"$target\" >>\"$ACERVO_TEST_TS_STATE\"\n",
         encoding="utf-8",
     )
     tailscale.chmod(0o755)
@@ -620,7 +622,7 @@ def test_configure_https_publishes_a_service_on_its_own_443(tmp_path: Path) -> N
     )
     assert added.returncode == 0, added.stderr
     assert log.read_text(encoding="utf-8") == (
-        "serve --service=svc:acervo --yes --https=443 http://127.0.0.1:27702\n"
+        "serve --service=svc:acervo --bg --yes --https=443 http://127.0.0.1:27702\n"
     )
     # The neighbouring service is left exactly as it was.
     assert state.read_text(encoding="utf-8").startswith(neighbour)
