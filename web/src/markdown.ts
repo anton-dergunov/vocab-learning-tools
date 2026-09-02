@@ -12,12 +12,17 @@
  *     *speaker; loudspeaker*
  *     > Nos estamos conectando al **parlante** por Bluetooth. - We're connecting to the **speaker** via Bluetooth.
  *
+ * Three lines at most, and that is the point. This file is scanned, not studied: a word, its
+ * one-line gloss, and — only if there is one worth keeping — a sentence. Every sense, the notes and
+ * the generated examples are deliberately left out; they are what the article is for, and putting
+ * them here would turn a page you can run your eye down into a second copy of the vocabulary.
+ *
  * Pure: no storage, no network, no DOM.
  */
 
-import type { Lexeme, Sense, VocabularyGraph } from "./domain";
-import { glossLanguagesFor, languageOf } from "./languages";
-import { articleFor, lexemesIn, type Article, type ArticleSense } from "./selectors";
+import type { Example, Lexeme, VocabularyGraph } from "./domain";
+import { languageOf } from "./languages";
+import { articleFor, lexemesIn, shortGlossOf, type Article } from "./selectors";
 
 /** Words waiting to be filed, which the rail also keeps out of every topic. */
 const INBOX_FILE = "Inbox";
@@ -50,26 +55,14 @@ function emphasise(text: string, form: string | null): string {
   return `${text.slice(0, at)}**${form}**${text.slice(at + form.length)}`;
 }
 
-/** The sense's terms in the vocabulary's preferred gloss language, joined the way the vault does. */
-function glossLine(graph: VocabularyGraph, lexeme: Lexeme, sense: Sense): string {
-  const preferred = glossLanguagesFor(lexeme.language, graph.vocabularies)
-    .map((lang) => sense.glosses.find((gloss) => gloss.lang === lang))
-    .find(Boolean);
-  const gloss = preferred ?? sense.glosses[0];
-  return gloss ? gloss.terms.join("; ") : sense.definition;
-}
-
-function senseBlock(graph: VocabularyGraph, lexeme: Lexeme, entry: ArticleSense, label: string): string[] {
-  const lines = [`${label}*${glossLine(graph, lexeme, entry.sense)}*`];
-  entry.examples.forEach((example) => {
-    const text = emphasise(example.text, example.matchedForm);
-    const translation = example.translation
-      ? ` - ${emphasise(example.translation, example.matchedTranslationForm)}`
-      : "";
-    lines.push(`> ${text}${translation}`);
-  });
-  return lines;
-}
+/**
+ * A sentence earns its place here by having been met or written, not produced.
+ *
+ * Provenance is already modelled rather than flagged, so this needs no new field: an example drawn
+ * from a sentence the owner supplied is `attestation`, and one they typed is `manual`. Everything
+ * generated — `llm`, and the corpus origins — belongs to the article, where it can be judged.
+ */
+const KEPT: Example["origin"][] = ["attestation", "manual"];
 
 export function entryFor(graph: VocabularyGraph, article: Article): string {
   const { lexeme, senses } = article;
@@ -79,14 +72,19 @@ export function entryFor(graph: VocabularyGraph, article: Article): string {
     lexeme.emoji ?? ""
   ].filter(Boolean).join(" ");
 
-  const lines = [heading];
-  // Numbered only when there is more than one sense, so the common single-sense word comes out
-  // identical to what the vault holds today.
-  senses.forEach((entry, index) => {
-    lines.push(...senseBlock(graph, lexeme, entry, senses.length > 1 ? `${index + 1}. ` : ""));
-  });
-  // Notes are curated text; losing them in the readable copy would make it the lesser record.
-  lexeme.notes.forEach((note) => lines.push("", note));
+  // The one-line form, exactly as the list shows it: the curated gloss when there is one, and the
+  // first sense's otherwise. Not every sense — a word with four of them still gets one line here.
+  const lines = [heading, `*${shortGlossOf(graph, lexeme)}*`];
+  senses
+    .flatMap((entry) => entry.examples)
+    .filter((example) => KEPT.includes(example.origin))
+    .forEach((example) => {
+      const text = emphasise(example.text, example.matchedForm);
+      const translation = example.translation
+        ? ` - ${emphasise(example.translation, example.matchedTranslationForm)}`
+        : "";
+      lines.push(`> ${text}${translation}`);
+    });
   return lines.join("\n");
 }
 

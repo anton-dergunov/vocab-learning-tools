@@ -1313,6 +1313,12 @@ a Technology topic would otherwise be two notes called Technology, neither disti
 ordinary note about technology. A word is filed under each of its topics, an unfiled one under
 `Misc`, and one still waiting under `Inbox`, mirroring what the rail does.
 
+The entries are three lines at most — the word, its one-line gloss, and a sentence if one is worth
+keeping — because the value of this file is that it can be *scanned*. Senses, notes and generated
+examples stay in the article. Which sentence is worth keeping needs no new field: provenance is
+already modelled, so an example is kept when its origin is the owner's own — `attestation` for one
+they met, `manual` for one they wrote — and dropped when it was produced.
+
 **Importing Acervo's own export is not that bridge.** A bundle is the current model, written by this
 application, and it is read back through the same `parseArticle` and written through the same
 `saveArticle` a typed document is. That is the §17 layer-0 rebuild path made real: export before a

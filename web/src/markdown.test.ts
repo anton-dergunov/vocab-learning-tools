@@ -18,28 +18,43 @@ describe("the Obsidian projection", () => {
     expect(fileNameFor("es", "Health / Body")).toBe("Spanish vocab - Health Body.md");
   });
 
-  it("writes a single-sense word exactly as the vault writes it", () => {
+  it("writes a word as a heading, one gloss line and nothing else it does not need", () => {
     const graph = testGraph();
-    const article = articleFor(graph, "lexemebalsa0001")!;
-    expect(entryFor(graph, article)).toBe([
+    // la balsa's only example is generated, so the entry is two lines.
+    expect(entryFor(graph, articleFor(graph, "lexemebalsa0001")!)).toBe([
       "##### **la balsa** 🛶",
-      "*raft*",
-      "> Cruzaron el río en una balsa. - They crossed the river on a raft."
+      "*raft*"
     ].join("\n"));
   });
 
-  it("numbers the senses of a word that has more than one, and bolds the matched forms", () => {
+  it("gives a word with several senses one gloss line, not one per sense", () => {
     const graph = testGraph();
-    const article = articleFor(graph, "lexemepicar0001")!;
-    expect(entryFor(graph, article)).toBe([
+    expect(entryFor(graph, articleFor(graph, "lexemepicar0001")!)).toBe([
       "##### **picar** 🌶️",
-      "1. *to itch*",
-      "> Me **pica** la nariz. - My nose **itches**.",
-      "2. *to chop; to dice*",
-      "> **Pica** la cebolla bien fina. - **Chop** the onion very finely.",
-      "",
-      "The sense is carried by the object, not the verb."
+      // The curated short form, the same line the list shows — not "to itch" then "to chop; to dice".
+      "*to itch; to chop*",
+      "> Me **pica** la nariz. - My nose **itches**."
     ].join("\n"));
+  });
+
+  it("keeps only the sentences you met or wrote, and leaves the notes to the article", () => {
+    const graph = testGraph();
+    const text = entryFor(graph, articleFor(graph, "lexemepicar0001")!);
+    // The attestation example stays; the subtitle one does not, and neither does the note.
+    expect(text).toContain("Me **pica** la nariz.");
+    expect(text).not.toContain("Pica la cebolla");
+    expect(text).not.toContain("carried by the object");
+
+    const manual = testGraph();
+    manual.examples[1] = { ...manual.examples[1], origin: "manual" };
+    expect(entryFor(manual, articleFor(manual, "lexemepicar0001")!))
+      .toContain("> **Pica** la cebolla bien fina. - **Chop** the onion very finely.");
+  });
+
+  it("falls back to the first sense when a word has no curated short form", () => {
+    const graph = testGraph();
+    expect(entryFor(graph, articleFor(graph, "lexemeturmoil01")!))
+      .toBe("##### **turmoil** 🌪️\n*суматоха; смятение*");
   });
 
   it("files a word by topic, an unfiled one under Misc and a waiting one under Inbox", () => {
@@ -55,8 +70,6 @@ describe("the Obsidian projection", () => {
     const files = markdownFor(testGraph(), "en", AT);
     expect(files.map((file) => file.path)).toEqual(["English vocab - Misc.md"]);
     expect(files[0].text).toContain("##### **turmoil** 🌪️");
-    // English glosses into Russian in the fixture, which is what the vocabulary record asks for.
-    expect(files[0].text).toContain("*суматоха; смятение*");
   });
 
   it("carries front matter and sorts entries so a re-export diffs cleanly", () => {
