@@ -7,7 +7,8 @@ import {
 } from "./dictionaries";
 import ExternalArticle, { type DictionaryAddRequest } from "./ExternalArticle";
 import {
-  externalEntryOf, mergeHits, type ExternalEntry, type ExternalRow, type RawHit
+  externalEntryOf, EXTERNAL_ROW_LIMIT, mergeHits,
+  type ExternalEntry, type ExternalRow, type RawHit
 } from "./externalEntries";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
 import LexemeArticle from "./LexemeArticle";
@@ -145,6 +146,8 @@ export default function App() {
      holds this word", "you have none switched on" and "the network refused" look identical without
      it, and only one of them is something the reader can act on. */
   const [externalTrouble, setExternalTrouble] = useState<string | null>(null);
+  /** How many matched in total, so a cut list can say it was cut. */
+  const [externalTotal, setExternalTotal] = useState(0);
   const [external, setExternal] = useState<ExternalEntry | null>(null);
   const [externalBusy, setExternalBusy] = useState(false);
   /* Which settings section is open, or null for closed. The native menu names a section, so
@@ -256,8 +259,15 @@ export default function App() {
   const recount = useCallback((mine: number) => {
     const merged = mergeHits(search.current?.value ?? "", [
       ...hits.current.device, ...hits.current.server, ...hits.current.online]);
-    setExternalRows(merged);
-    void hydrateGlosses(merged, language).then((withGlosses) => {
+    /* Only as many rows as can be described. Reading a row's meaning costs a lookup in the
+       dictionary that holds it — several range requests when that dictionary is on the server — so
+       the list is cut to what is worth paying for. `casa` across seven dictionaries merged to
+       thirty-four rows, and the twenty-two past the old hydration limit rendered as a column of
+       em-dashes, which reads as a search that found nothing rather than as one that found plenty. */
+    const shown = merged.slice(0, EXTERNAL_ROW_LIMIT);
+    setExternalRows(shown);
+    setExternalTotal(merged.length);
+    void hydrateGlosses(shown, language).then((withGlosses) => {
       if (token.current === mine) setExternalRows(withGlosses);
     });
   }, [language]);
@@ -267,6 +277,7 @@ export default function App() {
     const mine = (token.current += 1);
     hits.current = { device: [], server: [], online: [] };
     setExternalRows([]);
+    setExternalTotal(0);
     setExternalTrouble(null);
     setOnlineState(wanted && scope.online ? "ready" : "off");
     if (!wanted || !language || (!scope.device && !scope.server)) {
@@ -342,6 +353,7 @@ export default function App() {
 
   const externalSearch = useMemo<ExternalSearch>(() => ({
     rows: externalRows,
+    total: externalTotal,
     trouble: externalTrouble,
     searching: externalSearching || externalBusy,
     enabled: scope.device || scope.server || scope.online,
@@ -349,8 +361,8 @@ export default function App() {
     online: onlineState,
     onOpen: openExternal,
     onSearchOnline: searchOnline
-  }), [externalRows, externalTrouble, externalSearching, externalBusy, scope, syncStatus.state,
-       onlineState, openExternal, searchOnline]);
+  }), [externalRows, externalTotal, externalTrouble, externalSearching, externalBusy, scope,
+       syncStatus.state, onlineState, openExternal, searchOnline]);
 
   /**
    * Take a word from a dictionary into your own vocabulary.

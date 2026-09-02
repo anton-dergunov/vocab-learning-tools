@@ -1108,3 +1108,24 @@ to remove what the source never meant to publish and to promote what it did, and
 poor dictionary should look plain; it should not look broken, and it should not be dressed up.
 Choosing which dictionaries are worth carrying is a separate job from rendering them well.
 
+### §12.4 · Two faults that only a long result list showed
+
+Both were invisible on a short search and obvious on `casa`, which seven Spanish dictionaries answer.
+
+- **The list showed more rows than it could describe.** Merging across seven dictionaries produced
+  thirty-four rows; only the first fourteen were given a meaning, and the rest rendered as a column
+  of em-dashes — which reads as a search that found nothing, not as one that found plenty. Reading a
+  row's meaning costs a lookup in the dictionary holding it, and several byte-range requests when
+  that dictionary is on the server, so the cap and the hydration limit have to be the same number.
+  The list now shows the closest twelve, describes all twelve, and says how many matched.
+- **A gloss was taken from whichever source sorted first.** Alphabetical order put an `html` source
+  ahead of a mapped one, and reading a meaning back out of a rendered fragment gave
+  `nounbrothelwhorehouselupanar` where the mapped source had `brothel; whorehouse`. Candidates are
+  now tried mapped-first, the first non-empty answer wins, and an `html` gloss is assembled block by
+  block with the parts that describe the word rather than define it — its part of speech, its tags,
+  its backlinks — left out.
+
+The jump chips also stopped landing on their headings again once a word was held by six sources: the
+nav is sticky and wraps to two or three rows, so no fixed `scroll-margin-top` can be right for every
+entry. It is measured from the nav and re-measured when it resizes.
+

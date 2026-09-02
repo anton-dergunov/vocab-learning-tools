@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import type { DictionaryArticle } from "./dictionary";
 import { lookup } from "./dictionaries";
 import { CaretIcon } from "./icons";
@@ -99,8 +99,15 @@ function FieldsArticle({ article, entry, single }: {
   </div>;
 }
 
-function Section({ section, entry }: { section: ExternalSection; entry: ExternalEntry }) {
-  return <section className="sec ext-sec" id={sectionId(section)}>
+function Section({ section, entry, scrollMargin }: {
+  section: ExternalSection; entry: ExternalEntry; scrollMargin?: number;
+}) {
+  return <section
+    className="sec ext-sec" id={sectionId(section)}
+    // Measured, not guessed: the jump nav wraps to two or three rows once a word is held by five or
+    // six dictionaries, and a fixed offset then drops the heading behind it again.
+    style={scrollMargin ? { scrollMarginTop: scrollMargin } : undefined}
+  >
     <div className="rail-l"><div className="inner">
       <span className="num">{section.origin === "online" ? "🌐" : "📖"}</span>
       <span className="label">{railLabel(section.name)}</span>
@@ -180,6 +187,22 @@ export default function ExternalArticle({ entry, onAdd, busy = false }: {
   busy?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
+  const jump = useRef<HTMLElement>(null);
+  const [jumpHeight, setJumpHeight] = useState(0);
+
+  /* How far a jump has to clear. The nav is sticky and its height is not a constant: it wraps with
+     the number of sources and with the width of the window, so anything hard-coded is right for one
+     entry and wrong for the next. */
+  useLayoutEffect(() => {
+    const nav = jump.current;
+    if (!nav) { setJumpHeight(0); return; }
+    const measure = () => setJumpHeight(nav.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [entry]);
   const online = entry.sections.length > 0 && entry.sections.every((section) => section.origin === "online");
   const language = entry.language ? languageOf(entry.language) : null;
 
@@ -209,7 +232,7 @@ export default function ExternalArticle({ entry, onAdd, busy = false }: {
 
     {/* Everything is on this one page; these only move you down it. Sticky, because the reason to
         want one is that you are already several screens into another source. */}
-    {entry.sections.length > 1 && <nav className="ext-jump" aria-label="Sources">
+    {entry.sections.length > 1 && <nav className="ext-jump" aria-label="Sources" ref={jump}>
       {entry.sections.map((section) => <button
         key={section.dictionaryId}
         onClick={() => document.getElementById(sectionId(section))
@@ -225,7 +248,8 @@ export default function ExternalArticle({ entry, onAdd, busy = false }: {
 
     {entry.sections.length
       ? entry.sections.map((section) =>
-          <Section key={section.dictionaryId} section={section} entry={entry} />)
+          <Section key={section.dictionaryId} section={section} entry={entry}
+                   scrollMargin={jumpHeight ? Math.round(jumpHeight) + 14 : undefined} />)
       : <p className="empty">No dictionary here holds this word.</p>}
   </>;
 }

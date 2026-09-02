@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { LookupResult } from "./dictionaries";
-import { externalEntryOf, glossOf, mergeHits, referenceTextOf, type RawHit } from "./externalEntries";
+import {
+  EXTERNAL_ROW_LIMIT, externalEntryOf, glossOf, mergeHits, referenceTextOf, type RawHit
+} from "./externalEntries";
 
 const hit = (word: string, dictionaryId: string, origin: RawHit["origin"], gloss?: string): RawHit =>
   ({ word, dictionaryId, name: dictionaryId, origin, gloss });
@@ -64,11 +66,35 @@ describe("glossOf", () => {
     })).toBe("to itch; to chop; to sting");
   });
 
-  it("falls back to the visible text of an html entry", () => {
+  it("reads an html entry's blocks as separate meanings, not as one run-on", () => {
+    // `textContent` gave `nounbrothelwhorehouselupanar`: the structure is the only thing separating
+    // one meaning from the next, so a gloss has to be built block by block.
     expect(glossOf({
-      dictionaryId: "a", word: "casa", tier: "html",
-      html: "<h1>casa</h1><ol><li>Vivienda.<div>house</div></li></ol>"
-    })).toContain("Vivienda");
+      dictionaryId: "a", word: "casa de lenocinio", tier: "html",
+      html: "<h1>casa de lenocinio</h1><ol><li><div><div>noun</div><ol>"
+          + "<li><div>brothel</div></li><li><div>whorehouse</div></li></ol></div></li></ol>"
+    })).toBe("brothel; whorehouse");
+  });
+
+  it("leaves out what is said about the word rather than what it means", () => {
+    const gloss = glossOf({
+      dictionaryId: "a", word: "casadero", tier: "html",
+      html: "<h1>casadero</h1><ol><li><div><div>adjective</div>"
+          + "<ol><li>Que tiene edad de casarse.<div>at marriageable age</div></li></ol></div></li></ol>"
+    });
+    expect(gloss).not.toContain("adjective");
+    expect(gloss).toContain("Que tiene edad de casarse.");
+    expect(gloss).toContain("at marriageable age");
+  });
+});
+
+describe("EXTERNAL_ROW_LIMIT", () => {
+  it("is small enough that every row shown can be given a meaning", () => {
+    // Each row costs a lookup in the dictionary holding it — several range requests when that
+    // dictionary is on the server. `casa` across seven dictionaries merges to thirty-four rows, and
+    // rows that cannot be described render as em-dashes, which reads as a search that found nothing.
+    expect(EXTERNAL_ROW_LIMIT).toBeLessThanOrEqual(15);
+    expect(EXTERNAL_ROW_LIMIT).toBeGreaterThanOrEqual(8);
   });
 });
 

@@ -19,6 +19,8 @@ function Strength({ row }: { row: ListRow }) {
  */
 export interface ExternalSearch {
   rows: ExternalRow[];
+  /** How many matched before the list was cut to what could be described. */
+  total: number;
   /** Why a tier came back empty, when the reason is something other than "no such word". */
   trouble: string | null;
   /** True while the device and server tiers are still answering. */
@@ -72,6 +74,9 @@ function ExternalSection({ query, search }: { query: string; search: ExternalSea
       </button>)}
     </div>
 
+    {search.total > rows.length && <p className="ext-status">
+      The closest {rows.length} of {search.total}. Type more of the word to narrow them.
+    </p>}
     {search.searching && <p className="ext-status">Looking through your dictionaries…</p>}
     {/* A reason beats an absence. Switched off, unreachable and genuinely-not-there are three
         different answers, and only the last one is about the word. */}

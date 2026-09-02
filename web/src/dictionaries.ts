@@ -418,8 +418,6 @@ export function forgetCachedLookups(): void {
 
 /** How many headwords one dictionary may contribute before the list stops being a list. */
 const HITS_PER_DICTIONARY = 12;
-/** How many rows get a gloss. Beyond this the reader is scrolling, not reading. */
-const HYDRATE_LIMIT = 14;
 
 /**
  * Headwords beginning with `prefix`, from every enabled dictionary in the requested tiers.
@@ -478,28 +476,37 @@ export async function searchDictionaries(
  * frame, so several glosses often cost a single decode — but a dictionary on the server is read
  * over byte ranges, and hydrating every candidate there would turn a keystroke into a download.
  */
-export async function hydrateGlosses(
-  rows: ExternalRow[], language?: string, limit = HYDRATE_LIMIT
-): Promise<ExternalRow[]> {
-  const needed = rows.filter((row) => !row.gloss).slice(0, limit);
+export async function hydrateGlosses(rows: ExternalRow[], language?: string): Promise<ExternalRow[]> {
+  const needed = rows.filter((row) => !row.gloss);
   if (!needed.length) return rows;
   // Resolved again rather than assumed: a dictionary the server holds needs its description to be
   // range-read, and relying on the search having left it in the open-dictionary cache would make
   // this quietly stop working the moment that cache was evicted.
   const sources = await dictionarySources(language);
+  const tierOf = (id: string) => sources.find((candidate) => candidate.entry.id === id)?.entry.tier;
+
   const glosses = new Map<string, string>();
   await Promise.all(needed.map(async (row) => {
-    const nearest = row.sources[0];
-    if (nearest.origin === "online") return;
-    const source = sources.find((candidate) => candidate.entry.id === nearest.dictionaryId);
-    try {
-      const dictionary = await openDictionary(nearest.dictionaryId, source?.remote);
-      const entry = await dictionary?.lookup(row.word);
-      if (entry) glosses.set(`${nearest.dictionaryId}:${row.word}`, glossOf(entry));
-    } catch { /* a missing gloss is a quiet row, not a failed search */ }
+    /* Every dictionary holding the word is a candidate, mapped ones first. A `fields` source has
+       the meaning in a field; an `html` one has it somewhere inside a rendered fragment, and
+       reading that back gives a far worse line. Whichever answers first wins, so a row is only
+       blank when nothing could say anything about it. */
+    const candidates = row.sources
+      .filter((candidate) => candidate.origin !== "online")
+      .sort((left, right) => Number(tierOf(left.dictionaryId) === "html")
+        - Number(tierOf(right.dictionaryId) === "html"));
+    for (const candidate of candidates) {
+      const source = sources.find((entry) => entry.entry.id === candidate.dictionaryId);
+      try {
+        const dictionary = await openDictionary(candidate.dictionaryId, source?.remote);
+        const entry = await dictionary?.lookup(row.word);
+        const gloss = entry ? glossOf(entry) : "";
+        if (gloss) { glosses.set(row.word, gloss); return; }
+      } catch { /* a missing gloss is a quiet row, not a failed search */ }
+    }
   }));
   return rows.map((row) => {
-    const gloss = glosses.get(`${row.sources[0].dictionaryId}:${row.word}`);
+    const gloss = glosses.get(row.word);
     return gloss ? { ...row, gloss } : row;
   });
 }

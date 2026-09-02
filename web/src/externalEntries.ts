@@ -152,12 +152,37 @@ export function glossOf(entry: DictionaryEntry): string {
       .filter(Boolean);
     return clamp(definitions.slice(0, 3).join("; "));
   }
-  // An html payload has no field to read, so the visible text is the honest answer. The headword
-  // itself leads it, and repeating that beside the word would say nothing.
+  // An html payload has no field to read, so the visible text is the honest answer — but its
+  // structure is the only thing separating one meaning from the next, and `textContent` throws that
+  // away: `noun`, `brothel`, `whorehouse` came out as `nounbrothelwhorehouse`.
   const body = new DOMParser().parseFromString(
     `<body>${normaliseDictionaryHtml(entry.html ?? "", entry.word)}</body>`, "text/html");
-  return clamp(body.body.textContent ?? "");
+  /** Marks that say something *about* the word rather than what it means. */
+  const ASIDE = new Set(["ext-gram", "ext-tag", "ext-tags", "ext-links", "ext-formof"]);
+  const parts: string[] = [];
+  // `div` is in the list because a source that wraps nothing leaves its definition loose inside
+  // one; a wrapper contributes nothing anyway, since only a block's own words are taken.
+  for (const node of body.body.querySelectorAll("li, p, div")) {
+    if ([...node.classList].some((mark) => ASIDE.has(mark))) continue;
+    // This block's own words: a clone with the nested blocks taken out, so a definition and the
+    // translation beneath it are two parts rather than one run-on, and neither is counted twice.
+    const own = node.cloneNode(true) as Element;
+    own.querySelectorAll("li, p, div, ol, ul, details").forEach((nested) => nested.remove());
+    const line = (own.textContent ?? "").replace(/\s+/g, " ").trim();
+    if (line && !parts.includes(line)) parts.push(line);
+  }
+  return clamp(parts.length ? parts.join("; ") : (body.body.textContent ?? ""));
 }
+
+/**
+ * How many external rows a search shows.
+ *
+ * The cap is not tidiness. Every row shown gets its meaning read out of the dictionary that holds
+ * it, and a merged search across ten dictionaries produces far more rows than are worth paying that
+ * for — `casa` matched thirty-four. Showing what is not described, as a column of em-dashes, is
+ * worse than not showing it: it reads as a search that found nothing.
+ */
+export const EXTERNAL_ROW_LIMIT = 12;
 
 /* ── cleaning what the sources actually contain ─────────────────────────
    Surveyed across all 45 compiled dictionaries rather than guessed at. None of this invents
