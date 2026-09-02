@@ -686,8 +686,28 @@ function duplicateLexemes(app, ownerId, language, headword, lemma) {
   return matches;
 }
 
+/**
+ * An external dictionary's entry for the word, when the caller sent one.
+ *
+ * Grounding, and nothing else. It never reaches `resolution.sentences`, so it can never become an
+ * attestation: an attestation is a sentence the owner met, and a dictionary's own examples are not
+ * that. Provenance is modelled here, never flagged, and the modelling is this separation.
+ */
+const REFERENCE_LIMIT = 8000;
+
+function referenceOf(request) {
+  const text = trimmed(request.reference);
+  if (!text) return null;
+  const mode = trimmed(request.referenceMode);
+  return {
+    text: text.length > REFERENCE_LIMIT ? text.slice(0, REFERENCE_LIMIT) : text,
+    mode: mode === "faithful" || mode === "expand" ? mode : null,
+  };
+}
+
 function resolveCapture(app, ownerId, request) {
   const stream = trimmed(request.mode) === "stream";
+  const reference = referenceOf(request);
   const vocabularies = ownerVocabularies(app, ownerId);
   const known = vocabularies.map((entry) => entry.language + (entry.displayName ? " (" + entry.displayName + ")" : ""));
   const lines = String(request.text).split("\n");
@@ -696,6 +716,8 @@ function resolveCapture(app, ownerId, request) {
     "Languages this learner studies: " + (known.length ? known.join(", ") : "none configured yet"),
     trimmed(request.language) ? "The caller believes this is " + trimmed(request.language) + "; verify it." : "",
     trimmed(request.headword) ? "The learner says the word is: " + trimmed(request.headword) : "",
+    reference ? "\nReference (an external dictionary's entry for this word — CONTEXT ONLY. Do not\n"
+      + "take any sentence from it as one the learner supplied):\n```\n" + reference.text + "\n```" : "",
     "",
     "Input (" + lines.length + " lines):",
     "```",
@@ -737,6 +759,7 @@ function resolveCapture(app, ownerId, request) {
 }
 
 function composeArticle(app, ownerId, resolution, request, vocabulary, topics) {
+  const reference = referenceOf(request);
   const names = {};
   topics.forEach((topic) => { names[topic.name.toLowerCase()] = topic.name; });
   const preferred = textList(request.topics).map((name) => names[name.toLowerCase()]).filter((name) => Boolean(name));
@@ -758,6 +781,16 @@ function composeArticle(app, ownerId, resolution, request, vocabulary, topics) {
           index + ": " + item.text + (item.translation ? "  —  " + item.translation : "")).join("\n")
       : "(none)",
     trimmed(request.note) ? "\nThe learner asks specifically: " + trimmed(request.note) : "",
+    reference ? "\nReference entry from an external dictionary, which the learner was reading when\n"
+      + "they asked for this. Ground the article on it. Its example sentences are the dictionary's,\n"
+      + "NOT sentences the learner supplied:\n```\n" + reference.text + "\n```" : "",
+    reference && reference.mode === "faithful"
+      ? "\nTreatment: STAY CLOSE TO THE REFERENCE. Carry over its senses and no others, in its\n"
+        + "order. Translate and tidy; do not add senses, examples or notes it does not have." : "",
+    reference && reference.mode === "expand"
+      ? "\nTreatment: FILL IN THE GAPS. Keep what the reference says right, condense it to the three\n"
+        + "to five senses worth reading, and add what it lacks — glosses, an example where the word\n"
+        + "needs one, a note on usage, an emoji." : "",
   ].filter((line) => line !== "").join("\n");
 
   const answer = llmJson(promptText("acervo_compose"), user);

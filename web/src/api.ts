@@ -72,6 +72,17 @@ export interface CaptureRequest {
   sourceTitle?: string | null;
   /** A free-text nudge for the generator — §05's "regenerate with a note". */
   note?: string | null;
+  /**
+   * An external dictionary's entry for this word, as the reader saw it.
+   *
+   * Grounding, and only grounding. It is deliberately *not* sent as `text`: the resolver reads that
+   * as sentences the learner met, and every one of them would become an attestation — a claim about
+   * where this person encountered the word, forged out of a dictionary's own examples. Provenance
+   * is modelled here, never flagged, so the two arrive by different doors.
+   */
+  reference?: string | null;
+  /** How closely to follow it. Absent means the `note` says what to do instead. */
+  referenceMode?: "faithful" | "expand" | null;
 }
 
 /** An artifact this server holds, as its metadata sidecar describes it. */
@@ -227,7 +238,9 @@ export const backendSession = {
         headword: request.headword?.trim() || null,
         sourceUrl: request.sourceUrl ?? null,
         sourceTitle: request.sourceTitle ?? null,
-        note: request.note ?? null
+        note: request.note ?? null,
+        reference: request.reference?.trim() || null,
+        referenceMode: request.referenceMode ?? null
       })
     }, false, CAPTURE_TIMEOUT);
   },

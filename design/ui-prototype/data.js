@@ -443,3 +443,49 @@ const LEXEMES = [
     attestations: [], study: null
   }
 ];
+
+/* External dictionaries — what a search finds that is NOT yours (design §08, Stage 3).
+   Never mixed into LEXEMES: an external entry has no id, no study state and no owner, and the
+   whole point of the section below the rule is that the difference is visible. */
+const EXTERNAL = [
+  {
+    word: "picadura", gloss: "Mordedura o herida hecha por un insecto.", origin: "device",
+    sources: [{ id: "kaikki-es-es", name: "Wiktionary (es→es)", origin: "device" },
+              { id: "wikdict-es-en", name: "WikDict (es→en)", origin: "device" }],
+    ipa: "[pikaˈðuɾa]", posLabel: "noun",
+    sections: [
+      { id: "kaikki-es-es", name: "Wiktionary (es→es)", origin: "device", tier: "fields",
+        attribution: "Wiktionary contributors, via kaikki.org. CC BY-SA 4.0.", licence: "CC BY-SA 4.0",
+        senses: [
+          { definition: "Mordedura o herida hecha por un insecto.",
+            examples: [{ text: "Una picadura de mosquito.", translation: "A mosquito bite." }] },
+          { definition: "Acción y efecto de picar tabaco." }
+        ] },
+      { id: "wikdict-es-en", name: "WikDict (es→en)", origin: "device", tier: "html",
+        attribution: "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.", licence: "CC BY-SA 4.0",
+        html: '<p class="ext-gram">noun</p><ol class="ext-senses">'
+            + '<li>Mordedura de un insecto.<p class="ext-tr">bite</p></li>'
+            + '<li>Tabaco picado.<p class="ext-tr">shredded tobacco</p></li></ol>' }
+    ]
+  },
+  {
+    word: "picante", gloss: "Que pica al paladar.", origin: "device",
+    sources: [{ id: "kaikki-es-es", name: "Wiktionary (es→es)", origin: "device" }],
+    posLabel: "adjective",
+    sections: [
+      { id: "kaikki-es-es", name: "Wiktionary (es→es)", origin: "device", tier: "fields",
+        attribution: "Wiktionary contributors, via kaikki.org. CC BY-SA 4.0.", licence: "CC BY-SA 4.0",
+        senses: [{ definition: "Que pica al paladar." }] }
+    ]
+  },
+  {
+    word: "picotear", gloss: "to peck; to nibble", origin: "online",
+    sources: [{ id: "freedictionaryapi", name: "Free Dictionary API", origin: "online" }],
+    posLabel: "verb", online: true,
+    sections: [
+      { id: "freedictionaryapi", name: "Free Dictionary API", origin: "online", tier: "fields",
+        attribution: "freedictionaryapi.com, Wiktionary-derived. CC BY-SA 4.0.", licence: "CC BY-SA 4.0",
+        senses: [{ definition: "to peck (of a bird)" }, { definition: "to nibble; to snack" }] }
+    ]
+  }
+];

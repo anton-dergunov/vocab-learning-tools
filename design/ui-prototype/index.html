@@ -20,7 +20,21 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
       <input id="q" type="search" placeholder="Search your words…" autocomplete="off" spellcheck="false">
       <span class="kbd">⌘K</span>
-      <span class="scope">yours</span>
+      <button class="scope" id="scopeBtn" aria-haspopup="menu" aria-label="What search covers">yours +3</button>
+      <!-- Your own words are deliberately not on this list: they are always searched and always
+           first. What is switchable is only how far past them a search reaches. -->
+      <div class="menu scope-menu" id="scopeMenu">
+        <div class="label menu-label">Your words, then…</div>
+        <label class="on"><input type="checkbox" data-scope="device" checked>
+          <span><span>Dictionaries on this device</span>
+                <span class="hint">Instant, and answers with the server unreachable</span></span></label>
+        <label class="on"><input type="checkbox" data-scope="server" checked>
+          <span><span>Dictionaries on your server</span>
+                <span class="hint">Read over the network as you pause</span></span></label>
+        <label class="on"><input type="checkbox" data-scope="online" checked>
+          <span><span>Online sources</span>
+                <span class="hint">Asked only when you press ⏎</span></span></label>
+      </div>
     </div>
 
     <button class="tb-btn primary" id="addBtn">

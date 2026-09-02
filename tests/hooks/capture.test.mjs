@@ -226,6 +226,62 @@ describe("the capture endpoint", () => {
     assert.doesNotMatch(llm.calls[0].contents[0].parts[0].text, /The learner says the word is/);
   });
 
+  it("carries a dictionary entry to both steps as reference, and only as reference", () => {
+    seed();
+    llm.resolution = { ...RESOLUTION, sentences: [] };
+    llm.article = ARTICLE;
+    const reference = "## Wiktionary (es→es)\nverb\n1. Golpear algo con una punta.\n"
+      + "   - una tela que pica — an itchy fabric";
+    capture({ text: "picar", headword: "picar", reference, referenceMode: "expand" });
+
+    const [resolve, compose] = llm.calls.map((call) => call.contents[0].parts[0].text);
+    // The resolver is told what it is looking at, and told plainly that it is not learner input.
+    assert.match(resolve, /una tela que pica/);
+    assert.match(resolve, /CONTEXT ONLY/);
+    // The composer is grounded on it and told which treatment was chosen.
+    assert.match(compose, /Golpear algo con una punta/);
+    assert.match(compose, /FILL IN THE GAPS/);
+    assert.doesNotMatch(compose, /STAY CLOSE TO THE REFERENCE/);
+  });
+
+  it("says to stay close when that is what was asked for", () => {
+    seed();
+    llm.resolution = { ...RESOLUTION, sentences: [] };
+    llm.article = ARTICLE;
+    capture({ text: "picar", reference: "1. Golpear algo con una punta.", referenceMode: "faithful" });
+    const compose = llm.calls[1].contents[0].parts[0].text;
+    assert.match(compose, /STAY CLOSE TO THE REFERENCE/);
+    assert.doesNotMatch(compose, /FILL IN THE GAPS/);
+  });
+
+  it("never turns a reference into an attestation", () => {
+    seed();
+    // The resolver is what mints attestations, and a grounded capture gives it no sentences: the
+    // dictionary's examples are the dictionary's, not places this person met the word.
+    llm.resolution = { ...RESOLUTION, sentences: [] };
+    llm.article = ARTICLE;
+    const result = capture({
+      text: "picar", reference: "1. Golpear algo con una punta.\n   - una tela que pica",
+      referenceMode: "expand",
+    });
+    assert.deepEqual(result.data.draft.attestations, []);
+    // And the example the model drew from it is not filed against one either.
+    const examples = result.data.draft.senses.flatMap((sense) => sense.examples);
+    assert.ok(examples.length > 0);
+    assert.ok(examples.every((example) => example.sourceAttestationId === null));
+    assert.ok(examples.every((example) => example.origin === "llm"));
+  });
+
+  it("ignores a reference mode it does not recognise, rather than passing it on", () => {
+    seed();
+    llm.resolution = { ...RESOLUTION, sentences: [] };
+    llm.article = ARTICLE;
+    capture({ text: "picar", reference: "1. Golpear algo.", referenceMode: "whatever-you-like" });
+    const compose = llm.calls[1].contents[0].parts[0].text;
+    assert.match(compose, /Reference entry from an external dictionary/);
+    assert.doesNotMatch(compose, /Treatment:/);
+  });
+
   it("refuses a language with no vocabulary, and does not generate for it", () => {
     seed();
     llm.resolution = { ...RESOLUTION, language: "de", headword: "Wanderlust" };

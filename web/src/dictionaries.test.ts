@@ -7,6 +7,7 @@ import {
   groupedByLanguage,
   install,
   installed,
+  forgetCachedLookups,
   isEnabled,
   lookup,
   primaryLanguage,
@@ -104,6 +105,7 @@ describe("storing a dictionary on this device", () => {
   beforeEach(async () => {
     Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: new IDBFactory() });
     localStorage.clear();
+    forgetCachedLookups();
     for (const record of await installed()) await uninstall(record.id);
     await backendSession.logout();
     await backendSession.restore();
@@ -158,6 +160,7 @@ describe("looking a word up", () => {
   beforeEach(async () => {
     Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: new IDBFactory() });
     localStorage.clear();
+    forgetCachedLookups();
     for (const record of await installed()) await uninstall(record.id);
     vi.spyOn(backendSession, "dictionaryFileUrl").mockImplementation(
       (id, extension) => `https://acervo.example.com/api/acervo/dictionaries/${id}.${extension}`);

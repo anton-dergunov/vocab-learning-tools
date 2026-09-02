@@ -481,12 +481,12 @@ the decision in §7 is a hypothesis, not a commitment.
   reader over a different byte source rather than the format implemented twice. What the server does
   have is a listing route, an authenticated static route, and the two online connectors. No
   collections, no records, no revisions, no sync.
-- **Stage 3 · the interface. Partly built: the Settings pane exists, the reading surfaces do not.**
-  Settings has a Dictionaries pane with size, licence, install/remove, `storage.estimate()` and the
-  `persist()` request. Still to come: an "Other dictionaries" section in search below a separator,
-  which becomes the answer when there are no local results; a read-only reference section in
-  `LexemeArticle.tsx`; and "Add to my words" on a dictionary entry with no lexeme, seeding Capture
-  with the headword.
+- **Stage 3 · the interface. Built.** Settings has a Dictionaries pane with size, licence,
+  install/remove, `storage.estimate()` and the `persist()` request. The reading surfaces are now
+  there too: an "Other dictionaries" section in search below a separator, which becomes the answer
+  when no word of yours matches; a read-only fold at the foot of `LexemeArticle.tsx` that looks the
+  headword up only when opened; and "Add to my words" on a dictionary entry. §12 records what was
+  built and the three findings that changed the plan.
 - **Stage 4 · grounding.** Postponed indefinitely, gated on
   [acervo-grounding-spike.md](acervo-grounding-spike.md), and re-scoped by §1: the question is
   whether the *shown* senses improve, not whether coverage increases.
@@ -954,3 +954,90 @@ is not.
 10 GiB against a 27.8 MiB artifact. `persisted()` is false everywhere until asked, which is why
 `persist()` is requested once after an install succeeds.
 
+---
+
+## §12 · Stage 3 — the reading surfaces, as built
+
+Three modules and one rule. `web/src/dictionaries.ts` gained the search transports beside the lookup
+it already had; `externalEntries.ts` merges and ranks what they answer and is pure, the way
+`selectors.ts` is; `externalHtml.ts` turns an `html`-tier payload into Acervo's own marks;
+`ExternalArticle.tsx` renders both tiers through `LexemeArticle.tsx`'s classes. The rule is that
+**your own words answer first, always, and external results sit below a rule and say whose they
+are.** This is a personal vocabulary store that can consult a dictionary, not a dictionary browser
+that remembers some words.
+
+### Three speeds, because the tiers cost different amounts
+
+| Tier | When it runs | Why |
+|---|---|---|
+| your words | every keystroke | in memory |
+| dictionaries on this device | 120 ms debounce | 0.00–1.40 ms per read (§11.7) |
+| dictionaries on your server | 450 ms debounce | a prefix search is ~17 sequential range reads; the reader's restart-key cache makes repeats far cheaper |
+| online sources | **⏎ only** | §9's no-prefetch rule, and a rate limit should not be spent on a word someone was passing through |
+
+Under that sits a per-source result cache and a one-second floor between calls to the same online
+source, in the module that owns the transport rather than in the interface that happens to call it.
+
+### Results merge by word, not by dictionary
+
+Three dictionaries holding `casa` is one row naming three sources, not three rows of `casa`.
+Grouping by dictionary was the alternative and it floods the section: the reader is looking for a
+word, and which books carry it is a fact *about* the word. Opening one gives a single page with a
+section per source in resolution order, and sticky jump chips to move between them — comparing what
+two dictionaries say is most of the reason for having two, so a tab hiding one behind the other
+would work against the feature.
+
+### What rendering the `html` tier actually took
+
+§11.4 said these payloads "need restyling, not merely sanitising", and building it confirmed that
+with more force than expected. There are **three distinct source shapes**, all three measured off
+the compiled artifacts rather than assumed:
+
+1. **WikDict / PyGlossary** — clean, and semantically almost empty. A bare `<div>` is the part of
+   speech at one depth and a translation at another; position is the only signal. The reader
+   resolves it positionally, with a list of part-of-speech words for the case where position is
+   ambiguous.
+2. **Yomitan-derived (`wty-*`)** — the good case, and the surprise. Every node carries a `content=`
+   attribute naming what it *is*: `glosses`, `tags`, `example-sentence-a`/`-b`, `bold-text`,
+   `details-entry-Etymology`, `backlink`. Most of the mapper is reading those names.
+3. **ECDICT** — one list item of preformatted plain text with newlines, which renders as a wall
+   unless split.
+
+Three bugs came out of rendering real entries rather than fixtures, and none would have been found
+by reading the markup:
+
+- **Renaming the Yomitan `<summary>` destroyed the fold.** Mapping `content="summary-entry"` onto a
+  styled `<span>` left the `<details>` with no summary, so the browser drew its own "Details" where
+  the source said "Grammar", "Etymology" or "3 examples".
+- **Half the definitions grew a translation arrow.** A text-only `<div>` that is the *whole* of its
+  list item is that item's content — Yomitan wraps every gloss that way — not a translation of it.
+- **A list of one is a wrapper, not a list.** Every source nests the entry inside `<ol><li>` before
+  the senses begin, which put a meaningless "01." in front of the word.
+
+`tests/../web/src/externalHtml.test.ts` runs over real payloads from five dictionaries
+(`web/src/testFixtures/dictionaryHtml.json`), because every one of the above passed a synthetic
+fixture.
+
+### "Add to my words" is a capture, not a second writer
+
+Three treatments — keep it close to the source, fill in the gaps, or say what you want — and all
+three go through the existing capture route. The request gained `reference` and `referenceMode`;
+the two canned treatments are wordings in `prompts/acervo_compose.txt`, because prompts are content
+and a treatment is a thing to say, not a branch to write.
+
+> ### DECISION
+> **A dictionary entry is sent as `reference`, never as `text`.**
+>
+> **Because** the resolver reads `text` as sentences the learner supplied, and every one of them
+> becomes an attestation. A dictionary's own examples arriving as attestations would be a claim
+> about where this person met the word, forged out of a book they were only reading. Provenance is
+> modelled here, never flagged (`§ Data rules`), and this separation *is* the modelling: two
+> fields, two doors, and the compose prompt says out loud that an example drawn from the reference
+> carries `fromSentence: null` like any other invented one.
+
+### What is deliberately not here
+
+No caching of dictionary entries in the replica, no dictionary row in PocketBase, and no path by
+which an external entry becomes a record without passing through `parseArticle` and
+`repository.saveArticle`. An external entry stays render-only: it carries `posLabel` as free text
+and never meets Acervo's part-of-speech enum (§11.3).

@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import type { Example, Gloss, ImagePrompt } from "./domain";
 import { formatClock, formatDay } from "./format";
+import { DictionaryFold } from "./ExternalArticle";
 import { CaretIcon, PlayIcon } from "./icons";
 import type { Article, ArticleSense } from "./selectors";
 
@@ -161,6 +162,10 @@ export default function LexemeArticle({ article, onUnsupported, meta = true }: {
         </div>
       </div>
     </section>}
+
+    {/* Tied to `meta` for the same reason the footer is: a proposal under review is not a stored
+        word, and checking it against a dictionary is a thing you do to an entry you have. */}
+    {meta && <DictionaryFold headword={lexeme.headword} language={lexeme.language} />}
 
     {meta && <div className="meta-foot">
       <span>id <b>{lexeme.id}</b></span>

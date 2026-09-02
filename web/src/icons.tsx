@@ -17,4 +17,8 @@ export const GearIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={
 export const CloudIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} strokeLinejoin="round" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6 10.2 3.9 3.9 0 0 0 7 18z" /></svg>;
 export const CloudOffIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} strokeLinejoin="round" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6 10.2 3.9 3.9 0 0 0 7 18z" /><path d="M3 3l18 18" /></svg>;
 export const SyncIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.9} strokeLinejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>;
+/** A word that came out of a book rather than out of your own reading. */
+export const BookIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.7} strokeLinejoin="round" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H18v14H5.5A1.5 1.5 0 0 0 4 19.5z" /><path d="M4 19.5A1.5 1.5 0 0 1 5.5 18H20v2.5H5.5" /><path d="M8 8h6" /></svg>;
+/** The same, fetched over the network rather than held. */
+export const GlobeIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.7} strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17" /><path d="M12 3.5c2.2 2.3 3.3 5.2 3.3 8.5S14.2 18.2 12 20.5c-2.2-2.3-3.3-5.2-3.3-8.5S9.8 5.8 12 3.5z" /></svg>;
 export const AlertIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.9} strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17.2v.1" /></svg>;

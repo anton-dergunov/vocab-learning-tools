@@ -1,9 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import AddView, { type AddTab } from "./AddView";
+import AddView, { type AddTab, type CaptureSeed } from "./AddView";
 import { backendSession, type CaptureRequest } from "./api";
+import {
+  forgetCachedLookups, hydrateGlosses, lookup as lookupDictionaries, searchDictionaries,
+  type SearchTier
+} from "./dictionaries";
+import ExternalArticle, { type DictionaryAddRequest } from "./ExternalArticle";
+import {
+  externalEntryOf, mergeHits, type ExternalEntry, type ExternalRow, type RawHit
+} from "./externalEntries";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
 import LexemeArticle from "./LexemeArticle";
-import LexemeList from "./LexemeList";
+import LexemeList, { type ExternalSearch } from "./LexemeList";
 import { languageOf } from "./languages";
 import {
   alreadyInstalledOnThisDevice, canPromptInstall, detectedInstallPlatform,
@@ -17,6 +25,7 @@ import {
 } from "./selectors";
 import Settings, { type Page as SettingsPage } from "./Settings";
 import SignIn from "./SignIn";
+import { setSearchScope, useSearchScope, type SearchScope } from "./searchScope";
 import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
 import { SyncChip } from "./SyncStatus";
@@ -29,6 +38,18 @@ const YamlEditor = lazy(() => import("./YamlPane").then((module) => ({ default: 
 const YamlView = lazy(() => import("./YamlPane").then((module) => ({ default: module.YamlView })));
 
 type Mode = "read" | "yaml" | "edit";
+
+/** The scopes the chip offers. Your own words are deliberately absent — they are never optional. */
+const SCOPES: [keyof SearchScope, string, string][] = [
+  ["device", "Dictionaries on this device", "Instant, and answers with the server unreachable"],
+  ["server", "Dictionaries on your server", "Read over the network as you pause"],
+  ["online", "Online sources", "Asked only when you press ⏎"]
+];
+
+function scopeLabel(scope: SearchScope): string {
+  const extra = SCOPES.filter(([key]) => scope[key]).length;
+  return extra ? `yours +${extra}` : "yours";
+}
 
 function InstallGate({ onContinue }: { onContinue(): void }) {
   const platform = detectedInstallPlatform();
@@ -110,7 +131,18 @@ export default function App() {
   const [saving, setSaving] = useState(false);
 
   const [addTab, setAddTab] = useState<AddTab | null>(null);
+  const [addSeed, setAddSeed] = useState<CaptureSeed | null>(null);
   const [langMenu, setLangMenu] = useState(false);
+  const [scopeMenu, setScopeMenu] = useState(false);
+
+  /* What the dictionaries answered, and what is still being asked. Kept beside the search rather
+     than inside `LexemeList` because ⏎ is handled on the input, which lives up here. */
+  const scope = useSearchScope();
+  const [externalRows, setExternalRows] = useState<ExternalRow[]>([]);
+  const [externalSearching, setExternalSearching] = useState(false);
+  const [onlineState, setOnlineState] = useState<ExternalSearch["online"]>("off");
+  const [external, setExternal] = useState<ExternalEntry | null>(null);
+  const [externalBusy, setExternalBusy] = useState(false);
   /* Which settings section is open, or null for closed. The native menu names a section, so
      "open settings" is not a boolean here. */
   const [settings, setSettings] = useState<SettingsPage | null>(null);
@@ -120,6 +152,10 @@ export default function App() {
 
   const search = useRef<HTMLInputElement>(null);
   const main = useRef<HTMLElement>(null);
+  /* Each tier answers on its own schedule, so the hits are kept apart and re-merged as they land.
+     `token` drops the answer to a query nobody is asking any more. */
+  const hits = useRef<Record<SearchTier, RawHit[]>>({ device: [], server: [], online: [] });
+  const token = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const notify = useCallback((message: string) => {
@@ -206,8 +242,121 @@ export default function App() {
     document.title = article ? `${article.lexeme.headword} — Acervo` : "Acervo";
   }, [article]);
 
+  /* ── searching the dictionaries ───────────────────────────────────────
+     Three speeds, and the difference between them is what each one costs. A dictionary stored on
+     this device answers in under a millisecond, so it answers as you type. One only the server
+     holds is read over byte ranges — a prefix search is a run of range requests — so it waits for a
+     pause. An online source is never asked without ⏎ being pressed: §9 asks for no prefetching, and
+     a rate limit should not be spent on a word someone was passing through. */
+
+  const recount = useCallback((mine: number) => {
+    const merged = mergeHits(search.current?.value ?? "", [
+      ...hits.current.device, ...hits.current.server, ...hits.current.online]);
+    setExternalRows(merged);
+    void hydrateGlosses(merged, language).then((withGlosses) => {
+      if (token.current === mine) setExternalRows(withGlosses);
+    });
+  }, [language]);
+
+  useEffect(() => {
+    const wanted = query.trim();
+    const mine = (token.current += 1);
+    hits.current = { device: [], server: [], online: [] };
+    setExternalRows([]);
+    setOnlineState(wanted && scope.online ? "ready" : "off");
+    if (!wanted || !language || (!scope.device && !scope.server)) {
+      setExternalSearching(false);
+      return;
+    }
+    setExternalSearching(true);
+
+    const run = (tier: SearchTier, delay: number) => setTimeout(() => {
+      void searchDictionaries(wanted, { language, tiers: [tier] })
+        .then((found) => {
+          if (token.current !== mine) return;
+          hits.current[tier] = found;
+          recount(mine);
+        })
+        .finally(() => { if (token.current === mine && tier === "server") setExternalSearching(false); });
+    }, delay);
+
+    const timers = [
+      scope.device ? run("device", 120) : null,
+      scope.server ? run("server", 450) : null
+    ].filter((timer): timer is ReturnType<typeof setTimeout> => timer !== null);
+    if (!scope.server) setExternalSearching(false);
+    return () => timers.forEach(clearTimeout);
+  }, [query, language, scope, recount]);
+
+  const searchOnline = useCallback(() => {
+    const wanted = query.trim();
+    if (!wanted || !scope.online) return;
+    const mine = token.current;
+    setOnlineState("searching");
+    void searchDictionaries(wanted, { language, tiers: ["online"] })
+      .then((found) => {
+        if (token.current !== mine) return;
+        hits.current.online = found;
+        recount(mine);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (token.current === mine) setOnlineState("done"); });
+  }, [query, language, scope.online, recount]);
+
+  /**
+   * Open a word an external dictionary holds.
+   *
+   * Only the tiers that offered the row are asked again, so opening a result found on this device
+   * never quietly reaches for the network. `lookup` answers an online row out of the cache the
+   * search already filled.
+   */
+  const openExternal = useCallback((row: ExternalRow) => {
+    setExternalBusy(true);
+    setOpenId(null);
+    const tiers = [...new Set(row.sources.map((source) => source.origin))];
+    void lookupDictionaries(row.word, language, tiers)
+      .then((results) => {
+        setExternal(externalEntryOf(row.word, results));
+        if (main.current) main.current.scrollTop = 0;
+      })
+      .catch(() => notify("That entry could not be read."))
+      .finally(() => setExternalBusy(false));
+  }, [language, notify]);
+
+  const externalSearch = useMemo<ExternalSearch>(() => ({
+    rows: externalRows,
+    searching: externalSearching || externalBusy,
+    enabled: scope.device || scope.server || scope.online,
+    offline: syncStatus.state === "offline",
+    online: onlineState,
+    onOpen: openExternal,
+    onSearchOnline: searchOnline
+  }), [externalRows, externalSearching, externalBusy, scope, syncStatus.state, onlineState,
+       openExternal, searchOnline]);
+
+  /**
+   * Take a word from a dictionary into your own vocabulary.
+   *
+   * Not a second way to write: this fills in a capture and lets the ordinary pipeline run, so what
+   * arrives is a proposal to review and the one writer is still
+   * `repository.saveArticle(parseArticle(text))`. What is new is that the capture carries the entry
+   * you were just reading as *reference* — grounding for the article, never sentences of your own.
+   */
+  const addFromDictionary = useCallback((request: DictionaryAddRequest) => {
+    setAddSeed({
+      headword: request.headword,
+      reference: request.reference,
+      referenceMode: request.referenceMode,
+      note: request.note
+    });
+    setExternal(null);
+    setProblems([]);
+    setAddTab("capture");
+  }, []);
+
   const openLexeme = useCallback((id: string) => {
     setOpenId(id);
+    setExternal(null);
     setProblems([]);
     setMode("read");
     if (main.current) main.current.scrollTop = 0;
@@ -216,6 +365,7 @@ export default function App() {
   const chooseTopic = useCallback((next: TopicSelection) => {
     setTopic(next);
     setOpenId(null);
+    setExternal(null);
     setQuery("");
   }, []);
 
@@ -230,12 +380,13 @@ export default function App() {
       if (event.key === "Escape") {
         if (addTab) { setProblems([]); setAddTab(null); }
         else if (mode === "edit") { setProblems([]); setMode("read"); }
+        else if (external) setExternal(null);
         else if (openId) setOpenId(null);
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [addTab, mode, openId]);
+  }, [addTab, external, mode, openId]);
 
   /**
    * The one path a YAML document takes, whether it came from the article editor or the add sheet.
@@ -298,6 +449,9 @@ export default function App() {
 
   async function signOut() {
     syncEngine.stop();
+    // The next session may be a different account on a different server, so nothing an external
+    // source answered under this one survives into it.
+    forgetCachedLookups();
     await backendSession.logout();
     await repository.clear();
     setSnapshot(null);
@@ -323,7 +477,7 @@ export default function App() {
   const topicIcon = topic === "all" ? "📖" : topic === "inbox" ? "📥" : currentTopic?.icon ?? "📌";
 
   return <>
-    <div className="viewport" onClick={() => setLangMenu(false)}>
+    <div className="viewport" onClick={() => { setLangMenu(false); setScopeMenu(false); }}>
       <div className="app">
         <div className="brand"><span className="mark">A.</span></div>
 
@@ -333,10 +487,28 @@ export default function App() {
             <input
               ref={search} type="search" placeholder="Search your words…" autoComplete="off" spellCheck={false}
               value={query}
-              onChange={(event) => { setQuery(event.target.value); setOpenId(null); }}
+              onChange={(event) => { setQuery(event.target.value); setOpenId(null); setExternal(null); }}
+              // ⏎ is the only thing that ever reaches an online dictionary. Everything else here
+              // answers off this device or off your own server.
+              onKeyDown={(event) => { if (event.key === "Enter") searchOnline(); }}
             />
             <span className="kbd">⌘K</span>
-            <span className="scope">yours</span>
+            <button
+              className="scope" aria-haspopup="menu" aria-label="What search covers"
+              onClick={(event) => { event.stopPropagation(); setScopeMenu((open) => !open); }}
+            >{scopeLabel(scope)}</button>
+            <div className={`menu scope-menu ${scopeMenu ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
+              {/* Your own words are not on this list. They are always searched and always first —
+                  that ordering is the product, not a preference. */}
+              <div className="label menu-label">Your words, then…</div>
+              {SCOPES.map(([key, label, help]) => <label key={key} className={scope[key] ? "on" : ""}>
+                <input
+                  type="checkbox" checked={scope[key]}
+                  onChange={(event) => setSearchScope(key, event.target.checked)}
+                />
+                <span><span>{label}</span><span className="hint">{help}</span></span>
+              </label>)}
+            </div>
           </div>
 
           <button className="tb-btn primary" onClick={() => setAddTab("capture")}>
@@ -396,8 +568,12 @@ export default function App() {
             title and a save button on screen at every window size. */}
         <main className={`main ${composing ? "composing" : ""}`} ref={main}>
           {addTab ? <AddView
+            // A seed is a fresh composition, not a prop change: remounting is what makes "add this
+            // word, then that one" start clean rather than editing the previous draft.
+            key={addSeed?.headword ?? "blank"}
             tab={addTab} onTab={setAddTab} graph={snapshot} problems={problems} busy={saving}
-            onClose={() => { setProblems([]); setAddTab(null); }}
+            seed={addSeed}
+            onClose={() => { setProblems([]); setAddTab(null); setAddSeed(null); }}
             onCreate={(draft) => void createFromYaml(draft)}
             onCapture={captureText}
             onOpenLexeme={(id) => { setProblems([]); setAddTab(null); openLexeme(id); }}
@@ -412,6 +588,11 @@ export default function App() {
               onSave={(draft) => void saveArticleYaml(draft)}
             />
           </Suspense> : <div className="pane">
+            {external && <div className="art-bar">
+              <button className="icon-btn" aria-label="Back to the list" onClick={() => setExternal(null)}><BackIcon /></button>
+              <span className="label">Other dictionaries</span>
+              <span className="spacer" />
+            </div>}
             {article && <div className="art-bar">
               <button className="icon-btn" aria-label="Back to the list" onClick={() => setOpenId(null)}><BackIcon /></button>
               <span className="label">{topicLabel}</span>
@@ -425,10 +606,14 @@ export default function App() {
             </div>}
 
             {!snapshot ? <p className="empty">Opening your vocabulary…</p>
+              // An external entry replaces the list the way one of your own does, and reads in the
+              // same column: a word being looked up is the work, wherever it came from.
+              : external ? <ExternalArticle entry={external} busy={saving} onAdd={addFromDictionary} />
               : !article ? <LexemeList
                   rows={rows} languageName={active.name} topic={topic}
                   topicLabel={topicLabel} topicIcon={topicIcon} query={query} sort={sort}
                   onSort={setSort} onOpen={openLexeme}
+                  external={externalSearch}
                 />
               : mode === "read" ? <LexemeArticle article={article} onUnsupported={notify} />
               // Editing is a composer above, so only reading and the read-only projection get here.

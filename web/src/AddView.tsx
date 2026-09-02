@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { CaptureRequest, CaptureResult } from "./api";
 import Composer from "./Composer";
 import type { VocabularyGraph } from "./domain";
@@ -16,6 +16,21 @@ const EditorSurface = lazy(() => import("./YamlPane").then((module) => ({ defaul
 export type AddTab = "capture" | "article" | "yaml";
 
 /**
+ * A composition that starts somewhere other than an empty box — today, a word taken from an
+ * external dictionary.
+ *
+ * It carries what the reader was looking at so the generator is grounded on that rather than on the
+ * word alone, and it processes itself on arrival: the choice was already made on the article, and
+ * landing on a filled-in form with a Process button to press again would be asking twice.
+ */
+export interface CaptureSeed {
+  headword: string;
+  reference: string;
+  referenceMode: "faithful" | "expand" | null;
+  note: string | null;
+}
+
+/**
  * Capture (§05), the rendered proposal, and the YAML escape hatch — one view, because they are three
  * views of one thing.
  *
@@ -31,10 +46,12 @@ export type AddTab = "capture" | "article" | "yaml";
  * hand-written document takes, so there is one writer, one validator and one diff.
  */
 export default function AddView({
-  tab, onTab, graph, problems, busy, onClose, onCreate, onCapture, onOpenLexeme, onNotify
+  tab, onTab, graph, problems, busy, seed, onClose, onCreate, onCapture, onOpenLexeme, onNotify
 }: {
   tab: AddTab;
   onTab(tab: AddTab): void;
+  /** Where this composition started, when it did not start empty. */
+  seed?: CaptureSeed | null;
   /** The replica, for resolving the topic names a document carries. Null only during startup. */
   graph: VocabularyGraph | null;
   problems: YamlProblem[];
@@ -46,10 +63,10 @@ export default function AddView({
   onNotify(message: string): void;
 }) {
   const [capture, setCapture] = useState("");
-  const [headword, setHeadword] = useState("");
+  const [headword, setHeadword] = useState(seed?.headword ?? "");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(seed?.note ?? "");
   const [draft, setDraft] = useState(YAML_TEMPLATE);
   const [working, setWorking] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -85,7 +102,11 @@ export default function AddView({
         headword: headword.trim() || null,
         sourceUrl: sourceUrl.trim() || null,
         sourceTitle: sourceTitle.trim() || null,
-        note: note.trim() || null
+        note: note.trim() || null,
+        // A dictionary's entry, when there is one. Never `text`: that becomes attestations, and a
+        // dictionary's examples are not sentences this person met.
+        reference: seed?.reference ?? null,
+        referenceMode: seed?.referenceMode ?? null
       });
       if (result.duplicates.length) {
         setDuplicates(result.duplicates);
@@ -104,6 +125,18 @@ export default function AddView({
       setWorking(false);
     }
   }
+
+  /* A seeded composition processes itself. The decision was taken on the article — which word,
+     which treatment — and asking for it a second time here would be a form standing between
+     someone and the thing they already asked for. */
+  const started = useRef(false);
+  useEffect(() => {
+    if (!seed || started.current) return;
+    started.current = true;
+    void process();
+    // Deliberately once, on arrival. `seed` is fixed for the life of this view: App remounts it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const head = <>
     <h2>Add a word</h2>
@@ -161,11 +194,15 @@ export default function AddView({
         placeholder="picar" onChange={(event) => { setHeadword(event.target.value); setFailure(null); }}
       />
 
-      <p className="hint">
+      {seed ? <p className="hint">
+        Built from the dictionary entry you were reading, which is sent as reference only — its
+        example sentences are the dictionary's, not places you met the word, so none of them is
+        kept as an attestation. The entry lands in <b>Inbox</b> for review.
+      </p> : <p className="hint">
         Share the whole sentence — the word is picked out for you unless you name it above, and the
         sentence is kept as the place you met it. The entry is built for review and lands in{" "}
         <b>Inbox</b>.{!untouched && " Processing again replaces the draft you have."}
-      </p>
+      </p>}
 
       <details className="fold capture-fold">
         <summary>

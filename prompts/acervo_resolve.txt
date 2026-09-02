@@ -35,6 +35,17 @@ Return one JSON object and nothing else. No prose, no code fences.
 - `note` — one short line, only when something is genuinely worth flagging to the learner (you
   corrected a badly misspelled headword, the input was ambiguous between two words). Otherwise "".
 
+## A reference entry, when one is given
+
+Some captures arrive with a `Reference` block: an external dictionary's entry for the word, because
+the learner was reading it and asked to keep the word.
+
+- Use it to be certain WHICH word and WHICH language you are looking at. That is all it is for.
+- Its sentences are the dictionary's, not the learner's. **Never put one in `sentences`.** That list
+  means "the learner met the word here", and a dictionary's example is not a place anyone met it.
+- When a reference block is present and the input is just the word, `sentences` is `[]`. That is the
+  correct answer, not a gap to fill.
+
 ## Fixing the input
 
 The input is a learner's own scrappy notes. It is frequently misspelled, and the whole point of

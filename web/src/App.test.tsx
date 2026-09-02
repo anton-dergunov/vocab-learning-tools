@@ -3,11 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 import App from "./App";
 import { AcervoApiError, backendSession, SCHEMA_VERSION } from "./api";
+import { hydrateGlosses, lookup as lookupDictionaries, searchDictionaries } from "./dictionaries";
 import { INSTALLED_EVENT, UPDATE_EVENT } from "./pwa";
 import { repository } from "./repository";
 import { TEST_OWNER, testGraph } from "./testGraph";
 
 vi.mock("virtual:pwa-register", () => ({ registerSW: vi.fn() }));
+
+/* The dictionary transports are the network and the device store; the tests below are about what
+   the interface does with their answers, so they are spied rather than reimplemented. Everything
+   else in the module — the merging, the ranking, the resolution order — stays real. */
+vi.mock("./dictionaries", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./dictionaries")>();
+  return {
+    ...actual,
+    searchDictionaries: vi.fn(actual.searchDictionaries),
+    hydrateGlosses: vi.fn(actual.hydrateGlosses),
+    lookup: vi.fn(actual.lookup)
+  };
+});
+
+/* The mocks above are module-level `vi.fn`s, so their call history and any implementation a test
+   installs outlive `restoreAllMocks`. Each test starts from the real behaviour again. */
+const realDictionaries = await vi.importActual<typeof import("./dictionaries")>("./dictionaries");
 
 const SESSION = {
   baseUrl: "https://acervo.example.com", email: "learner@account.example.com",
@@ -126,6 +144,9 @@ describe("Acervo application", () => {
     localStorage.clear();
     sessionStorage.clear();
     await repository.clear();
+    vi.mocked(searchDictionaries).mockReset().mockImplementation(realDictionaries.searchDictionaries);
+    vi.mocked(hydrateGlosses).mockReset().mockImplementation(realDictionaries.hydrateGlosses);
+    vi.mocked(lookupDictionaries).mockReset().mockImplementation(realDictionaries.lookup);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: null }) }));
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -242,6 +263,144 @@ describe("Acervo application", () => {
     fireEvent.change(screen.getByPlaceholderText("Search your words…"), { target: { value: "itch" } });
     expect(await screen.findByRole("heading", { name: /Search/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /picar/ })).toBeInTheDocument();
+  });
+
+  /* ── external dictionaries ─────────────────────────────────────────
+     Your words answer first and always; anything else is below a rule and says whose it is. */
+
+  const DEVICE_HIT = {
+    word: "picadura", dictionaryId: "kaikki-es-es", name: "Wiktionary (es→es)",
+    origin: "device" as const, gloss: "mordedura de un insecto"
+  };
+  const ONLINE_HIT = {
+    word: "picar", dictionaryId: "freedictionaryapi", name: "Free Dictionary API",
+    origin: "online" as const, gloss: "to itch"
+  };
+
+  /** Answers each tier separately, the way the real transports do. */
+  function dictionariesAnswer(byTier: Partial<Record<"device" | "server" | "online", unknown[]>>) {
+    vi.mocked(hydrateGlosses).mockImplementation(async (rows) => rows);
+    vi.mocked(searchDictionaries).mockImplementation(async (_word, { tiers }) =>
+      (byTier[tiers[0] as "device"] ?? []) as never);
+  }
+
+  it("searches your words first and the dictionaries below a rule", async () => {
+    signedIn();
+    dictionariesAnswer({ device: [DEVICE_HIT] });
+    await openList();
+    fireEvent.change(screen.getByPlaceholderText("Search your words…"), { target: { value: "pica" } });
+
+    // Yours answers immediately; the dictionaries follow, under their own heading.
+    expect(await screen.findByRole("button", { name: /picar/ })).toBeInTheDocument();
+    expect(await screen.findByText("Other dictionaries")).toBeInTheDocument();
+    const external = await screen.findByRole("button", { name: /picadura/ });
+    expect(within(external).getByText("mordedura de un insecto")).toBeInTheDocument();
+    expect(within(external).getByText("Wiktionary (es→es)")).toBeInTheDocument();
+    // No study statistics: nothing here is being studied.
+    expect(external.querySelector(".strength")).toBeNull();
+  });
+
+  it("never asks an online source until ⏎ is pressed", async () => {
+    signedIn();
+    dictionariesAnswer({ device: [DEVICE_HIT], online: [ONLINE_HIT] });
+    await openList();
+    const box = screen.getByPlaceholderText("Search your words…");
+    fireEvent.change(box, { target: { value: "picar" } });
+    await screen.findByText("Other dictionaries");
+
+    await waitFor(() => expect(vi.mocked(searchDictionaries).mock.calls.length).toBeGreaterThan(0));
+    expect(vi.mocked(searchDictionaries).mock.calls.every(([, options]) => options.tiers[0] !== "online"))
+      .toBe(true);
+    expect(screen.getByText(/Press ⏎ to look/)).toBeInTheDocument();
+
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(
+      vi.mocked(searchDictionaries).mock.calls.some(([, options]) => options.tiers[0] === "online")
+    ).toBe(true));
+    expect(await screen.findByRole("button", { name: /Free Dictionary API/ })).toBeInTheDocument();
+  });
+
+  it("says the server is unreachable rather than pretending the list is complete", async () => {
+    signedIn();
+    vi.spyOn(backendSession, "pullGraph").mockRejectedValue(
+      new AcervoApiError("offline", 0, "offline"));
+    dictionariesAnswer({ device: [] });
+    render(<App />);
+    await screen.findByRole("heading", { name: /All words/ });
+    fireEvent.change(screen.getByPlaceholderText("Search your words…"), { target: { value: "pic" } });
+    expect(await screen.findByText(/only the dictionaries stored on this device/)).toBeInTheDocument();
+  });
+
+  it("opens a dictionary entry as an article, and offers to add it", async () => {
+    signedIn();
+    dictionariesAnswer({ device: [DEVICE_HIT] });
+    vi.mocked(lookupDictionaries).mockResolvedValue([{
+      dictionaryId: "kaikki-es-es", name: "Wiktionary (es→es)", origin: "device",
+      attribution: "Wiktionary contributors. CC BY-SA 4.0.", licence: "CC BY-SA 4.0",
+      entry: { dictionaryId: "kaikki-es-es", word: "picadura", tier: "fields", articles: [{
+        headword: "picadura", posLabel: "noun", ipa: "[pikaˈðuɾa]",
+        senses: [{ definition: "Mordedura de un insecto." }]
+      }] }
+    }]);
+    await openList();
+    fireEvent.change(screen.getByPlaceholderText("Search your words…"), { target: { value: "pica" } });
+    fireEvent.click(await screen.findByRole("button", { name: /picadura/ }));
+
+    expect(await screen.findByRole("heading", { name: "picadura" })).toBeInTheDocument();
+    expect(screen.getByText("Mordedura de un insecto.")).toBeInTheDocument();
+    // Said where it came from, because CC BY-SA asks that of whoever displays it.
+    expect(screen.getByText(/Wiktionary contributors/)).toBeInTheDocument();
+    expect(screen.getByText("not in your words")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to my words" })).toBeInTheDocument();
+  });
+
+  it("adds a dictionary entry through capture, carrying it as reference and not as your sentence", async () => {
+    signedIn();
+    dictionariesAnswer({ device: [DEVICE_HIT] });
+    vi.mocked(lookupDictionaries).mockResolvedValue([{
+      dictionaryId: "kaikki-es-es", name: "Wiktionary (es→es)", origin: "device",
+      attribution: "Wiktionary contributors.", licence: "CC BY-SA 4.0",
+      entry: { dictionaryId: "kaikki-es-es", word: "picadura", tier: "fields", articles: [{
+        headword: "picadura", posLabel: "noun",
+        senses: [{ definition: "Mordedura de un insecto.",
+                   examples: [{ text: "Una picadura de mosquito." }] }]
+      }] }
+    }]);
+    const capture = vi.spyOn(backendSession, "captureText")
+      .mockRejectedValue(new AcervoApiError("nothing to build", 502, "llm_unusable"));
+
+    await openList();
+    fireEvent.change(screen.getByPlaceholderText("Search your words…"), { target: { value: "pica" } });
+    fireEvent.click(await screen.findByRole("button", { name: /picadura/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add to my words" }));
+    fireEvent.click(screen.getByRole("button", { name: "Build entry" }));
+
+    await waitFor(() => expect(capture).toHaveBeenCalled());
+    const [, request] = capture.mock.calls[0];
+    expect(request.headword).toBe("picadura");
+    expect(request.referenceMode).toBe("expand");
+    expect(request.reference).toContain("Mordedura de un insecto.");
+    // The dictionary's own example is reference, never the text a capture turns into attestations.
+    expect(request.text).toBe("picadura");
+    expect(request.text).not.toContain("mosquito");
+  });
+
+  it("looks a word up in the dictionaries only when the fold is opened", async () => {
+    signedIn();
+    vi.mocked(lookupDictionaries).mockResolvedValue([]);
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+
+    const fold = await screen.findByText("Other dictionaries");
+    // Reading your own article must not quietly issue byte-range reads on the chance you are curious.
+    expect(lookupDictionaries).not.toHaveBeenCalled();
+
+    const details = fold.closest("details") as HTMLDetailsElement;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
+    await waitFor(() => expect(lookupDictionaries).toHaveBeenCalledWith("picar", "es", ["device", "server"]));
+    expect(await screen.findByText(/No dictionary on this device or your server holds/))
+      .toBeInTheDocument();
   });
 
   it("opens the article with its senses, lineage, schedule and provenance", async () => {

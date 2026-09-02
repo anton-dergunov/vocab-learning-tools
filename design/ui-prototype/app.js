@@ -9,7 +9,12 @@ const state = {
   query: "",
   openId: null,
   add: false,       // composing a new entry, which replaces the list
-  mode: "read"      // read | yaml | edit
+  mode: "read",     // read | yaml | edit
+  /* External dictionaries. `openExt` is a word, not an id: an external entry has no id, which is
+     most of what distinguishes it from one of yours. `onlineDone` is what ⏎ sets. */
+  openExt: null,
+  onlineDone: false,
+  scope: { device: true, server: true, online: true }
 };
 
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -27,8 +32,103 @@ const ICON = {
   caret:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
   trash:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>',
-  close:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+  close:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  book:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H18v14H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 1 5.5 18H20v2.5H5.5"/><path d="M8 8h6"/></svg>',
+  globe:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.2 2.3 3.3 5.2 3.3 8.5S14.2 18.2 12 20.5c-2.2-2.3-3.3-5.2-3.3-8.5S9.8 5.8 12 3.5z"/></svg>'
 };
+
+/* ── external dictionaries ───────────────────────────────────────────────
+   Below a rule, after every one of your own words, and never interleaved with them. Carries no
+   emoji, no sense count and no strength bars, because it has none of those things. */
+
+function externalHits() {
+  const q = state.query.trim().toLowerCase();
+  if (!q) return [];
+  return EXTERNAL.filter((x) => x.word.toLowerCase().startsWith(q.slice(0, 3))
+    && (x.origin !== "online" || state.onlineDone)
+    && (x.origin !== "device" || state.scope.device)
+    && (x.origin !== "online" || state.scope.online));
+}
+
+function externalOf(word) { return EXTERNAL.find((x) => x.word === word); }
+
+function sourceLabel(x) {
+  return x.sources.length > 2 ? `${x.sources.length} sources` : x.sources.map((s) => s.name).join(" · ");
+}
+
+function renderExternal() {
+  const q = state.query.trim();
+  const hits = externalHits();
+  const anyScope = state.scope.device || state.scope.server || state.scope.online;
+  if (!q || !anyScope) return "";
+  return `
+    <div class="ext-section">
+      <div class="list-sep"><span class="label">Other dictionaries</span></div>
+      <div class="rows">
+        ${hits.map((x) => `
+          <button class="row ext" data-ext="${esc(x.word)}">
+            <span class="plate ext">${x.origin === "online" ? ICON.globe : ICON.book}</span>
+            <span data-sources="${esc(sourceLabel(x))}">
+              <span class="word">${esc(x.word)}</span>
+              <span class="gloss">${esc(x.gloss)}</span>
+            </span>
+            <span class="meta"><span class="src">${esc(sourceLabel(x))}</span></span>
+          </button>`).join("")}
+      </div>
+      ${hits.length ? "" : `<p class="ext-status">No dictionary here holds “${esc(q)}”.</p>`}
+      ${state.scope.online && !state.onlineDone ? `
+        <button class="ext-online" id="onlineBtn">${ICON.globe}
+          <span>Press ⏎ to look “${esc(q)}” up online</span></button>` : ""}
+    </div>`;
+}
+
+function renderExternalArticle(x) {
+  const section = (s) => `
+    <section class="sec ext-sec" id="ext-${esc(s.id)}">
+      <div class="rail-l"><div class="inner">
+        <span class="num">${s.origin === "online" ? "\u{1F310}" : "\u{1F4D6}"}</span>
+        <span class="label">${esc(s.name.replace(/\s*[([].*$/, ""))}</span>
+      </div></div>
+      <div class="body">
+        ${s.tier === "html" ? `<div class="ext-body">${s.html}</div>` : `
+          <div class="ext-entry">
+            <p class="gram"><span>${esc(x.posLabel || "")}</span><span class="sep">·</span><span>${esc(state.lang)}</span></p>
+            <ol class="ext-senses">
+              ${s.senses.map((sense) => `
+                <li><p class="sense-def">${esc(sense.definition)}</p>
+                  ${(sense.examples || []).map((e) => `
+                    <div class="ex ext-ex"><p class="t">${esc(e.text)}</p>
+                      ${e.translation ? `<p class="tr">${esc(e.translation)}</p>` : ""}</div>`).join("")}
+                </li>`).join("")}
+            </ol>
+          </div>`}
+        <p class="ext-credit"><span>${esc(s.attribution)}</span><span class="sep">·</span>
+          <span>${s.origin === "device" ? "stored on this device" : s.origin === "server" ? "on your server" : "looked up online"}</span></p>
+      </div>
+    </section>`;
+
+  return `
+    <div class="masthead">
+      <div class="head-row">
+        <div class="emoji-plate ext">${x.online ? ICON.globe : ICON.book}</div>
+        <div class="head-text">
+          <h1 class="headword">${esc(x.word)}</h1>
+          ${x.ipa ? `<div class="pron-row"><span class="ipa">${esc(x.ipa)}</span></div>` : ""}
+          <p class="gram"><span>${esc(x.posLabel || "")}</span><span class="sep">·</span>
+            <span>${esc(langOf(state.lang).name)}</span><span class="sep">·</span><span>external dictionary</span></p>
+        </div>
+      </div>
+      <div class="chips">
+        <span class="chip ext">not in your words</span>
+        ${x.sections.length === 1 ? `<span class="chip">${esc(x.sections[0].name)}</span>` : ""}
+      </div>
+    </div>
+    ${x.sections.length > 1 ? `<nav class="ext-jump" aria-label="Sources">
+      ${x.sections.map((s) => `<button data-jump="ext-${esc(s.id)}">${esc(s.name)}</button>`).join("")}
+    </nav>` : ""}
+    <div class="ext-actions"><button class="tb-btn primary" id="extAdd">Add to my words</button></div>
+    ${x.sections.map(section).join("")}`;
+}
 
 /* ── selection helpers ───────────────────────────────────────────────── */
 
@@ -148,8 +248,10 @@ function renderList() {
             ${x.status === "inbox" ? '<span class="prov">unreviewed</span>' : strength(x)}
           </span>
         </button>`).join("")
-      : '<p class="empty">Nothing here yet.</p>'}
-    </div>`;
+      : q ? `<p class="ext-status none-yours">No words of yours match “${esc(q)}”.</p>`
+          : '<p class="empty">Nothing here yet.</p>'}
+    </div>
+    ${renderExternal()}`;
 }
 
 /* ── article view ────────────────────────────────────────────────────── */
@@ -591,6 +693,16 @@ function render() {
   }
   $("#composer").innerHTML = "";
 
+  const ext = state.openExt ? externalOf(state.openExt) : null;
+  if (ext) {
+    // An external entry replaces the list the way one of yours does, and reads in the same column.
+    $("#artBar").style.display = "";
+    $("#artBar").innerHTML = `<button class="icon-btn" id="backBtn" aria-label="Back to the list">${ICON.back}</button>`
+      + '<span class="label">Other dictionaries</span><span class="spacer"></span>';
+    main.innerHTML = renderExternalArticle(ext);
+    document.title = `${ext.word} — Acervo`;
+    return;
+  }
   if (!x) {
     $("#artBar").style.display = "none";
     main.innerHTML = renderList();
@@ -661,9 +773,29 @@ document.addEventListener("click", (ev) => {
   if (sortBtn) { state.sort = sortBtn.dataset.sort; render(); return; }
 
   const openBtn = hit("[data-open]");
-  if (openBtn) { state.openId = openBtn.dataset.open; state.mode = "read"; render(); $("#main").scrollTop = 0; return; }
+  if (openBtn) { state.openId = openBtn.dataset.open; state.openExt = null; state.mode = "read"; render(); $("#main").scrollTop = 0; return; }
 
-  if (hit("#backBtn")) { state.openId = null; render(); return; }
+  const extBtn = hit("[data-ext]");
+  if (extBtn) { state.openExt = extBtn.dataset.ext; state.openId = null; render(); $("#main").scrollTop = 0; return; }
+
+  const jump = hit("[data-jump]");
+  if (jump) { const target = document.getElementById(jump.dataset.jump);
+              if (target) target.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+
+  if (hit("#extAdd")) { toast("Builds the entry from what you are reading — not wired up in the prototype"); return; }
+  if (hit("#onlineBtn")) { state.onlineDone = true; render(); return; }
+
+  if (hit("#scopeBtn")) { $("#scopeMenu").classList.toggle("open"); return; }
+  const scopeItem = hit("[data-scope]");
+  if (scopeItem) {
+    state.scope[scopeItem.dataset.scope] = scopeItem.checked;
+    scopeItem.closest("label").classList.toggle("on", scopeItem.checked);
+    $("#scopeBtn").textContent = `yours +${Object.values(state.scope).filter(Boolean).length}`;
+    render(); return;
+  }
+  if (!hit("#scopeMenu")) $("#scopeMenu").classList.remove("open");
+
+  if (hit("#backBtn")) { state.openId = null; state.openExt = null; render(); return; }
 
   const modeBtn = hit("[data-mode]");
   if (modeBtn) { state.mode = modeBtn.dataset.mode; render(); return; }
@@ -694,6 +826,9 @@ document.addEventListener("click", (ev) => {
 $("#q").addEventListener("input", (ev) => {
   state.query = ev.target.value;
   state.openId = null;
+  state.openExt = null;
+  // ⏎ is the only thing that reaches an online source, so typing always puts that back.
+  state.onlineDone = false;
   $("#search").classList.toggle("searching", state.query.trim().length > 0);
   
 render();
@@ -705,6 +840,7 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape") {
     if (state.add) closeSheet();
     else if (state.mode === "edit") { state.mode = "read"; render(); }
+    else if (state.openExt) { state.openExt = null; render(); }
     else if (state.openId) { state.openId = null; render(); }
   }
 });

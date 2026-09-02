@@ -1,0 +1,252 @@
+/**
+ * Pure derivation from what the external dictionaries answered to what the interface renders.
+ *
+ * The same standing as `selectors.ts`, and for the same reason: nothing here touches storage or the
+ * network, so the whole external search and article surface is testable without a device holding a
+ * single artifact. `dictionaries.ts` owns the transports; this owns what their answers mean.
+ *
+ * Two rules run through all of it. **These are never Acervo records.** They carry no id, no
+ * revision and no study state, they are ordered separately from the owner's own words and they are
+ * never interleaved with them. And **the source's own words are kept**: `posLabel` is displayed
+ * verbatim, never bucketed into Acervo's part-of-speech enum, which §11.3 established does not
+ * survive contact with real dictionaries.
+ */
+
+import type { OnlineArticle } from "./api";
+import type { DictionaryArticle, DictionaryEntry, DictionaryTier } from "./dictionary";
+import type { LookupResult } from "./dictionaries";
+import { normaliseDictionaryHtml } from "./externalHtml";
+
+/** Where an answer came from. The interface says this out loud so nothing looks offline that isn't. */
+export type ExternalOrigin = "device" | "server" | "online";
+
+export interface SourceRef {
+  dictionaryId: string;
+  name: string;
+  origin: ExternalOrigin;
+}
+
+/** One headword a dictionary holds. The gloss arrives later — listing costs far less than reading. */
+export interface RawHit extends SourceRef {
+  word: string;
+  gloss?: string | null;
+}
+
+export interface ExternalRow {
+  word: string;
+  gloss: string;
+  /** Every dictionary holding this word, best first. A row is a word, not a word-per-dictionary. */
+  sources: SourceRef[];
+  /** The nearest source, which decides the plate: stored here, on the server, or out on the web. */
+  origin: ExternalOrigin;
+}
+
+export interface ExternalSection extends SourceRef {
+  attribution: string;
+  licence: string;
+  tier: DictionaryTier;
+  /** `fields` and online sources. Render-only — `posLabel` is free text, `pos` may be absent. */
+  articles: DictionaryArticle[];
+  /** `html` sources: already sanitised and restyled by `externalHtml.ts`. */
+  html: string;
+}
+
+export interface ExternalEntry {
+  word: string;
+  language: string | null;
+  reading: string | null;
+  ipa: string | null;
+  posLabel: string | null;
+  sections: ExternalSection[];
+}
+
+/* ── ordering ───────────────────────────────────────────────────────────
+   Nearest source first, everywhere: what this device holds answers before what the server holds,
+   which answers before the web. It is also the order the artifact reader resolves in, so the two
+   never disagree about which copy of a dictionary is "the" one. */
+
+const ORIGIN_ORDER: Record<ExternalOrigin, number> = { device: 0, server: 1, online: 2 };
+
+const encoder = new TextEncoder();
+
+/**
+ * Byte-wise comparison, matching the order the dictionary index is built in.
+ *
+ * Deliberately not `localeCompare` and not `<`: JavaScript compares UTF-16 code units, which
+ * disagrees with UTF-8 byte order above the BMP (§11.2). Using one order in the reader and another
+ * in the list would put rows in an order the reader would not reproduce.
+ */
+function compareWords(left: string, right: string): number {
+  const a = encoder.encode(left);
+  const b = encoder.encode(right);
+  const limit = Math.min(a.length, b.length);
+  for (let index = 0; index < limit; index += 1) {
+    if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1;
+  }
+  return a.length - b.length;
+}
+
+/** The spelling the compiler also stores as an alias, so `Casa` and `casa` are one row. */
+const folded = (word: string): string => word.normalize("NFC").toLowerCase();
+
+/**
+ * Every headword any dictionary offered, as one ranked list.
+ *
+ * Three dictionaries holding `casa` is one row naming three sources, not three rows of `casa`.
+ * Grouping by dictionary was the alternative and it floods the section: the reader is looking for a
+ * word, and which books happen to carry it is a fact about the word, not a way to organise it.
+ */
+export function mergeHits(query: string, hits: RawHit[]): ExternalRow[] {
+  const target = folded(query.trim());
+  const rows = new Map<string, ExternalRow>();
+  for (const hit of hits) {
+    const key = folded(hit.word);
+    const existing = rows.get(key);
+    const source: SourceRef = { dictionaryId: hit.dictionaryId, name: hit.name, origin: hit.origin };
+    if (!existing) {
+      rows.set(key, { word: hit.word, gloss: hit.gloss?.trim() ?? "", sources: [source], origin: hit.origin });
+      continue;
+    }
+    if (!existing.sources.some((candidate) => candidate.dictionaryId === hit.dictionaryId)) {
+      existing.sources.push(source);
+    }
+    // The first gloss offered wins, so the list does not flicker as slower sources land.
+    if (!existing.gloss && hit.gloss?.trim()) existing.gloss = hit.gloss.trim();
+    if (ORIGIN_ORDER[hit.origin] < ORIGIN_ORDER[existing.origin]) existing.origin = hit.origin;
+  }
+
+  for (const row of rows.values()) {
+    row.sources.sort((left, right) => ORIGIN_ORDER[left.origin] - ORIGIN_ORDER[right.origin]
+      || left.name.localeCompare(right.name));
+  }
+
+  return [...rows.values()].sort((left, right) => {
+    // The word actually typed comes first even when it sorts late — it is the answer to the question.
+    const exact = Number(folded(right.word) === target) - Number(folded(left.word) === target);
+    if (exact) return exact;
+    if (left.word.length !== right.word.length) return left.word.length - right.word.length;
+    return compareWords(left.word, right.word);
+  });
+}
+
+/* ── the gloss on a row ─────────────────────────────────────────────────
+   One line, from whatever the source actually has. A dictionary's first definition is not a gloss
+   in Acervo's sense and is not stored as one; it is the best one-line answer available, and saying
+   nothing would make the row unreadable. */
+
+const FIRST_LINE_LIMIT = 140;
+
+function clamp(line: string): string {
+  const collapsed = line.replace(/\s+/g, " ").trim();
+  return collapsed.length > FIRST_LINE_LIMIT ? `${collapsed.slice(0, FIRST_LINE_LIMIT - 1).trimEnd()}…` : collapsed;
+}
+
+/** The one-line form of an entry, for the search row. Empty when the payload says nothing useful. */
+export function glossOf(entry: DictionaryEntry): string {
+  if (entry.tier === "fields") {
+    const definitions = (entry.articles ?? [])
+      .flatMap((article) => article.senses.map((sense) => sense.definition.trim()))
+      .filter(Boolean);
+    return clamp(definitions.slice(0, 3).join("; "));
+  }
+  // An html payload has no field to read, so the visible text is the honest answer. The headword
+  // itself leads it, and repeating that beside the word would say nothing.
+  const body = new DOMParser().parseFromString(
+    `<body>${normaliseDictionaryHtml(entry.html ?? "", entry.word)}</body>`, "text/html");
+  return clamp(body.body.textContent ?? "");
+}
+
+/* ── the article ────────────────────────────────────────────────────────
+   One page with a section per source, in resolution order, rather than a tab per dictionary. What
+   several dictionaries say about a word is worth reading together — that is most of why anyone
+   installs more than one — and jumping between sources is navigation, not a change of view. */
+
+/** An online answer is a narrower `DictionaryArticle`, so one renderer serves both. */
+function fromOnline(article: OnlineArticle): DictionaryArticle {
+  return {
+    headword: article.headword,
+    language: article.language,
+    ipa: article.ipa,
+    posLabel: article.posLabel,
+    senses: article.senses.map((sense) => ({
+      definition: sense.definition,
+      examples: sense.examples?.map((example) => ({
+        text: example.text,
+        translation: example.translation ?? undefined
+      }))
+    }))
+  };
+}
+
+/** A mapped entry leads a restyled one: it is the section that looks most like an Acervo article. */
+const tierRank = (result: LookupResult) => (result.entry?.tier === "html" ? 1 : 0);
+
+export function externalEntryOf(word: string, results: LookupResult[]): ExternalEntry {
+  const sections: ExternalSection[] = results
+    .slice()
+    .sort((left, right) => ORIGIN_ORDER[left.origin] - ORIGIN_ORDER[right.origin]
+      || tierRank(left) - tierRank(right)
+      || left.name.localeCompare(right.name))
+    .map((result) => ({
+      dictionaryId: result.dictionaryId,
+      name: result.name,
+      origin: result.origin,
+      attribution: result.attribution,
+      licence: result.licence,
+      tier: result.entry?.tier ?? "fields",
+      articles: result.articles
+        ? result.articles.map(fromOnline)
+        : result.entry?.articles ?? [],
+      html: result.entry?.tier === "html"
+        ? normaliseDictionaryHtml(result.entry.html ?? "", result.entry.word)
+        : ""
+    }));
+
+  // The masthead takes the first source that knows each fact. Every section still shows its own,
+  // so nothing is hidden by the choice — it only decides what is said once, at the top.
+  const articles = sections.flatMap((section) => section.articles);
+  const firstOf = (pick: (article: DictionaryArticle) => string | undefined): string | null =>
+    articles.map(pick).find((value) => value && value.trim())?.trim() ?? null;
+
+  return {
+    word,
+    language: firstOf((article) => article.language),
+    reading: firstOf((article) => article.reading),
+    ipa: firstOf((article) => article.ipa),
+    posLabel: firstOf((article) => article.posLabel ?? article.pos),
+    sections
+  };
+}
+
+/**
+ * The entry as plain text, for grounding a generated article on what the reader actually saw.
+ *
+ * Deliberately built from the *rendered* model rather than the raw payloads: what goes to the model
+ * should be what is on screen, not a second, richer thing the reader never agreed to.
+ */
+export function referenceTextOf(entry: ExternalEntry): string {
+  const lines: string[] = [];
+  for (const section of entry.sections) {
+    lines.push(`## ${section.name}`);
+    for (const article of section.articles) {
+      const heading = [article.headword, article.reading, article.ipa,
+                       article.posLabel ?? article.pos].filter(Boolean).join(" · ");
+      if (heading) lines.push(heading);
+      article.senses.forEach((sense, index) => {
+        lines.push(`${index + 1}. ${sense.definition}${sense.domain ? ` (${sense.domain})` : ""}`);
+        for (const example of sense.examples ?? []) {
+          lines.push(`   - ${example.text}${example.translation ? ` — ${example.translation}` : ""}`);
+        }
+      });
+    }
+    if (section.html) {
+      const body = new DOMParser().parseFromString(`<body>${section.html}</body>`, "text/html");
+      for (const node of body.body.querySelectorAll("li, p, div, tr, summary, br")) {
+        node.parentNode?.insertBefore(body.createTextNode("\n"), node);
+      }
+      lines.push(...(body.body.textContent ?? "").split("\n")
+        .map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean));
+    }
+  }
+  return lines.join("\n");
+}

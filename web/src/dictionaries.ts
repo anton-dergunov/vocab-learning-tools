@@ -21,6 +21,7 @@ import {
   type DictionaryMetadata,
   type InstalledDictionary
 } from "./dictionaryStore";
+import { glossOf, type ExternalRow, type RawHit } from "./externalEntries";
 
 export type DictionaryKind = "offline" | "online" | "link";
 
@@ -75,6 +76,8 @@ export function setEnabled(id: string, on: boolean): void {
 }
 
 function announce(): void {
+  // Which dictionaries can answer has just changed, so the held resolution is stale by definition.
+  sourceCache = null;
   try { window.dispatchEvent(new CustomEvent(CHANGED_EVENT)); } catch { /* not in a document */ }
 }
 
@@ -292,9 +295,191 @@ export interface LookupResult {
   attribution: string;
   licence: string;
   /** Where the answer came from, which the interface says out loud so nothing looks offline that isn't. */
-  origin: "device" | "server" | "online";
+  origin: SearchTier;
   entry?: DictionaryEntry;
   articles?: OnlineArticle[];
+}
+
+/* ── where each dictionary would answer from, right now ─────────────────
+   Resolution order lives here and nowhere else: this device, then the server, then an online
+   source. Both the search list and the article read it, so a word can never be listed from one
+   place and then opened from another. */
+
+export type SearchTier = "device" | "server" | "online";
+
+export interface DictionarySource {
+  entry: CatalogueEntry;
+  origin: SearchTier;
+  /** Set only for `server`: what the server said about the artifact, which the reader needs to range-read it. */
+  remote?: RemoteDictionary;
+}
+
+/**
+ * Resolving this costs an IndexedDB listing and, when the device is missing something, a request to
+ * the server. Search runs on a keystroke, so the answer is held briefly rather than recomputed each
+ * time; installing, removing or switching a dictionary clears it through `announce`.
+ */
+let sourceCache: { language: string; at: number; value: Promise<DictionarySource[]> } | null = null;
+const SOURCE_CACHE_MS = 3000;
+
+export async function dictionarySources(language?: string): Promise<DictionarySource[]> {
+  const key = language ?? "";
+  const now = Date.now();
+  if (sourceCache && sourceCache.language === key && now - sourceCache.at < SOURCE_CACHE_MS) {
+    return sourceCache.value;
+  }
+  const value = (async (): Promise<DictionarySource[]> => {
+    const enabled = enabledSet();
+    const held = await installed();
+    const rows = knownDictionaries(held).filter((entry) => enabled.has(entry.id)
+      && (!language || entry.sourceLang === ANY_LANGUAGE
+          || primaryLanguage(entry.sourceLang) === primaryLanguage(language)));
+    const local = new Set(held.map((record) => record.id));
+
+    let remote: RemoteDictionary[] = [];
+    if (rows.some((entry) => entry.kind === "offline" && !local.has(entry.id))) {
+      // The server being unreachable is ordinary, not an error: what this device holds still answers.
+      try { remote = await listOnServer(); } catch { remote = []; }
+    }
+
+    const sources: DictionarySource[] = [];
+    for (const entry of rows) {
+      if (entry.kind === "online") { sources.push({ entry, origin: "online" }); continue; }
+      if (local.has(entry.id)) { sources.push({ entry, origin: "device" }); continue; }
+      const description = remote.find((candidate) => candidate.id === entry.id);
+      // A dictionary neither stored here nor compiled on the server cannot answer anything.
+      if (description) sources.push({ entry, origin: "server", remote: description });
+    }
+    return sources;
+  })();
+  sourceCache = { language: key, at: now, value };
+  return value;
+}
+
+/* ── online sources, and their manners ──────────────────────────────────
+   §9: honour the terms, do not prefetch, do not circumvent a rate limit. The interface already
+   waits for ⏎ before asking anything online; these two are the floor underneath that, so no amount
+   of clicking about can turn into a burst. */
+
+const ONLINE_CACHE_MS = 5 * 60 * 1000;
+const ONLINE_CACHE_ENTRIES = 200;
+const ONLINE_MINIMUM_INTERVAL_MS = 1000;
+
+const onlineCache = new Map<string, { at: number; entries: OnlineArticle[] }>();
+const onlineLastCall = new Map<string, number>();
+
+async function lookupOnline(id: string, word: string, language?: string): Promise<OnlineArticle[]> {
+  const key = `${id}:${language ?? ""}:${word.toLowerCase()}`;
+  const cached = onlineCache.get(key);
+  if (cached && Date.now() - cached.at < ONLINE_CACHE_MS) return cached.entries;
+
+  const since = Date.now() - (onlineLastCall.get(id) ?? 0);
+  if (since < ONLINE_MINIMUM_INTERVAL_MS) {
+    await new Promise((resolve) => setTimeout(resolve, ONLINE_MINIMUM_INTERVAL_MS - since));
+  }
+  onlineLastCall.set(id, Date.now());
+
+  const answer = await backendSession.lookupOnlineDictionary(id, word, language);
+  onlineCache.set(key, { at: Date.now(), entries: answer.entries });
+  // Insertion order is iteration order, so the oldest key is the first one.
+  while (onlineCache.size > ONLINE_CACHE_ENTRIES) {
+    onlineCache.delete(onlineCache.keys().next().value as string);
+  }
+  return answer.entries;
+}
+
+/**
+ * Forget every held answer and every held resolution.
+ *
+ * Signing out is the case that matters: the next session may be a different account on a different
+ * server, and an answer cached under the old one has no business surviving into it.
+ */
+export function forgetCachedLookups(): void {
+  onlineCache.clear();
+  onlineLastCall.clear();
+  sourceCache = null;
+  opened.clear();
+}
+
+/* ── searching ──────────────────────────────────────────────────────────
+   Listing candidate headwords touches only the key section of an artifact, so it costs a fraction
+   of reading one of them. The gloss beside each row is fetched afterwards and only for the rows
+   that will actually be shown. */
+
+/** How many headwords one dictionary may contribute before the list stops being a list. */
+const HITS_PER_DICTIONARY = 12;
+/** How many rows get a gloss. Beyond this the reader is scrolling, not reading. */
+const HYDRATE_LIMIT = 14;
+
+/**
+ * Headwords beginning with `prefix`, from every enabled dictionary in the requested tiers.
+ *
+ * One dictionary failing never takes the others down: an unreadable artifact or a server that went
+ * away mid-search costs its own rows and nothing else.
+ */
+export async function searchDictionaries(
+  prefix: string,
+  { language, tiers, limit = HITS_PER_DICTIONARY }:
+    { language?: string; tiers: SearchTier[]; limit?: number }
+): Promise<RawHit[]> {
+  const query = prefix.trim();
+  if (!query) return [];
+  const wanted = new Set(tiers);
+  const sources = (await dictionarySources(language)).filter((source) => wanted.has(source.origin));
+
+  const found = await Promise.all(sources.map(async (source): Promise<RawHit[]> => {
+    const shared = { dictionaryId: source.entry.id, name: source.entry.name, origin: source.origin };
+    try {
+      if (source.origin === "online") {
+        // An online source answers a word, not a prefix, so there is nothing to list: the answer
+        // itself is the row, and it arrives with its gloss already in hand.
+        const entries = await lookupOnline(source.entry.id, query, language);
+        return entries.length
+          ? [{ ...shared, word: entries[0].headword || query,
+               gloss: entries[0].senses.map((sense) => sense.definition).slice(0, 3).join("; ") }]
+          : [];
+      }
+      const dictionary = await openDictionary(source.entry.id, source.remote);
+      const words = (await dictionary?.search(query, limit)) ?? [];
+      return words.map((word) => ({ ...shared, word }));
+    } catch {
+      return [];
+    }
+  }));
+  return found.flat();
+}
+
+/**
+ * The one-line meaning for each of the first few rows.
+ *
+ * Deliberately bounded and deliberately last. A prefix run usually lands inside one 256-entry
+ * frame, so several glosses often cost a single decode — but a dictionary on the server is read
+ * over byte ranges, and hydrating every candidate there would turn a keystroke into a download.
+ */
+export async function hydrateGlosses(
+  rows: ExternalRow[], language?: string, limit = HYDRATE_LIMIT
+): Promise<ExternalRow[]> {
+  const needed = rows.filter((row) => !row.gloss).slice(0, limit);
+  if (!needed.length) return rows;
+  // Resolved again rather than assumed: a dictionary the server holds needs its description to be
+  // range-read, and relying on the search having left it in the open-dictionary cache would make
+  // this quietly stop working the moment that cache was evicted.
+  const sources = await dictionarySources(language);
+  const glosses = new Map<string, string>();
+  await Promise.all(needed.map(async (row) => {
+    const nearest = row.sources[0];
+    if (nearest.origin === "online") return;
+    const source = sources.find((candidate) => candidate.entry.id === nearest.dictionaryId);
+    try {
+      const dictionary = await openDictionary(nearest.dictionaryId, source?.remote);
+      const entry = await dictionary?.lookup(row.word);
+      if (entry) glosses.set(`${nearest.dictionaryId}:${row.word}`, glossOf(entry));
+    } catch { /* a missing gloss is a quiet row, not a failed search */ }
+  }));
+  return rows.map((row) => {
+    const gloss = glosses.get(`${row.sources[0].dictionaryId}:${row.word}`);
+    return gloss ? { ...row, gloss } : row;
+  });
 }
 
 /**
@@ -303,32 +488,26 @@ export interface LookupResult {
  * One dictionary failing never takes the others down: a server that is unreachable simply means the
  * dictionaries this device holds answer alone, which is the behaviour the whole design is built for.
  */
-export async function lookup(word: string, language?: string): Promise<LookupResult[]> {
-  const enabled = enabledSet();
-  const held = await installed();
-  const rows = knownDictionaries(held).filter((entry) => enabled.has(entry.id)
-    && (!language || entry.sourceLang === ANY_LANGUAGE
-        || primaryLanguage(entry.sourceLang) === primaryLanguage(language)));
-  const local = new Set(held.map((record) => record.id));
+export async function lookup(
+  word: string,
+  language?: string,
+  tiers: SearchTier[] = ["device", "server", "online"]
+): Promise<LookupResult[]> {
+  const wanted = new Set(tiers);
+  const sources = (await dictionarySources(language)).filter((source) => wanted.has(source.origin));
 
-  let remote: RemoteDictionary[] = [];
-  if (rows.some((entry) => entry.kind === "offline" && !local.has(entry.id))) {
-    try { remote = await listOnServer(); } catch { remote = []; }
-  }
-
-  const results = await Promise.all(rows.map(async (row): Promise<LookupResult | null> => {
-    const shared = { dictionaryId: row.id, name: row.name, attribution: row.attribution, licence: row.licence };
+  const results = await Promise.all(sources.map(async (source): Promise<LookupResult | null> => {
+    const { entry } = source;
+    const shared = { dictionaryId: entry.id, name: entry.name,
+                     attribution: entry.attribution, licence: entry.licence };
     try {
-      if (row.kind === "online") {
-        const answer = await backendSession.lookupOnlineDictionary(row.id, word, language);
-        return answer.entries.length ? { ...shared, origin: "online", articles: answer.entries } : null;
+      if (source.origin === "online") {
+        const entries = await lookupOnline(entry.id, word, language);
+        return entries.length ? { ...shared, origin: "online", articles: entries } : null;
       }
-      const held = local.has(row.id);
-      const description = remote.find((candidate) => candidate.id === row.id);
-      if (!held && !description) return null;
-      const dictionary = await openDictionary(row.id, description);
-      const entry = await dictionary?.lookup(word);
-      return entry ? { ...shared, origin: held ? "device" : "server", entry } : null;
+      const dictionary = await openDictionary(entry.id, source.remote);
+      const found = await dictionary?.lookup(word);
+      return found ? { ...shared, origin: source.origin, entry: found } : null;
     } catch {
       return null;
     }

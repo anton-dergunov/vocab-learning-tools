@@ -1,3 +1,5 @@
+import { BookIcon, GlobeIcon } from "./icons";
+import type { ExternalRow } from "./externalEntries";
 import type { ListRow, SortKey, TopicSelection } from "./selectors";
 
 const SORTS: [SortKey, string][] = [["recent", "Recent"], ["alpha", "A–Z"], ["hard", "Hardest"]];
@@ -8,7 +10,81 @@ function Strength({ row }: { row: ListRow }) {
   </span>;
 }
 
-export default function LexemeList({ rows, languageName, topic, topicLabel, topicIcon, query, sort, onSort, onOpen }: {
+/**
+ * What the external section is doing right now.
+ *
+ * `online` is separate from the rest because it is the one tier that never runs on its own: §9 asks
+ * for no prefetching, and a rate limit is not something to spend on a word someone was only passing
+ * through on the way to another one.
+ */
+export interface ExternalSearch {
+  rows: ExternalRow[];
+  /** True while the device and server tiers are still answering. */
+  searching: boolean;
+  /** Whether anything at all is switched on to search. */
+  enabled: boolean;
+  /** The server is unreachable, so only what this device holds can answer. */
+  offline: boolean;
+  online: "off" | "ready" | "searching" | "done";
+  onOpen(row: ExternalRow): void;
+  onSearchOnline(): void;
+}
+
+function sourceLabel(row: ExternalRow): string {
+  if (row.sources.length > 2) return `${row.sources.length} sources`;
+  return row.sources.map((source) => source.name).join(" · ");
+}
+
+/**
+ * The external section: everything Acervo can find that is not yours.
+ *
+ * Below a rule and after every one of your own words, always — the ordering is the product. What is
+ * here carries no emoji, no sense count and no strength bars, because it has none of those things:
+ * an external row must be unmistakable at a glance, and the surest way to do that is to show only
+ * what is true about it.
+ */
+function ExternalSection({ query, search }: { query: string; search: ExternalSearch }) {
+  const { rows, online } = search;
+  return <div className="ext-section">
+    <div className="list-sep"><span className="label">Other dictionaries</span></div>
+
+    {search.offline && <p className="ext-status">
+      Your server is unreachable, so only the dictionaries stored on this device are being searched.
+    </p>}
+
+    <div className="rows">
+      {rows.map((row) => <button
+        key={`${row.word}:${row.sources[0].dictionaryId}`} className="row ext"
+        onClick={() => search.onOpen(row)}
+      >
+        <span className="plate ext" aria-hidden="true">
+          {row.origin === "online" ? <GlobeIcon /> : <BookIcon />}
+        </span>
+        {/* The source names are repeated as an attribute so a phone can put them under the gloss
+            instead of squeezing a second column onto a screen that has no room for one. */}
+        <span data-sources={sourceLabel(row)}>
+          <span className="word">{row.word}</span>
+          <span className="gloss">{row.gloss || "—"}</span>
+        </span>
+        <span className="meta"><span className="src">{sourceLabel(row)}</span></span>
+      </button>)}
+    </div>
+
+    {search.searching && <p className="ext-status">Looking through your dictionaries…</p>}
+    {!search.searching && !rows.length && online !== "searching" && <p className="ext-status">
+      No dictionary here holds “{query}”.
+    </p>}
+
+    {online === "ready" && <button className="ext-online" onClick={search.onSearchOnline}>
+      <GlobeIcon /><span>Press ⏎ to look “{query}” up online</span>
+    </button>}
+    {online === "searching" && <p className="ext-status" role="status">Asking the online dictionaries…</p>}
+  </div>;
+}
+
+export default function LexemeList({
+  rows, languageName, topic, topicLabel, topicIcon, query, sort, onSort, onOpen, external
+}: {
   rows: ListRow[];
   languageName: string;
   topic: TopicSelection;
@@ -18,6 +94,8 @@ export default function LexemeList({ rows, languageName, topic, topicLabel, topi
   sort: SortKey;
   onSort(sort: SortKey): void;
   onOpen(id: string): void;
+  /** Absent when nothing is being searched — an empty topic list has no external half. */
+  external?: ExternalSearch;
 }) {
   const trimmed = query.trim();
   let title = topicLabel;
@@ -34,6 +112,8 @@ export default function LexemeList({ rows, languageName, topic, topicLabel, topi
   } else {
     sub = `${rows.length} word${rows.length === 1 ? "" : "s"} in ${languageName}`;
   }
+
+  const showExternal = Boolean(trimmed && external?.enabled);
 
   return <>
     <div className="list-head">
@@ -59,7 +139,11 @@ export default function LexemeList({ rows, languageName, topic, topicLabel, topi
             {row.status === "inbox" ? <span className="prov">unreviewed</span> : <Strength row={row} />}
           </span>
         </button>)
+      // With a search running, the dictionaries below are the answer, so this shrinks to a line
+      // saying which question it is answering rather than taking the whole page to say "nothing".
+      : showExternal ? <p className="ext-status none-yours">No words of yours match “{trimmed}”.</p>
       : <p className="empty">Nothing here yet.</p>}
     </div>
+    {showExternal && external && <ExternalSection query={trimmed} search={external} />}
   </>;
 }
