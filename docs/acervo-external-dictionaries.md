@@ -1,8 +1,10 @@
 # External dictionaries — source research
 
-**Status:** research, nothing built. Design §08 defines the storage stance and closes with "out of
-scope for this iteration". This document is the survey that would let it be brought into scope, plus
-the decisions that survived a first review.
+**Status:** researched, measured, and Stage 1 built. Design §08 defines the storage stance and closes
+with "out of scope for this iteration"; this document is the survey that brought it into scope, the
+decisions that survived a first review, and in §11 the measurements that settled them. The catalogue
+and the compiler now exist — see [acervo-dictionaries-stage1.md](acervo-dictionaries-stage1.md) for
+what was built and what it changed.
 
 Two separate needs push toward published dictionaries:
 
@@ -466,22 +468,25 @@ the decision in §7 is a hypothesis, not a commitment.
 
 ### Then, in order
 
-- **Stage 1 · the catalogue and the compiler.** `dictionaries/catalogue.json`, plus
-  `scripts/build_dictionary.py` reduced to what the spike proved: one Tier 1 mapper for wiktextract
-  shape, a handful of tiny Tier 1 parsers, and a PyGlossary shell-out for Tier 2. No per-source
-  schemas. **Requirements are written up in
-  [acervo-dictionaries-stage1.md](acervo-dictionaries-stage1.md)**, including the product shape the
-  Dictionaries dialog needs and the questions planning still has to settle.
-- **Stage 2 · the reader and the server route.** `web/src/dictionary.ts` — a pure interface,
-  `lookup` / `search` / `installed`, with two transports behind it chosen by whether the dictionary
-  is installed locally, mirroring how `sync.ts` owns the graph transport. A PocketBase hook route
-  `GET /api/acervo/v1/dictionary/{id}/lookup` opens the same file server-side. No collections, no
-  records, no revisions, no sync.
-- **Stage 3 · the interface.** Search gets an "Other dictionaries" section below a separator, which
-  becomes the answer when there are no local results. `LexemeArticle.tsx` gets a read-only reference
-  section. A dictionary entry with no lexeme gets "Add to my words", seeding Capture with the
-  headword. Settings gets a Dictionaries pane with size, licence, install/remove,
-  `storage.estimate()` and the `persist()` request.
+- **Stage 1 · the catalogue and the compiler. Built.** `dictionaries/catalogue.json` (58 rows across
+  a dozen languages) and `scripts/build_dictionary.py` over `src/vocabgen/dictionaries/`, reduced to
+  what the spike proved: one converter for the wiktextract shape, four small ones for the other
+  field-structured formats, and PyGlossary for everything opaque. No per-source schemas.
+  [acervo-dictionaries-stage1.md](acervo-dictionaries-stage1.md) records what was built.
+- **Stage 2 · the reader and the server route. Built, and the route turned out to be unnecessary.**
+  `web/src/dictionary.ts` is the reader — `lookup` / `search` over a `ByteSource`, with
+  `web/src/dictionaries.ts` owning the transports and the resolution order, mirroring how `sync.ts`
+  owns the graph transport. A *lookup* route was planned; it is not needed, because the artifact is
+  served as a static file that answers byte ranges, so "this device, then the server" is the same
+  reader over a different byte source rather than the format implemented twice. What the server does
+  have is a listing route, an authenticated static route, and the two online connectors. No
+  collections, no records, no revisions, no sync.
+- **Stage 3 · the interface. Partly built: the Settings pane exists, the reading surfaces do not.**
+  Settings has a Dictionaries pane with size, licence, install/remove, `storage.estimate()` and the
+  `persist()` request. Still to come: an "Other dictionaries" section in search below a separator,
+  which becomes the answer when there are no local results; a read-only reference section in
+  `LexemeArticle.tsx`; and "Add to my words" on a dictionary entry with no lexeme, seeding Capture
+  with the headword.
 - **Stage 4 · grounding.** Postponed indefinitely, gated on
   [acervo-grounding-spike.md](acervo-grounding-spike.md), and re-scoped by §1: the question is
   whether the *shown* senses improve, not whether coverage increases.
@@ -736,17 +741,45 @@ once blocked, `deflate` and `zstd19` are within 8 % of each other. Brotli-11 was
 discarded — never competitive after its engine cost, and the Python binding exposes no
 custom-dictionary API at all, so that variant is impractical by construction.
 
-### §11.2 · The index is the remaining prize
+### §11.2 · The index is the remaining prize — built, and the numbers held
 
 | Index | Bytes | Note |
 |---|---:|---|
-| As built (sorted keys + one packed record each) | 19.5 MiB | keys 8.4 + fixed records ~11 |
+| As built in the spike (sorted keys + one packed record each) | 19.5 MiB | keys 8.4 + fixed records ~11 |
 | Front-coded keys | 2.5 MiB | 29 % of raw — sorted headwords share long prefixes |
 | Varint records | 3.2 MiB | with a fixed block size the block number is `index // 256` |
-| **Both applied** | **5.7 MiB** | **saves ~13.8 MiB, ~35 % of the artifact** |
+| Both applied, predicted | 5.7 MiB | saves ~13.8 MiB, ~35 % of the artifact |
+| **Both applied, as Stage 1 actually built it** | **8.1 MiB** | see below |
 
-This is Stage 1 work, not a research question. It is the single largest remaining size win and it
-needs no new dependency.
+**Stage 1 built this and the artifact came in at 27.8 MiB against the 39.7 MiB measured above — a
+30 % cut.** The whole Spanish Wiktionary is 834,245 entries and 865,202 lookup keys in 19.7 MiB of
+payloads plus 8.1 MiB of index, built in about 30 seconds and byte-identical on a rebuild.
+
+The index landed above the 5.7 MiB prediction for two reasons, both deliberate. Every key carries a
+varint *entry index* rather than being positional, which is what makes an alias free — the
+traditional spelling of a simplified headword, and a case-folded spelling of an accented one, point
+at an existing entry and cost nothing but a key. That is 865,202 keys rather than 834,245. And the
+prediction ignored the two things a reader needs to use a front-coded index at all:
+
+- **Restart points.** Front-coding destroys random access, which a binary search requires. Every
+  16th key is stored whole with its offset recorded, so a lookup binary-searches the restart table
+  and then scans one bucket of at most 16. Costs about 6 % of the key bytes.
+- **A per-frame offset into the payload-length section.** Without it, finding an entry's offset
+  inside its frame means holding every entry's length — about 2 MiB for this corpus, per dictionary,
+  which does not survive the ten-dictionaries-per-language the interface is built for. With it, a
+  lookup range-reads at most 256 varints.
+
+What stays resident per open dictionary is therefore the header, the frame table and the restart
+table. Measured on the finished artifact with the real reader: **499 KiB resident**, 210 KiB read to
+open the dictionary at all, and **12.6 KiB read to answer one lookup** — a binary search over ~16
+restart probes, one bucket, one run of payload lengths and one frame. Ten dictionaries open at once
+therefore cost about 5 MiB, which is the budget the interface's ten-per-language target needs.
+
+One further detail that is not a size question but was found while building this: **the keys must be
+ordered by their UTF-8 bytes**, not by locale collation and not by the platform's own string
+comparison. JavaScript compares UTF-16 code units, which disagrees with UTF-8 byte order above the
+BMP, so a reader searching one order over an index built in the other fails to find real entries —
+and fails only for the rarest characters, which is the kind of bug that survives casual testing.
 
 ### §11.3 · Representation — is the mapper worth writing?
 
@@ -873,14 +906,32 @@ so they sit at the top of the range and a long entry still needs truncating.
   fallback for everything opaque. Every source measured — offline and online — reaches 98.7–100 %
   coverage with nothing invented.
 
-### §11.7 · Not measured
+### §11.7 · The device probe, and what it changed
 
-`probe.html` reports what a device can actually do — `DecompressionStream` formats, OPFS and
-`createSyncAccessHandle`, `storage.estimate()`, whether `fflate` round-trips a dictionary-compressed
-payload on-device, and decode throughput. **It has not yet been run on a phone or in the `macos/`
-WKWebView host.** Until it is, the read path is verified only on desktop Python, and the OPFS
-assumption behind the packed container is inference rather than measurement. That is the one gap
-before Stage 1 starts.
+`probe.html` has now been run on an iPad (Safari and Chrome), an Android phone, and macOS (Safari
+and Chrome). Two findings, one of which changed the design.
 
-IndexedDB is reported as a payload floor only; its true per-record overhead is invisible from
-Python and needs the same probe.
+**What the devices agree on, and it settles the codec:** `DecompressionStream` supports `gzip`,
+`deflate` and `deflate-raw` everywhere and **`zstd` and `br` nowhere**. `fflate` round-trips a
+dictionary-compressed payload on every device at 0.05–0.13 ms per frame. Plain DEFLATE was already
+the recommendation on size grounds; it is now the only option that needs no shipped engine at all.
+
+**OPFS reported missing on every device, including desktop Chrome — and that reading is an
+artifact.** `navigator.storage.getDirectory` and `navigator.storage.estimate` both require a secure
+context and both vanished together, on browsers that certainly have them; the runs were served over
+plain http. The probe now reports `isSecureContext` first, and says so, precisely so this cannot be
+misread again.
+
+**The design does not depend on the answer.** The frames live in IndexedDB, which needs no probe,
+is universally available, and is what `localDatabase.ts` already uses. That changes the reader and
+not the artifact, exactly as §10 anticipated. The one thing it does require is that IndexedDB store
+**whole files rather than entries**: a Blob is stored as opaque bytes and read lazily by
+`blob.slice`, so three records per dictionary preserve the compaction, whereas the per-entry shape
+this section originally modelled would have paid per-record overhead 834,245 times.
+
+Two assumptions remain measured only by inference and the probe now covers both: whether
+`storage.estimate().usage` grows by roughly what was written, and whether a `Blob.slice` out of a
+40 MiB stored Blob reads a range rather than materialising the file. If a slice turns out to be
+linear in the file size on WebKit, the fallback is chunking the payload blob into ~1 MiB records —
+about twenty per dictionary, still negligible overhead — which again changes the store and not the
+artifact.

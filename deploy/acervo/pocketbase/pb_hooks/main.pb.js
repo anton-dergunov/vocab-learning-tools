@@ -28,3 +28,19 @@ try {
 } catch (error) {
   console.log("Acervo: no macOS download directory; the desktop application is not offered.");
 }
+
+// Compiled dictionaries, served as plain files. Static rather than a lookup route on purpose: Go's
+// file server answers Range requests, so a client that has not stored a dictionary locally reads
+// the same artifact over the network with the same reader, and the packed format is implemented
+// once instead of twice.
+//
+// Behind requireAuth, and outside pb_public, for two separate reasons. The service worker must
+// never try to precache tens of MiB; and this data is third-party and mostly share-alike, so the
+// owner's own server handing it to the owner's own devices is not the same thing as publishing it.
+try {
+  const dictionaries = $os.getenv("ACERVO_DICTIONARIES_PATH") || "/pb/dictionaries";
+  routerAdd("GET", "/api/acervo/dictionaries/{path...}",
+    $apis.static($os.dirFS(dictionaries), false), $apis.requireAuth());
+} catch (error) {
+  console.log("Acervo: no dictionary directory; external dictionaries are not offered.");
+}

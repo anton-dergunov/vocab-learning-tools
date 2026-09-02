@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { TopicEditor, VocabularyEditor } from "./Configuration";
+import DictionaryPanel from "./DictionaryPanel";
 import { fetchMacRelease, type MacRelease } from "./macRelease";
 import { installUpdate, isNativeHost, shouldOfferMacApplication, type UpdateStage } from "./pwa";
 import type { ReplicaSnapshot } from "./repository";
@@ -12,7 +13,7 @@ import { editorPreferences, setEditorPreference, type EditorPreferences } from "
 /** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
 const CONFIRMATION = "DELETE";
 
-export type Page = "general" | "vocabularies" | "topics" | "editor" | "sync" | "data";
+export type Page = "general" | "vocabularies" | "topics" | "dictionaries" | "editor" | "sync" | "data";
 
 export default function Settings({ update, email, status, snapshot, language, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
   update?: UpdateStage;
@@ -94,6 +95,7 @@ export default function Settings({ update, email, status, snapshot, language, pa
     { id: "general", label: "General" },
     { id: "vocabularies", label: "Vocabularies" },
     { id: "topics", label: "Topics" },
+    { id: "dictionaries", label: "Dictionaries" },
     { id: "editor", label: "Editor" },
     { id: "sync", label: "Sync" },
     { id: "data", label: "Data" }
@@ -167,6 +169,8 @@ export default function Settings({ update, email, status, snapshot, language, pa
             </span>
           </label>
         </section>}
+
+        {page === "dictionaries" && <DictionaryPanel onNotify={onNotify} />}
 
         {page === "vocabularies" && snapshot && <VocabularyEditor snapshot={snapshot} onNotify={onNotify} onChanged={onChanged} />}
         {page === "topics" && snapshot && <TopicEditor snapshot={snapshot} language={language} onNotify={onNotify} onChanged={onChanged} />}

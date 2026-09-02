@@ -1,6 +1,7 @@
 # Complete runtime plus automated-test dependencies.
 -r media.txt
 -r benchmark.txt
+-r dictionaries.txt
 
 pytest
 cairosvg

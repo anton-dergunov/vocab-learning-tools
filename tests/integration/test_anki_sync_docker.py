@@ -100,7 +100,7 @@ def test_official_server_and_headless_clients_round_trip(tmp_path: Path) -> None
         "ACERVO_BIND_ADDRESS=127.0.0.1\n"
         f"ACERVO_ANKI_PORT={free_port()}\n"
         f"ACERVO_ANKI_SERVER_DATA={server}\n"
-        f"ACERVO_ANKI_ROBOT_DATA={robot}\n"
+        f"ACERVO_WORKER_DATA={robot}\n"
         f"ACERVO_INPUT_PATH={input_dir}\n",
         encoding="utf-8",
     )
@@ -139,7 +139,7 @@ def test_official_server_and_headless_clients_round_trip(tmp_path: Path) -> None
         return result
 
     def robot_command(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return run("--profile", "tools", "run", "--rm", "-T", "anki-robot", *args, check=check)
+        return run("--profile", "tools", "run", "--rm", "-T", "acervo-worker", "anki", *args, check=check)
 
     def mobile_command(command: str) -> dict:
         result = run(
@@ -152,7 +152,7 @@ def test_official_server_and_headless_clients_round_trip(tmp_path: Path) -> None
             "python",
             "-v",
             f"{mobile}:/mobile",
-            "anki-robot",
+            "acervo-worker",
             "/app/scripts/integration/anki_sync_client.py",
             command,
             "--endpoint",
@@ -250,7 +250,7 @@ def test_local_deploy_wrapper_preserves_temporary_dot_acervo(tmp_path: Path) -> 
 
     home = tmp_path / "home"
     acervo_root = home / ".acervo"
-    robot_data = acervo_root / "data" / "anki-robot"
+    robot_data = acervo_root / "data" / "acervo-worker"
     robot_data.mkdir(parents=True)
     sentinel = robot_data / "preserve-me"
     sentinel.write_text("persistent", encoding="utf-8")

@@ -81,8 +81,9 @@ esac
 umask 077
 mkdir -p \
   "$acervo_root/data/anki-server" \
-  "$acervo_root/data/anki-robot" \
+  "$acervo_root/data/acervo-worker" \
   "$acervo_root/data/pocketbase" \
+  "$acervo_root/data/dictionaries" \
   "$acervo_root/downloads" \
   "$acervo_root/input" \
   "$acervo_root/backups" \
@@ -136,8 +137,8 @@ chmod 600 "$acervo_root/secrets.env"
 
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup_dir="$acervo_root/backups/$timestamp"
-mkdir -p "$backup_dir/anki-server" "$backup_dir/anki-robot"
-for service in anki-server anki-robot; do
+mkdir -p "$backup_dir/anki-server" "$backup_dir/acervo-worker"
+for service in anki-server acervo-worker; do
   find "$acervo_root/data/$service" -type f \( \
     -name 'collection*.anki2' -o \
     -name 'collection*.anki21' -o \
@@ -156,8 +157,8 @@ while [ "$backup_count" -gt 10 ]; do
 done
 
 if [ "$reset_data" = true ]; then
-  rm -rf -- "$acervo_root/data/anki-server" "$acervo_root/data/anki-robot"
-  mkdir -p "$acervo_root/data/anki-server" "$acervo_root/data/anki-robot"
+  rm -rf -- "$acervo_root/data/anki-server" "$acervo_root/data/acervo-worker"
+  mkdir -p "$acervo_root/data/anki-server" "$acervo_root/data/acervo-worker"
 fi
 
 if [ -n "$archive" ]; then
@@ -191,7 +192,8 @@ ACERVO_APP_PORT=$app_port
 ACERVO_APP_VERSION=$app_version
 ACERVO_APP_BUILD=$app_build
 ACERVO_ANKI_SERVER_DATA=$acervo_root/data/anki-server
-ACERVO_ANKI_ROBOT_DATA=$acervo_root/data/anki-robot
+ACERVO_WORKER_DATA=$acervo_root/data/acervo-worker
+ACERVO_DICTIONARIES=$acervo_root/data/dictionaries
 ACERVO_PB_DATA=$acervo_root/data/pocketbase
 ACERVO_DOWNLOADS=$acervo_root/downloads
 ACERVO_INPUT_PATH=$acervo_root/input

@@ -1,0 +1,32 @@
+{
+  "id": "sample",
+  "note": "Built by tests/unit/dictionaries/test_fixture.py. Do not edit by hand.",
+  "metadata": {
+    "attribution": "Acervo test fixture.",
+    "blobBytes": 1034,
+    "builtAt": "2026-01-01T00:00:00Z",
+    "checksums": {
+      "sample.dict": "c48f2664790731f5f371fb99eaf7dfeba4daa6c0f29794c36370bd1edab74581",
+      "sample.idx": "743aeb8499b3ccdd7d40170a33f521d44af9befe6786001196bf966e2c5b89fc"
+    },
+    "droppedFields": [],
+    "entryCount": 45,
+    "frameCount": 6,
+    "frameSize": 8,
+    "id": "sample",
+    "indexBytes": 401,
+    "keyCount": 46,
+    "licence": "CC BY-SA 4.0",
+    "mergedEntries": 1,
+    "name": "Sample dictionary",
+    "restartInterval": 4,
+    "schemaVersion": 1,
+    "sourceDate": "2026-01-01",
+    "sourceLang": "es",
+    "targetLang": "en",
+    "tier": "fields",
+    "unmappedPartsOfSpeech": []
+  },
+  "dict": "rc09CsMwDAXgqxjPHZx/yBl6A5NBxYpjSOUSJ3QouXvVTlkF2vSkhz7/sQHnRGlPme5A0Y4Wyd7sghDeeQucX7DCYwPnHO9X7hwQ8dcrnAtS4WH010d83Bc0TwRKFE2ezeXHOZ2Tl7CVAlvJ2VqBreVso8A2crZVYFs52ymwnZztFdhezg4K7PBnv63NPQ6DMAwF4KtEmTsk/EiFM/QGEYOrGIhEnYqAOlTcvW4nVqve/GzrfeFtI46J0pYy3YAm21ske7EzQnzlNXJ+wgL3FZy78n7hnx0m/P4VzgWp8NCHcxEftxnNA4ESTSaP5tRxDMcQJGynwHZi1rv/We4Qs16B9XK2UmArOVsrsLWcbRTYRs62Cmz7Yz+tzT0OgzAMBeCrRJk7kCCVnzP0BhGDq5gQiZqKgDpU3L1uJ1ar3vxs633hbSOOmfKWF7oBJdtbJHuxE0J8LWvk/IQZ7itU7sr7mX92SPj9K5wLUuGhD+ciPm4TmgcCZUpmGc2p4xiOIUjYRoFt5GyrwLZytlNgOzHrq/9Z7hCzToF1ctYrsF7O1gps/WM/rc09DsIwDAXgq0SZGVqgv2fgBlEHo7hppOKgphUD6t0xTF0tvPnZ1vvc23ocI8U1JroBBdtbJHuyE4J/pcVzfsIM9wWK85X3M/9sEPD7lzlnpMxD745FfFwnNA8EihRMGs2hYx/2wUnYSoGt5GytwNZytlFgGznbKrCtnO0U2E7MXor/We4Qs6UCW/7YD63NPQ7CMAwF4KtEmRkQ6f8ZuEHUwShuGqk4qGnFgHp3DFNXS9787Cd//mMDTonSljLdgaIdLJK92BkhvPMaOL9ggccKV3fj/cKdHSL+eoVzQSo8DP78iI/bjOaJQImiyZM5/TjGY/QS1imwTs5WCmwlZ2sFtpazjQLbyNlWgW3lbKfAdnK2V2D7P/sFpZG/TgJBEMZfZXI1QmIJpYUWFPaEYu5uuNuwN7Pu3gliSCwtbOzsjI9g7CxsrjK+iKWP4AAa/giExG6+mf32t/Nt7zpKaWDYlEa4i5xF7YhC1IhywnQkPlXtTIJeW8ahqpYzH7dDfH9racuqo8KMfl2WigJXLE6Cqkvy8UJ0MSa77ATioL52b/UVOj4V6wg9oM0EEmGoGMFVXGJTXTTGwtkfX0njUh3nJqlfwCIkFIu183Oz0XKlaX/a2MCciC+VQgyOUpxIgKK60vqiovpZQnPm6fe2JcTrCQWJPW2JY2Vj50nVgrx7ceEGVE7LQ8n1PXJav25h70IgDKzJ8lIDDBAbveVQ1ufT3Tpnkh+dIc9gXk+ZuSnX8fEevJdRB6xh+vMh/6GOzX5qKTBCO+yAFpkcvPHX48PNRrS8N9rMG2Z9CwwwmW/Y/wY=",
+  "idx": "QUNWRAEACAAEAC0uDAYvEqwCiwGOAY4BjgGMAckCAAgQGCAod3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d6ICemzyAWcAGTJMZX6XAbABygHjAfwBnwIACnBhbGFicmEwMDAACQExAQkBMgIJATMDAApwYWxhYnJhMDA0BAkBNQUJATYGCQE3BwAKcGFsYWJyYTAwOAgJATkJCAIxMAoJATELAApwYWxhYnJhMDEyDAkBMw0JATQOCQE1DwAKcGFsYWJyYTAxNhAJATcRCQE4EgkBORMACnBhbGFicmEwMjAUCQExFQkBMhYJATMXAApwYWxhYnJhMDI0GAkBNRkJATYaCQE3GwAKcGFsYWJyYTAyOBwJATkdCAIzMB4JATEfAApwYWxhYnJhMDMyIAkBMyEJATQiCQE1IwAKcGFsYWJyYTAzNiQJATclCQE4JgkBOScABXBpY2FyKAAFc29icmUpAAfDkWFuZMO6KgEGsWFuZMO6KgAD6KGMKwAE8J+YgCw="
+}

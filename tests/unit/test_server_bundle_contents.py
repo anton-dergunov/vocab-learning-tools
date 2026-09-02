@@ -5,11 +5,17 @@ and fails on the server with `"/prompts": not found` — after the upload, at th
 moment. Keeping the two lists in step is what this checks.
 """
 
+import json
 import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-DOCKERFILE = ROOT / "deploy" / "acervo" / "pocketbase" / "Dockerfile"
+# Both images are built from the packaged archive, so both have to be checked. The worker one was
+# added with the dictionary compiler, which copies `dictionaries/` for the catalogue.
+DOCKERFILES = (
+    ROOT / "deploy" / "acervo" / "pocketbase" / "Dockerfile",
+    ROOT / "deploy" / "acervo" / "Dockerfile",
+)
 PACKAGER = ROOT / "scripts" / "package_acervo_server.sh"
 
 
@@ -27,20 +33,29 @@ def bundled_directories() -> set[str]:
 
 def image_sources() -> set[str]:
     sources = set()
-    for source, _destination in re.findall(r"^COPY\s+(\S+)\s+(\S+)$", DOCKERFILE.read_text(), flags=re.MULTILINE):
-        if source.startswith("--"):
-            continue
-        sources.add(pathlib.PurePosixPath(source).parts[0])
-    assert sources, "expected the Dockerfile to copy something from the build context"
+    for dockerfile in DOCKERFILES:
+        for source, _destination in re.findall(r"^COPY\s+(\S+)\s+(\S+)$", dockerfile.read_text(),
+                                               flags=re.MULTILINE):
+            if source.startswith("--"):
+                continue
+            sources.add(pathlib.PurePosixPath(source).parts[0])
+    assert sources, "expected the Dockerfiles to copy something from the build context"
     return sources
 
 
 def test_every_directory_the_image_copies_is_in_the_release_bundle():
     missing = image_sources() - bundled_directories()
     assert not missing, (
-        f"{sorted(missing)} are copied by the PocketBase image but not packaged by "
+        f"{sorted(missing)} are copied by a deployment image but not packaged by "
         f"{PACKAGER.name}, so a remote deployment cannot build"
     )
+
+
+def test_the_dictionary_catalogue_is_packaged_and_readable():
+    """The worker image reads the catalogue at build time; an unpackaged one fails the same way."""
+    assert "dictionaries" in bundled_directories()
+    catalogue = json.loads((ROOT / "dictionaries" / "catalogue.json").read_text())
+    assert catalogue["dictionaries"], "the shipped catalogue is empty"
 
 
 def test_the_capture_prompts_are_packaged_and_named_as_the_hook_reads_them():

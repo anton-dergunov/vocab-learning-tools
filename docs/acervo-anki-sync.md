@@ -114,7 +114,7 @@ services. Persistent paths below the Acervo root are:
 
 ```
 data/anki-server
-data/anki-robot
+data/acervo-worker
 input
 backups
 releases
@@ -152,7 +152,7 @@ the robot commands:
 docker compose -p acervo \
   --env-file "$HOME/.acervo/deployment.env" \
   --env-file "$HOME/.acervo/secrets.env" \
-  -f deploy/acervo/compose.yaml --profile tools run --rm anki-robot \
+  -f deploy/acervo/compose.yaml --profile tools run --rm acervo-worker anki \
   bootstrap-upload /input/manifest.json
 ```
 
@@ -266,7 +266,7 @@ robot has no local collection, then run:
 docker compose -p acervo \
   --env-file "$HOME/.acervo/deployment.env" \
   --env-file "$HOME/.acervo/secrets.env" \
-  -f deploy/acervo/compose.yaml --profile tools run --rm anki-robot \
+  -f deploy/acervo/compose.yaml --profile tools run --rm acervo-worker anki \
   adopt-server --confirm-no-other-clients
 ```
 

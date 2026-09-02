@@ -1,0 +1,9 @@
+# External dictionary compilation (docs/acervo-dictionaries-stage1.md).
+#
+# PyGlossary is pinned: 5.4.2 renamed `Glossary.read` to `directRead`, and it *silently* disables
+# seven plugins when lxml is absent — including EDICT2, the CC-CEDICT reader — warning rather than
+# failing, so a missing dependency looks like a source that has no entries. lxml is therefore a
+# direct requirement here rather than an extra.
+-r core.txt
+pyglossary==5.4.2
+lxml

@@ -5,7 +5,8 @@ PATH="$PATH:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/pa
 export PATH
 
 usage() {
-  echo "usage: run-robot.sh [--root PATH] [--input-archive FILE] {bootstrap-upload|push|export-state|adopt-server}" >&2
+  echo "usage: run-worker.sh [--root PATH] [--input-archive FILE]" >&2
+  echo "         {bootstrap-upload|push|export-state|adopt-server|build-dictionary} [ID]" >&2
   exit 2
 }
 
@@ -15,11 +16,16 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
     --input-archive) [ "$#" -ge 2 ] || usage; input_archive=$2; shift 2 ;;
-    bootstrap-upload|push|export-state|adopt-server) operation=$1; shift; break ;;
+    bootstrap-upload|push|export-state|adopt-server|build-dictionary) operation=$1; shift; break ;;
     *) usage ;;
   esac
 done
 [ "${operation:-}" ] || usage
+if [ "$operation" = build-dictionary ]; then
+  [ "$#" -eq 1 ] || usage
+  dictionary_id=$1
+  shift
+fi
 [ "$#" -eq 0 ] || usage
 
 if [ -z "$acervo_root" ]; then
@@ -68,16 +74,23 @@ case "$operation" in
     mkdir -p "$input_dir"
     tar -xzf "$input_archive" -C "$input_dir"
     # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm anki-robot \
-      "$operation" "/input/runs/$run_id/manifest.json"
+    compose $common_args --profile tools run --rm acervo-worker \
+      anki "$operation" "/input/runs/$run_id/manifest.json"
     ;;
   export-state)
     # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm anki-robot export-state
+    compose $common_args --profile tools run --rm acervo-worker anki export-state
     ;;
   adopt-server)
     # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm anki-robot \
-      adopt-server --confirm-no-other-clients
+    compose $common_args --profile tools run --rm acervo-worker \
+      anki adopt-server --confirm-no-other-clients
+    ;;
+  build-dictionary)
+    # Compiling streams a source that can be over a gigabyte, so this is deliberately a command the
+    # owner runs rather than something a checkbox triggers.
+    # shellcheck disable=SC2086
+    compose $common_args --profile tools run --rm acervo-worker \
+      dictionary build --id "$dictionary_id"
     ;;
 esac

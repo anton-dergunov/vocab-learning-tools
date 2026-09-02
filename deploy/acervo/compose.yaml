@@ -11,6 +11,7 @@ services:
       ACERVO_APP_VERSION: "${ACERVO_APP_VERSION:-}"
       ACERVO_APP_BUILD: "${ACERVO_APP_BUILD:-}"
       ACERVO_DOWNLOADS_PATH: /pb/downloads
+      ACERVO_DICTIONARIES_PATH: /pb/dictionaries
       ACERVO_PROMPTS_PATH: /pb/pb_hooks/prompts
       ACERVO_LLM_MODEL: "${ACERVO_LLM_MODEL:-gemini-3.1-flash-lite}"
       ACERVO_LLM_ENDPOINT: "${ACERVO_LLM_ENDPOINT:-https://generativelanguage.googleapis.com}"
@@ -20,6 +21,7 @@ services:
     volumes:
       - "${ACERVO_PB_DATA:-acervo-pocketbase-data}:/pb/pb_data"
       - "${ACERVO_DOWNLOADS:-acervo-downloads}:/pb/downloads:ro"
+      - "${ACERVO_DICTIONARIES:-acervo-dictionaries}:/pb/dictionaries:ro"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/api/acervo/v1/health"]
       interval: 5s
@@ -53,7 +55,10 @@ services:
       retries: 20
       start_period: 5s
 
-  anki-robot:
+  # Acervo's own server-side work. Not a running service: `profiles: ["tools"]` means it exists to
+  # be started by `docker compose run --rm`, do one job, and exit. A new job is a new subcommand of
+  # acervo_worker.py, never a new container.
+  acervo-worker:
     build:
       context: ../..
       dockerfile: deploy/acervo/Dockerfile
@@ -61,16 +66,21 @@ services:
         ANKI_VERSION: "${ACERVO_ANKI_VERSION:-26.8.1}"
     profiles: ["tools"]
     user: "${ACERVO_UID:-1000}:${ACERVO_GID:-1000}"
-    entrypoint: ["python", "/app/scripts/anki_robot.py"]
+    entrypoint: ["python", "/app/scripts/acervo_worker.py"]
     environment:
       ACERVO_ANKI_SYNC_ENDPOINT: "http://anki-sync-server:8080/"
       ACERVO_ANKI_SYNC_USERNAME: "${ACERVO_ANKI_SYNC_USERNAME:?Set ACERVO_ANKI_SYNC_USERNAME}"
       ACERVO_ANKI_SYNC_PASSWORD: "${ACERVO_ANKI_SYNC_PASSWORD:?Set ACERVO_ANKI_SYNC_PASSWORD}"
-      ACERVO_ANKI_COLLECTION: /var/lib/acervo/anki-robot/collection.anki2
-      ACERVO_ANKI_BACKUP_DIR: /var/lib/acervo/anki-robot/backups
+      ACERVO_ANKI_COLLECTION: /var/lib/acervo/worker/collection.anki2
+      ACERVO_ANKI_BACKUP_DIR: /var/lib/acervo/worker/backups
       ACERVO_ANKI_TEMPLATE_DIR: /app/templates
+      # Compiled dictionaries are written here and served read-only by PocketBase. The downloaded
+      # sources stay in the worker's own data directory and are never exposed.
+      ACERVO_DICTIONARIES_PATH: /var/lib/acervo/dictionaries
+      ACERVO_DICTIONARY_CACHE: /var/lib/acervo/worker/dictionary-sources
     volumes:
-      - "${ACERVO_ANKI_ROBOT_DATA:?Set ACERVO_ANKI_ROBOT_DATA}:/var/lib/acervo/anki-robot"
+      - "${ACERVO_WORKER_DATA:?Set ACERVO_WORKER_DATA}:/var/lib/acervo/worker"
+      - "${ACERVO_DICTIONARIES:-acervo-dictionaries}:/var/lib/acervo/dictionaries"
       - "${ACERVO_INPUT_PATH:?Set ACERVO_INPUT_PATH}:/input:ro"
     depends_on:
       anki-sync-server:
@@ -79,3 +89,4 @@ services:
 volumes:
   acervo-pocketbase-data:
   acervo-downloads:
+  acervo-dictionaries:

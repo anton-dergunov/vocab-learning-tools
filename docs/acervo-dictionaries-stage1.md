@@ -1,206 +1,296 @@
 # Stage 1 — the dictionary catalogue and compiler
 
-**Status:** requirements, nothing built. Written after Spike 0, whose results are
-[`acervo-external-dictionaries.md`](acervo-external-dictionaries.md) §11 and whose apparatus is
-[`experiments/external-dictionaries/`](../experiments/external-dictionaries/). This document states
-*what* Stage 1 must do and the decisions the spike already settled. It deliberately stops short of
-a file-by-file plan — that is the planning session's job.
+**Status:** built. Written as requirements after Spike 0, and rewritten here to record what was
+actually made and which of the requirements' assumptions did not survive contact with the sources.
+The measurements behind it are [`acervo-external-dictionaries.md`](acervo-external-dictionaries.md)
+§11; the apparatus is [`experiments/external-dictionaries/`](../experiments/external-dictionaries/).
 
-Stages 2 and 3 (the reader, the server route, the interface) stay as §10 describes them. This
-document covers Stage 1 plus the product shape Stage 3 has to serve, because that shape constrains
-what Stage 1 must produce.
+What landed: the catalogue, the compiler, the artifact format, the reader, the server surface, and
+the Dictionaries pane in Settings. **Rendering an external entry did not** — no search integration,
+no reference section in `LexemeArticle.tsx`, no HTML restyling in the interface. The stopping point
+is deliberate: mapper quality is what needs weeks of reading real entries, and that iteration is
+cheaper once the artifact, the pipeline and the install path are fixed and verifiable.
 
 ---
 
-## 1 · What the spike already settled
+## 1 · What the spike settled, and what it cost
 
-These are measured, not open. Re-deciding them needs a reason and a number.
+Measured, not open. Re-deciding any of it needs a reason and a number.
 
 | Decision | Value |
 |---|---|
 | Container | Packed blob + sidecar index, **not** SQLite (1.53× larger) |
 | Compression | DEFLATE, in **frames of 256 entries** — grouping is worth 57 % over per-entry |
 | Read library | `fflate`, already a `web/` dependency, ~8 KB, no wasm |
-| Size, worst case measured | Whole Spanish Wiktionary, 838,769 headwords → **~40 MiB** |
+| Size, worst case measured | Whole Spanish Wiktionary → **27.8 MiB** (§11.1 measured 39.7 before the index work) |
 | Lookup | p50 ~0.2 ms; latency is not a design input |
 | Memory per lookup | ~65 KiB — one decoded frame |
 | Payload tier | `fields` and `html` are within 7 % once compressed; choose on rendering, not size |
 | Coverage | 98.7–100 % of entries map, every source, nothing invented |
 
-**The single highest-value implementation detail:** the index is currently ~half the artifact
-(19.5 MiB of 39.7). Front-coding the sorted keys and varint-packing the records takes it to
-~5.7 MiB — a ~35 % cut to the whole download, with no new dependency. Build this in from the start;
-it is not an optimisation to defer.
+The index work §11.2 called "the single largest remaining size win" was built in from the start and
+delivered: 834,245 entries and 865,202 lookup keys in 19.7 MiB of payloads plus 8.1 MiB of index,
+built in about 30 seconds, byte-identical on rebuild. Read back through the TypeScript reader, `picar`
+returns its 37 senses and its IPA, `ñandú` and `de repente` resolve, and a prefix search over
+`pica` lists `pica picaba picabais picaban picabas picabe`.
 
 ---
 
-## 2 · The product shape Stage 1 must serve
+## 2 · The product shape
 
-A **Dictionaries** dialog, opened from Settings, listing pre-filled sources — online and offline
-together — that the owner turns on per device.
+A **Dictionaries** pane, opened from Settings, listing pre-filled sources — offline, online and
+link-out together — grouped by language and turned on per device.
 
-- Each row: name, languages and direction, licence, approximate download size, and its state on
-  *this* device.
+- Each row: name, direction, licence, approximate size, and its state on *this* device.
 - Online sources are enabled with one toggle and need no download.
-- Offline sources offer **"store on this device"**, which downloads and compiles the artifact
-  locally. The same dictionary can be on the phone and absent from the laptop.
-- **Resolution order for a lookup is: this device, then the server.** A dictionary the device does
-  not hold is still usable when the server has it and is reachable. This is the one place Acervo
-  reads through the network on purpose, and it does not contradict `§04` — external dictionaries
-  are not the replica, and a failure here degrades a reference surface rather than losing data.
+- Offline sources offer **"store on this device"**, which downloads the compiled artifact from the
+  server that built it. The same dictionary can be on the phone and absent from the laptop.
+- **Resolution order for a lookup is: this device, then the server, then an online source.** A
+  dictionary the device does not hold is still usable when the server has it and is reachable. This
+  is the one place Acervo reads through the network on purpose, and it does not contradict `§04` —
+  external dictionaries are not the replica, so a failure here degrades a reference surface rather
+  than losing data.
 - Removing a dictionary frees its space and leaves every other one untouched.
 
-Consequences for Stage 1: the compiler must produce **one artifact usable unchanged by both the
-server and the client**, and the catalogue must carry enough metadata to render that dialog without
-downloading anything.
+---
+
+## 3 · Decisions taken during the build
+
+### 3.1 · Compile at install time — but for one reason, not three
+
+**Compile once, at install time.** The original argument gave three reasons and only the third
+holds.
+
+- *"Grouping is where the space is"* — withdrawn. Frame grouping is a property of how the artifact
+  is packed, not of when it is packed. An on-demand compiler would group exactly the same way.
+- *"On-demand on mobile means shipping every source parser to the client"* — withdrawn. Conversion
+  would run on the server either way, so no parser ever reaches a client.
+- **Uniformity is the reason.** The server and the device hold byte-identical artifacts and run the
+  same reader. That is worth having on its own.
+
+### 3.2 · The stored payload is JSON
+
+The argument for YAML would have been reusing `parseArticle`, and §11.3 already establishes that
+external entries cannot go through it — `posLabel` is an unknown key it rejects. YAML therefore buys
+no code reuse here and costs a parser call per lookup, while `JSON.parse` is native. `yaml.ts`
+remains the editing projection for the owner's own entries.
+
+Two shape decisions came out of the same measurement. §11.0a found the `fields` tier larger than
+HTML raw and traced it to `definitionLang` and `order` repeating on every sense: `definitionLang` is
+now hoisted to the entry, where it is uniform for a whole dictionary, and `order` is gone because a
+JSON array is already ordered.
+
+### 3.3 · The downloaded source is cached, for now
+
+Kept in `data/dictionaries/src/` (already gitignored), so changing a converter is a re-run rather
+than another 1.19 GB fetch. `--discard-source` drops it. The default is commented to say it should
+flip to discarding once the conversions are trusted — the source is 2–25× the artifact and nothing
+reads it again.
+
+### 3.4 · Which HTML, and who writes it
+
+- **Opaque binaries (StarDict, slob, MDict, Zim, Yomitan zips …): the HTML is the source's own**,
+  handed over by PyGlossary. Genuinely free.
+- **Field-structured sources: there is no HTML at the source.** "Just use HTML" there still means
+  writing a renderer, which is the same work as the field mapper minus the structure.
+
+So `fields` wherever a source is field-structured, `html` where the payload arrives as markup. Tier
+2 HTML is restyled rather than merely sanitised — FreeDict payloads carry `<font color="gray">` and
+`<font class="grammar" color="green">`, whose inline colours fight Acervo's theme in both modes.
+`restyle()` strips `<font>` and presentational attributes and keeps the structure.
+
+### 3.5 · Compiled artifacts never enter git
+
+§9's decision is that Acervo ships the list, not the data. Nearly every source is share-alike or
+copyleft (kaikki, CC-CEDICT, JMdict all CC BY-SA; most FreeDict GPL), this repository is public, and
+Spanish alone is 27.8 MiB against GitHub's 1 GiB/month free LFS bandwidth. The server serves what it
+compiled, behind authentication, to the owner's own devices.
+
+### 3.6 · The frames live in IndexedDB, and the compaction survives
+
+The packed container was designed assuming OPFS. The device probe reported OPFS missing everywhere —
+including desktop Chrome, which certainly has it — because the runs were served over plain http and
+OPFS needs a secure context. The probe now reports `isSecureContext` first so this cannot be misread
+again, but the design no longer depends on the answer: IndexedDB is universally available and is
+what `localDatabase.ts` already uses, and per §10 that changes the reader and not the artifact.
+
+The condition is that IndexedDB stores **whole files, not entries** — three records per dictionary.
+A Blob is stored as opaque bytes and read lazily through `blob.slice`, so already-compressed frames
+stay compressed; the per-entry shape §11 originally modelled would have paid per-record overhead
+834,245 times. This is the one place where getting the storage shape wrong would silently undo the
+whole container decision.
+
+### 3.7 · There is no server-side lookup route
+
+Stage 2 planned `GET /api/acervo/v1/dictionary/{id}/lookup`. It is not needed. The artifact is
+served as a static file and Go's file server answers Range requests, so a dictionary the device has
+not stored is read by the *same* reader over an HTTP byte source. Adding the route would have meant
+implementing the packed format a second time, in another language, and keeping the two in step.
 
 ---
 
-## 3 · Decisions to make in planning, with the evidence
+## 4 · What was built
 
-These are genuinely open. Each has a recommendation and the measurement behind it; overturn them
-with a better argument, not by default.
+### The catalogue — `dictionaries/catalogue.json`
 
-### 3.1 · Compile at install time, or convert on demand?
+58 rows across a dozen languages: 46 offline, 2 online, 10 link-outs. Each carries id, name, kind,
+tier, format, languages, source URL, licence, attribution, approximate size and a note — enough to
+render the pane with nothing fetched.
 
-**Recommend: compile once, at install time, on whichever side is doing the installing.**
+**Breadth comes from rows; cost comes from converters.** Six converters carry all 46 offline rows,
+and the long tail costs no code at all.
 
-- **Grouping is where the space is.** 256-entry frames are 57 % smaller than compressing entries
-  individually. On-demand conversion is inherently per-entry and gives that up.
-- **On-demand on mobile means shipping every source parser to the client** and keeping the raw
-  source (94 MB gz for Spanish) beside the artifact. That is strictly worse on both axes.
-- **Uniformity is the stated goal** and compile-time gets it: the server and the device hold byte-
-  identical artifacts and run the same reader.
-
-The argument *for* on-demand was preserving the option to switch to raw HTML later. §3.4 shows that
-option is narrower than it looks, so it does not buy back the cost.
-
-### 3.2 · Store the payload as JSON or YAML?
-
-**Recommend: JSON for the stored payload. YAML is not a storage format here.**
-
-This corrects a reasonable assumption. YAML is what a *person* edits and what `yaml.ts` projects
-for the owner's own entries — but an external dictionary entry is never edited, and what gets
-displayed is the rendered article, not the document. Measured on `picar`: YAML and compact JSON are
-within 3 % raw and within 0.5 % compressed, so there is no size argument either way, and JSON parses
-with `JSON.parse` while YAML costs a parser call per lookup. `AGENTS.md` already holds the line that
-YAML is the editing projection rather than storage.
-
-### 3.3 · Keep the downloaded source as a cache?
-
-**Recommend: never on the device; optionally on the server.**
-
-On a phone the source is 2–25× the artifact and defeats the point. On the server, keeping it makes a
-rebuild cheap and space is not scarce — so make it a server-side flag, defaulting to discarding, and
-never expose it as a client concern.
-
-### 3.4 · Which HTML, and who writes it?
-
-Worth knowing before choosing a tier, because the answer is not uniform:
-
-- **Tier 2 (StarDict, and the other opaque binaries): the HTML is the source's own**, handed over by
-  PyGlossary and stored untouched. This is genuinely free.
-- **Tier 1 (kaikki, CC-CEDICT, jmdict, TEI, and both online APIs): there is no HTML at the source.**
-  The spike's `*_html` functions generate it. So "just use HTML" for a Tier 1 source still means
-  writing and maintaining a renderer — the same work as the field mapper, minus the structure.
-
-Given that, **prefer `fields` wherever a source is field-structured**, which is every non-opaque
-format measured, at 30–90 lines each. Reserve `html` for payloads that arrive as markup.
-
-One caveat carried from the spike: Tier 2 HTML needs **restyling, not just sanitising**. FreeDict
-StarDict payloads carry `<font color="gray">` and `<font class="grammar" color="green">`, whose
-inline colours fight Acervo's theme in both light and dark. Strip `<font>`, keep the structure,
-restyle from class names where they exist.
-
----
-
-## 4 · Requirements — the compiler
-
-A script that turns a downloaded source into the artifact triple. Reuse the spike's readers and
-mappers (`experiments/external-dictionaries/sources.py`) as the starting point; they are measured
-and correct, but they are experiment code and should be reviewed rather than copied wholesale.
-
-1. **Output** — three files per dictionary, named by catalogue id:
-   `<id>.dict` (payloads, DEFLATE frames of 256), `<id>.idx` (front-coded sorted headwords +
-   varint records), `<id>.json` (metadata: name, source URL, licence, attribution, build date,
-   entry count, schema version).
-2. **Front-code the index and varint the records** (§1). Do not ship the naive fixed-width index.
-3. **Support both payload tiers**, selected per source by the catalogue, not by a flag at the call
-   site.
-4. **Stream.** The largest source is 1.19 GB and must never be held in memory. The spike's
-   adjacent-run grouping over kaikki works and is verified — headword occurrences are contiguous
-   even though the file is unsorted.
-5. **Part of speech follows §11.3:** emit `pos` only when the source's value genuinely maps to
-   Acervo's enum, always emit `posLabel` verbatim, invent nothing. A source with no part of speech
-   (CC-CEDICT) emits neither.
-6. **Be re-runnable and deterministic** — the same input must produce a byte-identical artifact, so
-   a rebuild can be diffed and a mirror can be checksummed.
-7. **Record what it dropped.** Each source drops fields with no home (29 of them for kaikki `es→en`).
-   The metadata should say so rather than leaving it implicit.
-
-Source formats to support at Stage 1, in priority order — **the wiktextract mapper is the only
-load-bearing one**, since it covers ~20 Wiktionary editions and hundreds of languages:
-
-| Source | Effort measured |
+| Converter | What it carries |
 |---|---|
-| wiktextract JSONL (kaikki, both directions) | ~90 lines |
-| CC-CEDICT | ~30 lines |
-| jmdict-simplified | ~45 lines |
-| FreeDict TEI P5 | ~35 lines |
-| Anything PyGlossary reads → `html` | shell-out |
+| `wiktextract` | 18 rows. The only load-bearing one: ~20 Wiktionary editions and hundreds of languages, in both the per-language extracts and the whole-edition dumps |
+| `cc-cedict` | CC-CEDICT and CC-Canto — the same line grammar, the second with `{jyutping}` |
+| `jmdict` | jmdict-simplified |
+| `freedict-tei` | FreeDict's ~150 dictionaries, resolved through its own database so a version bump does not rot the row |
+| `moedict` | 重編國語辭典 — the monolingual Chinese answer |
+| `pyglossary` | Everything opaque, with no per-source code: StarDict, slob, MDict, DSL, Zim, XDXF, and **Yomitan zips**, which opens the prebuilt `wty-release` channel of 100+ languages |
 
-**PyGlossary notes from the spike:** version 5.4.2 renamed `Glossary.read` to `directRead`, and it
-silently disables seven plugins — including **XDXF** — when `lxml` is missing, warning rather than
-failing. Pin the version and depend on `lxml` explicitly.
+Deliberately excluded: **BKRS** (§9 — the best `zh→ru` content and the murkiest provenance here),
+any API needing a key (§6 puts bespoke connectors out of scope), PanLex and Tatoeba (bare pairs and
+sentences rather than dictionary entries), and the deprecated Glosbe API.
+
+Verified end to end: `es`, `en`, `zh`, plus `ja` and `ru` through the shared converters. The rest
+are rows on converters those already exercise, so a broken row is a catalogue fix and not new code.
+`build_dictionary.py verify --id <id>` compiles a sample into a throwaway directory and reports what
+came out, which is how a row is promoted from listed to trusted.
+
+### The compiler — `scripts/build_dictionary.py` over `src/vocabgen/dictionaries/`
+
+`container.py` owns the on-disk format and nothing else; `converters.py` owns the source formats and
+nothing else; `build.py` joins them, fetches (cached), and takes a progress callback rather than
+printing — so the "build it from the interface" job that comes later is a *caller* rather than a
+second pipeline. `model.py` is the render-only entry, deliberately not `ArticleDraft`.
+
+It streams (the largest source is 1.19 GB and is never resident), is deterministic (two runs produce
+byte-identical `.dict` and `.idx`; `builtAt` lives in the `.json`, which is excluded), and records
+what it dropped and which parts of speech it could not map into the artifact's own metadata.
+
+**PyGlossary is pinned at 5.4.2 with `lxml` as an explicit dependency.** Without `lxml` it silently
+disables seven plugins — including `EDICT2`, the CC-CEDICT reader — warning rather than failing, so
+a missing dependency looks like a source with no entries. This was confirmed the hard way.
+
+**PyGlossary is deliberately not used for the field-structured sources**, even though 5.4.2 has
+readers for all of them. Every one of its plugins emits HTML — the wiktextract reader builds an lxml
+tree writing `<div class="pos"><font color="green">` — and it yields one entry per JSONL line with
+no headword grouping, so `gratis` would arrive as separate adjective and adverb entries. Routing
+kaikki through it would turn the one load-bearing structured source into an opaque one.
+
+### The artifact format
+
+```
+<id>.dict   payloads concatenated in index order, raw DEFLATE, frames of 256 entries
+<id>.idx    header, then five varint sections: frame lengths, per-frame payload offsets,
+            per-entry payload lengths, restart offsets, front-coded keys
+<id>.json   name, source, licence, attribution, counts, what was dropped, checksums
+```
+
+Three details are load-bearing and were not in the original requirements:
+
+- **Restart points.** Front-coding destroys the random access a binary search needs, so every 16th
+  key is stored whole with its offset recorded. A lookup binary-searches the restart table and scans
+  one bucket of at most 16.
+- **Per-frame offsets into the payload-length section.** Without them, locating an entry inside its
+  frame means holding every entry's length — about 2 MiB per dictionary, which does not survive ten
+  dictionaries being installed. With them, resident state is the header, the frame table and the
+  restart table. Measured on the finished Spanish artifact with the real reader: **499 KiB
+  resident**, 210 KiB to open it, and **12.6 KiB read to answer one lookup**. Ten open at once cost
+  about 5 MiB.
+- **Byte-wise UTF-8 ordering**, not locale collation and not the platform's string comparison.
+  JavaScript compares UTF-16 code units, which disagrees with UTF-8 byte order above the BMP.
+
+Every key carries an explicit entry index, so **aliases are free**: the traditional spelling of a
+simplified headword and a case-folded spelling of an accented one point at an existing entry and
+cost one key each.
+
+A headword can hold **more than one article**. CC-CEDICT writes one line per reading, so simplified
+行 arrives as *háng*, *héng* and *xíng*; the payload is always a JSON array and the packer splices
+them. An earlier build kept only the first and silently lost 3 % of that dictionary — which is why
+the metadata now reports how many entries were folded together.
+
+### `acervo-worker`
+
+`anki-robot` was never a service — `profiles: ["tools"]`, no ports, no restart policy, started by
+`docker compose run --rm` to do one job and exit. It is now `acervo-worker` with subcommand dispatch
+(`anki …`, `dictionary …`), which is where Acervo's server-side Python converges as it grows. Zero
+running containers were added.
+
+### The server surface
+
+- `GET /api/acervo/dictionaries/{path...}` — the artifacts, `$apis.static` behind `$apis.requireAuth`
+  and outside `pb_public`, so the service worker never tries to precache tens of MiB and the server
+  is not a public redistributor of share-alike data.
+- `GET /api/acervo/v1/dictionaries` — what this server has compiled, from the metadata sidecars.
+- `GET /api/acervo/v1/dictionaries/online/{source}` — the two connectors. §11.5 withdrew the claim
+  that they share the offline mapper: three Wiktionary-derived sources, three field shapes.
+
+### The client
+
+`dictionary.ts` is the reader — pure, over a `ByteSource`. `dictionaries.ts` owns the catalogue, the
+transports, the per-device preferences and the resolution order, the way `sync.ts` owns the graph
+transport. `dictionaryStore.ts` is a **separate IndexedDB database** from the replica, so neither
+wipe touches the other. `DictionaryPanel.tsx` is the Settings pane.
+
+One correction found by a test: the catalogue is a starting list, **not an allow-list**. A server can
+compile a dictionary nobody wrote a row for, and an installed artifact carries its own name, licence
+and languages — so both the pane and `lookup` work from the union of the catalogue and what is
+actually installed.
 
 ---
 
-## 5 · Requirements — the catalogue
-
-A tracked `dictionaries/catalogue.json`, per §9: Acervo ships the *list*, never the data.
-
-Each entry needs: id, display name, source and target languages, direction, kind (`offline` /
-`online`), tier (`fields` / `html`), source URL, format, licence and attribution string, approximate
-download and installed sizes, and a note field. Enough to render the dialog in §2 with nothing
-fetched.
-
-- **Start with `es` and `en` only** and grow on demand (§9).
-- **Include the two online sources**, which the spike verified at 100 % coverage of held words:
-  `freedictionaryapi` and `wikimedia-rest`. They need **one small connector each, ~40 lines** —
-  §7's claim that they share the offline mapper is withdrawn (§11.5). Wikimedia's definition
-  endpoint lives only on `en.wiktionary.org`, keyed by term with languages inside the response.
-  Percent-encode headwords: accented and multi-word entries are ordinary.
-- **Keep unclear provenance out** — BKRS especially (§9).
-- Attribution and licence must be available to the interface wherever an entry is rendered, so they
-  belong in both the catalogue and each artifact's metadata.
-
----
-
-## 6 · Explicitly not Stage 1
-
-The reader interface, the server route, and every piece of interface are Stages 2 and 3. So are:
-grounding; any scraper; per-entry caching of dictionary data; bespoke connectors beyond the two
-Wiktionary-shaped ones; and anything that puts a dictionary row in PocketBase.
-
-**One thing must happen before Stage 1 is called done, though:** `probe.html` has still not been run
-on a phone or in the `macos/` WKWebView host. The packed container assumes OPFS with a sync access
-handle, and that assumption is currently inference from documentation rather than measurement. If it
-does not hold on iOS, the fallback is IndexedDB holding the same frames, which changes the reader
-but not the artifact — so the risk is contained, but it should be retired early rather than late.
-
----
-
-## 7 · Verification
+## 5 · Verification
 
 ```bash
-# the compiler, on the control case and the real one
-.venv/bin/python scripts/build_dictionary.py --id cc-cedict-zh-en
-.venv/bin/python scripts/build_dictionary.py --id kaikki-es-es
+uv pip install -r requirements/dev.txt
 
-#  · rebuild twice, diff the artifacts: must be byte-identical
-#  · index must be front-coded — compare against the naive size in §11.2
-#  · spot-check `picar` against es.wiktionary.org, and a headword with no part of speech
-#  · every artifact carries licence and attribution in its metadata
+.venv/bin/python scripts/build_dictionary.py list
+.venv/bin/python scripts/build_dictionary.py build --id cc-cedict
+.venv/bin/python scripts/build_dictionary.py build --id kaikki-es-es
+.venv/bin/python scripts/build_dictionary.py verify --id <any other row>
 
-npm --prefix web run test && .venv/bin/python -m pytest
+#  · rebuild, diff .dict and .idx: byte-identical
+#  · spot-check `picar` against es.wiktionary.org — 37 senses, IPA, and a `verb` label
+#  · a CC-CEDICT entry has no part of speech at all, and 行 returns three articles
+#  · either Chinese spelling, and an accented word typed in lower case, find the same entry
+
+.venv/bin/python -m pytest tests/unit/dictionaries/
+npm --prefix web run test
+npm run test:hooks
+npm --prefix web run build && npm run test:pwa
+
+# end to end, against a real server
+docker compose -f deploy/acervo/compose.yaml --profile tools run --rm acervo-worker \
+  dictionary build --id cc-cedict
+#  · Settings ▸ Dictionaries lists it as being on the server
+#  · store on this device → progress → stored here, with its entry count
+#  · stop PocketBase → the stored dictionary still answers a lookup
+#  · not stored, server down → the row says so, and nothing is written
+#  · DevTools ▸ Application ▸ Storage: persisted=true, usage ≈ the artifact size
 ```
+
+The format is written in Python and read in TypeScript, so it is checked where it actually crosses
+that boundary: `tests/unit/dictionaries/test_fixture.py` builds a small artifact and
+`web/src/dictionary.test.ts` opens those same bytes with the real reader. Regenerate with
+`ACERVO_UPDATE_FIXTURES=1`, and treat the failure as the moment to look at both halves together.
+
+---
+
+## 6 · What is still open
+
+- **Rendering.** The search surface, the reference section in `LexemeArticle.tsx`, "Add to my words",
+  and the sanitising and restyling of an `html` payload where it is displayed.
+- **Mapper quality.** The reason to stop here. Reading real entries will produce a list of
+  corrections, and the pipeline is now cheap to re-run.
+- **Building from the interface.** `build.build` already takes a progress callback and raises rather
+  than printing, so this is a job wrapper plus a status route, with no change to the artifact,
+  catalogue, client or reader.
+- **Two probe measurements.** Whether `storage.estimate().usage` grows by roughly what was written,
+  and whether a `Blob.slice` out of a 40 MiB stored Blob reads a range rather than materialising the
+  file. The probe now covers both and needs re-running over https. If WebKit materialises, the
+  fallback is chunking the payload into ~1 MiB records — twenty per dictionary — which changes the
+  store and not the artifact.
+- **A catalogue health check.** §9's monthly script that HEADs every URL and reports what moved. The
+  FreeDict and GitHub resolvers already remove the most common cause of rot.

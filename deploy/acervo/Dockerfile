@@ -6,17 +6,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src
 
+# PyGlossary is pinned and lxml is explicit: without lxml it silently disables seven plugins,
+# including the CC-CEDICT reader, warning rather than failing (docs §11.4).
 RUN python -m pip install --no-cache-dir \
     "anki==${ANKI_VERSION}" \
     "pydantic>=2,<3" \
-    "python-slugify>=8,<9"
+    "python-slugify>=8,<9" \
+    "pyglossary==5.4.2" \
+    "lxml"
 
 WORKDIR /app
 COPY src /app/src
-COPY scripts/anki_robot.py /app/scripts/anki_robot.py
+COPY dictionaries /app/dictionaries
+COPY scripts/acervo_worker.py /app/scripts/acervo_worker.py
 COPY scripts/integration/anki_sync_client.py /app/scripts/integration/anki_sync_client.py
 COPY templates /app/templates
 
-RUN mkdir -p /var/lib/acervo/anki-server /var/lib/acervo/anki-robot /input
+RUN mkdir -p /var/lib/acervo/anki-server /var/lib/acervo/worker /var/lib/acervo/dictionaries /input
 
 EXPOSE 8080

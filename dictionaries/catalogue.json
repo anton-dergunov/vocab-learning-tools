@@ -1,0 +1,914 @@
+{
+  "version": 1,
+  "note": "Acervo ships this list, never the data (docs/acervo-external-dictionaries.md §9). Every row is a set of facts and a URL; the download happens between you and the source, and a compiled dictionary is never committed to this repository.",
+  "dictionaries": [
+    {
+      "id": "kaikki-es-en",
+      "name": "Wiktionary Spanish (English definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "es",
+      "targetLang": "en",
+      "url": "https://kaikki.org/dictionary/Spanish/kaikki.org-dictionary-Spanish.jsonl",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 1026517383,
+      "note": "The English Wiktionary's coverage of this language: senses, IPA, tags and examples."
+    },
+    {
+      "id": "kaikki-en-en",
+      "name": "Wiktionary English (English definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "en",
+      "targetLang": "en",
+      "url": "https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 3212282689,
+      "note": "The English Wiktionary's coverage of this language: senses, IPA, tags and examples."
+    },
+    {
+      "id": "kaikki-zh-en",
+      "name": "Wiktionary Chinese (English definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "zh",
+      "targetLang": "en",
+      "url": "https://kaikki.org/dictionary/Chinese/kaikki.org-dictionary-Chinese.jsonl",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 1193012401,
+      "note": "The English Wiktionary's coverage of this language: senses, IPA, tags and examples."
+    },
+    {
+      "id": "kaikki-de-en",
+      "name": "Wiktionary German (English definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "de",
+      "targetLang": "en",
+      "url": "https://kaikki.org/dictionary/German/kaikki.org-dictionary-German.jsonl",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 1071107495,
+      "note": "The English Wiktionary's coverage of this language: senses, IPA, tags and examples."
+    },
+    {
+      "id": "kaikki-fr-en",
+      "name": "Wiktionary French (English definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "fr",
+      "targetLang": "en",
+      "url": "https://kaikki.org/dictionary/French/kaikki.org-dictionary-French.jsonl",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 573614254,
+      "note": "The English Wiktionary's coverage of this language: senses, IPA, tags and examples."
+    },
+    {
+      "id": "kaikki-ja-en",
+      "name": "Wiktionary Japanese (English definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "ja",
+      "targetLang": "en",
+      "url": "https://kaikki.org/dictionary/Japanese/kaikki.org-dictionary-Japanese.jsonl",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 329102084,
+      "note": "The English Wiktionary's coverage of this language: senses, IPA, tags and examples."
+    },
+    {
+      "id": "kaikki-ru-en",
+      "name": "Wiktionary Russian (English definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "ru",
+      "targetLang": "en",
+      "url": "https://kaikki.org/dictionary/Russian/kaikki.org-dictionary-Russian.jsonl",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 936640504,
+      "note": "The English Wiktionary's coverage of this language: senses, IPA, tags and examples."
+    },
+    {
+      "id": "kaikki-it-en",
+      "name": "Wiktionary Italian (English definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "it",
+      "targetLang": "en",
+      "url": "https://kaikki.org/dictionary/Italian/kaikki.org-dictionary-Italian.jsonl",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 761816243,
+      "note": "The English Wiktionary's coverage of this language: senses, IPA, tags and examples."
+    },
+    {
+      "id": "kaikki-pt-en",
+      "name": "Wiktionary Portuguese (English definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "pt",
+      "targetLang": "en",
+      "url": "https://kaikki.org/dictionary/Portuguese/kaikki.org-dictionary-Portuguese.jsonl",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 560987550,
+      "note": "The English Wiktionary's coverage of this language: senses, IPA, tags and examples."
+    },
+    {
+      "id": "kaikki-es-es",
+      "name": "Spanish Wiktionary (Spanish definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "es",
+      "targetLang": "es",
+      "url": "https://kaikki.org/eswiktionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 99931924,
+      "options": {
+        "langCode": "es",
+        "filename": "kaikki-eswiktionary.jsonl.gz"
+      },
+      "note": "The monolingual answer, and larger than the English edition's Spanish coverage."
+    },
+    {
+      "id": "kaikki-ru-ru",
+      "name": "Russian Wiktionary (Russian definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "ru",
+      "targetLang": "ru",
+      "url": "https://kaikki.org/ruwiktionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 290531383,
+      "options": {
+        "langCode": "ru",
+        "filename": "kaikki-ruwiktionary.jsonl.gz"
+      }
+    },
+    {
+      "id": "kaikki-en-ru",
+      "name": "Wiktionary English → Russian",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "en",
+      "targetLang": "ru",
+      "url": "https://kaikki.org/ruwiktionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 290531383,
+      "options": {
+        "langCode": "en",
+        "filename": "kaikki-ruwiktionary.jsonl.gz"
+      },
+      "note": "The only large source of Russian definitions for English words."
+    },
+    {
+      "id": "kaikki-es-ru",
+      "name": "Wiktionary Spanish → Russian",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "es",
+      "targetLang": "ru",
+      "url": "https://kaikki.org/ruwiktionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 290531383,
+      "options": {
+        "langCode": "es",
+        "filename": "kaikki-ruwiktionary.jsonl.gz"
+      },
+      "note": "Thin — about 21,000 senses. There is no good open Spanish→Russian dictionary."
+    },
+    {
+      "id": "kaikki-zh-ru",
+      "name": "Wiktionary Chinese → Russian",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "zh",
+      "targetLang": "ru",
+      "url": "https://kaikki.org/ruwiktionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 290531383,
+      "options": {
+        "langCode": "zh",
+        "filename": "kaikki-ruwiktionary.jsonl.gz"
+      },
+      "note": "Thin — about 11,000 Mandarin senses, but the legal zh→ru baseline."
+    },
+    {
+      "id": "kaikki-zh-zh",
+      "name": "Chinese Wiktionary (Chinese definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "zh",
+      "targetLang": "zh",
+      "url": "https://kaikki.org/zhwiktionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 226750313,
+      "options": {
+        "langCode": "zh",
+        "filename": "kaikki-zhwiktionary.jsonl.gz"
+      }
+    },
+    {
+      "id": "kaikki-de-de",
+      "name": "German Wiktionary (German definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "de",
+      "targetLang": "de",
+      "url": "https://kaikki.org/dewiktionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 303380639,
+      "options": {
+        "langCode": "de",
+        "filename": "kaikki-dewiktionary.jsonl.gz"
+      }
+    },
+    {
+      "id": "kaikki-fr-fr",
+      "name": "French Wiktionary (French definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "fr",
+      "targetLang": "fr",
+      "url": "https://kaikki.org/frwiktionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 714811390,
+      "options": {
+        "langCode": "fr",
+        "filename": "kaikki-frwiktionary.jsonl.gz"
+      },
+      "note": "The only large open French resource; the good French dictionaries are not licensable."
+    },
+    {
+      "id": "kaikki-ja-ja",
+      "name": "Japanese Wiktionary (Japanese definitions)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "wiktextract",
+      "sourceLang": "ja",
+      "targetLang": "ja",
+      "url": "https://kaikki.org/jawiktionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 61554739,
+      "options": {
+        "langCode": "ja",
+        "filename": "kaikki-jawiktionary.jsonl.gz"
+      }
+    },
+    {
+      "id": "cc-cedict",
+      "name": "CC-CEDICT",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "cc-cedict",
+      "sourceLang": "zh-Hans",
+      "targetLang": "en",
+      "url": "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "CC-CEDICT, MDBG. CC BY-SA 4.0.",
+      "approxDownloadBytes": 3971561,
+      "note": "Traditional, simplified and numbered pinyin on one line. Carries no part of speech, so entries show none. Either spelling finds the entry."
+    },
+    {
+      "id": "cc-canto",
+      "name": "CC-Canto (Cantonese)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "cc-cedict",
+      "sourceLang": "yue",
+      "targetLang": "en",
+      "url": "https://cantonese.org/cccanto-170202.zip",
+      "licence": "CC BY-SA 3.0",
+      "attribution": "CC-Canto, Pleco Software. CC BY-SA 3.0.",
+      "approxDownloadBytes": 1282537,
+      "options": {
+        "member": "cccanto-webdist.txt"
+      },
+      "note": "Cantonese readings over CC-CEDICT content. Last published 2017."
+    },
+    {
+      "id": "jmdict-eng",
+      "name": "JMdict (Japanese → English)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "jmdict",
+      "sourceLang": "ja",
+      "targetLang": "en",
+      "url": "https://github.com/scriptin/jmdict-simplified/releases/latest",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "JMdict, Electronic Dictionary Research and Development Group. CC BY-SA 4.0.",
+      "options": {
+        "resolve": "github-release",
+        "repo": "scriptin/jmdict-simplified",
+        "asset": "^jmdict-eng-[0-9].*\\.json\\.tgz$",
+        "member": ".json"
+      },
+      "note": "Sense-tagged and part-of-speech-tagged, maintained for thirty years."
+    },
+    {
+      "id": "freedict-eng-rus",
+      "name": "FreeDict English → Russian",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "freedict-tei",
+      "sourceLang": "en",
+      "targetLang": "ru",
+      "url": "https://freedict.org/downloads/#eng-rus",
+      "licence": "GPL",
+      "attribution": "FreeDict project. GPL.",
+      "options": {
+        "resolve": "freedict",
+        "pair": "eng-rus",
+        "platform": "src",
+        "member": ".tei"
+      }
+    },
+    {
+      "id": "freedict-deu-eng",
+      "name": "FreeDict German → English",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "freedict-tei",
+      "sourceLang": "de",
+      "targetLang": "en",
+      "url": "https://freedict.org/downloads/#deu-eng",
+      "licence": "GPL",
+      "attribution": "FreeDict project. GPL.",
+      "options": {
+        "resolve": "freedict",
+        "pair": "deu-eng",
+        "platform": "src",
+        "member": ".tei"
+      },
+      "note": "517,534 headwords — the largest open bilingual dictionary in existence."
+    },
+    {
+      "id": "freedict-eng-deu",
+      "name": "FreeDict English → German",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "freedict-tei",
+      "sourceLang": "en",
+      "targetLang": "de",
+      "url": "https://freedict.org/downloads/#eng-deu",
+      "licence": "GPL",
+      "attribution": "FreeDict project. GPL.",
+      "options": {
+        "resolve": "freedict",
+        "pair": "eng-deu",
+        "platform": "src",
+        "member": ".tei"
+      }
+    },
+    {
+      "id": "freedict-jpn-eng",
+      "name": "FreeDict Japanese → English",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "freedict-tei",
+      "sourceLang": "ja",
+      "targetLang": "en",
+      "url": "https://freedict.org/downloads/#jpn-eng",
+      "licence": "GPL",
+      "attribution": "FreeDict project. GPL.",
+      "options": {
+        "resolve": "freedict",
+        "pair": "jpn-eng",
+        "platform": "src",
+        "member": ".tei"
+      }
+    },
+    {
+      "id": "freedict-eng-spa",
+      "name": "FreeDict English → Spanish",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "freedict-tei",
+      "sourceLang": "en",
+      "targetLang": "es",
+      "url": "https://freedict.org/downloads/#eng-spa",
+      "licence": "GPL",
+      "attribution": "FreeDict project. GPL.",
+      "options": {
+        "resolve": "freedict",
+        "pair": "eng-spa",
+        "platform": "src",
+        "member": ".tei"
+      }
+    },
+    {
+      "id": "freedict-spa-eng",
+      "name": "FreeDict Spanish → English",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "freedict-tei",
+      "sourceLang": "es",
+      "targetLang": "en",
+      "url": "https://freedict.org/downloads/#spa-eng",
+      "licence": "GPL",
+      "attribution": "FreeDict project. GPL.",
+      "options": {
+        "resolve": "freedict",
+        "pair": "spa-eng",
+        "platform": "src",
+        "member": ".tei"
+      },
+      "note": "Only 4,502 headwords. Listed for completeness; the Wiktionary sources are far better here."
+    },
+    {
+      "id": "freedict-fra-eng",
+      "name": "FreeDict French → English",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "freedict-tei",
+      "sourceLang": "fr",
+      "targetLang": "en",
+      "url": "https://freedict.org/downloads/#fra-eng",
+      "licence": "GPL",
+      "attribution": "FreeDict project. GPL.",
+      "options": {
+        "resolve": "freedict",
+        "pair": "fra-eng",
+        "platform": "src",
+        "member": ".tei"
+      },
+      "note": "Only 8,505 headwords, effectively unusable."
+    },
+    {
+      "id": "moedict-zh",
+      "name": "重編國語辭典 (MOE, monolingual)",
+      "kind": "offline",
+      "tier": "fields",
+      "format": "moedict",
+      "sourceLang": "zh-Hant",
+      "targetLang": "zh-Hant",
+      "url": "https://raw.githubusercontent.com/g0v/moedict-data/main/dict-revised_bkup.json",
+      "licence": "Taiwan MOE open data",
+      "attribution": "教育部重編國語辭典修訂本, via g0v/moedict-data.",
+      "approxDownloadBytes": 75399170,
+      "options": {
+        "filename": "moedict-revised.json"
+      },
+      "note": "The monolingual Chinese answer. Traditional characters and Taiwan norms."
+    },
+    {
+      "id": "wikdict-es-en",
+      "name": "WikDict es→en",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "es",
+      "targetLang": "en",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-es-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 954820,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wikdict-en-es",
+      "name": "WikDict en→es",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "en",
+      "targetLang": "es",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-en-es.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 3820237,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wikdict-es-ru",
+      "name": "WikDict es→ru",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "es",
+      "targetLang": "ru",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-es-ru.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 532605,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wikdict-en-ru",
+      "name": "WikDict en→ru",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "en",
+      "targetLang": "ru",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-en-ru.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 4161986,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wikdict-ru-en",
+      "name": "WikDict ru→en",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "ru",
+      "targetLang": "en",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-ru-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 1262104,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wikdict-de-en",
+      "name": "WikDict de→en",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "de",
+      "targetLang": "en",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-de-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 11474544,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wikdict-en-de",
+      "name": "WikDict en→de",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "en",
+      "targetLang": "de",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-en-de.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 4274164,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wikdict-fr-en",
+      "name": "WikDict fr→en",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "fr",
+      "targetLang": "en",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-fr-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 4839120,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wikdict-it-en",
+      "name": "WikDict it→en",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "it",
+      "targetLang": "en",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-it-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 959398,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wikdict-pt-en",
+      "name": "WikDict pt→en",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "pt",
+      "targetLang": "en",
+      "url": "https://download.wikdict.com/dictionaries/stardict/wikdict-pt-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "WikDict, derived from DBnary/Wiktionary. CC BY-SA 4.0.",
+      "approxDownloadBytes": 330109,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Translation pairs rather than definitions, cleaned and cross-checked."
+    },
+    {
+      "id": "wty-es-en",
+      "name": "Wiktionary es→en (Yomitan build)",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "es",
+      "targetLang": "en",
+      "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict/es/en/wty-es-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 21441806,
+      "options": {
+        "pyglossaryFormat": "Yomichan"
+      },
+      "note": "Prebuilt from Wiktionary by wiktionary-to-yomitan — the fastest route to a per-language dictionary without running wiktextract over a multi-gigabyte dump."
+    },
+    {
+      "id": "wty-cmn-en",
+      "name": "Wiktionary cmn→en (Yomitan build)",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "cmn",
+      "targetLang": "en",
+      "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict/cmn/en/wty-cmn-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 26823,
+      "options": {
+        "pyglossaryFormat": "Yomichan"
+      },
+      "note": "Prebuilt from Wiktionary by wiktionary-to-yomitan — the fastest route to a per-language dictionary without running wiktextract over a multi-gigabyte dump."
+    },
+    {
+      "id": "wty-de-en",
+      "name": "Wiktionary de→en (Yomitan build)",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "de",
+      "targetLang": "en",
+      "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict/de/en/wty-de-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 17023294,
+      "options": {
+        "pyglossaryFormat": "Yomichan"
+      },
+      "note": "Prebuilt from Wiktionary by wiktionary-to-yomitan — the fastest route to a per-language dictionary without running wiktextract over a multi-gigabyte dump."
+    },
+    {
+      "id": "wty-fr-en",
+      "name": "Wiktionary fr→en (Yomitan build)",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "fr",
+      "targetLang": "en",
+      "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict/fr/en/wty-fr-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 10927921,
+      "options": {
+        "pyglossaryFormat": "Yomichan"
+      },
+      "note": "Prebuilt from Wiktionary by wiktionary-to-yomitan — the fastest route to a per-language dictionary without running wiktextract over a multi-gigabyte dump."
+    },
+    {
+      "id": "wty-ja-en",
+      "name": "Wiktionary ja→en (Yomitan build)",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "ja",
+      "targetLang": "en",
+      "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict/ja/en/wty-ja-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 14041994,
+      "options": {
+        "pyglossaryFormat": "Yomichan"
+      },
+      "note": "Prebuilt from Wiktionary by wiktionary-to-yomitan — the fastest route to a per-language dictionary without running wiktextract over a multi-gigabyte dump."
+    },
+    {
+      "id": "wty-ru-en",
+      "name": "Wiktionary ru→en (Yomitan build)",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "ru",
+      "targetLang": "en",
+      "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict/ru/en/wty-ru-en.zip",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via kaikki.org (wiktextract). CC BY-SA 4.0.",
+      "approxDownloadBytes": 26046509,
+      "options": {
+        "pyglossaryFormat": "Yomichan"
+      },
+      "note": "Prebuilt from Wiktionary by wiktionary-to-yomitan — the fastest route to a per-language dictionary without running wiktextract over a multi-gigabyte dump."
+    },
+    {
+      "id": "ecdict-en-zh",
+      "name": "ECDICT (English → Chinese)",
+      "kind": "offline",
+      "tier": "html",
+      "format": "pyglossary",
+      "sourceLang": "en",
+      "targetLang": "zh-Hans",
+      "url": "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-stardict-28.zip",
+      "licence": "MIT",
+      "attribution": "ECDICT, skywind3000. MIT.",
+      "approxDownloadBytes": 70415834,
+      "options": {
+        "member": "*.ifo"
+      },
+      "note": "Carries frequency ranks, Collins stars, Oxford 3000 and exam tags."
+    },
+    {
+      "id": "freedictionaryapi",
+      "name": "Free Dictionary API",
+      "kind": "online",
+      "tier": "fields",
+      "sourceLang": "*",
+      "targetLang": "*",
+      "url": "https://freedictionaryapi.com/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "freedictionaryapi.com, Wiktionary-derived. CC BY-SA 4.0.",
+      "note": "Multilingual and Wiktionary-backed. No download and no key; looked up through your server."
+    },
+    {
+      "id": "wikimedia-rest",
+      "name": "Wiktionary definitions (Wikimedia)",
+      "kind": "online",
+      "tier": "fields",
+      "sourceLang": "*",
+      "targetLang": "*",
+      "url": "https://en.wiktionary.org/api/rest_v1/",
+      "licence": "CC BY-SA 4.0",
+      "attribution": "Wiktionary contributors, via the Wikimedia REST API. CC BY-SA 4.0.",
+      "note": "The official fallback. Lives only on en.wiktionary.org, with languages inside the response."
+    },
+    {
+      "id": "dle-rae",
+      "name": "Diccionario de la lengua española (RAE)",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "es",
+      "targetLang": "es",
+      "url": "https://dle.rae.es/",
+      "licence": "Proprietary",
+      "attribution": "Diccionario de la lengua española (RAE)",
+      "note": "The dictionary Spanish speakers actually cite. Copyrighted, no API, and Acervo does not ship scrapers."
+    },
+    {
+      "id": "spanishdict",
+      "name": "SpanishDict",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "es",
+      "targetLang": "en",
+      "url": "https://www.spanishdict.com/",
+      "licence": "Proprietary",
+      "attribution": "SpanishDict"
+    },
+    {
+      "id": "tlfi",
+      "name": "Trésor de la langue française informatisé",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "fr",
+      "targetLang": "fr",
+      "url": "https://www.cnrtl.fr/definition/",
+      "licence": "Proprietary",
+      "attribution": "Trésor de la langue française informatisé",
+      "note": "100,000 words and 430,000 examples. Free to consult, not redistributable."
+    },
+    {
+      "id": "academie-francaise",
+      "name": "Dictionnaire de l'Académie française",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "fr",
+      "targetLang": "fr",
+      "url": "https://www.dictionnaire-academie.fr/",
+      "licence": "Proprietary",
+      "attribution": "Dictionnaire de l'Académie française"
+    },
+    {
+      "id": "dict-cc",
+      "name": "dict.cc",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "de",
+      "targetLang": "en",
+      "url": "https://www.dict.cc/",
+      "licence": "Proprietary",
+      "attribution": "dict.cc",
+      "note": "Proprietary since 2005."
+    },
+    {
+      "id": "dwds",
+      "name": "DWDS",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "de",
+      "targetLang": "de",
+      "url": "https://www.dwds.de/wb/",
+      "licence": "Proprietary",
+      "attribution": "DWDS",
+      "note": "Academic-grade contemporary German."
+    },
+    {
+      "id": "linguee",
+      "name": "Linguee",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "*",
+      "targetLang": "*",
+      "url": "https://www.linguee.com/",
+      "licence": "Proprietary",
+      "attribution": "Linguee"
+    },
+    {
+      "id": "reverso",
+      "name": "Reverso Context",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "*",
+      "targetLang": "*",
+      "url": "https://context.reverso.net/translation/",
+      "licence": "Proprietary",
+      "attribution": "Reverso Context"
+    },
+    {
+      "id": "jisho",
+      "name": "Jisho",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "ja",
+      "targetLang": "en",
+      "url": "https://jisho.org/search/",
+      "licence": "Proprietary",
+      "attribution": "Jisho"
+    },
+    {
+      "id": "pleco",
+      "name": "Pleco",
+      "kind": "link",
+      "tier": "html",
+      "sourceLang": "zh-Hans",
+      "targetLang": "en",
+      "url": "https://www.pleco.com/",
+      "licence": "Proprietary",
+      "attribution": "Pleco",
+      "note": "Best-in-class commercial Chinese dictionary. No API."
+    }
+  ]
+}

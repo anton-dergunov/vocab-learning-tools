@@ -47,7 +47,7 @@ case "$operation" in
 esac
 
 temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/acervo-anki-remote.XXXXXX")
-remote_helper="/tmp/acervo-run-robot-$$.sh"
+remote_helper="/tmp/acervo-run-worker-$$.sh"
 remote_input="/tmp/acervo-anki-input-$$.tar.gz"
 cleanup() {
   status=$?
@@ -59,7 +59,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 ssh -T "$target" "umask 077 && cat > $remote_helper" \
-  <"$repo_root/deploy/acervo/run-robot.sh"
+  <"$repo_root/deploy/acervo/run-worker.sh"
 
 helper_arguments=
 if [ -n "$acervo_root" ]; then

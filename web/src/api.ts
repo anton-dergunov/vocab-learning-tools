@@ -19,6 +19,8 @@ export type PushResponse = SyncEnvelope & { records: Partial<VocabularyGraph> };
 export type ResetResponse = SyncEnvelope & { deleted: number };
 
 const API_PATH = "/api/acervo/v1";
+/** Compiled dictionaries are served as plain files, outside the JSON API and outside `pb_public`. */
+const DICTIONARY_PATH = "/api/acervo/dictionaries";
 const REQUEST_TIMEOUT = 15_000;
 /** Capture is two model calls deep, so the sync timeout would abort a request that is working. */
 const CAPTURE_TIMEOUT = 120_000;
@@ -72,6 +74,38 @@ export interface CaptureRequest {
   note?: string | null;
 }
 
+/** An artifact this server holds, as its metadata sidecar describes it. */
+export interface RemoteDictionary {
+  id: string;
+  name: string;
+  sourceLang: string;
+  targetLang: string;
+  tier: "fields" | "html";
+  licence: string;
+  attribution: string;
+  entryCount: number;
+  keyCount: number;
+  blobBytes: number;
+  indexBytes: number;
+  schemaVersion: number;
+  sourceDate?: string;
+  builtAt?: string;
+}
+
+export interface OnlineLookup {
+  source: string;
+  word: string;
+  entries: OnlineArticle[];
+}
+
+export interface OnlineArticle {
+  headword: string;
+  language?: string;
+  posLabel?: string;
+  ipa?: string;
+  senses: { definition: string; examples?: { text: string; translation?: string | null }[] }[];
+}
+
 export class AcervoApiError extends Error {
   constructor(message: string, readonly status: number, readonly code: string) { super(message); }
 }
@@ -86,6 +120,17 @@ class ApiClient {
 
   configure(session: StoredSession | null) { this.session = session; }
   current() { return this.session; }
+
+  /** Where an artifact file lives, for the direct reads that do not go through the JSON envelope. */
+  fileUrl(path: string): string {
+    const baseUrl = this.session?.baseUrl;
+    if (!baseUrl) throw new AcervoApiError("Configure the Acervo server first.", 0, "not_configured");
+    return `${baseUrl}${DICTIONARY_PATH}${path}`;
+  }
+
+  authHeaders(): Record<string, string> {
+    return this.session?.token ? { Authorization: `Bearer ${this.session.token}` } : {};
+  }
   /** Called when the server rejects the stored token. The replica is deliberately kept. */
   handleUnauthorized(handler: (() => void) | null) { this.onUnauthorized = handler; }
 
@@ -186,6 +231,26 @@ export const backendSession = {
       })
     }, false, CAPTURE_TIMEOUT);
   },
+  /* ── external dictionaries ────────────────────────────────────────────
+     Two calls and two addresses. The list and an online lookup are ordinary JSON; the artifact
+     itself is a static file read with byte ranges, so the reader can treat a dictionary the server
+     holds exactly like one this device stored. */
+
+  listDictionaries(): Promise<{ dictionaries: RemoteDictionary[] }> {
+    return client.call<{ dictionaries: RemoteDictionary[] }>("/dictionaries");
+  },
+  lookupOnlineDictionary(source: string, word: string, language?: string): Promise<OnlineLookup> {
+    const query = new URLSearchParams({ word });
+    if (language) query.set("language", language);
+    return client.call<OnlineLookup>(`/dictionaries/online/${encodeURIComponent(source)}?${query}`);
+  },
+  dictionaryFileUrl(id: string, extension: "dict" | "idx" | "json"): string {
+    return client.fileUrl(`/${encodeURIComponent(id)}.${extension}`);
+  },
+  dictionaryHeaders(): Record<string, string> {
+    return client.authHeaders();
+  },
+
   resetGraph(deviceId: string): Promise<ResetResponse> {
     return client.call<ResetResponse>("/graph/reset", {
       method: "POST",

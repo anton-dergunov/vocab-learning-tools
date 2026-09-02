@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(
             os.environ.get(
                 "ACERVO_ANKI_COLLECTION",
-                "/var/lib/acervo/anki-robot/collection.anki2",
+                "/var/lib/acervo/worker/collection.anki2",
             )
         ),
     )
@@ -39,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(
             os.environ.get(
                 "ACERVO_ANKI_BACKUP_DIR",
-                "/var/lib/acervo/anki-robot/backups",
+                "/var/lib/acervo/worker/backups",
             )
         ),
     )

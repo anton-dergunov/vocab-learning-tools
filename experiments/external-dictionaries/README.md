@@ -59,7 +59,10 @@ uv pip install -r requirements/dictionary-spike.txt
 
 cd web && npx vitest run --config ../experiments/external-dictionaries/fidelity.config.ts
 
-open experiments/external-dictionaries/probe.html   # and on the phone
+# Serve it, do not open the file. OPFS and storage.estimate() need a secure context, so a file://
+# or plain-http origin reports both missing on every device — including desktop Chrome, which was
+# read as a device limitation once already. localhost counts as secure.
+python3 -m http.server -d experiments/external-dictionaries 8000   # then open it on the phone too
 ```
 
 `spike.py --source all` covers CC-CEDICT (fixed line grammar), kaikki `es→en` and `es→es` (rich

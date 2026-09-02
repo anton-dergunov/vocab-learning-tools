@@ -273,7 +273,7 @@ data/pocketbase
 downloads
 ```
 
-Deployment preserves both directories, along with `data/anki-server`, `data/anki-robot`, inputs,
+Deployment preserves both directories, along with `data/anki-server`, `data/acervo-worker`, inputs,
 and backups. `downloads` is deliberately outside PocketBase's public web directory so a phone's
 service worker never precaches the macOS archive.
 

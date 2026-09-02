@@ -127,7 +127,7 @@ def test_local_deployment_preserves_data_backs_up_and_rotates(tmp_path: Path) ->
     server.mkdir(parents=True)
     database = server / "collection.anki2"
     database.write_bytes(b"collection-v1")
-    robot = root / "data" / "anki-robot"
+    robot = root / "data" / "acervo-worker"
     robot.mkdir(parents=True)
     (robot / "collection.anki2").write_bytes(b"robot-v1")
     (server / "media.db").write_bytes(b"media-index-v1")
@@ -737,14 +737,14 @@ def test_remote_robot_wrapper_streams_validated_input_without_scp(tmp_path: Path
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     ssh_log = tmp_path / "ssh.log"
-    helper_upload = tmp_path / "run-robot.sh"
+    helper_upload = tmp_path / "run-worker.sh"
     input_upload = tmp_path / "input.tar.gz"
     ssh = bin_dir / "ssh"
     ssh.write_text(
         "#!/bin/sh\n"
         "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_SSH_LOG\"\n"
         "case \"$*\" in\n"
-        "  *'cat > /tmp/acervo-run-robot-'*) cat >\"$ACERVO_TEST_HELPER\" ;;\n"
+        "  *'cat > /tmp/acervo-run-worker-'*) cat >\"$ACERVO_TEST_HELPER\" ;;\n"
         "  *'cat > /tmp/acervo-anki-input-'*) cat >\"$ACERVO_TEST_INPUT\" ;;\n"
         "esac\n",
         encoding="utf-8",
@@ -781,7 +781,7 @@ def test_remote_robot_wrapper_streams_validated_input_without_scp(tmp_path: Path
     )
 
     assert result.returncode == 0, result.stderr
-    assert helper_upload.read_bytes() == (REPO_ROOT / "deploy/acervo/run-robot.sh").read_bytes()
+    assert helper_upload.read_bytes() == (REPO_ROOT / "deploy/acervo/run-worker.sh").read_bytes()
     with tarfile.open(input_upload) as package:
         assert package.getnames() == ["manifest.json"]
     commands = ssh_log.read_text(encoding="utf-8")

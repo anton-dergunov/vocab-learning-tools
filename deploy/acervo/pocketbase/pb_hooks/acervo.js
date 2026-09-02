@@ -1019,6 +1019,156 @@ function captureRoute(event) {
   });
 }
 
+
+/* ── external dictionaries ──────────────────────────────────────────────
+   Two jobs only. Say which compiled dictionaries this server holds, so the interface can offer
+   them; and answer an online lookup on the client's behalf, so §9's User-Agent obligation is
+   honoured in one place and the browser never depends on a third party's CORS headers.
+
+   Notably absent: a lookup route for compiled dictionaries. The artifact is served as a static
+   file with byte ranges, so "this device, then the server" is the same reader over a different
+   byte source, and the format is never implemented twice. */
+
+const DICTIONARY_USER_AGENT = "Acervo/1.0 (self-hosted vocabulary store; +https://acervo.example.com)";
+const DICTIONARY_TIMEOUT_SECONDS = 20;
+
+function dictionaryDirectory() {
+  return trimmed($os.getenv("ACERVO_DICTIONARIES_PATH")) || "/pb/dictionaries";
+}
+
+/** The metadata sidecar of every artifact on disk. A dictionary with no `.json` is a failed build. */
+function installedDictionaries() {
+  const directory = dictionaryDirectory();
+  let names;
+  try { names = $os.readDir(directory); }
+  catch (_) { return []; }
+  const found = [];
+  for (const item of names) {
+    const name = item.name();
+    if (item.isDir() || name.slice(-5) !== ".json") continue;
+    try {
+      const metadata = JSON.parse(toString($os.readFile(directory + "/" + name)));
+      if (metadata && metadata.id) found.push(metadata);
+    } catch (_) {
+      // A half-written artifact must not take the whole list down with it.
+      console.log("Acervo: ignoring unreadable dictionary metadata " + name);
+    }
+  }
+  found.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  return found;
+}
+
+function fetchJson(url) {
+  let response;
+  try {
+    response = $http.send({
+      url: url,
+      method: "GET",
+      headers: { "User-Agent": DICTIONARY_USER_AGENT, "Accept": "application/json" },
+      timeout: DICTIONARY_TIMEOUT_SECONDS,
+    });
+  } catch (_) {
+    throw apiError(502, "dictionary_unreachable", "The dictionary service could not be reached.");
+  }
+  // A 404 is an answer, not a failure: it means the source genuinely has no entry for the word.
+  if (response.statusCode === 404) return null;
+  if (response.statusCode >= 400) {
+    throw apiError(502, "dictionary_failed",
+      "The dictionary service answered with status " + response.statusCode + ".");
+  }
+  try { return JSON.parse(toString(response.body)); }
+  catch (_) { throw apiError(502, "dictionary_unusable", "The dictionary service returned an unreadable answer."); }
+}
+
+function plainText(markup) {
+  return trimmed(String(markup == null ? "" : markup).replace(/<[^>]*>/g, "").replace(/\s+/g, " "));
+}
+
+/**
+ * freedictionaryapi.com. Wiktionary-derived but its own field shape: `partOfSpeech`,
+ * `pronunciations[].text`, and `senses[].definition` as a *string* where wiktextract has a list.
+ * §11.5 withdrew the claim that these share the offline mapper.
+ */
+function lookupFreeDictionary(word, language) {
+  const payload = fetchJson("https://freedictionaryapi.com/api/v1/entries/"
+    + encodeURIComponent(language || "en") + "/" + encodeURIComponent(word));
+  if (!payload || !payload.entries || !payload.entries.length) return [];
+  return payload.entries.map((entry) => {
+    const senses = (entry.senses || [])
+      .filter((sense) => trimmed(sense.definition))
+      .map((sense) => {
+        const mapped = { definition: trimmed(sense.definition) };
+        const examples = (sense.examples || []).filter((text) => trimmed(text)).slice(0, 3);
+        if (examples.length) mapped.examples = examples.map((text) => ({ text: trimmed(text) }));
+        return mapped;
+      });
+    const ipa = (entry.pronunciations || []).filter((sound) => trimmed(sound.text))[0];
+    return pruneEntry({
+      headword: trimmed(payload.word) || word,
+      language: (entry.language && entry.language.code) || language || null,
+      posLabel: trimmed(entry.partOfSpeech) || null,
+      ipa: ipa ? trimmed(ipa.text) : null,
+      senses: senses,
+    });
+  }).filter((entry) => entry.senses && entry.senses.length);
+}
+
+/**
+ * The Wikimedia REST definition endpoint. It lives only on en.wiktionary.org — a per-language host
+ * 404s on everything — and keys its answer by language *inside* the response. Definitions arrive as
+ * HTML fragments carrying mw:WikiLink markup, so mapping means stripping it.
+ */
+function lookupWikimedia(word, language) {
+  const payload = fetchJson("https://en.wiktionary.org/api/rest_v1/page/definition/"
+    + encodeURIComponent(word));
+  if (!payload) return [];
+  const wanted = trimmed(language);
+  const codes = wanted && payload[wanted] ? [wanted] : Object.keys(payload);
+  const entries = [];
+  for (const code of codes) {
+    for (const group of payload[code] || []) {
+      const senses = (group.definitions || [])
+        .map((item) => {
+          const definition = plainText(item.definition);
+          if (!definition) return null;
+          const sense = { definition: definition };
+          const examples = (item.parsedExamples || [])
+            .map((sample) => ({ text: plainText(sample.example),
+                                translation: plainText(sample.translation) || null }))
+            .filter((sample) => sample.text)
+            .slice(0, 3);
+          if (examples.length) sense.examples = examples;
+          return sense;
+        })
+        .filter((sense) => sense);
+      if (!senses.length) continue;
+      entries.push(pruneEntry({
+        headword: word,
+        language: code,
+        posLabel: trimmed(group.partOfSpeech) || null,
+        senses: senses,
+      }));
+    }
+  }
+  return entries;
+}
+
+/** Drops empties, so an online answer is the same shape the compiler writes into an artifact. */
+function pruneEntry(entry) {
+  const cleaned = {};
+  for (const key of Object.keys(entry)) {
+    const value = entry[key];
+    if (value === null || value === "" || (Array.isArray(value) && !value.length)) continue;
+    cleaned[key] = value;
+  }
+  return cleaned;
+}
+
+const ONLINE_DICTIONARIES = {
+  "freedictionaryapi": lookupFreeDictionary,
+  "wikimedia-rest": lookupWikimedia,
+};
+
 function dispatch(event) {
   const path = String(event.request.url.path || "");
   const relative = path.indexOf(API_ROOT) === 0 ? path.slice(API_ROOT.length) || "/" : path;
@@ -1088,6 +1238,24 @@ function dispatch(event) {
         };
       });
       return respond(event, result);
+    }
+    if (method === "GET" && relative === "/dictionaries") {
+      requireOwner(event);
+      return respond(event, { dictionaries: installedDictionaries() });
+    }
+    if (method === "GET" && relative.indexOf("/dictionaries/online/") === 0) {
+      requireOwner(event);
+      const source = relative.slice("/dictionaries/online/".length);
+      const connector = ONLINE_DICTIONARIES[source];
+      if (!connector) throw apiError(404, "not_found", "No such online dictionary.");
+      const parameters = query(event);
+      const word = trimmed(parameters.word);
+      if (!word) throw apiError(400, "word_required", "Ask for a word.");
+      return respond(event, {
+        source: source,
+        word: word,
+        entries: connector(word, trimmed(parameters.language)),
+      });
     }
     if (method === "POST" && relative === "/capture") return captureRoute(event);
     if (method === "POST" && relative === "/graph/reset") {

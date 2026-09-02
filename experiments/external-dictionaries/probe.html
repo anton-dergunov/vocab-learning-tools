@@ -14,6 +14,10 @@
 <h1>Acervo dictionary storage probe</h1>
 <p>Open on the target phone and in the <code>macos/</code> WKWebView host. Everything the spike
 assumes about what a client can read is measured here rather than inferred.</p>
+<p><strong>Serve this over https.</strong> OPFS and <code>storage.estimate()</code> both require a
+secure context, so opening it as a <code>file://</code> URL or over plain http reports them missing
+on every device including desktop Chrome — which is a property of the page's origin, not of the
+device. <code>python3 -m http.server</code> on <code>localhost</code> also counts as secure.</p>
 <table id="out"><tbody></tbody></table>
 <script type="module">
 const tbody = document.querySelector("#out tbody");
@@ -55,6 +59,9 @@ if (opfs) {
   } catch (error) { row("OPFS write/read", String(error), false); }
 }
 
+row("Secure context", window.isSecureContext ? "yes" : "NO — storage results below are meaningless",
+    window.isSecureContext);
+
 const estimate = await navigator.storage?.estimate?.();
 if (estimate) {
   row("storage.estimate() quota", mb(estimate.quota));
@@ -84,6 +91,69 @@ try {
   for (let i = 0; i < 200; i++) fflate.inflateSync(packed, { dictionary: dict });
   row("fflate inflate throughput", `${((performance.now() - t0) / 200).toFixed(3)} ms/block`, true);
 } catch (error) { row("fflate", String(error), false); }
+
+// 5. IndexedDB is where the frames actually live, so the two things the container decision rests on
+//    are measured directly: does storage cost about what was written, and does a Blob slice read a
+//    range rather than materialising the whole file? If a slice is linear in the *file* size rather
+//    than the range, the fallback is chunking the payload blob into ~1 MiB records — which changes
+//    the store and not the artifact.
+try {
+  const SIZE = 40 * 1024 * 1024;
+  const before = (await navigator.storage?.estimate?.())?.usage ?? null;
+  const payload = new Uint8Array(SIZE);
+  for (let i = 0; i < SIZE; i += 4096) payload[i] = i & 0xff;   // not all zeroes, so nothing dedupes
+
+  const database = await new Promise((ok, no) => {
+    const opening = indexedDB.open("acervo-probe", 1);
+    opening.onupgradeneeded = () => opening.result.createObjectStore("artifacts", { keyPath: "id" });
+    opening.onsuccess = () => ok(opening.result);
+    opening.onerror = () => no(opening.error);
+  });
+  const put = (value) => new Promise((ok, no) => {
+    const tx = database.transaction("artifacts", "readwrite");
+    tx.objectStore("artifacts").put(value);
+    tx.oncomplete = ok; tx.onerror = () => no(tx.error); tx.onabort = () => no(tx.error);
+  });
+  const written = performance.now();
+  await put({ id: "blob", data: new Blob([payload]) });
+  row("IndexedDB: store a 40 MiB Blob", `${(performance.now() - written).toFixed(0)} ms`, true);
+
+  const after = (await navigator.storage?.estimate?.())?.usage ?? null;
+  if (before !== null && after !== null) {
+    const overhead = (after - before) / SIZE;
+    row("IndexedDB: bytes stored ÷ bytes written", `${overhead.toFixed(2)}×`, overhead < 1.3);
+  } else {
+    row("IndexedDB: bytes stored ÷ bytes written", "storage.estimate() unavailable", false);
+  }
+
+  const stored = await new Promise((ok, no) => {
+    const request = indexedDB.open("acervo-probe", 1);
+    request.onsuccess = () => {
+      const get = request.result.transaction("artifacts", "readonly").objectStore("artifacts").get("blob");
+      get.onsuccess = () => ok(get.result.data);
+      get.onerror = () => no(get.error);
+    };
+  });
+  const slices = [];
+  for (let i = 0; i < 20; i++) {
+    const at = Math.floor(Math.random() * (SIZE - 65536));
+    const started = performance.now();
+    await stored.slice(at, at + 65536).arrayBuffer();
+    slices.push(performance.now() - started);
+  }
+  slices.sort((a, b) => a - b);
+  const median = slices[Math.floor(slices.length / 2)];
+  // A 64 KiB range read out of 40 MiB should be about a millisecond. Tens of milliseconds means the
+  // engine is materialising the whole Blob, and the payload has to be chunked instead.
+  row("Blob.slice(64 KiB) out of 40 MiB, p50", `${median.toFixed(2)} ms`, median < 10);
+
+  const whole = performance.now();
+  await stored.slice(0, SIZE).arrayBuffer();
+  row("Blob.slice(whole 40 MiB), for comparison", `${(performance.now() - whole).toFixed(0)} ms`);
+
+  database.close();
+  indexedDB.deleteDatabase("acervo-probe");
+} catch (error) { row("IndexedDB Blob storage", String(error), false); }
 
 try {
   await load("https://cdn.jsdelivr.net/npm/fzstd@0.1.1/umd/index.js");
