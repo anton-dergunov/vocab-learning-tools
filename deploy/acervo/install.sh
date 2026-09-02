@@ -209,6 +209,15 @@ elif [ -f "$acervo_root/downloads/release.json" ]; then
   echo "This release carries no macOS application; keeping the previously published one"
 fi
 
+# Compiled dictionaries built on the operator's machine. Merged rather than replaced: building only
+# the Spanish ones and deploying must not withdraw the Chinese ones deployed last week. Removing one
+# is deleting its three files from this directory.
+if [ -d "$release_dir/dictionary-artifacts" ]; then
+  cp -R "$release_dir/dictionary-artifacts/." "$acervo_root/data/dictionaries/"
+  installed_dictionaries=$(find "$acervo_root/data/dictionaries" -maxdepth 1 -name '*.json' | wc -l | tr -d ' ')
+  echo "Published $installed_dictionaries compiled dictionaries"
+fi
+
 compose_file="$release_dir/deploy/acervo/compose.yaml"
 
 # A schema change is deployed by rewriting the bootstrap migration, and PocketBase records applied

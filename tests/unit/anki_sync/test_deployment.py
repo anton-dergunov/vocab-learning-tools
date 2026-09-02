@@ -157,6 +157,53 @@ def test_local_deployment_preserves_data_backs_up_and_rotates(tmp_path: Path) ->
     assert (root / "secrets.env").stat().st_mode & 0o777 == 0o600
 
 
+def test_compiled_dictionaries_travel_with_the_release_and_are_merged(tmp_path: Path) -> None:
+    """Dictionaries are built where the compiler runs and are not in the repository, so the release
+    carries them the way it carries the macOS application.
+
+    Merged rather than replaced: building only the Spanish ones and deploying must not withdraw the
+    Chinese ones deployed last week.
+    """
+    env, root = deployment_env(tmp_path)
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    for name in ("cc-cedict", "kaikki-es-es"):
+        (artifacts / f"{name}.json").write_text(f'{{"id": "{name}"}}', encoding="utf-8")
+        (artifacts / f"{name}.dict").write_bytes(b"payloads")
+        (artifacts / f"{name}.idx").write_bytes(b"index")
+    # A metadata file with no payload beside it must not be published: the server would list it and
+    # then fail at the moment someone tried to store it.
+    (artifacts / "half-built.json").write_text('{"id": "half-built"}', encoding="utf-8")
+
+    served = root / "data" / "dictionaries"
+    served.mkdir(parents=True)
+    for suffix, content in ((".json", b'{"id": "moedict-zh"}'), (".dict", b"old"), (".idx", b"old")):
+        (served / f"moedict-zh{suffix}").write_bytes(content)
+
+    env["ACERVO_DICTIONARY_ARTIFACTS"] = str(artifacts)
+    result = run_local(env)
+
+    assert result.returncode == 0, result.stderr
+    published = {path.stem for path in served.glob("*.json")}
+    assert {"cc-cedict", "kaikki-es-es"} <= published, "the release did not publish its dictionaries"
+    assert "moedict-zh" in published, "deploying replaced the dictionaries already on the server"
+    assert "half-built" not in published
+    assert (served / "cc-cedict.dict").read_bytes() == b"payloads"
+
+
+def test_a_release_without_dictionaries_leaves_the_published_ones_alone(tmp_path: Path) -> None:
+    env, root = deployment_env(tmp_path)
+    served = root / "data" / "dictionaries"
+    served.mkdir(parents=True)
+    (served / "cc-cedict.json").write_text('{"id": "cc-cedict"}', encoding="utf-8")
+
+    env["ACERVO_INCLUDE_DICTIONARIES"] = "false"
+    result = run_local(env)
+
+    assert result.returncode == 0, result.stderr
+    assert (served / "cc-cedict.json").is_file(), "a build with no dictionaries withdrew the old ones"
+
+
 def test_reset_requires_exact_confirmation_and_backs_up_first(tmp_path: Path) -> None:
     env, root = deployment_env(tmp_path)
     server = root / "data" / "anki-server"

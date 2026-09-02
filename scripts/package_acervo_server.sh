@@ -37,8 +37,34 @@ if [ "${ACERVO_INCLUDE_MACOS_RELEASE:-false}" = true ] && [ -f "$repo_root/build
   cp -R "$repo_root/build/macos-release/." "$bundle/downloads/"
 fi
 
+# Compiled dictionaries are built on the machine that runs the compiler and are not in the
+# repository, so they travel in the release the way the macOS application does. This is a private
+# copy moving between the owner's own machines; the licensing rule in docs §9 is about publishing to
+# the world and does not apply.
+dictionary_artifacts=${ACERVO_DICTIONARY_ARTIFACTS:-"$repo_root/data/dictionaries/out"}
+if [ "${ACERVO_INCLUDE_DICTIONARIES:-true}" = true ] && [ -d "$dictionary_artifacts" ] \
+   && [ -n "$(find "$dictionary_artifacts" -maxdepth 1 -name '*.json' -print -quit)" ]; then
+  mkdir -p "$bundle/dictionary-artifacts"
+  # Only complete triples: a `.json` with no payload beside it would be listed by the server and
+  # then fail at the moment someone tried to store it.
+  for metadata in "$dictionary_artifacts"/*.json; do
+    id=$(basename "$metadata" .json)
+    if [ -f "$dictionary_artifacts/$id.dict" ] && [ -f "$dictionary_artifacts/$id.idx" ]; then
+      cp "$metadata" "$dictionary_artifacts/$id.dict" "$dictionary_artifacts/$id.idx" \
+        "$bundle/dictionary-artifacts/"
+    else
+      echo "Skipping incomplete dictionary $id (no .dict/.idx beside its metadata)" >&2
+    fi
+  done
+  bundled=$(find "$bundle/dictionary-artifacts" -name '*.json' | wc -l | tr -d ' ')
+  size=$(du -sh "$bundle/dictionary-artifacts" | cut -f1)
+  # stderr, not stdout: this script's stdout is the archive path and deploy.sh reads it.
+  echo "Bundling $bundled compiled dictionaries ($size). Set ACERVO_INCLUDE_DICTIONARIES=false to skip." >&2
+fi
+
 archive_entries="deploy dictionaries docs prompts requirements scripts src templates package.json version.json"
 [ ! -d "$bundle/downloads" ] || archive_entries="$archive_entries downloads"
+[ ! -d "$bundle/dictionary-artifacts" ] || archive_entries="$archive_entries dictionary-artifacts"
 
 if [ "$(uname -s)" = Darwin ]; then
   COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -C "$bundle" -czf "$archive" \

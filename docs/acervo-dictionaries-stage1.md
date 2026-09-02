@@ -99,12 +99,25 @@ So `fields` wherever a source is field-structured, `html` where the payload arri
 `<font class="grammar" color="green">`, whose inline colours fight Acervo's theme in both modes.
 `restyle()` strips `<font>` and presentational attributes and keeps the structure.
 
-### 3.5 · Compiled artifacts never enter git
+### 3.5 · Compiled artifacts stay out of git, and travel in the release
 
-§9's decision is that Acervo ships the list, not the data. Nearly every source is share-alike or
-copyleft (kaikki, CC-CEDICT, JMdict all CC BY-SA; most FreeDict GPL), this repository is public, and
-Spanish alone is 27.8 MiB against GitHub's 1 GiB/month free LFS bandwidth. The server serves what it
-compiled, behind authentication, to the owner's own devices.
+Two different questions that are easy to conflate, and were:
+
+**Not committed to the repository.** §9's decision is that Acervo ships the list, not the data.
+Nearly every source is share-alike or copyleft (kaikki, CC-CEDICT, JMdict all CC BY-SA; most
+FreeDict GPL), this repository is public, and Spanish alone is 27.8 MiB against GitHub's
+1 GiB/month free LFS bandwidth — with a rebuild on every mapper change.
+
+**Carried by the deployment.** §9 is about publishing to the world; moving the owner's own compiled
+copy from their laptop to their own server is not publishing anything. So the release bundle carries
+whatever is in `data/dictionaries/out/`, exactly the way it already carries the macOS application,
+and `install.sh` publishes it into the directory PocketBase serves. The workflow is: build locally,
+check it locally, `./deploy.sh`, and the dictionaries are there.
+
+They are **merged, not replaced**: building only the Spanish ones and deploying must not withdraw
+the Chinese ones deployed last week, and a release built with none at all leaves the published ones
+alone. Removing one means deleting its three files from `<acervo-root>/data/dictionaries`.
+`ACERVO_INCLUDE_DICTIONARIES=false` skips the bundling when a deploy should not re-upload them.
 
 ### 3.6 · The frames live in IndexedDB, and the probe says that works
 
@@ -259,7 +272,8 @@ uv pip install -r requirements/dev.txt
 
 .venv/bin/python scripts/build_dictionary.py list
 .venv/bin/python scripts/build_dictionary.py build --id cc-cedict
-.venv/bin/python scripts/build_dictionary.py build --id kaikki-es-es
+.venv/bin/python scripts/build_dictionary.py build --all --language es,zh   # 12 rows, ~1.7 GiB
+.venv/bin/python scripts/build_dictionary.py build --all                    # 46 rows, ~11.6 GiB
 .venv/bin/python scripts/build_dictionary.py verify --id <any other row>
 
 #  · rebuild, diff .dict and .idx: byte-identical
@@ -272,14 +286,17 @@ npm --prefix web run test
 npm run test:hooks
 npm --prefix web run build && npm run test:pwa
 
-# end to end, against a real server
-docker compose -f deploy/acervo/compose.yaml --profile tools run --rm acervo-worker \
-  dictionary build --id cc-cedict
-#  · Settings ▸ Dictionaries lists it as being on the server
+# end to end: build locally, deploy, and the dictionaries go with the release
+./deploy.sh                       # or --local
+#  · the packager reports how many dictionaries it bundled and how large they are
+#  · Settings ▸ Dictionaries lists them as being on the server
 #  · store on this device → progress → stored here, with its entry count
 #  · stop PocketBase → the stored dictionary still answers a lookup
 #  · not stored, server down → the row says so, and nothing is written
 #  · DevTools ▸ Application ▸ Storage: persisted=true, usage ≈ the artifact size
+
+# building on the server instead, when a source is too large to want on the laptop
+run-worker.sh build-dictionary --all --language es,zh
 ```
 
 The format is written in Python and read in TypeScript, so it is checked where it actually crosses
