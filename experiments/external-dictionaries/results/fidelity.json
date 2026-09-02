@@ -10,42 +10,42 @@
     "source": "freedict-eng-rus-tei",
     "checked": 300,
     "valid": 300,
-    "sensesPerEntry": 1.58,
+    "sensesPerEntry": 1.53,
     "causes": []
   },
   {
     "source": "jmdict-eng",
     "checked": 300,
     "valid": 300,
-    "sensesPerEntry": 1.37,
+    "sensesPerEntry": 1.31,
     "causes": []
   },
   {
     "source": "kaikki-es-en",
     "checked": 300,
     "valid": 300,
-    "sensesPerEntry": 2.14,
+    "sensesPerEntry": 2.05,
     "causes": []
   },
   {
     "source": "kaikki-es-es",
     "checked": 300,
     "valid": 300,
-    "sensesPerEntry": 2.7,
+    "sensesPerEntry": 2.79,
     "causes": []
   },
   {
     "source": "freedictionaryapi",
-    "checked": 6,
-    "valid": 6,
-    "sensesPerEntry": 7.67,
+    "checked": 26,
+    "valid": 26,
+    "sensesPerEntry": 4.23,
     "causes": []
   },
   {
     "source": "wikimedia-rest",
-    "checked": 6,
-    "valid": 6,
-    "sensesPerEntry": 8.17,
+    "checked": 26,
+    "valid": 26,
+    "sensesPerEntry": 4.58,
     "causes": []
   }
 ]

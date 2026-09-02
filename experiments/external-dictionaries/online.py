@@ -17,6 +17,7 @@ import statistics
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from html import escape
 from pathlib import Path
@@ -31,21 +32,42 @@ OUT = HERE.parents[1] / "data" / "dictionaries" / "out"
 AGENT = "AcervoDictionarySpike/0.1 (https://acervo.example.com)"
 TAG = re.compile(r"<[^>]+>")
 
-DEFAULT_WORDS = ["picar", "desmayarse", "balsa", "gratis", "correr", "mesa", "aunque", "rápidamente",
-                 "zzzznotaword"]
+DEFAULT_WORDS = [
+    # verbs, nouns, adjectives, adverbs — the four Acervo's enum handles
+    "picar", "desmayarse", "correr", "comer", "balsa", "mesa", "casa", "libro",
+    "gratis", "rápido", "hermoso", "rápidamente", "siempre", "muy",
+    # the shapes its enum does not have: conjunction, preposition, pronoun, determiner,
+    # numeral, interjection, and a multi-word phrase
+    "aunque", "pero", "sobre", "hacia", "ella", "nosotros", "este", "cinco", "primero",
+    "hola", "ojalá", "de repente",
+    # and one word no source holds, to separate absence from failure
+    "zzzznotaword",
+]
 
 
-def fetch(url: str) -> tuple[dict | list | None, float, int]:
+def fetch(url: str, attempts: int = 3) -> tuple[dict | list | None, float, int]:
+    """Fetch with retries, so a transient failure is not scored as a missing word.
+
+    The distinction matters: 404 means the source genuinely has no entry, while a timeout or a 5xx
+    says nothing about coverage. The first spike run conflated the two.
+    """
     request = urllib.request.Request(url, headers={"User-Agent": AGENT})
     started = time.perf_counter()
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-            return payload, (time.perf_counter() - started) * 1000, response.status
-    except urllib.error.HTTPError as error:
-        return None, (time.perf_counter() - started) * 1000, error.code
-    except Exception:
-        return None, (time.perf_counter() - started) * 1000, 0
+    status = 0
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(request, timeout=25) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                return payload, (time.perf_counter() - started) * 1000, response.status
+        except urllib.error.HTTPError as error:
+            if error.code == 404:                      # a real absence, not worth retrying
+                return None, (time.perf_counter() - started) * 1000, 404
+            status = error.code
+        except Exception:
+            status = -1
+        if attempt < attempts - 1:
+            time.sleep(1.5 * (attempt + 1))
+    return None, (time.perf_counter() - started) * 1000, status
 
 
 # --- freedictionaryapi -------------------------------------------------------------------------
@@ -59,12 +81,12 @@ def free_fields(payload: dict, language: str, lenient: bool) -> sources.Entry:
     if not entries:
         return entry
     head = entries[0]
-    pos = sources.POS_MAP.get((head.get("partOfSpeech") or "").lower())
+    pos_source = head.get("partOfSpeech") or ""
+    pos = sources.POS_MAP.get(pos_source.lower())
     if pos is None:
-        entry.pos_unmapped.add(head.get("partOfSpeech") or "")
-        if not lenient:
-            return entry
-        pos = sources.LENIENT_POS
+        entry.pos_unmapped.add(pos_source)
+    else:
+        entry.pos_in_enum = True
     senses = []
     for block in entries:
         for sense in block.get("senses") or []:
@@ -81,7 +103,9 @@ def free_fields(payload: dict, language: str, lenient: bool) -> sources.Entry:
         entry.dropped |= {"forms", "pronunciations"} & set(block)
     if not senses:
         return entry
-    draft = {"language": language, "headword": entry.key, "lemma": entry.key, "pos": pos,
+    draft = {"language": language, "headword": entry.key, "lemma": entry.key,
+             **({"pos": pos} if pos else {}),
+             **({"posLabel": pos_source} if pos_source else {}),
              "status": "inbox", "senses": senses}
     ipa = next((p.get("text") for p in head.get("pronunciations") or []
                 if (p.get("text") or "").startswith("/")), None)
@@ -116,12 +140,12 @@ def rest_fields(payload: dict, language: str, lenient: bool, word: str) -> sourc
     blocks = payload.get(language) or []
     if not blocks:
         return entry
-    pos = sources.POS_MAP.get((blocks[0].get("partOfSpeech") or "").lower())
+    pos_source = blocks[0].get("partOfSpeech") or ""
+    pos = sources.POS_MAP.get(pos_source.lower())
     if pos is None:
-        entry.pos_unmapped.add(blocks[0].get("partOfSpeech") or "")
-        if not lenient:
-            return entry
-        pos = sources.LENIENT_POS
+        entry.pos_unmapped.add(pos_source)
+    else:
+        entry.pos_in_enum = True
     senses = []
     for block in blocks:
         for item in block.get("definitions") or []:
@@ -139,7 +163,9 @@ def rest_fields(payload: dict, language: str, lenient: bool, word: str) -> sourc
             senses.append(sense)
     if not senses:
         return entry
-    entry.fields = {"language": language, "headword": word, "lemma": word, "pos": pos,
+    entry.fields = {"language": language, "headword": word, "lemma": word,
+                    **({"pos": pos} if pos else {}),
+                    **({"posLabel": pos_source} if pos_source else {}),
                     "status": "inbox", "senses": senses}
     return entry
 
@@ -168,19 +194,28 @@ def main() -> int:
     yaml_rows = []
 
     for api in ("freedictionaryapi", "wikimedia-rest"):
-        latencies, mapped, html_bytes, fields_bytes, misses = [], 0, 0, 0, 0
+        latencies, mapped, html_bytes, fields_bytes = [], 0, 0, 0
         dropped, unmapped = set(), set()
+        outcomes: dict[str, str] = {}
         for word in words:
+            # Percent-encode: accented headwords and multi-word entries are ordinary here.
+            slug = urllib.parse.quote(word, safe="")
             if api == "freedictionaryapi":
-                url = f"https://freedictionaryapi.com/api/v1/entries/{args.lang}/{word}"
+                url = f"https://freedictionaryapi.com/api/v1/entries/{args.lang}/{slug}"
             else:
                 # The definition endpoint exists only on the English Wiktionary; the response is
                 # keyed by language code, so the target language is selected from the payload.
-                url = f"https://en.wiktionary.org/api/rest_v1/page/definition/{word}"
+                url = f"https://en.wiktionary.org/api/rest_v1/page/definition/{slug}"
             payload, ms, status = fetch(url)
             latencies.append(ms)
             if payload is None:
-                misses += 1
+                outcomes[word] = "absent (404)" if status == 404 else f"transport failure ({status})"
+                continue
+            has_data = bool(payload.get("entries")) if api == "freedictionaryapi" \
+                else bool(payload.get(args.lang))
+            if not has_data:
+                # 200 with an empty body: the source answered and holds nothing for this word.
+                outcomes[word] = "absent (empty)"
                 continue
             if api == "freedictionaryapi":
                 entry = free_fields(payload, args.lang, args.lenient_pos)
@@ -193,12 +228,25 @@ def main() -> int:
             html_bytes += len(entry.html.encode())
             if entry.fields:
                 mapped += 1
+                outcomes[word] = "mapped"
                 fields_bytes += len(json.dumps(entry.fields, ensure_ascii=False).encode())
                 yaml_rows.append({"source": api, "key": entry.key, "yaml": _to_yaml(entry.fields)})
+            else:
+                reason = "no usable sense"
+                outcomes[word] = f"unmapped — {reason}"
 
+        held = [w for w, o in outcomes.items() if not o.startswith("absent")
+                and not o.startswith("transport")]
+        transport = [w for w, o in outcomes.items() if o.startswith("transport")]
         report["apis"][api] = {
-            "requests": len(words), "misses": misses, "mapped": mapped,
-            "acceptance": round(mapped / max(1, len(words) - misses), 3),
+            "requests": len(words),
+            "absent": sum(1 for o in outcomes.values() if o.startswith("absent")),
+            "transport_failures": len(transport),
+            "held": len(held), "mapped": mapped,
+            # Coverage discounts words the source does not hold and transport failures alike:
+            # neither says anything about whether the shape maps.
+            "mapped_share_of_held": round(mapped / max(1, len(held)), 3),
+            "outcomes": outcomes,
             "latency_p50_ms": round(statistics.median(latencies), 1),
             "latency_max_ms": round(max(latencies), 1),
             "fields_bytes": fields_bytes, "html_bytes": html_bytes,
@@ -214,17 +262,20 @@ def main() -> int:
     RESULTS.mkdir(parents=True, exist_ok=True)
     (RESULTS / "online.json").write_text(json.dumps(report, indent=2, ensure_ascii=False),
                                          encoding="utf-8")
-    lines = ["| API | Requests | Misses | Mapped | p50 ms | max ms | fields B | html B |",
+    lines = ["| API | Requested | Absent at source | Transport failures | Held | Mapped | Mapped ÷ held | p50 ms |",
              "|---|---:|---:|---:|---:|---:|---:|---:|"]
     for api, data in report["apis"].items():
-        lines.append(f"| `{api}` | {data['requests']} | {data['misses']} | {data['mapped']} | "
-                     f"{data['latency_p50_ms']} | {data['latency_max_ms']} | "
-                     f"{data['fields_bytes']:,} | {data['html_bytes']:,} |")
+        lines.append(f"| `{api}` | {data['requests']} | {data['absent']} | "
+                     f"{data['transport_failures']} | {data['held']} | {data['mapped']} | "
+                     f"{data['mapped_share_of_held'] * 100:.1f} % | {data['latency_p50_ms']} |")
     text = "\n".join(lines)
     (RESULTS / "online.md").write_text(text, encoding="utf-8")
     print(text)
     for api, data in report["apis"].items():
-        print(f"\n{api}: dropped={data['dropped']} unmapped_pos={data['unmapped_pos']}")
+        print(f"\n{api}: unmapped_pos={data['unmapped_pos']}")
+        for word, outcome in data["outcomes"].items():
+            if outcome != "mapped":
+                print(f"    {word}: {outcome}")
     return 0
 
 

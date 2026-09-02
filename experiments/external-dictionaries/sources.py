@@ -32,7 +32,10 @@ POS_MAP = {
     "phrase": "phrase", "prep_phrase": "phrase", "proverb": "phrase", "prepositional phrase": "phrase",
     "idiom": "idiom", "intj": "expression", "interjection": "expression",
 }
-# The lenient policy: everything else becomes "expression" and the loss is recorded.
+# Everything outside the enum keeps its own label instead. External entries are render-only and
+# never reach the database, so the display model can carry an arbitrary string: `pos` holds the
+# enum value when one genuinely applies, `posLabel` always holds what the source actually said.
+# Nothing is bucketed and nothing is invented.
 LENIENT_POS = "expression"
 
 REGISTER_TAGS = {
@@ -51,6 +54,7 @@ class Entry:
     dropped: set[str] = field(default_factory=set)
     pos_unmapped: set[str] = field(default_factory=set)
     invented: set[str] = field(default_factory=set)
+    pos_in_enum: bool = False      # did the source POS land in Acervo's seven values?
 
 
 def _open(path: Path):
@@ -140,9 +144,8 @@ def kaikki_fields(group: list[dict], language: str, definition_lang: str, lenien
     pos = POS_MAP.get(pos_source)
     if pos is None:
         entry.pos_unmapped.add(pos_source)
-        if not lenient:
-            return entry
-        pos = LENIENT_POS
+    else:
+        entry.pos_in_enum = True
 
     senses: list[dict] = []
     for record in group:
@@ -188,10 +191,13 @@ def kaikki_fields(group: list[dict], language: str, definition_lang: str, lenien
         "language": language,
         "headword": head["word"],
         "lemma": head["word"],
-        "pos": pos,
         "status": "inbox",
         "senses": senses,
     }
+    if pos:
+        draft["pos"] = pos
+    if pos_source:
+        draft["posLabel"] = pos_source
     ipa = _ipa_of(head)
     if ipa:
         draft["ipa"] = ipa
@@ -258,7 +264,8 @@ def cedict_fields(row: tuple[str, str, str, list[str]]) -> Entry:
         "headword": simplified,
         "lemma": simplified,
         "reading": pinyin,                  # Chinese lexemes require a reading (domain.ts)
-        "pos": "noun",                      # CC-CEDICT carries no POS at all
+        # CC-CEDICT carries no part of speech. Earlier this invented "noun"; it now says nothing,
+        # and the interface shows nothing.
         "status": "inbox",
         # One English text per sense: writing it as definition *and* gloss would store it twice.
         "senses": [{
@@ -267,7 +274,6 @@ def cedict_fields(row: tuple[str, str, str, list[str]]) -> Entry:
             "definitionLang": "en",
         } for index, text in enumerate(senses)],
     }
-    entry.invented.add("pos")               # nothing in the source supports this
     return entry
 
 
@@ -327,18 +333,20 @@ def jmdict_fields(word: dict, lenient: bool) -> Entry:
     pos = next((JMDICT_POS[p] for p in pos_seen if p in JMDICT_POS), None)
     if pos is None:
         entry.pos_unmapped |= set(pos_seen)
-        if not lenient:
-            return entry
-        pos = LENIENT_POS
+    else:
+        entry.pos_in_enum = True
 
     draft = {
         "language": "ja",
         "headword": headword,
         "lemma": headword,
-        "pos": pos,
         "status": "inbox",
         "senses": senses,
     }
+    if pos:
+        draft["pos"] = pos
+    if pos_seen:
+        draft["posLabel"] = pos_seen[0]
     if kana and kanji:
         draft["reading"] = kana[0]
     entry.fields = draft
@@ -409,14 +417,14 @@ def tei_fields(row: tuple[str, str, list[str]], lenient: bool) -> Entry:
     pos = TEI_POS.get(pos_source)
     if pos is None:
         entry.pos_unmapped.add(pos_source or "(none)")
-        if not lenient:
-            return entry
-        pos = LENIENT_POS
+    else:
+        entry.pos_in_enum = True
     entry.fields = {
         "language": "en",
         "headword": headword,
         "lemma": headword,
-        "pos": pos,
+        **({"pos": pos} if pos else {}),
+        **({"posLabel": pos_source} if pos_source else {}),
         "status": "inbox",
         "senses": [{
             "order": index,

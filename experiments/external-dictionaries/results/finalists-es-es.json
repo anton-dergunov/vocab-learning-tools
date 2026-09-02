@@ -3,10 +3,10 @@
     "source": "kaikki-es-es",
     "entries": 838769,
     "source_bytes": 99290188,
-    "read_seconds": 19.4,
-    "fidelity": 0.9528,
-    "mapped": 799174,
-    "fields_bytes": 240428007,
+    "read_seconds": 21.1,
+    "fidelity": 0.9946,
+    "mapped": 834245,
+    "fields_bytes": 263960477,
     "html_bytes": 176391757,
     "dropped_fields": [
       "antonyms",
@@ -48,95 +48,95 @@
           "container": "packed+block256",
           "codec": "deflate",
           "engine": "fflate",
-          "artifact": 39860177,
+          "artifact": 41620471,
           "dictionary": 0,
           "engine_bytes": 0,
-          "total": 39860177,
+          "total": 41620471,
           "resident": 65536,
-          "transient": 50944,
+          "transient": 66560,
           "extra": {
-            "blob": 20263747,
-            "index": 19596430,
-            "index_if_held_in_ram": 19596430
+            "blob": 21181228,
+            "index": 20439243,
+            "index_if_held_in_ram": 20439243
           },
-          "exact_p50": 0.1418,
-          "exact_p95": 0.2502,
-          "prefix_p50": 0.0021,
-          "prefix_p95": 0.0035
+          "exact_p50": 0.1882,
+          "exact_p95": 4.9451,
+          "prefix_p50": 0.0025,
+          "prefix_p95": 0.0069
         },
         {
           "container": "packed+block256",
           "codec": "deflate+dict",
           "engine": "fflate",
-          "artifact": 38928818,
+          "artifact": 40486146,
           "dictionary": 65536,
           "engine_bytes": 0,
-          "total": 38994354,
+          "total": 40551682,
           "resident": 65536,
-          "transient": 50944,
+          "transient": 66560,
           "extra": {
-            "blob": 19332388,
-            "index": 19596430,
-            "index_if_held_in_ram": 19596430
+            "blob": 20046903,
+            "index": 20439243,
+            "index_if_held_in_ram": 20439243
           },
-          "exact_p50": 0.1339,
-          "exact_p95": 0.2517,
-          "prefix_p50": 0.0022,
-          "prefix_p95": 0.0037
+          "exact_p50": 0.1478,
+          "exact_p95": 0.294,
+          "prefix_p50": 0.0025,
+          "prefix_p95": 0.0043
         },
         {
           "container": "packed+block256",
           "codec": "zstd19",
           "engine": "fzstd",
-          "artifact": 38469423,
+          "artifact": 40074393,
           "dictionary": 0,
           "engine_bytes": 8394,
-          "total": 38477817,
+          "total": 40082787,
           "resident": 65536,
-          "transient": 50944,
+          "transient": 66560,
           "extra": {
-            "blob": 18872993,
-            "index": 19596430,
-            "index_if_held_in_ram": 19596430
+            "blob": 19635150,
+            "index": 20439243,
+            "index_if_held_in_ram": 20439243
           },
-          "exact_p50": 0.1274,
-          "exact_p95": 0.2388,
-          "prefix_p50": 0.0022,
-          "prefix_p95": 0.0034
+          "exact_p50": 0.1269,
+          "exact_p95": 0.2251,
+          "prefix_p50": 0.0021,
+          "prefix_p95": 0.0033
         },
         {
           "container": "packed+block256",
           "codec": "zstd19+dict",
           "engine": "zstd-wasm",
-          "artifact": 36379325,
+          "artifact": 37875521,
           "dictionary": 65536,
           "engine_bytes": 348579,
-          "total": 36793440,
+          "total": 38289636,
           "resident": 65536,
-          "transient": 50944,
+          "transient": 66560,
           "extra": {
-            "blob": 16782895,
-            "index": 19596430,
-            "index_if_held_in_ram": 19596430
+            "blob": 17436278,
+            "index": 20439243,
+            "index_if_held_in_ram": 20439243
           },
-          "exact_p50": 0.1427,
-          "exact_p95": 0.2511,
+          "exact_p50": 0.1489,
+          "exact_p95": 0.2339,
           "prefix_p50": 0.0022,
-          "prefix_p95": 0.0037
+          "prefix_p95": 0.0035
         },
         {
           "container": "sqlite+block256",
           "codec": "deflate",
           "engine": "sqlite-wasm",
-          "artifact": 59863040,
+          "artifact": 62541824,
           "dictionary": 0,
           "engine_bytes": 1305884,
-          "total": 61168924,
+          "total": 63847708,
           "resident": 2097152,
-          "transient": 167680,
-          "exact_p50": 0.044,
-          "exact_p95": 0.1277,
-          "prefix_p50": 0.0138,
+          "transient": 172800,
+          "exact_p50": 0.0449,
+          "exact_p95": 0.1233,
+          "prefix_p50": 0.0135,
           "prefix_p95": 0.0151
         }
       ],
@@ -156,10 +156,10 @@
             "index": 20544816,
             "index_if_held_in_ram": 20544816
           },
-          "exact_p50": 0.1279,
-          "exact_p95": 0.2319,
-          "prefix_p50": 0.0022,
-          "prefix_p95": 0.0037
+          "exact_p50": 0.129,
+          "exact_p95": 0.248,
+          "prefix_p50": 0.0069,
+          "prefix_p95": 0.0215
         },
         {
           "container": "packed+block256",
@@ -176,10 +176,10 @@
             "index": 20544816,
             "index_if_held_in_ram": 20544816
           },
-          "exact_p50": 0.1237,
-          "exact_p95": 0.2396,
-          "prefix_p50": 0.0023,
-          "prefix_p95": 0.0048
+          "exact_p50": 0.1173,
+          "exact_p95": 0.2377,
+          "prefix_p50": 0.0025,
+          "prefix_p95": 0.0038
         },
         {
           "container": "packed+block256",
@@ -196,9 +196,9 @@
             "index": 20544816,
             "index_if_held_in_ram": 20544816
           },
-          "exact_p50": 0.1085,
-          "exact_p95": 0.2116,
-          "prefix_p50": 0.0023,
+          "exact_p50": 0.1064,
+          "exact_p95": 0.2109,
+          "prefix_p50": 0.0021,
           "prefix_p95": 0.0033
         },
         {
@@ -216,10 +216,10 @@
             "index": 20544816,
             "index_if_held_in_ram": 20544816
           },
-          "exact_p50": 0.076,
-          "exact_p95": 0.2201,
-          "prefix_p50": 0.0023,
-          "prefix_p95": 0.0042
+          "exact_p50": 0.0873,
+          "exact_p95": 0.2302,
+          "prefix_p50": 0.0022,
+          "prefix_p95": 0.004
         },
         {
           "container": "sqlite+block256",
@@ -231,10 +231,10 @@
           "total": 61107484,
           "resident": 2097152,
           "transient": 119296,
-          "exact_p50": 0.0387,
-          "exact_p95": 0.1119,
-          "prefix_p50": 0.0149,
-          "prefix_p95": 0.0342
+          "exact_p50": 0.0393,
+          "exact_p95": 0.127,
+          "prefix_p50": 0.0148,
+          "prefix_p95": 0.032
         }
       ]
     }

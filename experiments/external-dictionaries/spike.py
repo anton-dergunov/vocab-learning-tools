@@ -39,6 +39,8 @@ OUT = HERE.parents[1] / "data" / "dictionaries" / "out"
 DRAFT_KEYS = ["id", "language", "headword", "lemma", "reading", "ipa", "pos", "gender", "register",
               "dialect", "emoji", "status", "topics", "shortGloss", "notes", "senses",
               "attestations", "imagePrompts"]
+# posLabel is deliberately absent from DRAFT_KEYS: it is a render-only field the current
+# parseArticle would reject as an unknown key. §11.3 records what that implies.
 SENSE_KEYS = ["id", "order", "definition", "definitionLang", "domain", "glosses", "examples",
               "imagePrompts"]
 
