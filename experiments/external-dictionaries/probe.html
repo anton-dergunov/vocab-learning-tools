@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acervo dictionary storage probe</title>
+<style>
+  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: 1rem; }
+  h1 { font-size: 1.1rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td, th { border-bottom: 1px solid #ddd; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+  td:last-child { text-align: right; white-space: nowrap; }
+  .y { color: #0a7; font-weight: 600; } .n { color: #c33; font-weight: 600; }
+  code { font: 12px ui-monospace, monospace; }
+</style>
+<h1>Acervo dictionary storage probe</h1>
+<p>Open on the target phone and in the <code>macos/</code> WKWebView host. Everything the spike
+assumes about what a client can read is measured here rather than inferred.</p>
+<table id="out"><tbody></tbody></table>
+<script type="module">
+const tbody = document.querySelector("#out tbody");
+const row = (label, value, ok) => {
+  const tr = document.createElement("tr");
+  const mark = ok === undefined ? "" : ok ? ' class="y"' : ' class="n"';
+  tr.innerHTML = `<th>${label}</th><td${mark}>${value}</td>`;
+  tbody.append(tr);
+};
+const mb = (n) => (n / 1048576).toFixed(1) + " MiB";
+
+row("User agent", navigator.userAgent);
+
+// 1. What the platform can decompress for free, with no library at all.
+for (const format of ["gzip", "deflate", "deflate-raw", "zstd", "br"]) {
+  let ok = false;
+  try { new DecompressionStream(format); ok = true; } catch { ok = false; }
+  row(`DecompressionStream("${format}")`, ok ? "supported" : "not supported", ok);
+}
+
+// 2. Storage surfaces. OPFS with a sync access handle is what makes a packed blob container
+//    viable without shipping a database engine.
+const opfs = !!navigator.storage?.getDirectory;
+row("OPFS (navigator.storage.getDirectory)", opfs ? "available" : "missing", opfs);
+if (opfs) {
+  try {
+    const dir = await navigator.storage.getDirectory();
+    const file = await dir.getFileHandle("probe.bin", { create: true });
+    row("createSyncAccessHandle (worker API)", "createSyncAccessHandle" in file ? "present" : "absent",
+        "createSyncAccessHandle" in file);
+    const writable = await file.createWritable();
+    await writable.write(new Uint8Array(1024));
+    await writable.close();
+    const blob = await file.getFile();
+    const t0 = performance.now();
+    await blob.slice(100, 400).arrayBuffer();
+    row("Blob.slice random read", `${(performance.now() - t0).toFixed(3)} ms`, true);
+    await dir.removeEntry("probe.bin");
+  } catch (error) { row("OPFS write/read", String(error), false); }
+}
+
+const estimate = await navigator.storage?.estimate?.();
+if (estimate) {
+  row("storage.estimate() quota", mb(estimate.quota));
+  row("storage.estimate() usage", mb(estimate.usage));
+}
+row("storage.persisted()", await navigator.storage?.persisted?.() ? "true" : "false");
+
+// 3. Device memory, the ceiling the container has to live under.
+row("navigator.deviceMemory", navigator.deviceMemory ? `${navigator.deviceMemory} GB` : "unreported");
+row("JS heap limit", performance.memory ? mb(performance.memory.jsHeapSizeLimit) : "unreported");
+
+// 4. Can the libraries the spike shortlists actually decompress a dictionary-compressed payload?
+const load = (url) => new Promise((ok, no) => {
+  const el = document.createElement("script"); el.src = url; el.onload = ok; el.onerror = no;
+  document.head.append(el);
+});
+
+try {
+  await load("https://cdn.jsdelivr.net/npm/fflate@0.8.3/umd/index.js");
+  const sample = new TextEncoder().encode(JSON.stringify({ headword: "picar", pos: "verb" }).repeat(40));
+  const dict = new TextEncoder().encode('{"headword":"","pos":"verb","senses":[{"definition":"');
+  const packed = fflate.deflateSync(sample, { dictionary: dict, level: 9 });
+  const back = fflate.inflateSync(packed, { dictionary: dict });
+  const same = back.length === sample.length;
+  row("fflate deflate+dictionary round trip", same ? `ok, ${sample.length}→${packed.length} B` : "MISMATCH", same);
+  const t0 = performance.now();
+  for (let i = 0; i < 200; i++) fflate.inflateSync(packed, { dictionary: dict });
+  row("fflate inflate throughput", `${((performance.now() - t0) / 200).toFixed(3)} ms/block`, true);
+} catch (error) { row("fflate", String(error), false); }
+
+try {
+  await load("https://cdn.jsdelivr.net/npm/fzstd@0.1.1/umd/index.js");
+  row("fzstd loaded", "yes", true);
+  // fzstd is decompress-only and, critically, exposes no way to supply a trained dictionary.
+  const hasDict = typeof fzstd.decompress === "function" && fzstd.decompress.length > 1;
+  row("fzstd custom-dictionary support", hasDict ? "check API" : "none exposed", hasDict);
+} catch (error) { row("fzstd", String(error), false); }
+</script>

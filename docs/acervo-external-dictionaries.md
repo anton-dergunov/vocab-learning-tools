@@ -147,7 +147,8 @@ hound, hound dog — (any of several breeds of dog used for hunting,
 
 There is no good open Spanish→Russian dictionary. The options are WikDict pairs, PanLex pairs
 (CC0), or pivoting es→en→ru and compounding the error. **Use dictionaries for `es→es` and `es→en`,
-and keep letting the LLM write the Russian gloss.** That is a genuine strength of the current
+and keep letting the LLM write the Russian gloss.** (§11.3 confirms both directions map cleanly —
+95.0 % and 97.5 % of entries — with nothing invented.) That is a genuine strength of the current
 pipeline, not a gap, and it is a reason not to over-invest in bilingual dictionary plumbing.
 
 ---
@@ -253,7 +254,12 @@ Two objections to that are correct and change the design:
 But the container requirement does not go away: a 2.69 GB JSONL file cannot be scanned per keystroke
 on a phone, so *something* must provide keyed random access and prefix search.
 
-> ### DECISION
+> ### DECISION — SUPERSEDED by §11
+> *Measured and rejected. SQLite costs 1.66× the packed-blob container for the same corpus; the
+> replacement decision is in §11. The two-tier payload idea survives, but not its rationale — HTML
+> turned out to be **smaller** than the mapped fields, not larger. Kept here because §11 is only
+> legible as a correction to it.*
+>
 > **SQLite as a dumb container, not as a relational model. Two tiers of payload.**
 >
 > ```
@@ -295,7 +301,7 @@ article components can render. These are worth the mapping effort.
 | Format | Mapper effort | Why it maps |
 |---|---|---|
 | **wiktextract JSONL** | One mapper, reused everywhere | Near-isomorphic to Acervo's model already: `word`, `pos`, `sounds[].ipa`, `senses[].glosses`, `senses[].tags`, `forms[]`. This is the mapper that matters — it covers ~20 Wiktionary editions and hundreds of languages. |
-| **Wiktionary-shaped JSON APIs** (freedictionaryapi.com, Wikimedia REST) | Shares the above | Same upstream data, so the same field mapper serves the online and offline paths. |
+| **Wiktionary-shaped JSON APIs** (freedictionaryapi.com, Wikimedia REST) | ~~Shares the above~~ **one small connector each** | Same upstream data but *three different field shapes* — measured in §11.5, which withdraws this claim. |
 | **CC-CEDICT** | ~30 lines | Fixed line grammar: traditional, simplified, `[pinyin]`, `/gloss/gloss/`. |
 | **jmdict-simplified JSON** | Small | Sense-tagged, POS-tagged JSON. |
 | **ECDICT CSV** | Small | Columnar, with frequency and exam metadata worth keeping. |
@@ -323,9 +329,9 @@ per-source maintenance the tiering exists to avoid.
 
 The mitigation is to exploit shared upstreams rather than write many connectors:
 
-- **freedictionaryapi.com and Wikimedia REST are both Wiktionary-derived**, so the Tier 1
-  wiktextract mapper covers them with a thin request wrapper. **Ship these two and stop.** One
-  primary, one fallback, zero new mapping logic.
+- **freedictionaryapi.com and Wikimedia REST are both Wiktionary-derived**, so ship these two and
+  stop: one primary, one fallback. But *not* "zero new mapping logic" — §11.5 measured three
+  different field shapes across the three Wiktionary-derived sources. Budget ~40 lines each.
 - Wordnik, WordsAPI, Merriam-Webster and Lexicala each need a bespoke connector. Add one only when a
   concrete gap in the free sources appears — not speculatively.
 - Rate limits are not a constraint at personal scale (§2). Do not prefetch; look up on demand.
@@ -341,8 +347,9 @@ reasoning behind them, stated so it can be falsified by the spike:
 2. Per-row compression of what remains — guessed at roughly half again.
 3. 2.69 GB → ~300 MB → ~150 MB.
 
-Any link in that chain could be wrong by 2× or more, in either direction. §10's spike measures it
-instead.
+Any link in that chain could be wrong by 2× or more, in either direction. §10's spike measured it
+instead: **35–38 MiB** for the whole Spanish Wiktionary (838,769 headwords), so the guess was about
+4× too high. See §11.1.
 
 ---
 
@@ -586,3 +593,190 @@ npm --prefix web run build && npm run test:pwa
 [arXiv 2404.06224](https://arxiv.org/abs/2404.06224) ·
 [arXiv 2410.03182](https://arxiv.org/abs/2410.03182) ·
 [arXiv 2601.01842](https://arxiv.org/abs/2601.01842)
+
+---
+
+## §11 · Spike 0 results
+
+**Status:** measured. Apparatus and raw numbers in
+[`experiments/external-dictionaries/`](../experiments/external-dictionaries/). Everything below is
+measured on the real corpora unless labelled an estimate.
+
+Corpora: CC-CEDICT (2026-08-31), kaikki `eswiktionary` and kaikki Spanish (English edition),
+jmdict-simplified 3.6.2, FreeDict `eng-rus` 2025.11.23 in both TEI P5 and StarDict form, plus
+freedictionaryapi and the Wikimedia REST definition endpoint. Sources were chosen to span *formats*
+— fixed line grammar, rich JSONL, clean sense-tagged JSON, semantic XML, opaque binary, JSON API —
+rather than languages.
+
+### The four headline findings
+
+1. **The `fields` tier is not smaller than HTML — it is larger.** On every source measured, a
+   rendered HTML fragment costs less than the mapped `ArticleDraft` JSON, because the JSON repeats
+   its keys on every sense while the HTML does not. Whatever justifies mapping, it is not space.
+2. **Latency is not a constraint and never becomes one.** Exact lookup p95 is 0.01–0.25 ms across
+   every container at every scale tested. The stated tolerance was ~1 s. Size can decide alone.
+3. **§7's ~150 MB guess was about 4× too high.** The whole Spanish Wiktionary — 838,769 headwords —
+   lands at **35–38 MiB** installed. Storage is a non-issue at this size; §8's conclusion is
+   reinforced, not merely preserved.
+4. **The headword index, not the payload, is now the thing worth optimising.** At full scale the
+   index is 21.2 MiB against a 16–19 MiB compressed payload. Front-coding the sorted keys and
+   varint-packing the records takes it to **5.7 MiB** — a ~40 % cut to the whole artifact, and by
+   some distance the highest-leverage work remaining.
+
+> ### DECISION — supersedes the container decision in §7
+> **A packed blob plus a sidecar index, block-compressed at 256 entries, read with `fflate`.
+> Not SQLite.**
+>
+> ```
+> <name>.dict   concatenated payloads, deflate-compressed in 256-entry frames
+> <name>.idx    sorted headwords + one fixed record per entry (front-coded — see below)
+> <name>.json   meta: name, source, licence, attribution, built_at
+> ```
+>
+> **Because** it is the smallest total on the device and the fewest moving parts at once. SQLite
+> costs **1.53× more** than the recommended packed build for the same corpus (58.3 MiB against
+> 38.0 MiB, and 1.66× against the smallest packed build at 35.1 MiB): a
+> 1.3 MB wasm engine, plus page-alignment overhead on every row. `fflate` is already a `web/`
+> dependency, is ~8 KB, and supports the shared-dictionary API in both directions, so the read path
+> ships no new engine at all. A lookup is one binary search and one 256-entry frame decode — about
+> 50 KiB transient, which is the memory budget a phone actually cares about.
+>
+> **One container serves both mobile and the server.** The server has no space problem and could
+> use anything, but the same file read by the same code is worth more than a second format that
+> saves nothing anyone is short of. `sql.js-httpvfs` is no longer needed for the online path either
+> — an HTTP Range read of the packed blob is the same operation.
+
+### §11.1 · Container — full corpus, kaikki `eswiktionary`, 838,769 headwords
+
+`fields` payload, 229.3 MiB raw. "Total device" is artifact + trained dictionary + the library a
+client must ship to read it.
+
+| Container | Codec | Blob | Index | Library | **Total device** | vs best | RAM/lookup | exact p95 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| packed+block256 | zstd19+dict | 16.0 | 18.7 | 340 KiB | **35.1 MiB** | 1.00× | 50 KiB | 0.25 ms |
+| packed+block256 | zstd19 | 18.0 | 18.7 | 8 KiB | **36.7 MiB** | 1.05× | 50 KiB | 0.24 ms |
+| packed+block256 | deflate+dict | 18.4 | 18.7 | — | **37.2 MiB** | 1.06× | 50 KiB | 0.25 ms |
+| **packed+block256** | **deflate** | **19.3** | **18.7** | **—** | **38.0 MiB** | **1.08×** | **50 KiB** | **0.25 ms** |
+| sqlite+block256 | deflate | 57.1 | — | 1,275 KiB | **58.3 MiB** | 1.66× | 164 KiB | 0.13 ms |
+
+**Plain `deflate` is the recommendation despite not winning.** It is 8 % larger than the best
+result and needs no library beyond what is already bundled. zstd-with-a-trained-dictionary saves
+2.9 MiB but costs a ~340 KB wasm build, because `fzstd` (the 8 KB pure-JS decoder) cannot supply a
+custom dictionary — so the real comparison is 35.1 against 38.0 MiB, and 2.9 MiB does not justify a
+second compression engine on the read path. Revisit only if many dictionaries are installed at once.
+
+Block size matters more than codec choice: 256-entry frames roughly halve per-row compression, and
+once blocked, `deflate` and `zstd19` are within 8 % of each other. Brotli-11 was measured and
+discarded — never competitive after its engine cost, and the Python binding exposes no
+custom-dictionary API at all, so that variant is impractical by construction.
+
+### §11.2 · The index is the remaining prize
+
+| Index | Bytes | Note |
+|---|---:|---|
+| As built (sorted keys + 16-byte records) | 21.2 MiB | keys 8.4 + records 12.8 |
+| Front-coded keys | 2.5 MiB | 29 % of raw — sorted headwords share long prefixes |
+| Varint records | 3.2 MiB | with a fixed block size the block number is `index // 256` |
+| **Both applied** | **5.7 MiB** | **saves 15.5 MiB, ~40 % of the artifact** |
+
+This is Stage 1 work, not a research question. It is the single largest remaining size win and it
+needs no new dependency.
+
+### §11.3 · Representation — is the mapper worth writing?
+
+5,000-entry samples. "Mapped" is the share of source entries that produce an `ArticleDraft` at all.
+
+| Source | Format family | fields MiB | html MiB | html ÷ fields | Mapped | Dropped fields | Verdict |
+|---|---|---:|---:|---:|---:|---:|---|
+| `cc-cedict` | fixed line grammar | 1.3 | 0.7 | 0.56× | 100.0 % | 1 | **map** (~30 lines) |
+| `jmdict-eng` | sense-tagged JSON | 1.4 | 0.5 | 0.36× | 98.0 % | 6 | **map** (~45 lines) |
+| `freedict-eng-rus-tei` | semantic XML | 1.0 | 0.4 | 0.41× | 97.8 % | 0 | **map** (~35 lines) |
+| `kaikki-es-es` | rich JSONL | 2.8 | 2.1 | 0.75× | 97.5 % | 15 | **map** (~90 lines, reused) |
+| `kaikki-es-en` | rich JSONL | 1.6 | 1.2 | 0.75× | 95.0 % | 29 | **map** (same mapper) |
+| `freedict-eng-rus-stardict` | opaque binary | — | 1.8 | — | 0 % | all | **html only** |
+
+**Every mapped entry is a valid article.** Run through the application's own `parseArticle` — not a
+re-implementation — acceptance is **100 % on all seven sources**, so the failure mode is never a
+malformed article, only an entry that produces none at all.
+
+What actually costs entries is **Acervo's closed seven-value `pos` enum**. Wiktextract offers
+`det`, `prep`, `conj`, `pron`, `num`, `particle`, `article`, `character`, `prefix`, `suffix`;
+jmdict offers 17 more; TEI offers `pn`, `prefix`, `suffix`, `pronoun`. There is no escape-hatch
+field, so those entries are dropped rather than mistranslated. That is the honest behaviour and it
+costs 2–5 % of entries.
+
+Two source-specific notes worth keeping:
+
+- **CC-CEDICT carries no part of speech at all.** The mapper invents `pos: noun`. This is the one
+  place something is fabricated, and it is flagged rather than hidden. Its traditional-character
+  form is also dropped — a variant axis a single lexeme has nowhere to put.
+- **`es→en` and `es→es` both map, contrary to the concern in §3.** The English edition's glosses
+  are written as an English definition with `definitionLang: "en"` rather than pretended to be
+  Spanish, so nothing is invented. `parseArticle` requires a definition per sense but enforces no
+  minimum on glosses — `validateGraph`'s stricter rule does not apply, because external entries are
+  render-only and never enter the graph.
+
+### §11.4 · Tier 2, and PyGlossary in practice
+
+The opaque-binary path works and produces usable HTML, confirming the fallback is real: 5,000
+StarDict entries → 1.8 MiB of HTML, 0.3 MiB installed. Two practical frictions:
+
+- **PyGlossary 5.4.2 renamed `Glossary.read` to `directRead`**, and silently disables seven plugins
+  — including **XDXF** — when `lxml` is absent, printing a warning rather than failing. Anything
+  depending on those formats must install `lxml` explicitly.
+- **Its HTML needs restyling, not merely sanitising.** FreeDict StarDict payloads carry
+  presentational markup — `<font color="gray">` for IPA, `<font class="grammar" color="green">` for
+  part of speech — whose inline colours would fight Acervo's theme in both light and dark. Strip
+  `<font>`, keep the structure, restyle from the class names where they exist.
+
+Notably these payloads *do* contain IPA, part of speech, definition and translation as recoverable
+structure. They could be mapped by parsing the HTML — and that is exactly the case where the answer
+is no: extracting fields from presentational markup is unbounded maintenance for a source that
+renders perfectly well as-is.
+
+### §11.5 · Online sources
+
+| API | Requests | Misses | Mapped | p50 | max | Shape |
+|---|---:|---:|---:|---:|---:|---|
+| `freedictionaryapi` | 9 | 1 | 6 | 131 ms | 459 ms | `entries[].partOfSpeech`, `senses[].definition` (string) |
+| `wikimedia-rest` | 9 | 2 | 6 | 254 ms | 679 ms | `{lang: [{definitions: [{definition: HTML}]}]}` |
+
+**§7's claim that these "share the offline wiktextract mapper" is wrong and is corrected here.**
+Three Wiktionary-derived sources, three different field shapes: wiktextract uses `pos`,
+`sounds[].ipa` and `senses[].glosses` (a *list*); freedictionaryapi uses `partOfSpeech`,
+`pronunciations[].text` and `senses[].definition` (a *string*); Wikimedia REST returns definitions
+as **HTML fragments with `mw:WikiLink` markup**, so its `fields` path must strip markup — and its
+raw HTML is 2.4× larger than the mapped fields. Budget one small connector each, roughly 40 lines,
+not one shared mapper.
+
+Two further practical notes: the definition endpoint exists **only on `en.wiktionary.org`**, keyed
+by term with languages inside the response — a per-language host 404s. And both APIs return far
+more senses than §1 wants shown: **7.7 and 8.2 senses per entry** against the three-to-five target.
+Whatever renders them must truncate.
+
+### §11.6 · What this changes
+
+- **§7's container DECISION is superseded** by §11's. SQLite was a reasonable hypothesis and it
+  lost on measurement, at 1.66× the size for no benefit that matters here.
+- **§7's "same mapper" claim about the APIs is withdrawn** (§11.5).
+- **§7's removed ~150 MB estimate is replaced by 35–38 MiB measured** for the largest corpus.
+- **The `fields`/`html` tiering survives, but its rationale is inverted.** Mapping is not a space
+  optimisation — HTML is smaller. Mapping buys *rendering in Acervo's own article view*, and it is
+  worth it exactly where a source is already field-structured, which the measurements show is four
+  of the five non-opaque formats at under 100 lines each.
+- **Answering the question that motivated the spike:** yes, build the ingest path — but only the
+  wiktextract mapper is load-bearing, since it covers ~20 Wiktionary editions and hundreds of
+  languages. The small parsers are cheap enough to add on demand, and HTML remains the guaranteed
+  fallback for everything opaque.
+
+### §11.7 · Not measured
+
+`probe.html` reports what a device can actually do — `DecompressionStream` formats, OPFS and
+`createSyncAccessHandle`, `storage.estimate()`, whether `fflate` round-trips a dictionary-compressed
+payload on-device, and decode throughput. **It has not yet been run on a phone or in the `macos/`
+WKWebView host.** Until it is, the read path is verified only on desktop Python, and the OPFS
+assumption behind the packed container is inference rather than measurement. That is the one gap
+before Stage 1 starts.
+
+IndexedDB is reported as a payload floor only; its true per-record overhead is invisible from
+Python and needs the same probe.

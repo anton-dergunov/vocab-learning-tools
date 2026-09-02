@@ -1,0 +1,44 @@
+{
+  "language": "es",
+  "words": 9,
+  "apis": {
+    "freedictionaryapi": {
+      "requests": 9,
+      "misses": 1,
+      "mapped": 6,
+      "acceptance": 0.75,
+      "latency_p50_ms": 131.2,
+      "latency_max_ms": 459.0,
+      "fields_bytes": 5502,
+      "html_bytes": 3031,
+      "dropped": [
+        "antonyms",
+        "forms",
+        "pronunciations",
+        "quotes",
+        "subsenses",
+        "synonyms",
+        "tags"
+      ],
+      "unmapped_pos": [
+        "conjunction"
+      ]
+    },
+    "wikimedia-rest": {
+      "requests": 9,
+      "misses": 2,
+      "mapped": 6,
+      "acceptance": 0.857,
+      "latency_p50_ms": 253.5,
+      "latency_max_ms": 678.5,
+      "fields_bytes": 5400,
+      "html_bytes": 13025,
+      "dropped": [
+        "(definitions arrive as HTML; markup stripped)"
+      ],
+      "unmapped_pos": [
+        "Conjunction"
+      ]
+    }
+  }
+}

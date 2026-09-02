@@ -17,6 +17,7 @@ old_prototypes/
 # Selected, app-ready assets belong under assets/ and remain tracked.
 /design/generated/
 /build/
+/node_modules/
 /web/node_modules/
 /web/dist/
 # Generated PWA staging area populated by `npm run stage:pwa` before deployment.
