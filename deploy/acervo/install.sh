@@ -241,11 +241,19 @@ if [ "$reset_pocketbase" = true ]; then
   echo "PocketBase database replaced; the previous one is in $backup_dir/pocketbase"
 fi
 
-compose -p "$compose_project" \
+echo "Building and starting containers..."
+build_log=$(mktemp "${TMPDIR:-/tmp}/acervo-build.XXXXXX")
+if ! compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
   --env-file "$acervo_root/secrets.env" \
-  -f "$compose_file" up -d --build anki-sync-server pocketbase
+  -f "$compose_file" up -d --build anki-sync-server pocketbase >"$build_log" 2>&1; then
+  cat "$build_log" >&2
+  rm -f "$build_log"
+  exit 1
+fi
+rm -f "$build_log"
 
+echo "Waiting for anki-sync-server to become healthy..."
 attempt=0
 until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" ps --format json anki-sync-server 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
   attempt=$((attempt + 1))
@@ -256,6 +264,7 @@ until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env
   sleep 2
 done
 
+echo "Waiting for pocketbase to become healthy..."
 attempt=0
 until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" ps --format json pocketbase 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
   attempt=$((attempt + 1))

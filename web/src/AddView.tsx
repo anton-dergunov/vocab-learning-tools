@@ -1,12 +1,17 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import type { CaptureRequest, CaptureResult } from "./api";
 import Composer from "./Composer";
 import type { VocabularyGraph } from "./domain";
+import { useEditorPreferences } from "./editorPreferences";
 import { CaretIcon, CloseIcon } from "./icons";
 import LexemeArticle from "./LexemeArticle";
 import { articleFromDraft, type Article } from "./selectors";
-import { EditorSurface, useEditorPreferences, ValidationPanel } from "./YamlPane";
+import { ValidationPanel } from "./ValidationPanel";
 import { parseArticle, YAML_TEMPLATE, yamlForDraft, YamlProblems, type YamlProblem } from "./yaml";
+
+// CodeMirror is the largest dependency in the bundle and is only needed once the YAML tab is
+// actually opened, so it is loaded on demand rather than with everything else.
+const EditorSurface = lazy(() => import("./YamlPane").then((module) => ({ default: module.EditorSurface })));
 
 export type AddTab = "capture" | "article" | "yaml";
 
@@ -238,7 +243,9 @@ export default function AddView({
   >
     <div className="code-wrap">
       <div className="code-head"><span className="label">new-entry.yaml</span></div>
-      <EditorSurface value={draft} onChange={setDraft} wrap={wrap} numbers={numbers} />
+      <Suspense fallback={<p className="empty">Loading the editor…</p>}>
+        <EditorSurface value={draft} onChange={setDraft} wrap={wrap} numbers={numbers} />
+      </Suspense>
     </div>
   </Composer>;
 }

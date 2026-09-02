@@ -8,7 +8,7 @@ import { syncEngine, type SyncStatus } from "./sync";
 import { SyncPanel } from "./SyncStatus";
 import { ExportPanel, ImportPanel } from "./TransferPanel";
 import { appVersionLabel } from "./version";
-import { editorPreferences, setEditorPreference, type EditorPreferences } from "./YamlPane";
+import { editorPreferences, setEditorPreference, type EditorPreferences } from "./editorPreferences";
 
 /** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
 const CONFIRMATION = "DELETE";

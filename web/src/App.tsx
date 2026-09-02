@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AddView, { type AddTab } from "./AddView";
 import { backendSession, type CaptureRequest } from "./api";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
@@ -21,8 +21,12 @@ import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
 import { SyncChip } from "./SyncStatus";
 import { parseArticle, yamlFor, YamlProblems, type YamlProblem } from "./yaml";
-import { YamlEditor, YamlView } from "./YamlPane";
 import "./styles.css";
+
+// CodeMirror is the largest dependency in the bundle and is only needed once the YAML tab or the
+// YAML editor is actually opened, so it is loaded on demand rather than with everything else.
+const YamlEditor = lazy(() => import("./YamlPane").then((module) => ({ default: module.YamlEditor })));
+const YamlView = lazy(() => import("./YamlPane").then((module) => ({ default: module.YamlView })));
 
 type Mode = "read" | "yaml" | "edit";
 
@@ -398,14 +402,16 @@ export default function App() {
             onCapture={captureText}
             onOpenLexeme={(id) => { setProblems([]); setAddTab(null); openLexeme(id); }}
             onNotify={notify}
-          /> : article && mode === "edit" ? <YamlEditor
-            // Remounts for a different entry, and only then: the draft must survive a sync.
-            key={article.lexeme.id}
-            name={article.lexeme.headword} yaml={yamlFor(article)}
-            problems={problems} notice={null} busy={saving}
-            onCancel={() => { setProblems([]); setMode("read"); }}
-            onSave={(draft) => void saveArticleYaml(draft)}
-          /> : <div className="pane">
+          /> : article && mode === "edit" ? <Suspense fallback={<p className="empty">Loading the editor…</p>}>
+            <YamlEditor
+              // Remounts for a different entry, and only then: the draft must survive a sync.
+              key={article.lexeme.id}
+              name={article.lexeme.headword} yaml={yamlFor(article)}
+              problems={problems} notice={null} busy={saving}
+              onCancel={() => { setProblems([]); setMode("read"); }}
+              onSave={(draft) => void saveArticleYaml(draft)}
+            />
+          </Suspense> : <div className="pane">
             {article && <div className="art-bar">
               <button className="icon-btn" aria-label="Back to the list" onClick={() => setOpenId(null)}><BackIcon /></button>
               <span className="label">{topicLabel}</span>
@@ -426,7 +432,9 @@ export default function App() {
                 />
               : mode === "read" ? <LexemeArticle article={article} onUnsupported={notify} />
               // Editing is a composer above, so only reading and the read-only projection get here.
-              : <YamlView name={article.lexeme.headword} yaml={yamlFor(article)} />}
+              : <Suspense fallback={<p className="empty">Loading the editor…</p>}>
+                  <YamlView name={article.lexeme.headword} yaml={yamlFor(article)} />
+                </Suspense>}
           </div>}
         </main>
       </div>

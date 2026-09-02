@@ -67,6 +67,11 @@ function replaceInEditor(find: string, replacement: string) {
   });
 }
 
+/** CodeMirror is loaded on demand, so a mount that follows a tab/mode switch takes an extra tick. */
+async function waitForEditor() {
+  await waitFor(() => expect(document.querySelector(".cm-editor")).not.toBeNull());
+}
+
 /**
  * A capture the server answered with a full proposal: one sense, the learner's own sentence kept as
  * an attestation, and the example that draws on it naming that attestation.
@@ -407,6 +412,7 @@ describe("Acervo application", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "YAML" }));
     await screen.findByText("new-entry.yaml");
+    await waitForEditor();
     expect(editorText()).toContain("headword: el garfio");
     expect(editorText()).toContain("origin: attestation");
 
@@ -439,12 +445,14 @@ describe("Acervo application", () => {
     // disagree about what is being approved.
     fireEvent.click(screen.getByRole("button", { name: "YAML" }));
     await screen.findByText("new-entry.yaml");
+    await waitForEditor();
     replaceInEditor("headword: el garfio", "headword: el gancho");
     fireEvent.click(screen.getByRole("button", { name: "Article" }));
     expect(await screen.findByRole("heading", { name: "el gancho" })).toBeInTheDocument();
 
     // A document that cannot be read has nothing to show and nothing to approve.
     fireEvent.click(screen.getByRole("button", { name: "YAML" }));
+    await waitForEditor();
     replaceInEditor("pos: noun", "pos: preposition");
     fireEvent.click(screen.getByRole("button", { name: "Article" }));
     expect(await screen.findByText(/must be one of/)).toBeInTheDocument();
@@ -480,6 +488,7 @@ describe("Acervo application", () => {
     acceptWrites();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await waitForEditor();
 
     replaceInEditor("emoji: 🌶️", "emoji: 🫠");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -495,6 +504,7 @@ describe("Acervo application", () => {
     acceptWrites();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await waitForEditor();
 
     replaceInEditor("pos: verb", "pos: preposition");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -542,6 +552,7 @@ describe("Acervo application", () => {
     await openList();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await waitForEditor();
 
     // Wrapping is the default: these documents are prose, and a clipped definition was unreadable
     // and unscrollable both. The class is what the editor actually applies to wrap its lines.
@@ -564,6 +575,7 @@ describe("Acervo application", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await waitForEditor();
     // The editor draws a number per line and keeps it beside a line that wraps — which is the
     // reason numbers are worth offering at all.
     expect(document.querySelector(".cm-lineNumbers")).not.toBeNull();
@@ -578,6 +590,7 @@ describe("Acervo application", () => {
     // A region, not a dialog: composing replaces the list rather than covering it.
     const sheet = within(screen.getByRole("region", { name: "Add a word" }));
     fireEvent.click(sheet.getByRole("button", { name: "YAML" }));
+    await waitForEditor();
 
     const view = editorView();
     act(() => {
@@ -601,6 +614,7 @@ describe("Acervo application", () => {
       .mockRejectedValue(new AcervoApiError("This entry was changed somewhere else.", 409, "stale_record"));
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await waitForEditor();
 
     replaceInEditor("headword: picar", "headword: picarse");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

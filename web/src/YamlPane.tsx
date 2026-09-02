@@ -6,58 +6,10 @@ import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef, useState } from "react";
 import Composer from "./Composer";
+import { useEditorPreferences } from "./editorPreferences";
 import { CloseIcon } from "./icons";
+import { ValidationPanel } from "./ValidationPanel";
 import type { YamlProblem } from "./yaml";
-
-/**
- * How the YAML surfaces present text, remembered per device.
- *
- * These describe this screen, not the vocabulary — a phone and a desktop want different answers —
- * so they live in local storage rather than the replicated graph, and they are set in Settings
- * rather than above the editor, where they were controls you had to step over on the way to work.
- *
- * Wrapping is the default: these documents are mostly prose, and a definition running off the right
- * edge is the common case. Scrolling stays available because YAML indentation is meaningful.
- */
-export interface EditorPreferences {
-  wrap: boolean;
-  numbers: boolean;
-}
-
-const PREFERENCE_KEYS = { wrap: "acervo-editor-wrap", numbers: "acervo-editor-numbers" } as const;
-const PREFERENCES_EVENT = "acervo-editor-preferences";
-
-function readPreference(key: string, fallback: boolean): boolean {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored === null ? fallback : stored === "on";
-  } catch {
-    return fallback;
-  }
-}
-
-export function editorPreferences(): EditorPreferences {
-  return {
-    wrap: readPreference(PREFERENCE_KEYS.wrap, true),
-    numbers: readPreference(PREFERENCE_KEYS.numbers, false)
-  };
-}
-
-export function setEditorPreference(name: keyof EditorPreferences, value: boolean): void {
-  try { localStorage.setItem(PREFERENCE_KEYS[name], value ? "on" : "off"); } catch { /* a preference, not data */ }
-  // Settings and the editor are different trees, so a change in one has to reach the other.
-  window.dispatchEvent(new CustomEvent(PREFERENCES_EVENT));
-}
-
-export function useEditorPreferences(): EditorPreferences {
-  const [preferences, setPreferences] = useState(editorPreferences);
-  useEffect(() => {
-    const refresh = () => setPreferences(editorPreferences());
-    window.addEventListener(PREFERENCES_EVENT, refresh);
-    return () => window.removeEventListener(PREFERENCES_EVENT, refresh);
-  }, []);
-  return preferences;
-}
 
 /* ── the editing surface ────────────────────────────────────────────────
    CodeMirror owns the caret and the glyphs together, which is the whole reason it is here.
@@ -177,23 +129,6 @@ export function YamlView({ name, yaml }: { name: string; yaml: string }) {
     {/* The same surface as the editor, so the projection you read and the one you edit cannot
         disagree about how a long line is shown. */}
     <EditorSurface value={yaml} onChange={() => undefined} wrap={wrap} numbers={numbers} readOnly />
-  </div>;
-}
-
-/** Parse problems, a refusal from the server, or the confirmation that a save landed. */
-export function ValidationPanel({ problems, notice }: {
-  problems: YamlProblem[]; notice: string | null;
-}) {
-  if (!problems.length) {
-    return notice ? <div className="validation ok" role="status">{notice}</div> : null;
-  }
-  return <div className="validation bad" role="alert">
-    <strong>{problems.length === 1 ? "This document was not saved:" : `${problems.length} problems, so nothing was saved:`}</strong>
-    <ul>
-      {problems.map((problem, index) => <li key={index}>
-        {problem.line !== null && <code>line {problem.line}</code>} {problem.message}
-      </li>)}
-    </ul>
   </div>;
 }
 

@@ -12,11 +12,22 @@ for argument in "$@"; do
 done
 
 eval "$("$project_root/scripts/version.sh")"
-[[ -d web/node_modules ]] || npm install --prefix web
+if [[ ! -d web/node_modules ]]; then
+  print "Installing web dependencies..."
+  log=$(mktemp "${TMPDIR:-/tmp}/acervo-npm-install.XXXXXX")
+  if ! npm install --prefix web >"$log" 2>&1; then
+    cat "$log"
+    rm -f "$log"
+    exit 1
+  fi
+  rm -f "$log"
+fi
 "$project_root/scripts/generate_app_icons.py"
 npm run build:web
 xcodegen generate --spec macos/project.yml
-xcodebuild \
+print "Building the macOS app (this can take a while)..."
+xcodebuild_log=$(mktemp "${TMPDIR:-/tmp}/acervo-xcodebuild.XXXXXX")
+if ! xcodebuild \
   -project macos/Acervo.xcodeproj \
   -scheme Acervo \
   -configuration "$configuration" \
@@ -24,7 +35,12 @@ xcodebuild \
   MARKETING_VERSION="$ACERVO_APP_VERSION" \
   CURRENT_PROJECT_VERSION="$ACERVO_APP_BUILD" \
   CODE_SIGNING_ALLOWED=NO \
-  build
+  build >"$xcodebuild_log" 2>&1; then
+  cat "$xcodebuild_log"
+  rm -f "$xcodebuild_log"
+  exit 1
+fi
+rm -f "$xcodebuild_log"
 
 mkdir -p "$project_root/build"
 rm -rf "$project_root/build/Acervo.app"

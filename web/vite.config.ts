@@ -58,6 +58,7 @@ export default defineConfig({
       return hostType === "js" ? `./${filename}` : { relative: true };
     }
   },
-  build: { outDir: "dist", emptyOutDir: true },
+  // Just above the current largest chunk (index, ~447 kB) so real growth still trips the warning.
+  build: { outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 480 },
   test: { environment: "jsdom", globals: true, setupFiles: ["./src/testSetup.ts"] }
 });

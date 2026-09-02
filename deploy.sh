@@ -270,7 +270,14 @@ build_release_archive() {
   fi
   export ACERVO_INCLUDE_MACOS_RELEASE
   if [ "${ACERVO_SKIP_APP_BUILD:-false}" != true ]; then
-    npm run stage:pwa >&2
+    echo "Building the web app..." >&2
+    stage_log=$(mktemp "${TMPDIR:-/tmp}/acervo-stage-pwa.XXXXXX")
+    if ! npm run stage:pwa >"$stage_log" 2>&1; then
+      cat "$stage_log" >&2
+      rm -f "$stage_log"
+      exit 1
+    fi
+    rm -f "$stage_log"
   fi
   "$repo_root/scripts/package_acervo_server.sh"
 }
