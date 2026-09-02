@@ -46,17 +46,24 @@ export interface CatalogueEntry {
 export const catalogue: CatalogueEntry[] = (catalogueDocument as { dictionaries: CatalogueEntry[] })
   .dictionaries;
 
-const ENABLED_KEY = "acervo-dictionaries-enabled";
+const DISABLED_KEY = "acervo-dictionaries-off";
 const CHANGED_EVENT = "acervo-dictionaries-changed";
 
 /* ── per-device preferences ─────────────────────────────────────────────
    Which dictionaries are on describes *this device*, like the editor preferences and unlike the
    vocabulary — the phone and the laptop legitimately want different ones, and none of it is worth
-   a round trip to the server. */
+   a round trip to the server.
 
-function enabledSet(): Set<string> {
+   **What is stored is what is switched OFF.** It was the other way round, and that was a bug with
+   a long fuse: an online source can never be "installed", so nothing ever added it to a set of
+   switched-on ids, and a search that had just promised "press ⏎ to look this up online" then
+   quietly found nothing to ask. Anything Acervo can actually reach — stored here, compiled on the
+   server, or answerable online — is on until someone says otherwise, which is also the answer most
+   people would expect after going to the trouble of storing a dictionary. */
+
+function disabledSet(): Set<string> {
   try {
-    const stored = localStorage.getItem(ENABLED_KEY);
+    const stored = localStorage.getItem(DISABLED_KEY);
     return new Set(stored ? (JSON.parse(stored) as string[]) : []);
   } catch {
     return new Set();
@@ -64,13 +71,13 @@ function enabledSet(): Set<string> {
 }
 
 export function isEnabled(id: string): boolean {
-  return enabledSet().has(id);
+  return !disabledSet().has(id);
 }
 
 export function setEnabled(id: string, on: boolean): void {
-  const enabled = enabledSet();
-  if (on) enabled.add(id); else enabled.delete(id);
-  try { localStorage.setItem(ENABLED_KEY, JSON.stringify([...enabled].sort())); }
+  const disabled = disabledSet();
+  if (on) disabled.delete(id); else disabled.add(id);
+  try { localStorage.setItem(DISABLED_KEY, JSON.stringify([...disabled].sort())); }
   catch { /* a preference, not data */ }
   announce();
 }
@@ -194,7 +201,8 @@ export async function install(id: string, onProgress?: (progress: InstallProgres
   // Asked for once, after a successful install: an origin with no interaction for seven days of
   // browser use is otherwise evicted, and a dictionary someone waited for should not evaporate.
   await requestPersistence();
-  setEnabled(id, true);
+  // Deliberately not switching anything on: a dictionary is on unless someone switched it off, so
+  // storing one that had been switched off keeps that choice rather than quietly undoing it.
   opened.delete(id);
   const saved = (await store.list()).find((record) => record.id === id);
   if (!saved) throw new DictionaryInstallError("The dictionary was downloaded but could not be read back.");
@@ -294,6 +302,8 @@ export interface LookupResult {
   name: string;
   attribution: string;
   licence: string;
+  /** The catalogue's own answer, for a source whose payload does not carry one. */
+  sourceLang: string;
   /** Where the answer came from, which the interface says out loud so nothing looks offline that isn't. */
   origin: SearchTier;
   entry?: DictionaryEntry;
@@ -329,9 +339,9 @@ export async function dictionarySources(language?: string): Promise<DictionarySo
     return sourceCache.value;
   }
   const value = (async (): Promise<DictionarySource[]> => {
-    const enabled = enabledSet();
+    const disabled = disabledSet();
     const held = await installed();
-    const rows = knownDictionaries(held).filter((entry) => enabled.has(entry.id)
+    const rows = knownDictionaries(held).filter((entry) => !disabled.has(entry.id)
       && (!language || entry.sourceLang === ANY_LANGUAGE
           || primaryLanguage(entry.sourceLang) === primaryLanguage(language)));
     const local = new Set(held.map((record) => record.id));
@@ -417,15 +427,24 @@ const HYDRATE_LIMIT = 14;
  * One dictionary failing never takes the others down: an unreadable artifact or a server that went
  * away mid-search costs its own rows and nothing else.
  */
+export interface SearchOutcome {
+  hits: RawHit[];
+  /** How many sources in these tiers were available to ask at all. Zero is worth saying out loud. */
+  asked: number;
+  /** Sources that failed rather than having nothing to say — a different thing, and never silent. */
+  failed: string[];
+}
+
 export async function searchDictionaries(
   prefix: string,
   { language, tiers, limit = HITS_PER_DICTIONARY }:
     { language?: string; tiers: SearchTier[]; limit?: number }
-): Promise<RawHit[]> {
+): Promise<SearchOutcome> {
   const query = prefix.trim();
-  if (!query) return [];
+  if (!query) return { hits: [], asked: 0, failed: [] };
   const wanted = new Set(tiers);
   const sources = (await dictionarySources(language)).filter((source) => wanted.has(source.origin));
+  const failed: string[] = [];
 
   const found = await Promise.all(sources.map(async (source): Promise<RawHit[]> => {
     const shared = { dictionaryId: source.entry.id, name: source.entry.name, origin: source.origin };
@@ -443,10 +462,13 @@ export async function searchDictionaries(
       const words = (await dictionary?.search(query, limit)) ?? [];
       return words.map((word) => ({ ...shared, word }));
     } catch {
+      // Recorded rather than swallowed. "No dictionary holds this word" and "the dictionary could
+      // not be reached" look identical on screen otherwise, and only one of them is the truth.
+      failed.push(source.entry.name);
       return [];
     }
   }));
-  return found.flat();
+  return { hits: found.flat(), asked: sources.length, failed };
 }
 
 /**
@@ -491,23 +513,42 @@ export async function hydrateGlosses(
 export async function lookup(
   word: string,
   language?: string,
-  tiers: SearchTier[] = ["device", "server", "online"]
+  tiers: SearchTier[] = ["device", "server", "online"],
+  /**
+   * Other spellings of the same word, tried in order until one answers.
+   *
+   * This is what `lemma` is for. Acervo stores `la azafata` as the headword because the article is
+   * how a Spanish learner needs to see the word, and `azafata` as the lemma because that is "the
+   * dictionary form" — which is exactly what a dictionary is keyed on. Looking up only the headword
+   * therefore missed every gendered noun in the vocabulary. Deliberately not a rule about articles:
+   * nothing here knows that `la` is one, and the same field answers for a verb stored conjugated or
+   * a noun stored with its classifier.
+   */
+  also: string[] = []
 ): Promise<LookupResult[]> {
   const wanted = new Set(tiers);
   const sources = (await dictionarySources(language)).filter((source) => wanted.has(source.origin));
+  const spellings = [word, ...also].map((spelling) => spelling.trim()).filter(Boolean)
+    .filter((spelling, index, all) => all.indexOf(spelling) === index);
 
   const results = await Promise.all(sources.map(async (source): Promise<LookupResult | null> => {
     const { entry } = source;
-    const shared = { dictionaryId: entry.id, name: entry.name,
+    const shared = { dictionaryId: entry.id, name: entry.name, sourceLang: entry.sourceLang,
                      attribution: entry.attribution, licence: entry.licence };
     try {
       if (source.origin === "online") {
-        const entries = await lookupOnline(entry.id, word, language);
-        return entries.length ? { ...shared, origin: "online", articles: entries } : null;
+        for (const spelling of spellings) {
+          const entries = await lookupOnline(entry.id, spelling, language);
+          if (entries.length) return { ...shared, origin: "online", articles: entries };
+        }
+        return null;
       }
       const dictionary = await openDictionary(entry.id, source.remote);
-      const found = await dictionary?.lookup(word);
-      return found ? { ...shared, origin: source.origin, entry: found } : null;
+      for (const spelling of spellings) {
+        const found = await dictionary?.lookup(spelling);
+        if (found) return { ...shared, origin: source.origin, entry: found };
+      }
+      return null;
     } catch {
       return null;
     }

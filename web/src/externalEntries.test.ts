@@ -75,7 +75,7 @@ describe("glossOf", () => {
 describe("externalEntryOf", () => {
   const fields: LookupResult = {
     dictionaryId: "kaikki-es-es", name: "Wiktionary (es→es)", attribution: "Wiktionary. CC BY-SA 4.0.",
-    licence: "CC BY-SA 4.0", origin: "device",
+    licence: "CC BY-SA 4.0", origin: "device", sourceLang: "es",
     entry: { dictionaryId: "kaikki-es-es", word: "picar", tier: "fields", articles: [{
       headword: "picar", ipa: "[piˈkaɾ]", posLabel: "verb", language: "es",
       senses: [{ definition: "Cortar en pedazos muy pequeños.",
@@ -84,7 +84,7 @@ describe("externalEntryOf", () => {
   };
   const online: LookupResult = {
     dictionaryId: "freedictionaryapi", name: "Free Dictionary API", attribution: "freedictionaryapi.com",
-    licence: "CC BY-SA 4.0", origin: "online",
+    licence: "CC BY-SA 4.0", origin: "online", sourceLang: "es",
     articles: [{ headword: "picar", posLabel: "verb", senses: [{ definition: "to itch" }] }]
   };
 
@@ -96,7 +96,7 @@ describe("externalEntryOf", () => {
   it("leads with a mapped section over a restyled one from the same place", () => {
     const markup: LookupResult = {
       dictionaryId: "wikdict-es-en", name: "WikDict (es→en)", attribution: "WikDict",
-      licence: "CC BY-SA 4.0", origin: "device",
+      licence: "CC BY-SA 4.0", origin: "device", sourceLang: "es",
       entry: { dictionaryId: "wikdict-es-en", word: "picar", tier: "html", html: "<p>puncture</p>" }
     };
     // Alphabetically WikDict would come first; the mapped entry is the one that reads like an
@@ -121,7 +121,7 @@ describe("externalEntryOf", () => {
   it("sanitises an html section on the way in, not at the point of rendering", () => {
     const entry = externalEntryOf("casa", [{
       dictionaryId: "wikdict-es-en", name: "WikDict", attribution: "WikDict", licence: "CC BY-SA 4.0",
-      origin: "device",
+      origin: "device", sourceLang: "es",
       entry: { dictionaryId: "wikdict-es-en", word: "casa", tier: "html",
                html: '<h1>casa</h1><script>steal()</script><ol><li>Vivienda.</li></ol>' }
     }]);
@@ -134,7 +134,7 @@ describe("referenceTextOf", () => {
   it("carries what was on screen, not a richer thing the reader never saw", () => {
     const text = referenceTextOf(externalEntryOf("picar", [{
       dictionaryId: "kaikki-es-es", name: "Wiktionary (es→es)", attribution: "Wiktionary",
-      licence: "CC BY-SA 4.0", origin: "device",
+      licence: "CC BY-SA 4.0", origin: "device", sourceLang: "es",
       entry: { dictionaryId: "kaikki-es-es", word: "picar", tier: "fields", articles: [{
         headword: "picar", posLabel: "verb",
         senses: [{ definition: "Cortar en pedazos muy pequeños.",

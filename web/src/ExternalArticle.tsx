@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { DictionaryArticle } from "./dictionary";
 import { lookup } from "./dictionaries";
 import { CaretIcon } from "./icons";
@@ -30,6 +30,8 @@ export interface DictionaryAddRequest {
   reference: string;
   referenceMode: "faithful" | "expand" | null;
   note: string | null;
+  /** The dictionaries it was read from, so the review surface can say where it came from. */
+  sources: string[];
 }
 
 type AddMode = "faithful" | "expand" | "custom";
@@ -58,22 +60,32 @@ function railLabel(name: string): string {
 
 const sectionId = (section: ExternalSection) => `ext-${section.dictionaryId}`;
 
-function GrammarLine({ article, language }: { article: DictionaryArticle; language: string | null }) {
+/**
+ * The source's own words about the word, minus anything the masthead has already said.
+ *
+ * A section that repeats `n · ja` under a masthead reading "n · Japanese · external dictionary" is
+ * pure noise, and it was on almost every entry of the single-article dictionaries. What survives
+ * here is what this *source* adds: a second part of speech for a homograph, a register, a language
+ * that genuinely differs from the entry's.
+ */
+function GrammarLine({ article, entry }: { article: DictionaryArticle; entry: ExternalEntry }) {
   // The source's own word for the part of speech, verbatim (§11.3). Acervo's enum is for records
   // that are stored, and bucketing `preposition` into `expression` to satisfy it would be a lie.
-  const bits = [article.posLabel ?? article.pos, article.language ?? language ?? undefined,
-                article.register].filter((bit): bit is string => Boolean(bit));
+  const pos = article.posLabel ?? article.pos;
+  const language = article.language && article.language !== entry.language ? article.language : null;
+  const bits = [pos && pos !== entry.posLabel ? pos : null, language, article.register ?? null]
+    .filter((bit): bit is string => Boolean(bit));
   if (!bits.length) return null;
   return <p className="gram">{bits.map((bit, index) =>
     <span key={`${bit}:${index}`}>{index > 0 && <span className="sep">·</span>}{bit}</span>)}</p>;
 }
 
-function FieldsArticle({ article, language, single }: {
-  article: DictionaryArticle; language: string | null; single: boolean;
+function FieldsArticle({ article, entry, single }: {
+  article: DictionaryArticle; entry: ExternalEntry; single: boolean;
 }) {
   return <div className="ext-entry">
     {!single && <p className="ext-headword">{article.headword}{article.reading && <span className="rdg">{article.reading}</span>}</p>}
-    <GrammarLine article={article} language={language} />
+    <GrammarLine article={article} entry={entry} />
     <ol className="ext-senses">
       {article.senses.map((sense, index) => <li key={index}>
         <p className="sense-def">{sense.definition}</p>
@@ -87,7 +99,7 @@ function FieldsArticle({ article, language, single }: {
   </div>;
 }
 
-function Section({ section, language }: { section: ExternalSection; language: string | null }) {
+function Section({ section, entry }: { section: ExternalSection; entry: ExternalEntry }) {
   return <section className="sec ext-sec" id={sectionId(section)}>
     <div className="rail-l"><div className="inner">
       <span className="num">{section.origin === "online" ? "🌐" : "📖"}</span>
@@ -99,7 +111,7 @@ function Section({ section, language }: { section: ExternalSection; language: st
         // trusted. Nothing reaches here that was not rebuilt from an allow-list.
         ? <div className="ext-body" dangerouslySetInnerHTML={{ __html: section.html }} />
         : section.articles.map((article, index) =>
-            <FieldsArticle key={index} article={article} language={language}
+            <FieldsArticle key={index} article={article} entry={entry}
                            single={section.articles.length === 1} />)}
       {/* Shown wherever the content is, not once at the foot: CC BY-SA asks this of whoever
           displays the text, and each section is a different source under a different licence. */}
@@ -130,7 +142,8 @@ function AddPanel({ entry, onAdd, onCancel, busy }: {
       // A free-text instruction is its own thing: the note carries it, and the two canned modes
       // are wordings that live in `prompts/`, not here.
       referenceMode: mode === "custom" ? null : mode,
-      note: mode === "custom" ? note.trim() || null : null
+      note: mode === "custom" ? note.trim() || null : null,
+      sources: entry.sections.map((section) => section.name)
     });
   }
 
@@ -212,7 +225,7 @@ export default function ExternalArticle({ entry, onAdd, busy = false }: {
 
     {entry.sections.length
       ? entry.sections.map((section) =>
-          <Section key={section.dictionaryId} section={section} language={entry.language} />)
+          <Section key={section.dictionaryId} section={section} entry={entry} />)
       : <p className="empty">No dictionary here holds this word.</p>}
   </>;
 }
@@ -225,16 +238,20 @@ export default function ExternalArticle({ entry, onAdd, busy = false }: {
  * you are reading should not be quietly issuing byte-range reads on the chance you are curious, and
  * on a phone that chance is mostly no.
  */
-export function DictionaryFold({ headword, language }: { headword: string; language: string }) {
+export function DictionaryFold({ headword, lemma, language }: {
+  headword: string; lemma: string; language: string;
+}) {
   const [state, setState] = useState<"closed" | "loading" | "ready" | "failed">("closed");
   const [entry, setEntry] = useState<ExternalEntry | null>(null);
+  const spellings = [...new Set([headword.trim(), lemma.trim()].filter(Boolean))];
 
   function open(isOpen: boolean) {
     if (!isOpen || state !== "closed") return;
     setState("loading");
     // Only what is at hand: this is a footnote on a word you already have, which is not a reason to
-    // spend an online source's rate limit.
-    void lookup(headword, language, ["device", "server"])
+    // spend an online source's rate limit. Both spellings, because a dictionary is keyed on the
+    // lemma and Acervo's headword keeps the article that tells a learner the gender.
+    void lookup(headword, language, ["device", "server"], [lemma])
       .then((results) => {
         setEntry(externalEntryOf(headword, results));
         setState("ready");
@@ -252,9 +269,11 @@ export function DictionaryFold({ headword, language }: { headword: string; langu
       {state === "failed" && <p className="ext-status">Your dictionaries could not be read just now.</p>}
       {state === "ready" && (entry?.sections.length
         ? entry.sections.map((section) =>
-            <Section key={section.dictionaryId} section={section} language={entry.language} />)
+            <Section key={section.dictionaryId} section={section} entry={entry} />)
         : <p className="ext-status">
-            No dictionary on this device or your server holds “{headword}”.
+            No dictionary on this device or your server holds{" "}
+            {spellings.map((spelling, index) =>
+              <Fragment key={spelling}>{index > 0 && " or "}“{spelling}”</Fragment>)}.
           </p>)}
     </div>
   </details>;

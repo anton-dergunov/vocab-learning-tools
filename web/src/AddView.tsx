@@ -28,6 +28,8 @@ export interface CaptureSeed {
   reference: string;
   referenceMode: "faithful" | "expand" | null;
   note: string | null;
+  /** Which dictionaries the reference came from, so the panel can name them. */
+  sources: string[];
 }
 
 /**
@@ -179,7 +181,9 @@ export default function AddView({
         </div>
       </>}
     >
-      <label className="label" htmlFor="captureText">Paste a word, or the sentence you met it in</label>
+      <label className="label" htmlFor="captureText">{seed
+        ? <>A sentence of your own, if you have one <span className="opt">optional</span></>
+        : "Paste a word, or the sentence you met it in"}</label>
       <textarea
         className="capture-area" id="captureText" style={{ marginTop: 8 }} value={capture}
         onChange={(event) => { setCapture(event.target.value); setDuplicates([]); setFailure(null); }}
@@ -194,11 +198,24 @@ export default function AddView({
         placeholder="picar" onChange={(event) => { setHeadword(event.target.value); setFailure(null); }}
       />
 
-      {seed ? <p className="hint">
-        Built from the dictionary entry you were reading, which is sent as reference only — its
-        example sentences are the dictionary's, not places you met the word, so none of them is
-        kept as an attestation. The entry lands in <b>Inbox</b> for review.
-      </p> : <p className="hint">
+      {seed ? <>
+        <p className="hint">
+          Built from the dictionary entry you were reading, which is sent as reference only — its
+          example sentences are the dictionary's, not places you met the word, so none of them is
+          kept as an attestation. The entry lands in <b>Inbox</b> for review.
+        </p>
+        {/* Shown rather than merely described. What is sent to a model on someone's behalf should
+            be readable by them first, and "it carries some context" is not the same as saying so. */}
+        <details className="fold capture-fold">
+          <summary>
+            <span className="caret"><CaretIcon /></span>
+            <span className="label">
+              What is being sent as reference{seed.sources.length ? ` · ${seed.sources.join(" · ")}` : ""}
+            </span>
+          </summary>
+          <div className="fold-body"><pre className="reference-text">{seed.reference}</pre></div>
+        </details>
+      </> : <p className="hint">
         Share the whole sentence — the word is picked out for you unless you name it above, and the
         sentence is kept as the place you met it. The entry is built for review and lands in{" "}
         <b>Inbox</b>.{!untouched && " Processing again replaces the draft you have."}

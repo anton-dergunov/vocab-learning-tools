@@ -141,6 +141,10 @@ export default function App() {
   const [externalRows, setExternalRows] = useState<ExternalRow[]>([]);
   const [externalSearching, setExternalSearching] = useState(false);
   const [onlineState, setOnlineState] = useState<ExternalSearch["online"]>("off");
+  /* Why a tier came back empty. Silence is the one answer a search must never give: "no dictionary
+     holds this word", "you have none switched on" and "the network refused" look identical without
+     it, and only one of them is something the reader can act on. */
+  const [externalTrouble, setExternalTrouble] = useState<string | null>(null);
   const [external, setExternal] = useState<ExternalEntry | null>(null);
   const [externalBusy, setExternalBusy] = useState(false);
   /* Which settings section is open, or null for closed. The native menu names a section, so
@@ -263,6 +267,7 @@ export default function App() {
     const mine = (token.current += 1);
     hits.current = { device: [], server: [], online: [] };
     setExternalRows([]);
+    setExternalTrouble(null);
     setOnlineState(wanted && scope.online ? "ready" : "off");
     if (!wanted || !language || (!scope.device && !scope.server)) {
       setExternalSearching(false);
@@ -274,7 +279,12 @@ export default function App() {
       void searchDictionaries(wanted, { language, tiers: [tier] })
         .then((found) => {
           if (token.current !== mine) return;
-          hits.current[tier] = found;
+          hits.current[tier] = found.hits;
+          if (found.failed.length) {
+            setExternalTrouble(`${found.failed.join(" and ")} could not be read just now.`);
+          } else if (tier === "device" && !found.asked && !scope.server) {
+            setExternalTrouble("No dictionaries are switched on for this language. Settings → Dictionaries.");
+          }
           recount(mine);
         })
         .finally(() => { if (token.current === mine && tier === "server") setExternalSearching(false); });
@@ -293,13 +303,20 @@ export default function App() {
     if (!wanted || !scope.online) return;
     const mine = token.current;
     setOnlineState("searching");
+    setExternalTrouble(null);
     void searchDictionaries(wanted, { language, tiers: ["online"] })
       .then((found) => {
         if (token.current !== mine) return;
-        hits.current.online = found;
+        hits.current.online = found.hits;
+        if (!found.asked) {
+          setExternalTrouble("No online source is switched on. Settings → Dictionaries.");
+        } else if (found.failed.length) {
+          setExternalTrouble(`${found.failed.join(" and ")} could not be reached. `
+            + "An online lookup goes through your server, so it needs that to be up too.");
+        }
         recount(mine);
       })
-      .catch(() => undefined)
+      .catch(() => { if (token.current === mine) setExternalTrouble("The online lookup failed."); })
       .finally(() => { if (token.current === mine) setOnlineState("done"); });
   }, [query, language, scope.online, recount]);
 
@@ -325,14 +342,15 @@ export default function App() {
 
   const externalSearch = useMemo<ExternalSearch>(() => ({
     rows: externalRows,
+    trouble: externalTrouble,
     searching: externalSearching || externalBusy,
     enabled: scope.device || scope.server || scope.online,
     offline: syncStatus.state === "offline",
     online: onlineState,
     onOpen: openExternal,
     onSearchOnline: searchOnline
-  }), [externalRows, externalSearching, externalBusy, scope, syncStatus.state, onlineState,
-       openExternal, searchOnline]);
+  }), [externalRows, externalTrouble, externalSearching, externalBusy, scope, syncStatus.state,
+       onlineState, openExternal, searchOnline]);
 
   /**
    * Take a word from a dictionary into your own vocabulary.
@@ -347,7 +365,8 @@ export default function App() {
       headword: request.headword,
       reference: request.reference,
       referenceMode: request.referenceMode,
-      note: request.note
+      note: request.note,
+      sources: request.sources
     });
     setExternal(null);
     setProblems([]);

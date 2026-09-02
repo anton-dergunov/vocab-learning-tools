@@ -165,7 +165,8 @@ export default function LexemeArticle({ article, onUnsupported, meta = true }: {
 
     {/* Tied to `meta` for the same reason the footer is: a proposal under review is not a stored
         word, and checking it against a dictionary is a thing you do to an entry you have. */}
-    {meta && <DictionaryFold headword={lexeme.headword} language={lexeme.language} />}
+    {meta && <DictionaryFold
+      headword={lexeme.headword} lemma={lexeme.lemma} language={lexeme.language} />}
 
     {meta && <div className="meta-foot">
       <span>id <b>{lexeme.id}</b></span>

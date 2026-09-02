@@ -21,8 +21,12 @@
   --on-core:    #FBFCFC;
   --shadow:     0 1px 2px rgba(19,34,32,.06), 0 8px 24px -16px rgba(19,34,32,.28);
 
+  /* The CJK faces sit *after* `system-ui`, which is not cosmetic ordering. A stack is consulted
+     per character, so any glyph the first family lacks is drawn by the next family that has it —
+     and a CJK face has Cyrillic and Greek, set on CJK metrics. Ahead of `system-ui` it therefore
+     captured every Russian word the Latin subsets did not cover, a letter at a time. */
   --serif: "Literata", Georgia, "Times New Roman", serif;
-  --sans:  "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  --sans:  "IBM Plex Sans", system-ui, "PingFang SC", "Hiragino Sans GB", sans-serif;
   --mono:  "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
 
   --measure: 68ch;
@@ -118,7 +122,9 @@ input, textarea { font: inherit; color: inherit; }
    painted its checkboxes as full-width text fields. */
 .search > input {
   width: 100%; height: 36px;
-  padding: 0 74px 0 34px;
+  /* Room for the chip *and* the browser's own clear button, which WebKit draws at the right edge
+     of the content box: too little padding and the two are drawn on top of each other. */
+  padding: 0 108px 0 34px;
   background: var(--paper);
   border: 1px solid var(--rule-soft); border-radius: 6px;
   font-size: 14.5px;
@@ -132,7 +138,7 @@ input, textarea { font: inherit; color: inherit; }
   background: var(--surface);
 }
 .search .scope {
-  position: absolute; right: 8px;
+  position: absolute; right: 8px; z-index: 1;
   font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
   color: var(--core); background: var(--core-soft); border-radius: 3px; padding: 2px 6px;
   display: none;
@@ -503,6 +509,9 @@ details.fold .fold-body { padding: 4px 0 18px; }
   border: 1px solid var(--rule-soft); background: var(--surface); color: var(--ink-2);
 }
 .ext-jump button:hover { border-color: var(--core); color: var(--core); }
+/* The jump nav is sticky, so a section scrolled to the top of the pane lands underneath it. This
+   is the height it has to clear, and without it every jump overshoots its own heading. */
+.ext-sec { scroll-margin-top: 62px; }
 
 .ext-actions { display: flex; margin-top: 18px; }
 .ext-add {
@@ -566,12 +575,28 @@ details.fold .fold-body { padding: 4px 0 18px; }
   font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--core);
 }
 .ext-senses .sense-def { font-size: 17px; }
-/* A nested list is a sub-sense: quieter, and it does not restart the outer numbering visually. */
+/* A nested list is a sub-sense, and it says so by counting differently: two columns of identical
+   `01 02` at different indents read as one broken list rather than as two levels. */
 .ext-body li ol, .ext-body li ul { margin-top: 8px; gap: 8px; }
-.ext-body li ol > li::before, .ext-body li ul > li::before { color: var(--ink-3); font-weight: 400; }
+.ext-body li ol > li, .ext-body li ul > li { padding-left: 22px; font-size: 16px; }
+.ext-body li ol > li::before, .ext-body li ul > li::before {
+  content: counter(ext-sense, lower-alpha) "."; color: var(--ink-3); font-weight: 400;
+}
+/* One sense is a statement, not a list of one, so it loses the number it was being given. */
+.ext-senses > li:only-child, .ext-body ol > li:only-child, .ext-body ul > li:only-child {
+  padding-left: 0;
+}
+.ext-senses > li:only-child::before, .ext-body ol > li:only-child::before,
+.ext-body ul > li:only-child::before { content: none; }
 
-.ext-body { display: flex; flex-direction: column; gap: 12px; font-size: 16px; }
-.ext-body > p { margin: 0; font-family: var(--serif); font-size: 17px; line-height: 1.45; }
+/* The serif belongs to the whole body, not only to the paragraphs the source happened to wrap.
+   WikDict leaves its definitions as loose text inside a `<div>`, so half of them were set in the
+   interface font while a mapped entry beside them was set in the reading one. */
+.ext-body {
+  display: flex; flex-direction: column; gap: 12px;
+  font-family: var(--serif); font-size: 17px; line-height: 1.45;
+}
+.ext-body > p { margin: 0; }
 .ext-title { font-family: var(--serif); font-size: 21px; font-weight: 600; margin: 0; }
 .ext-split { border-top: 1px solid var(--rule); margin: 6px 0; }
 .ext-gram { font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--ink-3); margin: 0 0 2px; }
@@ -579,6 +604,23 @@ details.fold .fold-body { padding: 4px 0 18px; }
   margin: 4px 0 0; font-family: var(--sans); font-size: 15.5px; color: var(--ink);
 }
 .ext-tr::before { content: "→"; color: var(--ink-3); margin-right: 7px; }
+/* Five spellings of one word arrive as five blocks; between them they are worth this one line. */
+.ext-formof {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 0;
+  padding-top: 4px;
+}
+.ext-formof-target { font-family: var(--serif); font-size: 17px; color: var(--ink); }
+.ext-formof-target::before { content: "→"; color: var(--ink-3); margin-right: 7px; }
+/* The reference, shown as it will be sent. Monospace and scrollable: it is a document being
+   handed over, not prose to admire. */
+.reference-text {
+  margin: 0; max-height: 260px; overflow: auto;
+  font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--ink-2);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--code-bg); border: 1px solid var(--rule-soft); border-radius: 7px;
+  padding: 11px 13px;
+}
+.ext-status.trouble { color: var(--warn); font-style: normal; font-family: var(--sans); font-size: 13.5px; }
 .ext-line { margin: 0; font-family: var(--sans); font-size: 14.5px; color: var(--ink-2); line-height: 1.5; }
 .ext-preamble { display: flex; flex-direction: column; }
 .ext-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; }

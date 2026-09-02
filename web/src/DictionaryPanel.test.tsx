@@ -78,10 +78,14 @@ describe("the Dictionaries pane", () => {
     expect(screen.getByText(/does not say how much room/i)).toBeInTheDocument();
   });
 
-  it("remembers switching a dictionary on for this device", async () => {
+  it("remembers switching a dictionary off for this device", async () => {
     panel();
     await screen.findByRole("heading", { name: /Spanish/i });
     const row = rowOf(screen.getByText("CC-CEDICT"));
+    // Everything usable is on to begin with, so the switch that means anything is the one off.
+    expect(isEnabled("cc-cedict")).toBe(true);
+    fireEvent.click(within(row).getByRole("checkbox"));
+    await waitFor(() => expect(isEnabled("cc-cedict")).toBe(false));
     fireEvent.click(within(row).getByRole("checkbox"));
     await waitFor(() => expect(isEnabled("cc-cedict")).toBe(true));
   });

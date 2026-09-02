@@ -280,8 +280,11 @@ describe("Acervo application", () => {
   /** Answers each tier separately, the way the real transports do. */
   function dictionariesAnswer(byTier: Partial<Record<"device" | "server" | "online", unknown[]>>) {
     vi.mocked(hydrateGlosses).mockImplementation(async (rows) => rows);
-    vi.mocked(searchDictionaries).mockImplementation(async (_word, { tiers }) =>
-      (byTier[tiers[0] as "device"] ?? []) as never);
+    vi.mocked(searchDictionaries).mockImplementation(async (_word, { tiers }) => {
+      const hits = (byTier[tiers[0] as "device"] ?? []) as never[];
+      // `asked` is what stops the section claiming a word is missing when nothing was switched on.
+      return { hits, asked: 1, failed: [] };
+    });
   }
 
   it("searches your words first and the dictionaries below a rule", async () => {
@@ -336,7 +339,7 @@ describe("Acervo application", () => {
     dictionariesAnswer({ device: [DEVICE_HIT] });
     vi.mocked(lookupDictionaries).mockResolvedValue([{
       dictionaryId: "kaikki-es-es", name: "Wiktionary (es→es)", origin: "device",
-      attribution: "Wiktionary contributors. CC BY-SA 4.0.", licence: "CC BY-SA 4.0",
+      attribution: "Wiktionary contributors. CC BY-SA 4.0.", licence: "CC BY-SA 4.0", sourceLang: "es",
       entry: { dictionaryId: "kaikki-es-es", word: "picadura", tier: "fields", articles: [{
         headword: "picadura", posLabel: "noun", ipa: "[pikaˈðuɾa]",
         senses: [{ definition: "Mordedura de un insecto." }]
@@ -359,7 +362,7 @@ describe("Acervo application", () => {
     dictionariesAnswer({ device: [DEVICE_HIT] });
     vi.mocked(lookupDictionaries).mockResolvedValue([{
       dictionaryId: "kaikki-es-es", name: "Wiktionary (es→es)", origin: "device",
-      attribution: "Wiktionary contributors.", licence: "CC BY-SA 4.0",
+      attribution: "Wiktionary contributors.", licence: "CC BY-SA 4.0", sourceLang: "es",
       entry: { dictionaryId: "kaikki-es-es", word: "picadura", tier: "fields", articles: [{
         headword: "picadura", posLabel: "noun",
         senses: [{ definition: "Mordedura de un insecto.",
@@ -385,6 +388,21 @@ describe("Acervo application", () => {
     expect(request.text).not.toContain("mosquito");
   });
 
+  it("looks the dictionary form up too, not only the headword you read", async () => {
+    signedIn();
+    vi.mocked(lookupDictionaries).mockResolvedValue([]);
+    await openList();
+    // `la balsa` is how a Spanish learner needs to see the word; `balsa` is how a dictionary is
+    // keyed. Only the first was ever asked for, so every gendered noun missed.
+    fireEvent.click(await screen.findByRole("button", { name: /la balsa/ }));
+    const details = (await screen.findByText("Other dictionaries")).closest("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
+    await waitFor(() => expect(lookupDictionaries)
+      .toHaveBeenCalledWith("la balsa", "es", ["device", "server"], ["balsa"]));
+    expect(await screen.findByText(/“la balsa” or “balsa”/)).toBeInTheDocument();
+  });
+
   it("looks a word up in the dictionaries only when the fold is opened", async () => {
     signedIn();
     vi.mocked(lookupDictionaries).mockResolvedValue([]);
@@ -398,7 +416,8 @@ describe("Acervo application", () => {
     const details = fold.closest("details") as HTMLDetailsElement;
     details.open = true;
     fireEvent(details, new Event("toggle"));
-    await waitFor(() => expect(lookupDictionaries).toHaveBeenCalledWith("picar", "es", ["device", "server"]));
+    await waitFor(() => expect(lookupDictionaries)
+      .toHaveBeenCalledWith("picar", "es", ["device", "server"], ["picar"]));
     expect(await screen.findByText(/No dictionary on this device or your server holds/))
       .toBeInTheDocument();
   });

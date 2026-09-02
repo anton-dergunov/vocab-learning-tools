@@ -19,6 +19,8 @@ function Strength({ row }: { row: ListRow }) {
  */
 export interface ExternalSearch {
   rows: ExternalRow[];
+  /** Why a tier came back empty, when the reason is something other than "no such word". */
+  trouble: string | null;
   /** True while the device and server tiers are still answering. */
   searching: boolean;
   /** Whether anything at all is switched on to search. */
@@ -71,9 +73,11 @@ function ExternalSection({ query, search }: { query: string; search: ExternalSea
     </div>
 
     {search.searching && <p className="ext-status">Looking through your dictionaries…</p>}
-    {!search.searching && !rows.length && online !== "searching" && <p className="ext-status">
-      No dictionary here holds “{query}”.
-    </p>}
+    {/* A reason beats an absence. Switched off, unreachable and genuinely-not-there are three
+        different answers, and only the last one is about the word. */}
+    {search.trouble && <p className="ext-status trouble" role="status">{search.trouble}</p>}
+    {!search.searching && !search.trouble && !rows.length && online !== "searching"
+      && <p className="ext-status">No dictionary here holds “{query}”.</p>}
 
     {online === "ready" && <button className="ext-online" onClick={search.onSearchOnline}>
       <GlobeIcon /><span>Press ⏎ to look “{query}” up online</span>

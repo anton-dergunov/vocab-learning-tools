@@ -16,6 +16,7 @@ import type { OnlineArticle } from "./api";
 import type { DictionaryArticle, DictionaryEntry, DictionaryTier } from "./dictionary";
 import type { LookupResult } from "./dictionaries";
 import { normaliseDictionaryHtml } from "./externalHtml";
+import { accentedPinyin, accentedPinyinInText } from "./pinyin";
 
 /** Where an answer came from. The interface says this out loud so nothing looks offline that isn't. */
 export type ExternalOrigin = "device" | "server" | "online";
@@ -44,6 +45,8 @@ export interface ExternalRow {
 export interface ExternalSection extends SourceRef {
   attribution: string;
   licence: string;
+  /** What the catalogue says this dictionary is in, which an `html` payload never carries itself. */
+  sourceLang: string;
   tier: DictionaryTier;
   /** `fields` and online sources. Render-only — `posLabel` is free text, `pos` may be absent. */
   articles: DictionaryArticle[];
@@ -156,6 +159,102 @@ export function glossOf(entry: DictionaryEntry): string {
   return clamp(body.body.textContent ?? "");
 }
 
+/* ── cleaning what the sources actually contain ─────────────────────────
+   Surveyed across all 45 compiled dictionaries rather than guessed at. None of this invents
+   anything: it removes markup the source never meant to publish, promotes a label the source
+   already wrote to the field it belongs in, and collapses senses that say the same thing twice. A
+   source that is genuinely poor stays poor — that is its own business — but it should not also
+   look broken. */
+
+/** `[[учебный]] [[пример]]` — FreeDict and TEI carry wiki link syntax straight through. */
+const WIKI_LINK = /\[\[([^\]|]*\|)?([^\]]+)\]\]/g;
+
+/**
+ * `Química| Compuesto orgánico…` — WikDict writes the domain and the definition into one string.
+ *
+ * The pipe is only a label when a space follows it and the left side is short and bracket-free.
+ * CC-CEDICT's `呂梁市|吕梁市[Lu:3 liang2 Shi4]` is a cross-reference in the middle of a sentence and
+ * matches none of that, which is why the test for it is this fussy.
+ */
+const LABELLED = /^([^|[\]]{1,28})\|[ \t]+(\S[\s\S]*)$/;
+
+function cleanText(value: string): string {
+  return accentedPinyinInText(value
+    .replace(WIKI_LINK, (_match, _target, label: string) => label)
+    .replace(/\s+/g, " ")
+    .trim());
+}
+
+/**
+ * The key two senses are "the same" under.
+ *
+ * Combining acute is stripped because Russian dictionaries mark stress with it and list the same
+ * word twice, once marked and once not. Precomposed accents — Spanish `papá` against `papa` — are
+ * untouched by that, which is the whole reason it is `\u0301` and not a diacritic strip.
+ */
+function senseKey(definition: string): string {
+  return definition.normalize("NFC").replace(/\u0301/g, "").toLowerCase();
+}
+
+type Sense = DictionaryArticle["senses"][number];
+
+function cleanSenses(senses: Sense[]): Sense[] {
+  const kept = new Map<string, Sense>();
+  for (const sense of senses) {
+    let definition = cleanText(sense.definition ?? "");
+    let domain = sense.domain?.trim() || undefined;
+    const labelled = LABELLED.exec(definition);
+    if (labelled) {
+      // The source wrote a domain; it belongs in the field the interface already has for one.
+      domain = domain ?? cleanText(labelled[1]);
+      definition = labelled[2].trim();
+    }
+    // `inflection of lastimar:` — wiktextract leaves the colon in front of a tag list that the
+    // artifact does not carry, so it dangles.
+    definition = definition.replace(/[:,;]\s*$/, "");
+    if (!definition) continue;
+
+    const examples = (sense.examples ?? [])
+      .map((example) => ({ ...example, text: cleanText(example.text),
+                           translation: example.translation ? cleanText(example.translation) : example.translation }))
+      .filter((example) => example.text);
+
+    const key = senseKey(definition);
+    const existing = kept.get(key);
+    if (!existing) {
+      kept.set(key, { ...sense, definition, domain, examples: examples.length ? examples : undefined });
+      continue;
+    }
+    // The same sense twice, one copy carrying the examples: `malo` lists "bad (of bad quality)"
+    // bare and then again with three sentences. Keeping both loses nothing but reads as a fault.
+    const merged = [...(existing.examples ?? []), ...examples];
+    const seen = new Set<string>();
+    existing.examples = merged.filter((example) => {
+      const id = senseKey(example.text);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    if (!existing.examples.length) delete existing.examples;
+    existing.domain = existing.domain ?? domain;
+  }
+  return [...kept.values()];
+}
+
+export function cleanArticle(article: DictionaryArticle): DictionaryArticle {
+  const headword = article.headword?.trim() ?? "";
+  const reading = article.reading?.trim();
+  return {
+    ...article,
+    headword,
+    // JMdict stores the reading even when it is the headword — `ゼーマンこうか` under itself — and
+    // printing a word twice under itself says nothing. CC-CEDICT stores `Fang1 shan1 Xian4`,
+    // which is the storage format rather than the word (`pinyin.ts`).
+    reading: reading && reading !== headword ? accentedPinyin(reading) : undefined,
+    senses: cleanSenses(article.senses ?? [])
+  };
+}
+
 /* ── the article ────────────────────────────────────────────────────────
    One page with a section per source, in resolution order, rather than a tab per dictionary. What
    several dictionaries say about a word is worth reading together — that is most of why anyone
@@ -193,10 +292,11 @@ export function externalEntryOf(word: string, results: LookupResult[]): External
       origin: result.origin,
       attribution: result.attribution,
       licence: result.licence,
+      sourceLang: result.sourceLang,
       tier: result.entry?.tier ?? "fields",
-      articles: result.articles
+      articles: (result.articles
         ? result.articles.map(fromOnline)
-        : result.entry?.articles ?? [],
+        : result.entry?.articles ?? []).map(cleanArticle),
       html: result.entry?.tier === "html"
         ? normaliseDictionaryHtml(result.entry.html ?? "", result.entry.word)
         : ""
@@ -208,9 +308,13 @@ export function externalEntryOf(word: string, results: LookupResult[]): External
   const firstOf = (pick: (article: DictionaryArticle) => string | undefined): string | null =>
     articles.map(pick).find((value) => value && value.trim())?.trim() ?? null;
 
+  // An `html` section carries no fields at all, so without the catalogue's answer the masthead of
+  // a WikDict-only entry could not even say which language the word is in.
+  const declared = sections.map((section) => section.sourceLang)
+    .find((code) => code && code !== "*");
   return {
     word,
-    language: firstOf((article) => article.language),
+    language: firstOf((article) => article.language) ?? declared ?? null,
     reading: firstOf((article) => article.reading),
     ipa: firstOf((article) => article.ipa),
     posLabel: firstOf((article) => article.posLabel ?? article.pos),

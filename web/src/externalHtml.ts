@@ -66,6 +66,24 @@ const CARET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 
 const text = (node: Element): string => (node.textContent ?? "").trim();
 
+/** `[[учебный]]` — wiki link syntax that FreeDict and TEI carry straight through. */
+const WIKI_LINK = /\[\[([^\]|]*\|)?([^\]]+)\]\]/g;
+
+/**
+ * `Química| Compuesto orgánico…` — WikDict writes the domain and the definition into one string.
+ * Only a label when a space follows and the left side is short and bracket-free, so CC-CEDICT's
+ * `呂梁市|吕梁市[Lu:3 …]` cross-reference is left alone.
+ */
+const LABELLED = /^([^|[\]]{1,28})\|[ \t]+(\S[\s\S]*)$/;
+
+/**
+ * `Colombia ««« maloka` — how the Yomitan build renders "this is a form of that".
+ *
+ * Every one of these arrives as its own `<h1>`-headed block, so a word with four variant spellings
+ * renders as five entries separated by rules. They are worth one line between them, not five.
+ */
+const FORM_OF = /^(.*?)\s*«{2,}\s*(\S.*)$/;
+
 function isSafeHref(value: string): boolean {
   try {
     const url = new URL(value, "https://acervo.invalid/");
@@ -178,6 +196,14 @@ export function normaliseDictionaryHtml(html: string, headword = ""): string {
     if (DISCARDED.has(node.tagName.toLowerCase())) node.remove();
   }
 
+  // Text first, before anything is restructured around it: `[[учебный]] [[пример]]` is markup the
+  // source never meant to publish, and it would otherwise survive into every branch below.
+  const walker = parsed.createTreeWalker(body, 4 /* NodeFilter.SHOW_TEXT */);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const value = node.nodeValue ?? "";
+    if (value.includes("[[")) node.nodeValue = value.replace(WIKI_LINK, (_m, _t, label: string) => label);
+  }
+
   // A live list would shift under renaming and unwrapping, so the walk is over a snapshot and each
   // node is checked for having been detached in the meantime.
   for (const node of [...body.querySelectorAll("*")]) {
@@ -227,6 +253,57 @@ export function normaliseDictionaryHtml(html: string, headword = ""): string {
     if (tag === "ol" && node.parentElement === body) node.setAttribute("class", "ext-senses");
   }
 
+  /* `Química| Compuesto orgánico…` — the source already wrote a domain, so it becomes the chip the
+     mapped tier gives a domain rather than a pipe in the middle of a sentence. Over text nodes
+     rather than over elements: WikDict leaves the label loose beside the part of speech, not at the
+     head of a tidy container. */
+  const labelWalker = parsed.createTreeWalker(body, 4);
+  const labelled: { node: Text; label: string; rest: string }[] = [];
+  for (let node = labelWalker.nextNode(); node; node = labelWalker.nextNode()) {
+    const match = LABELLED.exec((node.nodeValue ?? "").trim());
+    if (match) labelled.push({ node: node as Text, label: match[1].trim(), rest: match[2].trim() });
+  }
+  for (const { node, label, rest } of labelled) {
+    const chip = document.createElement("span");
+    chip.setAttribute("class", "ext-tag");
+    chip.textContent = label;
+    node.nodeValue = ` ${rest}`;
+    node.parentNode?.insertBefore(chip, node);
+  }
+
+  /* Yomitan's form-of stubs, collapsed. Each arrives as its own titled block, so a word with five
+     variant spellings renders as five entries separated by rules; between them they are worth one
+     line. Deliberately before the list collapsing below, which would otherwise dissolve the very
+     `<li>` this recognises them by. */
+  const variants = new Map<string, string[]>();
+  for (const holder of [...body.querySelectorAll("li, p")]) {
+    if (holder.children.length) continue;
+    const stub = FORM_OF.exec(text(holder));
+    if (!stub) continue;
+    const target = stub[2].trim();
+    variants.set(target, [...(variants.get(target) ?? []), stub[1].trim()].filter(Boolean));
+    // Take the whole block it sits in, so its title and wrapper list go with it.
+    let block: Element = holder;
+    while (block.parentElement && block.parentElement !== body) block = block.parentElement;
+    const title = block.previousElementSibling;
+    if (title && title.tagName.toLowerCase() === "h1") title.remove();
+    block.remove();
+  }
+  const formOf = [...variants.entries()];
+
+  /* A list item whose whole content is another list is a wrapper too — WikDict groups translations
+     that way, and numbering it puts an empty "01." above the things it holds. Promoting the inner
+     items into its place says the same thing with nothing standing in front of it. */
+  for (const item of [...body.querySelectorAll("li")].reverse()) {
+    const own = [...item.childNodes]
+      .filter((child) => !(child.nodeType === 1 && ["OL", "UL"].includes((child as Element).tagName)))
+      .map((child) => child.textContent ?? "").join("").trim();
+    const nested = item.querySelector(":scope > ol, :scope > ul");
+    if (own || !nested || item.children.length !== 1) continue;
+    while (nested.firstChild) item.parentNode?.insertBefore(nested.firstChild, item);
+    item.remove();
+  }
+
   /* A list of one is a wrapper, not a list. Every source nests the whole entry inside `<ol><li>`
      before the senses begin, and numbering that wrapper puts a meaningless "1." in front of the
      word. Collapsing it also means a single-sense entry reads as a statement rather than as a list
@@ -253,6 +330,15 @@ export function normaliseDictionaryHtml(html: string, headword = ""): string {
     rule.setAttribute("class", "ext-split");
     title.parentNode?.replaceChild(rule, title);
   });
+
+  for (const [target, tags] of formOf) {
+    const line = document.createElement("p");
+    line.setAttribute("class", "ext-formof");
+    line.innerHTML = tags.map((tag) =>
+      `<span class="ext-tag">${tag.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`).join("")
+      + `<span class="ext-formof-target">${target.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`;
+    body.appendChild(line);
+  }
 
   return body.innerHTML.trim();
 }

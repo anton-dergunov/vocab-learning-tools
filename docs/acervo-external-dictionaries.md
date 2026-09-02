@@ -1041,3 +1041,70 @@ No caching of dictionary entries in the replica, no dictionary row in PocketBase
 which an external entry becomes a record without passing through `parseArticle` and
 `repository.saveArticle`. An external entry stays render-only: it carries `posLabel` as free text
 and never meets Acervo's part-of-speech enum (§11.3).
+
+### §12.1 · What a survey of all 45 compiled dictionaries changed
+
+The first pass was checked against six entries from five dictionaries. That was not enough: sampling
+six random headwords from **every** compiled artifact — 270 entries, 45 dictionaries — and rendering
+them through the real components found faults on the sixth of them that six entries could not.
+The apparatus is a throwaway script, and the value was in *reading the output*, not in the script.
+
+**Faults the survey found, all now fixed and all counted before and after:**
+
+| | before | after |
+|---|---:|---:|
+| Senses printed twice, one copy carrying the examples | 6 | 0 |
+| `«««` form-of stubs, one titled block each | 9 | 0 |
+| A domain written into the definition as `Química\| …` | 6 | 2 |
+| Numbered items with nothing in them | yes | 0 |
+| Wiki-link syntax `[[учебный]]` reaching the page | yes | 0 |
+
+The two remaining pipes are real CC-CEDICT cross-references — `涼山彝族自治州|凉山彝族自治州[…]` — which
+is that dictionary's own notation and not an artefact.
+
+**The rendering decisions those findings produced**, each of them a removal rather than an addition:
+
+- **A sense that appears twice is one sense.** Deduplicated on a key that strips combining acute, so
+  the Russian habit of listing a word once with stress marks and once without collapses too; the
+  examples from both copies merge into the survivor.
+- **A label the source wrote belongs in the field that exists for it.** `Química| Compuesto…` becomes
+  a domain chip, which is what the mapped tier already does with `domain`.
+- **A list of one is not a list**, and neither is a list item that holds only another list. Both were
+  putting an empty `01.` in front of the thing they held. A single sense now reads as a statement.
+- **A nested level counts differently** — `a. b. c.` under `01 02 03` — because two identical columns
+  of numbers at different indents read as one broken list.
+- **A section says only what the masthead has not.** `n · ja` under a masthead reading
+  `n · Japanese · external dictionary` was on almost every entry of every single-source dictionary.
+- **Numbered pinyin is a storage format, not a word.** `Fang1 shan1 Xian4` renders as `Fāng shān Xiàn`
+  (`web/src/pinyin.ts`), in the reading and in the cross-references CC-CEDICT writes inside a
+  definition. Syllables are not joined: CC-CEDICT does not record where words begin, and joining
+  would be a guess.
+
+### §12.2 · Three bugs that were not about dictionaries at all
+
+- **Online sources could never answer.** A dictionary was searched only if its id was in a set of
+  *switched-on* ids, and the only thing that ever added an id was installing one — which an online
+  source cannot be. So the interface offered "press ⏎ to look this up online" and then had nothing
+  to ask. The store now holds what is switched **off**: anything Acervo can reach is on until someone
+  says otherwise. The search section also now says *why* a tier was empty — switched off, unreachable,
+  or genuinely not holding the word are three different answers and only one is about the word.
+- **Russian was set in a CJK face.** `--sans` listed `PingFang SC` ahead of `system-ui`, and the
+  Cyrillic subset of IBM Plex Sans was imported at weights 400 and 500 but not 600 — which is the
+  weight a gloss term is set in. A stack is consulted per character, so every bold Russian gloss fell
+  out of the family and onto the first face that had the glyphs, set on CJK metrics. Both halves are
+  fixed: the subsets now cover every weight and style the interface uses, and the CJK faces sit after
+  `system-ui` so they can never capture Cyrillic or Greek again.
+- **The reference fold missed every gendered noun.** It looked up `headword`, and Acervo stores
+  `la azafata` there because that is how a learner needs to see the word — while a dictionary is keyed
+  on `azafata`. `lemma` is already defined as "the dictionary form", so a lookup now takes both.
+  Deliberately not a rule about articles: nothing knows that `la` is one, and the same field answers
+  for a verb stored conjugated or a noun stored with a classifier.
+
+### §12.3 · What the survey did not fix, and will not
+
+Several sources are simply thin — a Wiktionary inflection entry says "inflection of lastimar" because
+that is all it knows, and no amount of rendering makes it say more. The rule applied throughout was
+to remove what the source never meant to publish and to promote what it did, and to stop there. A
+poor dictionary should look plain; it should not look broken, and it should not be dressed up.
+Choosing which dictionaries are worth carrying is a separate job from rendering them well.
+

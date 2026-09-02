@@ -83,18 +83,24 @@ describe("the shipped catalogue", () => {
 describe("which dictionaries are switched on here", () => {
   beforeEach(() => localStorage.clear());
 
-  it("remembers a choice about this device", () => {
-    expect(isEnabled("cc-cedict")).toBe(false);
-    setEnabled("cc-cedict", true);
+  it("has everything on until someone switches it off", () => {
+    // The other way round was a bug with a long fuse: an online source can never be "installed",
+    // so nothing ever added it to a set of switched-on ids, and pressing ⏎ quietly found nothing
+    // to ask after the interface had just offered to look the word up online.
     expect(isEnabled("cc-cedict")).toBe(true);
+    expect(isEnabled("freedictionaryapi")).toBe(true);
     setEnabled("cc-cedict", false);
     expect(isEnabled("cc-cedict")).toBe(false);
+    expect(isEnabled("freedictionaryapi")).toBe(true);
+    setEnabled("cc-cedict", true);
+    expect(isEnabled("cc-cedict")).toBe(true);
   });
 
   it("survives storage that refuses to answer", () => {
     const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
     try {
-      expect(isEnabled("cc-cedict")).toBe(false);
+      // Storage that will not answer must not silently switch every dictionary off.
+      expect(isEnabled("cc-cedict")).toBe(true);
     } finally {
       getItem.mockRestore();
     }
