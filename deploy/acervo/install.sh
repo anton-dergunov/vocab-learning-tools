@@ -11,6 +11,25 @@ usage() {
   exit 2
 }
 
+# A step says what stage it is in and what it produced; a container runtime's layer-by-layer
+# progress says neither, so it is kept until it is worth reading. On failure everything the step
+# wrote is printed before the script stops. Deliberately not a pipeline: this is POSIX sh, where
+# pipefail does not exist and a pipe would discard the step's own exit status.
+run_quietly() {
+  quiet_label=$1
+  shift
+  quiet_log=$(mktemp "${TMPDIR:-/tmp}/acervo-step.XXXXXX")
+  quiet_status=0
+  "$@" >"$quiet_log" 2>&1 || quiet_status=$?
+  if [ "$quiet_status" -ne 0 ]; then
+    echo "$quiet_label failed (exit $quiet_status):" >&2
+    cat "$quiet_log" >&2
+    rm -f "$quiet_log"
+    exit "$quiet_status"
+  fi
+  rm -f "$quiet_log"
+}
+
 acervo_root=
 archive=
 credentials_stdin=false
@@ -242,16 +261,10 @@ if [ "$reset_pocketbase" = true ]; then
 fi
 
 echo "Building and starting containers..."
-build_log=$(mktemp "${TMPDIR:-/tmp}/acervo-build.XXXXXX")
-if ! compose -p "$compose_project" \
+run_quietly "Building and starting containers" compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
   --env-file "$acervo_root/secrets.env" \
-  -f "$compose_file" up -d --build anki-sync-server pocketbase >"$build_log" 2>&1; then
-  cat "$build_log" >&2
-  rm -f "$build_log"
-  exit 1
-fi
-rm -f "$build_log"
+  -f "$compose_file" up -d --build anki-sync-server pocketbase
 
 echo "Waiting for anki-sync-server to become healthy..."
 attempt=0
@@ -275,7 +288,10 @@ until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env
   sleep 2
 done
 
-compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" \
+# Quiet on purpose: PocketBase confirms the upsert by echoing the account's address, and the
+# summary below already says the server is up.
+run_quietly "Configuring the PocketBase superuser" \
+  compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" \
   exec -T pocketbase /pb/pocketbase superuser upsert "$ACERVO_PB_SUPERUSER_EMAIL" "$ACERVO_PB_SUPERUSER_PASSWORD"
 
 printf '%s\n' "$release_dir" >"$acervo_root/current-release"

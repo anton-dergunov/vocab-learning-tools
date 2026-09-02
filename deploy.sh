@@ -51,6 +51,25 @@ choose_action() {
   action=$1
 }
 
+# A step says what stage it is in and what it produced; a bundler's asset table says neither, so it
+# is kept until it is worth reading. On failure everything the step wrote is printed before the
+# script stops. Deliberately not a pipeline: this is POSIX sh, where pipefail does not exist and a
+# pipe would discard the step's own exit status.
+run_quietly() {
+  quiet_label=$1
+  shift
+  quiet_log=$(mktemp "${TMPDIR:-/tmp}/acervo-step.XXXXXX")
+  quiet_status=0
+  "$@" >"$quiet_log" 2>&1 || quiet_status=$?
+  if [ "$quiet_status" -ne 0 ]; then
+    echo "$quiet_label failed (exit $quiet_status):" >&2
+    cat "$quiet_log" >&2
+    rm -f "$quiet_log"
+    exit "$quiet_status"
+  fi
+  rm -f "$quiet_log"
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --local) mode=local; shift ;;
@@ -271,13 +290,7 @@ build_release_archive() {
   export ACERVO_INCLUDE_MACOS_RELEASE
   if [ "${ACERVO_SKIP_APP_BUILD:-false}" != true ]; then
     echo "Building the web app..." >&2
-    stage_log=$(mktemp "${TMPDIR:-/tmp}/acervo-stage-pwa.XXXXXX")
-    if ! npm run stage:pwa >"$stage_log" 2>&1; then
-      cat "$stage_log" >&2
-      rm -f "$stage_log"
-      exit 1
-    fi
-    rm -f "$stage_log"
+    run_quietly "The web build" npm run stage:pwa
   fi
   "$repo_root/scripts/package_acervo_server.sh"
 }
