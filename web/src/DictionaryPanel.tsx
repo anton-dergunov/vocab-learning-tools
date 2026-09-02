@@ -36,6 +36,23 @@ function formatBytes(bytes: number | null | undefined): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+/**
+ * What to say about room on this device.
+ *
+ * Measured on the device probe: WebKit updates `estimate().usage` lazily and reports zero straight
+ * after a 40 MiB write that plainly happened. Repeating a usage figure lower than what this pane
+ * knows it is holding would be worse than saying nothing, so in that case it reports the headroom
+ * instead — which is the number someone deciding whether to download is actually asking about.
+ */
+function storageLine(storage: StorageReport | null, storedBytes: number): string {
+  if (!storage?.quotaBytes) return "This browser does not say how much room it will give Acervo.";
+  if (!storage.usedBytes || storage.usedBytes < storedBytes) {
+    return `About ${formatBytes(storage.quotaBytes)} is available to Acervo on this device.`;
+  }
+  return `${formatBytes(storage.usedBytes)} of about ${formatBytes(storage.quotaBytes)} `
+    + "used by Acervo on this device.";
+}
+
 function languageName(code: string): string {
   return code === ANY_LANGUAGE ? "Any language" : languageOf(code).name;
 }
@@ -178,9 +195,7 @@ export default function DictionaryPanel({ onNotify }: { onNotify(message: string
           : `${storedCount} ${storedCount === 1 ? "dictionary" : "dictionaries"} on this device · ${formatBytes(storedBytes)}`}
       </strong>
       <span>
-        {storage?.quotaBytes
-          ? `${formatBytes(storage.usedBytes)} of about ${formatBytes(storage.quotaBytes)} used by Acervo on this device.`
-          : "This browser does not say how much room it will give Acervo."}
+        {storageLine(storage, storedBytes)}
         {storage?.persisted
           ? " Storage here is protected from being cleared automatically."
           : " Storage here may be cleared if you do not use Acervo for a while."}

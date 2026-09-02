@@ -29,3 +29,10 @@ old_prototypes/
 .acervo-deploy
 *.swp
 *.swo
+
+# Serving probe.html to a phone over https needs a local certificate and a Caddyfile in the
+# experiment directory (see experiments/external-dictionaries/README.md). Neither belongs in a
+# public repository — the Caddyfile carries a LAN address and the key is a private key.
+Caddyfile
+*.pem
+*-key.pem

@@ -6,7 +6,10 @@ export PATH
 
 usage() {
   echo "usage: run-worker.sh [--root PATH] [--input-archive FILE]" >&2
-  echo "         {bootstrap-upload|push|export-state|adopt-server|build-dictionary} [ID]" >&2
+  echo "         {bootstrap-upload|push|export-state|adopt-server}" >&2
+  echo "       run-worker.sh [--root PATH] build-dictionary <compiler arguments...>" >&2
+  echo "         e.g. build-dictionary --id cc-cedict" >&2
+  echo "              build-dictionary --all --language es,en,zh" >&2
   exit 2
 }
 
@@ -21,12 +24,13 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ "${operation:-}" ] || usage
+# The compiler's own flags are passed straight through, so building one dictionary and building
+# every Spanish one are the same command with different arguments rather than two wrappers.
 if [ "$operation" = build-dictionary ]; then
-  [ "$#" -eq 1 ] || usage
-  dictionary_id=$1
-  shift
+  [ "$#" -ge 1 ] || usage
+else
+  [ "$#" -eq 0 ] || usage
 fi
-[ "$#" -eq 0 ] || usage
 
 if [ -z "$acervo_root" ]; then
   if [ -f /etc/acervo-root ]; then
@@ -87,10 +91,9 @@ case "$operation" in
       anki adopt-server --confirm-no-other-clients
     ;;
   build-dictionary)
-    # Compiling streams a source that can be over a gigabyte, so this is deliberately a command the
-    # owner runs rather than something a checkbox triggers.
+    # Compiling streams sources that run to gigabytes, so this is deliberately a command the owner
+    # runs rather than something a checkbox triggers.
     # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm acervo-worker \
-      dictionary build --id "$dictionary_id"
+    compose $common_args --profile tools run --rm acervo-worker dictionary build "$@"
     ;;
 esac

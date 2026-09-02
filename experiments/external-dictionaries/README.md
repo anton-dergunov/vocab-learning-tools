@@ -61,8 +61,24 @@ cd web && npx vitest run --config ../experiments/external-dictionaries/fidelity.
 
 # Serve it, do not open the file. OPFS and storage.estimate() need a secure context, so a file://
 # or plain-http origin reports both missing on every device — including desktop Chrome, which was
-# read as a device limitation once already. localhost counts as secure.
-python3 -m http.server -d experiments/external-dictionaries 8000   # then open it on the phone too
+# read as a device limitation once already.
+python3 -m http.server -d experiments/external-dictionaries 8000   # localhost only: it is secure
+
+# For the phone and the iPad, localhost is not available and plain http is not secure, so serve the
+# LAN address over TLS. `caddy file-server` takes no --cert flag; use a Caddyfile:
+#
+#   mkcert <lan-ip>
+#   cat > Caddyfile <<'EOF'
+#   https://<lan-ip>:8443 {
+#     tls <lan-ip>.pem <lan-ip>-key.pem
+#     root * .
+#     file_server
+#   }
+#   EOF
+#   caddy run
+#
+# `mkcert -install` on the phone's trust store, or accept the warning, then open
+# https://<lan-ip>:8443/probe.html
 ```
 
 `spike.py --source all` covers CC-CEDICT (fixed line grammar), kaikki `es→en` and `es→es` (rich

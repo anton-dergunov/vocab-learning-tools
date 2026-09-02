@@ -906,32 +906,51 @@ so they sit at the top of the range and a long entry still needs truncating.
   fallback for everything opaque. Every source measured — offline and online — reaches 98.7–100 %
   coverage with nothing invented.
 
-### §11.7 · The device probe, and what it changed
+### §11.7 · The device probe — run, and what it settled
 
-`probe.html` has now been run on an iPad (Safari and Chrome), an Android phone, and macOS (Safari
-and Chrome). Two findings, one of which changed the design.
+Run over https (mkcert + Caddy on the LAN) on macOS Safari, iPad Safari and Android Chrome. This was
+the last open measurement; nothing here is inference any more.
 
-**What the devices agree on, and it settles the codec:** `DecompressionStream` supports `gzip`,
-`deflate` and `deflate-raw` everywhere and **`zstd` and `br` nowhere**. `fflate` round-trips a
-dictionary-compressed payload on every device at 0.05–0.13 ms per frame. Plain DEFLATE was already
-the recommendation on size grounds; it is now the only option that needs no shipped engine at all.
+| | macOS Safari | iPad Safari | Android Chrome |
+|---|---|---|---|
+| `DecompressionStream` gzip / deflate / deflate-raw | supported | supported | supported |
+| `DecompressionStream` zstd / br | **not supported** | **not supported** | **not supported** |
+| OPFS `getDirectory` | available | available | available |
+| `createSyncAccessHandle` on the main thread | absent | absent | absent |
+| `storage.estimate()` quota | 76.8 GiB | 38.4 GiB | 10.0 GiB |
+| `fflate` inflate | 0.070 ms/frame | 0.045 ms/frame | 0.124 ms/frame |
+| Store a 40 MiB Blob in IndexedDB | 102 ms | 129 ms | 165 ms |
+| Bytes stored ÷ bytes written | *usage unreported* | *usage unreported* | **1.00×** |
+| `Blob.slice(64 KiB)` out of 40 MiB, p50 | 0.00 ms | 0.00 ms | 1.40 ms |
+| `Blob.slice(whole 40 MiB)` | 14 ms | 29 ms | 37 ms |
 
-**OPFS reported missing on every device, including desktop Chrome — and that reading is an
-artifact.** `navigator.storage.getDirectory` and `navigator.storage.estimate` both require a secure
-context and both vanished together, on browsers that certainly have them; the runs were served over
-plain http. The probe now reports `isSecureContext` first, and says so, precisely so this cannot be
-misread again.
+**The codec question is closed.** `zstd` is unsupported on every device and `deflate` is supported on
+every one, so plain DEFLATE is not merely the cheapest option, it is the only one that ships no
+engine. `fflate` decodes a frame in 0.045–0.124 ms against a ~1 s budget.
 
-**The design does not depend on the answer.** The frames live in IndexedDB, which needs no probe,
-is universally available, and is what `localDatabase.ts` already uses. That changes the reader and
-not the artifact, exactly as §10 anticipated. The one thing it does require is that IndexedDB store
-**whole files rather than entries**: a Blob is stored as opaque bytes and read lazily by
-`blob.slice`, so three records per dictionary preserve the compaction, whereas the per-entry shape
-this section originally modelled would have paid per-record overhead 834,245 times.
+**IndexedDB preserves the compaction.** Android Chrome reports **1.00×** — storage grows by exactly
+what was written, so already-compressed frames are stored as opaque bytes and nothing re-encodes
+them. Both WebKit browsers report `usage` unchanged after a write that plainly happened, because
+WebKit updates that figure lazily; the probe now says so rather than reporting a ratio of zero,
+which it previously painted as a pass. This has one consequence in the interface: the Dictionaries
+pane must not quote a usage figure lower than what it knows it is holding, and reports headroom
+instead.
 
-Two assumptions remain measured only by inference and the probe now covers both: whether
-`storage.estimate().usage` grows by roughly what was written, and whether a `Blob.slice` out of a
-40 MiB stored Blob reads a range rather than materialising the file. If a slice turns out to be
-linear in the file size on WebKit, the fallback is chunking the payload blob into ~1 MiB records —
-about twenty per dictionary, still negligible overhead — which again changes the store and not the
-artifact.
+**Blob slices are lazy, which is the assumption the container rests on.** A 64 KiB range read out of
+a 40 MiB stored Blob costs 0.00–1.40 ms while reading the whole Blob costs 14–37 ms. If a slice
+materialised the file, the two would be the same number. The IndexedDB store therefore behaves like
+the random-access file the packed format was designed against, and the ~1 MiB chunking fallback is
+not needed.
+
+**OPFS turned out to be available everywhere** — the earlier "missing on every device" reading was
+an insecure origin, as suspected, and the probe now reports `isSecureContext` first so it cannot be
+misread again. It is still not used. `createSyncAccessHandle` is `[Exposed=DedicatedWorker]` and is
+correctly absent from the main thread on all three, so the fast OPFS path would mean moving reads
+into a worker — for a store that is already measured fast enough, in a database the application
+already uses. Revisit only if a lookup ever becomes slow enough to notice, which at 0.00–1.40 ms it
+is not.
+
+**Storage headroom is a non-issue at these sizes**, reinforcing §8: the tightest quota measured is
+10 GiB against a 27.8 MiB artifact. `persisted()` is false everywhere until asked, which is why
+`persist()` is requested once after an install succeeds.
+

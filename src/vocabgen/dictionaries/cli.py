@@ -22,13 +22,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    compile_command = subcommands.add_parser("build", help="compile one dictionary")
-    compile_command.add_argument("--id", required=True, help="catalogue id, e.g. cc-cedict")
+    compile_command = subcommands.add_parser("build", help="compile one dictionary, or many")
+    what = compile_command.add_mutually_exclusive_group(required=True)
+    what.add_argument("--id", help="catalogue id, e.g. cc-cedict")
+    what.add_argument("--all", action="store_true",
+                      help="every offline row, or every one matching --language")
+    compile_command.add_argument(
+        "--language",
+        help="comma-separated source languages to build, e.g. es,en,zh. Matches the primary subtag, "
+             "so `zh` covers zh-Hans and zh-Hant.",
+    )
     compile_command.add_argument("--out", help="where to write the artifact (default: the served directory)")
     compile_command.add_argument("--limit", type=int, help="stop after this many entries")
     compile_command.add_argument(
         "--discard-source", action="store_true",
-        help="delete the download afterwards. The default keeps it, because re-running a changed "
+        help="delete each download afterwards. The default keeps it, because re-running a changed "
              "converter should not mean fetching a gigabyte again.",
     )
 
@@ -63,16 +71,56 @@ def _list() -> int:
 def _build(arguments) -> int:
     from pathlib import Path
 
-    result = builder.build(
-        arguments.id,
-        destination=Path(arguments.out) if arguments.out else None,
-        limit=arguments.limit,
-        discard_source=arguments.discard_source,
-        progress=lambda message: print(f"  · {message}", flush=True),
-    )
-    _report(result)
-    print(f"  → {result.destination}")
-    return 0
+    destination = Path(arguments.out) if arguments.out else None
+    identifiers = _selected(arguments)
+    if not identifiers:
+        print("Nothing in the catalogue matches that.", file=sys.stderr)
+        return 1
+
+    if len(identifiers) > 1:
+        total = sum(row.approxDownloadBytes or 0 for row in load_catalogue()
+                    if row.id in set(identifiers))
+        print(f"Building {len(identifiers)} dictionaries, about {total / 2**30:.1f} GiB to download "
+              f"(downloads already cached are reused).\n")
+
+    failures: list[tuple[str, Exception]] = []
+    for position, identifier in enumerate(identifiers, start=1):
+        if len(identifiers) > 1:
+            print(f"[{position}/{len(identifiers)}] {identifier}", flush=True)
+        try:
+            result = builder.build(
+                identifier,
+                destination=destination,
+                limit=arguments.limit,
+                discard_source=arguments.discard_source,
+                progress=lambda message: print(f"  · {message}", flush=True),
+            )
+        except Exception as error:                              # noqa: BLE001 — a batch keeps going
+            # One source moving must not abandon the ten gigabytes already downloaded behind it.
+            failures.append((identifier, error))
+            print(f"  ! failed: {type(error).__name__}: {error}\n", file=sys.stderr, flush=True)
+            continue
+        _report(result)
+        print(f"  → {result.destination}\n", flush=True)
+
+    if failures:
+        print(f"{len(failures)} of {len(identifiers)} did not build:", file=sys.stderr)
+        for identifier, error in failures:
+            print(f"  {identifier}: {error}", file=sys.stderr)
+    return 1 if failures else 0
+
+
+def _selected(arguments) -> list[str]:
+    """Which rows this invocation names: one id, or every offline row a language filter allows."""
+    rows = [row for row in load_catalogue() if row.kind == "offline"]
+    if arguments.id:
+        if arguments.language:
+            print("--language filters --all; it does nothing beside --id.", file=sys.stderr)
+        return [arguments.id]
+    if arguments.language:
+        wanted = {code.strip().split("-")[0] for code in arguments.language.split(",") if code.strip()}
+        rows = [row for row in rows if row.sourceLang.split("-")[0] in wanted]
+    return [row.id for row in rows]
 
 
 def _verify(arguments) -> int:

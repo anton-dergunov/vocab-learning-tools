@@ -50,6 +50,25 @@ describe("the Dictionaries pane", () => {
     expect(screen.getByText(/protected from being cleared/i)).toBeInTheDocument();
   });
 
+  it("reports headroom rather than a usage figure the browser has not caught up with", async () => {
+    // Measured on WebKit: estimate().usage stays at zero right after a 40 MiB write, so quoting it
+    // back would tell someone holding dictionaries that they are holding nothing.
+    vi.spyOn(store, "storageReport").mockResolvedValue({
+      usedBytes: 0, quotaBytes: 78 * 2 ** 30, persisted: true
+    });
+    panel();
+    expect(await screen.findByText(/About 78\.0 GB is available to Acervo/i)).toBeInTheDocument();
+    expect(screen.queryByText(/of about .* used by Acervo/i)).toBeNull();
+  });
+
+  it("quotes the browser's usage when it is believable", async () => {
+    vi.spyOn(store, "storageReport").mockResolvedValue({
+      usedBytes: 30 * 2 ** 20, quotaBytes: 4 * 2 ** 30, persisted: true
+    });
+    panel();
+    expect(await screen.findByText(/30 MB of about 4\.0 GB used by Acervo/i)).toBeInTheDocument();
+  });
+
   it("warns when the browser may clear the storage again", async () => {
     vi.spyOn(store, "storageReport").mockResolvedValue({
       usedBytes: null, quotaBytes: null, persisted: false

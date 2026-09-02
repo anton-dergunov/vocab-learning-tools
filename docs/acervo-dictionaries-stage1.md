@@ -106,19 +106,30 @@ copyleft (kaikki, CC-CEDICT, JMdict all CC BY-SA; most FreeDict GPL), this repos
 Spanish alone is 27.8 MiB against GitHub's 1 GiB/month free LFS bandwidth. The server serves what it
 compiled, behind authentication, to the owner's own devices.
 
-### 3.6 · The frames live in IndexedDB, and the compaction survives
+### 3.6 · The frames live in IndexedDB, and the probe says that works
 
-The packed container was designed assuming OPFS. The device probe reported OPFS missing everywhere —
-including desktop Chrome, which certainly has it — because the runs were served over plain http and
-OPFS needs a secure context. The probe now reports `isSecureContext` first so this cannot be misread
-again, but the design no longer depends on the answer: IndexedDB is universally available and is
-what `localDatabase.ts` already uses, and per §10 that changes the reader and not the artifact.
+The packed container was designed assuming OPFS, and the first probe run reported OPFS missing on
+every device — including desktop Chrome, which certainly has it. That was an insecure origin, and
+re-running over https confirms OPFS is available everywhere (§11.7).
+
+It is still not used, and this is now a measurement rather than a fallback. `createSyncAccessHandle`
+is `[Exposed=DedicatedWorker]`, so the fast OPFS path means moving reads into a worker; IndexedDB
+needs no worker, is what `localDatabase.ts` already uses, and measured:
+
+- **1.00× storage overhead** on Android Chrome — the artifact is stored as exactly the bytes written,
+  so DEFLATE frames stay compressed and the container decision survives storage intact.
+- **A 64 KiB `Blob.slice` out of a 40 MiB stored Blob costs 0.00–1.40 ms**, against 14–37 ms to read
+  the whole Blob. Slices are lazy, so the store behaves like the random-access file the format was
+  designed against, and the ~1 MiB chunking fallback is not needed.
 
 The condition is that IndexedDB stores **whole files, not entries** — three records per dictionary.
-A Blob is stored as opaque bytes and read lazily through `blob.slice`, so already-compressed frames
-stay compressed; the per-entry shape §11 originally modelled would have paid per-record overhead
-834,245 times. This is the one place where getting the storage shape wrong would silently undo the
-whole container decision.
+The per-entry shape §11 originally modelled would have paid per-record overhead 834,245 times. This
+is the one place where getting the storage shape wrong would silently undo the container decision.
+
+One interface consequence fell out of the same run: **both WebKit browsers report
+`storage.estimate().usage` as unchanged after a 40 MiB write**, because WebKit updates it lazily. The
+pane therefore never quotes a usage figure lower than what it knows it is holding — it reports the
+headroom instead, which is the number someone deciding whether to download is actually asking.
 
 ### 3.7 · There is no server-side lookup route
 
@@ -287,10 +298,5 @@ that boundary: `tests/unit/dictionaries/test_fixture.py` builds a small artifact
 - **Building from the interface.** `build.build` already takes a progress callback and raises rather
   than printing, so this is a job wrapper plus a status route, with no change to the artifact,
   catalogue, client or reader.
-- **Two probe measurements.** Whether `storage.estimate().usage` grows by roughly what was written,
-  and whether a `Blob.slice` out of a 40 MiB stored Blob reads a range rather than materialising the
-  file. The probe now covers both and needs re-running over https. If WebKit materialises, the
-  fallback is chunking the payload into ~1 MiB records — twenty per dictionary — which changes the
-  store and not the artifact.
 - **A catalogue health check.** §9's monthly script that HEADs every URL and reports what moved. The
   FreeDict and GitHub resolvers already remove the most common cause of rot.

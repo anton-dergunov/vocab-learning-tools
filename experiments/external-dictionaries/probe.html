@@ -119,11 +119,16 @@ try {
   row("IndexedDB: store a 40 MiB Blob", `${(performance.now() - written).toFixed(0)} ms`, true);
 
   const after = (await navigator.storage?.estimate?.())?.usage ?? null;
-  if (before !== null && after !== null) {
+  // A ratio of zero is not a pass, it is a non-answer: WebKit updates `estimate().usage` lazily and
+  // reports 0 immediately after a write that plainly happened. Saying so beats painting it green.
+  if (before === null || after === null) {
+    row("IndexedDB: bytes stored ÷ bytes written", "storage.estimate() unavailable", false);
+  } else if (after <= before) {
+    row("IndexedDB: bytes stored ÷ bytes written",
+        "usage unchanged — this browser reports it lazily, so nothing can be concluded", undefined);
+  } else {
     const overhead = (after - before) / SIZE;
     row("IndexedDB: bytes stored ÷ bytes written", `${overhead.toFixed(2)}×`, overhead < 1.3);
-  } else {
-    row("IndexedDB: bytes stored ÷ bytes written", "storage.estimate() unavailable", false);
   }
 
   const stored = await new Promise((ok, no) => {
