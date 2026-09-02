@@ -874,15 +874,14 @@ def test_app_and_anki_ports_are_distinct_and_collisions_are_rejected(tmp_path: P
 
 
 def test_shared_host_guardrails_are_documented_and_global_serve_mutations_are_absent() -> None:
-    agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     docs = (REPO_ROOT / "docs/acervo-app.md").read_text(encoding="utf-8")
     helper = (REPO_ROOT / "deploy/acervo/remote-helper.sh").read_text(encoding="utf-8")
-    combined = agents + readme + docs
+    combined = readme + docs
 
     assert "shared host" in combined.lower()
-    assert "never assume" in agents
-    assert "--https-port" in readme + docs
+    assert "never assume" in combined
+    assert "--https-port" in combined
     assert "serve --bg http://127.0.0.1:27702" not in combined
     assert "serve reset" not in helper
     assert "serve off" not in helper
