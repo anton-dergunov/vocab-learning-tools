@@ -449,12 +449,19 @@ export async function searchDictionaries(
     try {
       if (source.origin === "online") {
         // An online source answers a word, not a prefix, so there is nothing to list: the answer
-        // itself is the row, and it arrives with its gloss already in hand.
-        const entries = await lookupOnline(source.entry.id, query, language);
-        return entries.length
-          ? [{ ...shared, word: entries[0].headword || query,
-               gloss: entries[0].senses.map((sense) => sense.definition).slice(0, 3).join("; ") }]
-          : [];
+        // itself is the row, and it arrives with its gloss already in hand. Both spellings, so the
+        // online tier is no more case-sensitive than the compiled one — but as typed first, because
+        // a proper noun is a word the source may only hold capitalised.
+        const spellings = [query, query.toLowerCase()].filter((word, index, all) =>
+          all.indexOf(word) === index);
+        for (const spelling of spellings) {
+          const entries = await lookupOnline(source.entry.id, spelling, language);
+          if (entries.length) {
+            return [{ ...shared, word: entries[0].headword || spelling,
+                      gloss: entries[0].senses.map((sense) => sense.definition).slice(0, 3).join("; ") }];
+          }
+        }
+        return [];
       }
       const dictionary = await openDictionary(source.entry.id, source.remote);
       const words = (await dictionary?.search(query, limit)) ?? [];

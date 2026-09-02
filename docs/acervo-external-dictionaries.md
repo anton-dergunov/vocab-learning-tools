@@ -1129,3 +1129,21 @@ The jump chips also stopped landing on their headings again once a word was held
 nav is sticky and wraps to two or three rows, so no fixed `scroll-margin-top` can be right for every
 entry. It is measured from the nav and re-measured when it resizes.
 
+### §12.5 · Prefix search was case-sensitive, and only prefix search
+
+`lookup` folded case from the beginning — the compiler stores a case-folded alias beside every key
+that needs one, and the reader falls back to it. `search` did not, because a prefix scan walks the
+sorted key bytes: `Mejor` looked for keys beginning `Mejor` and there are none, while `mejor` found
+the word. The two halves of the same reader disagreed, and a phone capitalises the first letter of
+everything typed into a search box, so the common case was the broken one.
+
+Both spellings are now scanned, and each gets the **full** result budget rather than a share of one.
+That second part matters as much as the first: letting the as-typed scan fill the list is how `Casa`
+came back as `Casa Blanca · Casablanca · Casadevante` and never `casa`. When the pool has to be
+trimmed, the word actually typed leads it. Results are deduplicated by *entry*, not by spelling, so
+a key and its folded alias are one row rather than the same word listed twice.
+
+The online tier folds the same way, and in the same order — as typed first, because a proper noun
+may only be held capitalised — which costs one extra request only on a miss, behind the ⏎ that was
+already required.
+

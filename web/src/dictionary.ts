@@ -251,26 +251,65 @@ export class Dictionary {
    * decoded, so listing candidates costs a fraction of reading one of them.
    */
   async search(prefix: string, limit = 25): Promise<string[]> {
-    const target = encoder.encode(prefix.trim().normalize("NFC"));
-    if (!target.length || !this.restarts.length) return [];
+    const typed = prefix.trim().normalize("NFC");
+    if (!typed || !this.restarts.length) return [];
+    /* Case is not a filter anyone meant to apply. The compiler stores a case-folded alias beside
+       every key that needs one, and `lookup` already falls back to it — but a *prefix* scan walks
+       the sorted key bytes, so `Mejor` looked for keys beginning `Mejor` and found none, while
+       `mejor` found the word. Scanning both spellings is what makes typing `tHiS` work as well as
+       typing `this`, and it costs a second binary search only when the two actually differ. */
+    const spellings = [typed];
+    const lowered = folded(typed);
+    if (lowered !== typed) spellings.push(lowered);
+
     const found: string[] = [];
-    const seen = new Set<string>();
+    const seenWord = new Set<string>();
+    // By entry, not only by spelling: a key and its folded alias are one word, and returning both
+    // would list it twice.
+    const seenEntry = new Set<number>();
+    for (const spelling of spellings) {
+      // Each spelling gets the full budget rather than a share of one. Letting the first fill the
+      // list is how `Casa` came back as `Casa Blanca, Casablanca, Casadevante…` and never `casa` —
+      // which is what a phone's autocapitalise turns every first word into.
+      await this.scanPrefix(encoder.encode(spelling), limit, found, seenWord, seenEntry);
+    }
+    if (found.length <= limit) return found;
+
+    /* Trimming the pool, not the scan. Whatever survives, the word that was actually typed has to:
+       it is the answer to the question, and the alphabet is no reason to lose it. */
+    const wanted = lowered;
+    return found
+      .map((word, position) => ({ word, position }))
+      .sort((left, right) =>
+        Number(folded(right.word) === wanted) - Number(folded(left.word) === wanted)
+        || left.word.length - right.word.length
+        || left.position - right.position)
+      .slice(0, limit)
+      .map((candidate) => candidate.word);
+  }
+
+  /** Walks the sorted keys from `target` while they still begin with it. */
+  private async scanPrefix(
+    target: Uint8Array, limit: number,
+    found: string[], seenWord: Set<string>, seenEntry: Set<number>
+  ): Promise<void> {
+    if (!target.length) return;
     for (let bucket = await this.floorRestart(target); bucket < this.restarts.length; bucket += 1) {
-      for (const { key } of await this.bucket(bucket)) {
+      for (const { key, entry } of await this.bucket(bucket)) {
         if (!startsWith(key, target)) {
           // The keys are sorted, so once we are past the prefix there is nothing further to find.
-          if (compareBytes(key, target) > 0) return found;
+          if (compareBytes(key, target) > 0) return;
           continue;
         }
         const word = decoder.decode(key);
-        if (!seen.has(word)) {
-          seen.add(word);
+        if (!seenWord.has(word) && !seenEntry.has(entry)) {
+          seenWord.add(word);
+          seenEntry.add(entry);
           found.push(word);
-          if (found.length >= limit) return found;
+          if (found.length >= limit) return;
         }
       }
     }
-    return found;
   }
 
   private async locate(target: Uint8Array): Promise<Location | null> {

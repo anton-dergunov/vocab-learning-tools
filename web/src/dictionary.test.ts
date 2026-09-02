@@ -97,6 +97,29 @@ describe("reading a compiled dictionary", () => {
     expect(await search.search("zzz")).toEqual([]);
   });
 
+  it("finds a word however it was capitalised", async () => {
+    // A prefix scan walks the sorted key bytes, so `Picar` looked for keys beginning `Picar` and
+    // found none while `picar` found the word — and a phone capitalises the first letter of
+    // everything typed into a search box.
+    for (const typed of ["picar", "Picar", "PICAR", "pIcAr"]) {
+      expect(await dictionary.search(typed, 5), `${typed} should find picar`).toContain("picar");
+    }
+  });
+
+  it("counts a key and its folded alias as one word, not two", async () => {
+    // `Ñandú` is stored with `ñandú` beside it so either spelling resolves; listing both would show
+    // one entry twice.
+    const found = await dictionary.search("ñand", 10);
+    expect(found.filter((word) => word.toLowerCase() === "ñandú")).toHaveLength(1);
+    expect(await dictionary.search("ÑANDÚ", 10)).toHaveLength(1);
+  });
+
+  it("keeps the word that was typed when the list has to be cut", async () => {
+    // Both spellings get the full budget, so neither can crowd the other out; what survives the
+    // trim is led by the word actually asked for.
+    expect((await dictionary.search("Picar", 1))).toEqual(["picar"]);
+  });
+
   it("reads a small fraction of the index to answer one lookup", async () => {
     // The point of the format: a lookup is a binary search plus one frame, not a whole file.
     const index = countingSource(indexBytes);
