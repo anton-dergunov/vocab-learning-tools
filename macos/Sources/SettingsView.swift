@@ -9,11 +9,18 @@ struct SettingsView: View {
 
     let checkNow: () -> Void
     let installUpdate: () -> Void
+    let restartNow: () -> Void
 
-    init(updates: UpdateService, checkNow: @escaping () -> Void, installUpdate: @escaping () -> Void) {
+    init(
+        updates: UpdateService,
+        checkNow: @escaping () -> Void,
+        installUpdate: @escaping () -> Void,
+        restartNow: @escaping () -> Void
+    ) {
         self.updates = updates
         self.checkNow = checkNow
         self.installUpdate = installUpdate
+        self.restartNow = restartNow
         _serverURL = State(initialValue: updates.storedServerURL)
     }
 
@@ -76,6 +83,11 @@ struct SettingsView: View {
             ))
             .disabled(!updates.automaticChecks)
 
+            Text("Updates install quietly in the background and start the next time Acervo opens. Acervo never restarts itself.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Divider()
 
             HStack(spacing: 10) {
@@ -104,9 +116,13 @@ struct SettingsView: View {
         case .checking:
             ProgressView().controlSize(.small)
         case .idle:
-            if let release = updates.available {
+            if let pending = updates.pendingBuild {
+                Text("Build \(pending) starts when Acervo restarts").font(.caption).foregroundStyle(.orange)
+                Button("Restart Now", action: restartNow).buttonStyle(.borderedProminent).controlSize(.small)
+            } else if let release = updates.available {
                 Text("Build \(release.build) is available").font(.caption).foregroundStyle(.orange)
-                Button("Update Now", action: installUpdate).buttonStyle(.borderedProminent).controlSize(.small)
+                // The label names the restart, so nothing has to confirm it afterwards.
+                Button("Update and Restart", action: installUpdate).buttonStyle(.borderedProminent).controlSize(.small)
             } else if let message = updates.statusMessage {
                 Text(message).font(.caption).foregroundStyle(.secondary)
             } else if let date = updates.lastCheck {

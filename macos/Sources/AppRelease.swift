@@ -16,6 +16,14 @@ enum AppVersion {
     }
 }
 
+enum BuildStamp {
+    static func isNewer(_ offered: String, than current: String) -> Bool {
+        guard let offered = UInt64(offered) else { return false }
+        guard let current = UInt64(current) else { return true }
+        return offered > current
+    }
+}
+
 struct MacRelease: Decodable, Equatable {
     let version: String
     let build: String
@@ -27,10 +35,17 @@ struct MacRelease: Decodable, Equatable {
     struct Envelope: Decodable { let data: MacRelease? }
 
     func isNewer(than currentBuild: String) -> Bool {
-        guard let offered = UInt64(build) else { return false }
-        guard let current = UInt64(currentBuild) else { return true }
-        return offered > current
+        BuildStamp.isNewer(build, than: currentBuild)
     }
+}
+
+/// What the menu bar says about an update. One mark, two reasons for it: nothing about an update
+/// interrupts, so this is the only place it is announced until someone goes looking.
+enum UpdateMark: Equatable {
+    /// A newer build exists on the server and is not installed.
+    case available(MacRelease)
+    /// A newer build is already on disk and starts the next time Acervo opens.
+    case pendingRestart(build: String)
 }
 
 enum ServerAddress {

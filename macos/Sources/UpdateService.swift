@@ -17,6 +17,7 @@ final class UpdateService: ObservableObject {
         static let automatic = "AcervoAutomaticUpdateChecks"
         static let automaticInstall = "AcervoAutomaticUpdateInstall"
         static let lastCheck = "AcervoLastUpdateCheck"
+        static let pendingBuild = "AcervoPendingUpdateBuild"
     }
 
     private static let checkInterval: TimeInterval = 6 * 3600
@@ -26,9 +27,10 @@ final class UpdateService: ObservableObject {
     @Published private(set) var state: State = .idle
     @Published private(set) var lastCheck: Date?
     @Published private(set) var statusMessage: String?
+    /// A build already written over this bundle, waiting for the next launch to take effect.
+    @Published private(set) var pendingBuild: String?
 
-    var onAvailabilityChanged: ((MacRelease?) -> Void)?
-    var confirmRestart: ((MacRelease) -> Bool)?
+    var onUpdateMarkChanged: ((UpdateMark?) -> Void)?
 
     private let defaults: UserDefaults
     private let session: URLSession
@@ -39,6 +41,29 @@ final class UpdateService: ObservableObject {
         self.session = session
         if defaults.object(forKey: Keys.automatic) == nil { defaults.set(true, forKey: Keys.automatic) }
         lastCheck = defaults.object(forKey: Keys.lastCheck) as? Date
+        // A pending build that is no longer ahead of the running one is the restart having happened.
+        if let pending = defaults.string(forKey: Keys.pendingBuild),
+           BuildStamp.isNewer(pending, than: AppVersion.build) {
+            pendingBuild = pending
+        } else {
+            defaults.removeObject(forKey: Keys.pendingBuild)
+        }
+    }
+
+    /// Pending wins over available, so the mark never blinks off between installing and restarting.
+    var currentMark: UpdateMark? {
+        if let pendingBuild { return .pendingRestart(build: pendingBuild) }
+        if let available { return .available(available) }
+        return nil
+    }
+
+    /// The build this Mac will run next: the pending one once it is on disk, otherwise the running
+    /// one. Comparing against it is what stops an installed update being offered again every check.
+    private var installedBuild: String {
+        guard let pendingBuild, BuildStamp.isNewer(pendingBuild, than: AppVersion.build) else {
+            return AppVersion.build
+        }
+        return pendingBuild
     }
 
     var storedServerURL: String { defaults.string(forKey: Self.serverURLKey) ?? "" }
@@ -108,20 +133,22 @@ final class UpdateService: ObservableObject {
             defaults.set(now, forKey: Keys.lastCheck)
             lastCheck = now
             let offered = try JSONDecoder().decode(MacRelease.Envelope.self, from: data).data
-            let newer = offered.flatMap { $0.isNewer(than: AppVersion.build) ? $0 : nil }
+            let newer = offered.flatMap { $0.isNewer(than: installedBuild) ? $0 : nil }
             available = newer
-            onAvailabilityChanged?(newer)
+            publishMark()
             state = .idle
-            statusMessage = newer == nil ? "Acervo is up to date." : nil
-            if newer != nil, !force, automaticInstall { await install() }
+            statusMessage = newer == nil && pendingBuild == nil ? "Acervo is up to date." : nil
+            // Found by the timer with automatic installing on: take it now and say so in the menu
+            // bar. Nothing here may steal focus — whoever is at this Mac is doing something else.
+            if newer != nil, !force, automaticInstall { await install(thenRestart: false) }
         } catch {
             available = nil
-            onAvailabilityChanged?(nil)
+            publishMark()
             state = force ? .failed(describe(error)) : .idle
         }
     }
 
-    func install() async {
+    func install(thenRestart: Bool) async {
         guard let release = available else { return }
         guard let downloadURL = serverURL(path: release.url) else {
             state = .failed("The server gave an invalid download address.")
@@ -150,14 +177,24 @@ final class UpdateService: ObservableObject {
             }.value
             state = .idle
             available = nil
-            onAvailabilityChanged?(nil)
-            guard confirmRestart?(release) ?? true else { return }
-            relaunch(at: bundle)
+            pendingBuild = release.build
+            defaults.set(release.build, forKey: Keys.pendingBuild)
+            publishMark()
+            if thenRestart { relaunch(at: bundle) }
         } catch {
-            let message = describe(error)
-            state = .failed(message)
-            presentFailure(message)
+            // Settings shows this; a background failure must not put anything on screen.
+            state = .failed(describe(error))
         }
+    }
+
+    /// Quit and reopen on the build already written over this bundle. Only ever called from a
+    /// control that says it restarts, so it asks nothing first.
+    func restartNow() {
+        relaunch(at: URL(fileURLWithPath: Bundle.main.bundlePath))
+    }
+
+    private func publishMark() {
+        onUpdateMarkChanged?(currentMark)
     }
 
     static func progressUpdate(_ fraction: Double, whileShowing state: State) -> State? {
@@ -277,17 +314,6 @@ final class UpdateService: ObservableObject {
             return "HTTPS could not be established. Use the address printed by Tailscale Serve or your HTTPS reverse proxy, not Acervo's HTTP app port."
         }
         return networkError.localizedDescription
-    }
-
-    private func presentFailure(_ message: String) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "Acervo could not install the update"
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
     }
 }
 

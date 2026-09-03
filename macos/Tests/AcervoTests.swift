@@ -100,7 +100,8 @@ final class AcervoTests: XCTestCase {
     @MainActor
     func testMenuBarIconIsACompactTemplateImage() {
         let icon = makeMenuBarIcon(accessibilityDescription: "Acervo")
-        XCTAssertEqual(icon.size, NSSize(width: 20, height: 18))
+        // Wider than the book: the trailing points are reserved for the update mark.
+        XCTAssertEqual(icon.size, NSSize(width: 27, height: 18))
         XCTAssertTrue(icon.isTemplate)
         XCTAssertEqual(icon.accessibilityDescription, "Acervo")
         XCTAssertNotNil(icon.tiffRepresentation)
@@ -114,7 +115,48 @@ final class AcervoTests: XCTestCase {
         )
         XCTAssertTrue(icon.isTemplate)
         XCTAssertEqual(icon.accessibilityDescription, "Acervo; an update is available")
-        XCTAssertNotNil(icon.tiffRepresentation)
+        // The mark must actually be drawn, not merely described.
+        XCTAssertNotEqual(
+            icon.tiffRepresentation,
+            makeMenuBarIcon(accessibilityDescription: "Acervo").tiffRepresentation
+        )
+    }
+
+    @MainActor
+    func testStatusMenuOffersARestartOnlyWhenAnUpdateIsWaiting() {
+        XCTAssertEqual(makeStatusMenu(mark: nil, target: nil).items.map(\.title), ["Quit Acervo"])
+        XCTAssertEqual(
+            makeStatusMenu(mark: .pendingRestart(build: "202608271230"), target: nil).items.map(\.title),
+            ["Restart to Update", "", "Quit Acervo"]
+        )
+        let release = MacRelease(version: "0.1.0", build: "202608271230", file: "a.zip", size: 1, sha256: "x", url: "/a.zip")
+        XCTAssertEqual(
+            makeStatusMenu(mark: .available(release), target: nil).items.map(\.title),
+            ["Check for Updates…", "", "Quit Acervo"]
+        )
+    }
+
+    @MainActor
+    func testAnInstalledUpdateIsNotOfferedAgainAndKeepsMarkingTheMenuBar() async throws {
+        defer { StubURLProtocol.reset() }
+        StubURLProtocol.body = Data(
+            #"{"data":{"version":"9.9.9","build":"999999999999","file":"Acervo.zip","size":1,"sha256":"x","url":"/api/acervo/downloads/Acervo.zip"}}"#.utf8
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let defaultsSuite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
+        defaults.set("https://acervo.example.com", forKey: UpdateService.serverURLKey)
+        // Already installed by an earlier background check, waiting for the next launch.
+        defaults.set("999999999999", forKey: "AcervoPendingUpdateBuild")
+
+        let updates = UpdateService(defaults: defaults, session: URLSession(configuration: configuration))
+        XCTAssertEqual(updates.pendingBuild, "999999999999")
+        await updates.check(force: true)
+
+        XCTAssertNil(updates.available, "An installed build must not be downloaded again on every check")
+        XCTAssertEqual(updates.currentMark, .pendingRestart(build: "999999999999"))
     }
 
     func testSchemeHandlerRefusesTraversalAndKnowsTypes() throws {

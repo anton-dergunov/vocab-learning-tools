@@ -5,7 +5,12 @@ import SwiftUI
 final class SettingsWindowController {
     private var window: NSWindow?
 
-    func show(updates: UpdateService, checkNow: @escaping () -> Void, installUpdate: @escaping () -> Void) {
+    func show(
+        updates: UpdateService,
+        checkNow: @escaping () -> Void,
+        installUpdate: @escaping () -> Void,
+        restartNow: @escaping () -> Void
+    ) {
         NSApp.setActivationPolicy(.regular)
         if let window {
             window.makeKeyAndOrderFront(nil)
@@ -15,7 +20,8 @@ final class SettingsWindowController {
         let controller = NSHostingController(rootView: SettingsView(
             updates: updates,
             checkNow: checkNow,
-            installUpdate: installUpdate
+            installUpdate: installUpdate,
+            restartNow: restartNow
         ))
         let window = NSWindow(contentViewController: controller)
         window.title = "Acervo Settings"

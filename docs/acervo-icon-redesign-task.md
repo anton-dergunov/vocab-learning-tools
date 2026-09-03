@@ -40,8 +40,11 @@ The concept is not approved as final artwork. It currently feels too formal and 
 - Create a separate monochrome interpretation of the chosen book silhouette.
 - Supply it as a macOS template image so the system renders it black or white for the current menu-bar appearance.
 - Do not reuse the burgundy-and-gold colour bitmap in the menu bar.
-- Preserve the existing interactions: left-click opens Acervo and right-click shows only **Quit Acervo**.
-- Preserve space for the update-available dot without clipping or crowding the book.
+- Preserve the existing interactions: left-click opens Acervo, and right-click shows **Quit Acervo**
+  plus one update item when an update is waiting.
+- Preserve the reserved trailing margin for the update dot. The dot is drawn beside the book, never
+  on it, so that it is large enough to read at menu-bar size; the book must not be clipped, crowded,
+  or shifted by it, and the icon must not change width when the dot appears.
 
 ## Suggested workflow
 

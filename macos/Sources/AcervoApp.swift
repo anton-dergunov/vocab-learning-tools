@@ -62,11 +62,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
         createWindow()
-        menuBar = MenuBarController(openWindow: { [weak self] in self?.showWindow() })
+        menuBar = MenuBarController(
+            openWindow: { [weak self] in self?.showWindow() },
+            restartToUpdate: { [weak self] in self?.updates.restartNow() },
+            checkForUpdates: { [weak self] in self?.checkForUpdates() }
+        )
         showWindow()
 
-        updates.onAvailabilityChanged = { [weak self] release in self?.menuBar.setUpdateAvailable(release) }
-        updates.confirmRestart = { [weak self] release in self?.confirmRestart(for: release) ?? true }
+        // An update never opens a window or takes focus; the menu bar carries it until it is wanted.
+        updates.onUpdateMarkChanged = { [weak self] mark in self?.menuBar.setUpdateMark(mark) }
+        menuBar.setUpdateMark(updates.currentMark)
         updates.start()
 
         if !updates.hasServerURL {
@@ -285,18 +290,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         settings.show(
             updates: updates,
             checkNow: { [weak self] in Task { await self?.updates.check(force: true) } },
-            installUpdate: { [weak self] in Task { await self?.updates.install() } }
+            installUpdate: { [weak self] in Task { await self?.updates.install(thenRestart: true) } },
+            restartNow: { [weak self] in self?.updates.restartNow() }
         )
-    }
-
-    private func confirmRestart(for release: MacRelease) -> Bool {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "Acervo has been updated"
-        alert.informativeText = "Build \(release.build) is installed and starts the next time Acervo opens."
-        alert.addButton(withTitle: "Restart Now")
-        alert.addButton(withTitle: "Later")
-        return alert.runModal() == .alertFirstButtonReturn
     }
 }
