@@ -281,7 +281,7 @@ def test_local_deploy_wrapper_preserves_temporary_dot_acervo(tmp_path: Path) -> 
     try:
         first = deploy(
             "--configure-credentials",
-            stdin="deploy-test\ndeploy-password\n",
+            stdin="deploy-test\ndeploy-password\ndeploy-test@example.com\ndeploy-password\n\n",
         )
         assert first.returncode == 0, first.stderr
         second = deploy()
