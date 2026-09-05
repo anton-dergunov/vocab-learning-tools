@@ -9,7 +9,7 @@ import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase,
 import { newDeviceId, newId, nowInstant } from "./ids";
 import type { ArticleDraft, ImagePromptDraft } from "./yaml";
 
-export const LOCAL_SCHEMA_VERSION = 5;
+export const LOCAL_SCHEMA_VERSION = 6;
 
 const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []

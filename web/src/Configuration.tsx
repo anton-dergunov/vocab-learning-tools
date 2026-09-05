@@ -32,6 +32,7 @@ function VocabularyRow({ vocabulary, wordCount, onSave, onRemove }: {
   const [flag, setFlag] = useState(vocabulary.flag ?? fallback.flag);
   const [definitionLang, setDefinitionLang] = useState(vocabulary.definitionLang);
   const [glossLangs, setGlossLangs] = useState(vocabulary.glossLangs.join(", "));
+  const [notesLang, setNotesLang] = useState(vocabulary.notesLang);
 
   if (!editing) {
     return <div className="config-row">
@@ -40,7 +41,8 @@ function VocabularyRow({ vocabulary, wordCount, onSave, onRemove }: {
         <strong>{vocabulary.displayName ?? fallback.name}</strong>
         <span>
           {vocabulary.language} · defined in {vocabulary.definitionLang} · translated into{" "}
-          {vocabulary.glossLangs.join(", ")} · {wordCount} {wordCount === 1 ? "word" : "words"}
+          {vocabulary.glossLangs.join(", ")} · noted in {vocabulary.notesLang} ·{" "}
+          {wordCount} {wordCount === 1 ? "word" : "words"}
         </span>
       </span>
       <button className="tb-btn" onClick={() => setEditing(true)}>Edit</button>
@@ -63,9 +65,15 @@ function VocabularyRow({ vocabulary, wordCount, onSave, onRemove }: {
       id={`gloss-${vocabulary.id}`} value={glossLangs} spellCheck={false} placeholder="en, ru"
       onChange={(event) => setGlossLangs(event.target.value)}
     />
+    <label className="label" htmlFor={`notes-${vocabulary.id}`}>Notes written in</label>
+    <input
+      id={`notes-${vocabulary.id}`} value={notesLang} spellCheck={false}
+      onChange={(event) => setNotesLang(event.target.value)}
+    />
     <p className="config-help">
-      Language tags, most preferred first. These are the languages every generated entry is
-      translated into.
+      Language tags, most preferred first. Translations are the languages every generated entry is
+      translated into. Notes are the usage remarks under an entry — the language you read fastest,
+      until you would rather read them in the language you are learning.
     </p>
     <div className="sync-actions">
       <button className="tb-btn" onClick={() => setEditing(false)}>Cancel</button>
@@ -75,7 +83,8 @@ function VocabularyRow({ vocabulary, wordCount, onSave, onRemove }: {
           displayName: name.trim() || null,
           flag: flag.trim() || null,
           definitionLang: definitionLang.trim(),
-          glossLangs: parseLanguageList(glossLangs) ?? vocabulary.glossLangs
+          glossLangs: parseLanguageList(glossLangs) ?? vocabulary.glossLangs,
+          notesLang: notesLang.trim() || vocabulary.notesLang
         });
       }}>Save</button>
     </div>
@@ -121,12 +130,14 @@ export function VocabularyEditor({ snapshot, onNotify, onChanged }: {
       return;
     }
     const defaults = languageOf(language);
+    // A language the table does not know has no sensible pivot to guess, so English is the
+    // starting point and the row is immediately editable.
+    const glossLangs = defaults.glossLangs.length ? defaults.glossLangs : ["en"];
     void run(() => repository.saveVocabulary({
       language,
       definitionLang: language,
-      // A language the table does not know has no sensible pivot to guess, so English is the
-      // starting point and the row is immediately editable.
-      glossLangs: defaults.glossLangs.length ? defaults.glossLangs : ["en"],
+      glossLangs,
+      notesLang: glossLangs[0],
       displayName: defaults.name,
       flag: defaults.flag,
       order: entries.length
@@ -160,6 +171,7 @@ export function VocabularyEditor({ snapshot, onNotify, onChanged }: {
           language: vocabulary.language,
           definitionLang: vocabulary.definitionLang,
           glossLangs: vocabulary.glossLangs,
+          notesLang: vocabulary.notesLang,
           displayName: vocabulary.displayName,
           flag: vocabulary.flag,
           order: vocabulary.order,

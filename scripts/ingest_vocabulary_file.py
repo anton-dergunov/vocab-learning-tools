@@ -36,7 +36,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from vocabgen.provider.rate_limiter import RateLimiter  # noqa: E402
 
 API_PATH = "/api/acervo/v1"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 DEVICE_ID = "ingestscript01"
 REQUEST_TIMEOUT = 600
 RETRY_DELAYS = (15, 30, 60)

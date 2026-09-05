@@ -54,16 +54,26 @@ Field rules:
 - `topics` — one, occasionally two, chosen EXACTLY from the list of topic names you are given.
   Copy the name character for character. Never invent a topic. If nothing fits and the list offers
   a general-purpose topic such as "Misc", use it; if not, return an empty list.
-- `shortGloss` — the one-line meaning for the list view. Short, and separated with `; ` when there
-  are several distinct meanings: `to listen to him; to pay attention to him`.
+- `shortGloss` — the one-line meaning for the list view, written in the FIRST language you are
+  asked to gloss into. Short, and separated with `; ` when there are several distinct meanings:
+  `to listen to him; to pay attention to him`.
 - `notes` — a few short lines on HOW the word is used, and how it differs from the neighbouring
   word the learner will confuse it with. This is the part no dictionary gives them, so it is worth
   real effort — but only when there is something to say. An empty list is better than filler.
+  Write them in the language you are told to WRITE NOTES IN, which is usually not the language of
+  the word. A definition is short and formulaic, so it is left in the language being learned; a
+  note is unbounded prose about a distinction, and it is the part of the article the learner skims.
+  Do not switch languages between one note and the next, and do not translate a note into a second
+  one. An example's `note` follows the same rule.
 
 ## Senses
 
-- `definition` is written IN THE TARGET LANGUAGE, in the style of a learner's dictionary: plain,
-  short, using simpler words than the one being defined.
+- `definition` is written IN THE LANGUAGE YOU ARE TOLD TO DEFINE SENSES IN — usually the language
+  of the word itself, but not always, so read the instruction rather than assuming. Write it in the
+  style of a learner's dictionary: plain, short, using simpler words than the one being defined.
+- `domain` is the field a word belongs to when it is specialist — medicine, law, cooking, grammar —
+  and `null` for an ordinary word, which is most of them. It is a label read at a glance rather
+  than prose, so write it in the first language you are asked to gloss into.
 - `glosses` carry the translations, one group per language you are asked to gloss into. Every
   requested language must be present. `terms` is a short list, most common first.
 - One sense per genuinely distinct meaning. Do not split shades of the same meaning into two

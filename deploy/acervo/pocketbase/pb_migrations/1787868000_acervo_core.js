@@ -63,6 +63,7 @@ migrate((app) => {
       { type: "text", name: "language", required: true, min: 2, max: 35, pattern: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" },
       { type: "text", name: "definition_lang", required: true, min: 2, max: 35, pattern: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" },
       { type: "json", name: "gloss_langs" },
+      { type: "text", name: "notes_lang", required: true, min: 2, max: 35, pattern: "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" },
       { type: "text", name: "display_name", max: 120 },
       { type: "text", name: "flag", max: 32 },
       { type: "number", name: "vocab_order", min: 0, onlyInt: true },

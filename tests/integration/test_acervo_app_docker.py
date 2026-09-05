@@ -25,7 +25,7 @@ from scripts.seed_acervo_demo import demo_records
 ROOT = Path(__file__).resolve().parents[2]
 API = "/api/acervo/v1"
 # Kept in step with web/src/api.ts and pb_hooks/acervo.js; a mismatch is a 409 by design.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 GRAPH = f"{API}/graph?schemaVersion={SCHEMA_VERSION}&since=0"
 
 

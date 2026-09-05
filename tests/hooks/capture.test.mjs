@@ -155,7 +155,7 @@ function seed() {
   app.add("sync_state", { id: "dataset00000001", owner: OWNER, sequence: 0 });
   app.add("vocabularies", {
     id: "vocabes00000001", owner: OWNER, language: "es", definition_lang: "es",
-    gloss_langs: ["en"], display_name: "Spanish", vocab_order: 0, deleted: false, revision: 1,
+    gloss_langs: ["en"], notes_lang: "en", display_name: "Spanish", vocab_order: 0, deleted: false, revision: 1,
   });
   ["Food", "Culture"].forEach((name, index) => app.add("topics", {
     id: `topic${index}000000001`.slice(0, 15), owner: OWNER, name, topic_order: index,
@@ -196,13 +196,13 @@ const ARTICLE = {
 
 function capture(body) {
   return hook.dispatch(event(app, OWNER, {
-    schemaVersion: 5, deviceId: "device000000001", mode: "single", text: "some text", ...body,
+    schemaVersion: 6, deviceId: "device000000001", mode: "single", text: "some text", ...body,
   })).payload;
 }
 
 function resetGraph(confirm = "delete-all-words") {
   return hook.dispatch(event(app, OWNER, {
-    schemaVersion: 5, deviceId: "device000000001", confirm,
+    schemaVersion: 6, deviceId: "device000000001", confirm,
   }, "/graph/reset")).payload;
 }
 

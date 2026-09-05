@@ -44,6 +44,13 @@ export interface Vocabulary extends SyncFields, OwnedFields {
   definitionLang: string;
   /** The languages to translate into, most preferred first. Never empty. */
   glossLangs: string[];
+  /**
+   * The language usage notes are written in. Neither of the two above: a definition is short and
+   * formulaic, so reading it in the target language is cheap practice, while a note is unbounded
+   * contrastive prose and the part of an article you skim. Defaults to the first gloss language,
+   * and is configurable because immersion becomes the better answer at some point.
+   */
+  notesLang: string;
   displayName: string | null;
   flag: string | null;
   order: number;
@@ -225,6 +232,7 @@ export function validateGraph(graph: VocabularyGraph): void {
     language(record.definitionLang, "Vocabulary definition language");
     stringArray(record.glossLangs, "Vocabulary gloss languages", false);
     record.glossLangs.forEach((code) => language(code, "Vocabulary gloss language"));
+    language(record.notesLang, "Vocabulary notes language");
     optionalString(record.displayName, "Vocabulary name");
     optionalString(record.flag, "Vocabulary flag");
     invariant(Number.isSafeInteger(record.order) && record.order >= 0, "Vocabulary order is invalid.");

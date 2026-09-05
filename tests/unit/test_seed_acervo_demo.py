@@ -44,6 +44,8 @@ def test_every_seeded_word_has_a_vocabulary_behind_it():
     assert {r["language"] for r in by_collection("lexemes")} <= set(configured)
     assert all(r["gloss_langs"] for r in configured.values())
     assert configured["zh-Hans"]["gloss_langs"] == ["ru", "en"]
+    assert all(r["notes_lang"] for r in configured.values())
+    assert configured["zh-Hans"]["notes_lang"] == "ru"
 
 
 def test_starter_topics_carry_an_explicit_rail_order():

@@ -149,6 +149,7 @@ function vocabularyContent(graph: VocabularyGraph, languages: string[]): Vocabul
       language: entry.language,
       definitionLang: entry.definitionLang,
       glossLangs: entry.glossLangs,
+      notesLang: entry.notesLang,
       displayName: entry.displayName,
       flag: entry.flag,
       order: entry.order
@@ -344,6 +345,7 @@ export function readBundle(input: BundleFile[]): BundlePlan {
       language,
       definitionLang: text(raw.definitionLang) ?? language,
       glossLangs,
+      notesLang: text(raw.notesLang) ?? glossLangs[0],
       displayName: text(raw.displayName),
       flag: text(raw.flag),
       order: typeof raw.order === "number" ? raw.order : 0

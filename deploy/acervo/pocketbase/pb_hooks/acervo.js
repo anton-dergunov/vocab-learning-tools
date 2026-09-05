@@ -1,5 +1,5 @@
 const API_ROOT = "/api/acervo/v1";
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const DOWNLOAD_ROOT = "/api/acervo/downloads/";
 const RECORD_ID = /^[a-z0-9]{15}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -131,6 +131,7 @@ const COLLECTIONS = [
       language: record.getString("language"),
       definitionLang: record.getString("definition_lang"),
       glossLangs: jsonValue(record.get("gloss_langs")) || [],
+      notesLang: record.getString("notes_lang"),
       displayName: textOrNull(record, "display_name"),
       flag: textOrNull(record, "flag"),
       order: Number(record.get("vocab_order")) || 0,
@@ -139,6 +140,7 @@ const COLLECTIONS = [
       setText(record, "language", value.language);
       setText(record, "definition_lang", value.definitionLang);
       setList(record, "gloss_langs", value.glossLangs);
+      setText(record, "notes_lang", value.notesLang);
       setText(record, "display_name", value.displayName);
       setText(record, "flag", value.flag);
       setNumber(record, "vocab_order", value.order);
@@ -703,6 +705,7 @@ function ownerVocabularies(app, ownerId) {
       language: record.getString("language"),
       definitionLang: record.getString("definition_lang"),
       glossLangs: jsonValue(record.get("gloss_langs")) || [],
+      notesLang: record.getString("notes_lang"),
       displayName: textOrNull(record, "display_name"),
     }));
 }
@@ -827,6 +830,7 @@ function composeArticle(app, ownerId, resolution, request, vocabulary, topics) {
     "Part of speech: " + resolution.pos,
     "Define senses in: " + vocabulary.definitionLang,
     "Gloss into: " + vocabulary.glossLangs.join(", "),
+    "Write notes in: " + (vocabulary.notesLang || vocabulary.glossLangs[0]),
     "Topics to choose from: " + (topics.length ? topics.map((topic) => topic.name).join(" | ") : "(none — return an empty list)"),
     // A file of notes already filed under one heading knows its own topic better than the model
     // can infer it from a single word, so say so — as a preference, not an instruction.
@@ -1438,6 +1442,7 @@ function validateRecord(app, record) {
     stringArray(glossLangs, "Vocabulary gloss languages");
     if (!Array.isArray(glossLangs) || glossLangs.length === 0) invalid("A vocabulary needs at least one gloss language.");
     glossLangs.forEach((code) => validLanguage(code, "Vocabulary gloss language"));
+    validLanguage(record.getString("notes_lang"), "Vocabulary notes language");
     return;
   }
   if (collection === "topics") {

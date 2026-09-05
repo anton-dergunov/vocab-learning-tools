@@ -3,9 +3,9 @@
    repository later without reshaping the view layer. Content is illustrative. */
 
 const LANGUAGES = [
-  { code: "es",      flag: "\u{1F1EA}\u{1F1F8}", name: "Spanish",             definitionLang: "es", glossLangs: ["en"] },
-  { code: "en",      flag: "\u{1F1EC}\u{1F1E7}", name: "English",             definitionLang: "en", glossLangs: ["ru"] },
-  { code: "zh-Hans", flag: "\u{1F1E8}\u{1F1F3}", name: "Chinese (Simplified)", definitionLang: "en", glossLangs: ["ru", "en"] }
+  { code: "es",      flag: "\u{1F1EA}\u{1F1F8}", name: "Spanish",             definitionLang: "es", glossLangs: ["en"], notesLang: "en" },
+  { code: "en",      flag: "\u{1F1EC}\u{1F1E7}", name: "English",             definitionLang: "en", glossLangs: ["ru"], notesLang: "ru" },
+  { code: "zh-Hans", flag: "\u{1F1E8}\u{1F1F3}", name: "Chinese (Simplified)", definitionLang: "en", glossLangs: ["ru", "en"], notesLang: "ru" }
 ];
 
 const TOPICS = [

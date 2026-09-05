@@ -16,11 +16,11 @@ export function testGraph(): VocabularyGraph {
   return {
     vocabularies: [
       {
-        id: "vocabes00000001", language: "es", definitionLang: "es", glossLangs: ["en"],
+        id: "vocabes00000001", language: "es", definitionLang: "es", glossLangs: ["en"], notesLang: "en",
         displayName: null, flag: null, order: 0, ...sync("01-05")
       },
       {
-        id: "vocaben00000001", language: "en", definitionLang: "en", glossLangs: ["ru"],
+        id: "vocaben00000001", language: "en", definitionLang: "en", glossLangs: ["ru"], notesLang: "ru",
         displayName: null, flag: null, order: 1, ...sync("01-05")
       }
     ],

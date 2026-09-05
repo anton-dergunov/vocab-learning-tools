@@ -51,8 +51,8 @@ describe("exporting a bundle", () => {
 
   it("writes the vocabulary and topic records the article documents cannot express", () => {
     expect(parse(at(bundle(), VOCABULARIES_FILE).text)).toEqual([
-      { language: "es", definitionLang: "es", glossLangs: ["en"], displayName: null, flag: null, order: 0 },
-      { language: "en", definitionLang: "en", glossLangs: ["ru"], displayName: null, flag: null, order: 1 }
+      { language: "es", definitionLang: "es", glossLangs: ["en"], notesLang: "en", displayName: null, flag: null, order: 0 },
+      { language: "en", definitionLang: "en", glossLangs: ["ru"], notesLang: "ru", displayName: null, flag: null, order: 1 }
     ]);
     expect(parse(at(bundle(), TOPICS_FILE).text)).toEqual([
       { name: "Food", icon: "🍽️", order: 0 },

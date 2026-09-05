@@ -17,7 +17,7 @@ describe("vocabulary selectors", () => {
   it("offers a configured language that holds no words yet", () => {
     const graph = testGraph();
     graph.vocabularies.push({
-      ...graph.vocabularies[0], id: "vocabru00000001", language: "ru", definitionLang: "ru",
+      ...graph.vocabularies[0], id: "vocabru00000001", language: "ru", definitionLang: "ru", notesLang: "en",
       glossLangs: ["en"], order: 2
     });
     const options = languageOptions(graph);

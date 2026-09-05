@@ -43,10 +43,10 @@ STARTER_TOPICS = (
 # configured before a word in it can be captured, so seeding these is what makes the seeded account
 # usable rather than merely populated.
 STARTER_VOCABULARIES = (
-    ("es", "es", ["en"], "Spanish", "\U0001F1EA\U0001F1F8"),
-    ("en", "en", ["ru"], "English", "\U0001F1EC\U0001F1E7"),
-    ("ru", "ru", ["en"], "Russian", "\U0001F1F7\U0001F1FA"),
-    ("zh-Hans", "en", ["ru", "en"], "Chinese (Simplified)", "\U0001F1E8\U0001F1F3"),
+    ("es", "es", ["en"], "en", "Spanish", "\U0001F1EA\U0001F1F8"),
+    ("en", "en", ["ru"], "ru", "English", "\U0001F1EC\U0001F1E7"),
+    ("ru", "ru", ["en"], "en", "Russian", "\U0001F1F7\U0001F1FA"),
+    ("zh-Hans", "en", ["ru", "en"], "ru", "Chinese (Simplified)", "\U0001F1E8\U0001F1F3"),
 )
 
 # Disposable demonstration vocabulary. Content is illustrative, not curated learning material.
@@ -502,9 +502,11 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
     records: list[tuple[str, dict]] = [
         ("vocabularies", {"id": rid("vocabularies", language), "owner": owner_id,
                           "language": language, "definition_lang": definition_lang,
-                          "gloss_langs": gloss_langs, "display_name": name, "flag": flag,
+                          "gloss_langs": gloss_langs, "notes_lang": notes_lang,
+                          "display_name": name, "flag": flag,
                           "vocab_order": order, **sync_fields()})
-        for order, (language, definition_lang, gloss_langs, name, flag) in enumerate(STARTER_VOCABULARIES)
+        for order, (language, definition_lang, gloss_langs, notes_lang, name, flag)
+        in enumerate(STARTER_VOCABULARIES)
     ]
     records += [
         ("topics", {"id": topics[key], "owner": owner_id, "name": name, "icon": icon,
