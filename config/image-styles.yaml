@@ -1,0 +1,185 @@
+# Art direction for sense images. Content, not code: edit freely, and every edit changes
+# `promptVersion`, so a sense generated afterwards uses the new wording while images already drawn
+# are left alone.
+#
+# `brief` is spliced into the image prompt verbatim, so write art direction, not a label.
+# `weight` is the default sampling weight; per-owner weights will override it later.
+# `mono` marks a style with no colour to spend — the brief writer is told to avoid one when the
+# meaning depends on colour.
+#
+# Deliberately absent from every entry: flat, schematic, simple shapes, silhouette, icon, minimal,
+# "readable at small size". These pictures are looked at on a tablet at the size of a photo in a
+# feed. The finalist benchmark asked for legible silhouettes at 192 px and its own report calls that
+# a mistake; it is not carried forward.
+
+styles:
+  cinematic-photoreal:
+    label: Cinematic photograph
+    weight: 1
+    brief: >-
+      a photorealistic cinematic still, 35mm anamorphic, shallow depth of field, dramatic key light
+      with deep falloff, filmic colour grade, natural skin and material texture
+
+  golden-hour:
+    label: Golden-hour photography
+    weight: 1
+    brief: >-
+      naturalistic photography in low golden-hour sun, long warm rim light, soft haze in the air,
+      rich shadow detail, gentle lens bloom
+
+  oil-painting:
+    label: Oil on canvas
+    weight: 1
+    brief: >-
+      thick impasto oil on canvas, visible loaded brushwork and palette-knife ridges, deep varnish
+      tones, old-master lighting
+
+  baroque-chiaroscuro:
+    label: Baroque chiaroscuro
+    weight: 1
+    brief: >-
+      a baroque painting in the manner of Caravaggio, one hard light source out of deep black,
+      sculpted flesh and fabric, theatrical gesture
+
+  watercolour-storybook:
+    label: Watercolour storybook
+    weight: 1
+    brief: >-
+      loose watercolour washes over confident ink linework, blooms and granulation in the pigment,
+      warm paper grain, the warmth of a picture book for adults
+
+  gouache-poster:
+    label: Mid-century gouache poster
+    weight: 1
+    brief: >-
+      a mid-century travel poster painted in gouache, rich opaque colour, confident simplified
+      forms with real painted texture, strong diagonal composition
+
+  art-nouveau:
+    label: Art nouveau
+    weight: 1
+    brief: >-
+      art nouveau in the manner of Mucha, sinuous ornamental linework, muted jewel tones with gold
+      leaf, decorative arch framing the figure
+
+  ukiyo-e:
+    label: Japanese woodblock
+    weight: 1
+    brief: >-
+      a Japanese ukiyo-e woodblock print, flat layered colour planes, Prussian blue and vermilion,
+      visible woodgrain and registration edges, weather and motion stylised into pattern
+
+  anime-cel:
+    label: Anime cel
+    weight: 1
+    brief: >-
+      a modern anime cel over a painted background, expressive face, crisp rim lighting, saturated
+      skies, a single held dramatic moment
+
+  manga-panel:
+    label: Manga panel
+    weight: 1
+    mono: true
+    brief: >-
+      a single black-and-white manga panel, dense screentone, hard ink blacks, dramatic foreshortening
+      and speed lines, one held expression
+
+  comic-book:
+    label: Comic-book ink and halftone
+    weight: 1
+    brief: >-
+      American comic-book art, bold confident inks, benday halftone colour, heavy cast shadow, a low
+      heroic camera angle
+
+  pixar-3d:
+    label: 3D animated feature
+    weight: 1
+    brief: >-
+      a frame from a 3D animated feature, appealing stylised character design with large readable
+      expression, soft global illumination, subsurface scattering, glossy production polish
+
+  claymation:
+    label: Stop-motion clay
+    weight: 1
+    brief: >-
+      a stop-motion plasticine set photographed with a macro lens, thumbprints and tool marks in the
+      clay, tiny practical lights, visible felt and cardboard scenery
+
+  papercraft-diorama:
+    label: Cut-paper diorama
+    weight: 1
+    brief: >-
+      a layered cut-paper diorama in a shallow box, real depth between the layers, crisp cast
+      shadows, textured card and tissue, raking side light
+
+  retro-futurism:
+    label: 1970s sci-fi paperback
+    weight: 1
+    brief: >-
+      a 1970s science-fiction paperback cover, airbrushed gradients, muted offset-print palette with
+      visible halftone, vast scale against a small figure
+
+  film-noir:
+    label: Film noir
+    weight: 1
+    mono: true
+    brief: >-
+      high-contrast black-and-white film noir, venetian-blind shadows across the frame, wet street
+      reflections, cigarette haze in a hard key light
+
+  surrealism:
+    label: Surrealist dream logic
+    weight: 1
+    brief: >-
+      surrealism in the manner of Magritte and Dalí, one impossible juxtaposition rendered with
+      complete photographic conviction, still air, an empty horizon
+
+  vintage-botanical:
+    label: 19th-century engraved plate
+    weight: 1
+    brief: >-
+      a nineteenth-century engraved scientific plate, fine hatching, hand-tinted washes, aged rag
+      paper, the specimen isolated and reverently observed
+
+  constructivist-poster:
+    label: Constructivist poster
+    weight: 1
+    brief: >-
+      a constructivist poster, aggressive diagonal geometry, a limited palette of red, black and
+      cream, photomontage fragments, monumental low-angle figure
+
+  neon-cyberpunk:
+    label: Neon night
+    weight: 1
+    brief: >-
+      a rain-slick neon night street, teal and magenta signage bleeding into volumetric haze, wet
+      reflections, high dynamic range
+
+  pixel-art:
+    label: 16-bit pixel art
+    weight: 1
+    brief: >-
+      detailed 16-bit pixel art, a rich limited palette with careful dithering, chunky readable
+      sprites in a densely furnished scene, side-lit
+
+  charcoal-sketch:
+    label: Charcoal on toned paper
+    weight: 1
+    mono: true
+    brief: >-
+      expressive charcoal and white chalk on toned grey paper, smudged tone, decisive dark accents,
+      the paper left bare where the light falls
+
+  stained-glass:
+    label: Stained glass
+    weight: 1
+    brief: >-
+      a leaded stained-glass window backlit by daylight, saturated jewel colour between black
+      cames, radiating geometry
+
+  folk-naive:
+    label: Naïve folk painting
+    weight: 1
+    brief: >-
+      a naïve folk painting, flattened perspective, decorative repeating pattern in the borders and
+      fabrics, warm earthy palette, everything lovingly overfilled

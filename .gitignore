@@ -37,3 +37,10 @@ old_prototypes/
 Caddyfile
 *.pem
 *-key.pem
+
+# Local working files that carry deployment specifics: `ingest.sh` holds the account password and
+# the tailnet hostname of the live server, `TODO.txt` holds pasted terminal output with home paths.
+# Both are untracked but were not ignored, which is one `git add -A` away from publishing them —
+# and it is what `tests/unit/test_public_repository_privacy.py` was failing on.
+/ingest.sh
+/TODO.txt

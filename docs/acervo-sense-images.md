@@ -6,7 +6,7 @@ article, that style variety is pedagogical, that a master is 1024×1024 WebP, an
 no image is complete. What was missing was *what the picture is of*, *how the prompt is written*,
 and *where the work runs first*. That is this document.
 
-Status: proposal, under review. Nothing here is built yet.
+Status: Phase A is built and running. §10 records what is decided and what is still open.
 
 ---
 
@@ -125,8 +125,13 @@ Existing fields, used as follows:
 | `imageRef` | relative path to the master, once drawn; null until then |
 | `imageModelId` | the model that drew it |
 
-§09 says to seed from `lexemeId`. Per-sense images make `senseId` the right stable key — two senses
-of one word seeded identically would fight the variety the whole design is built on.
+§09 says to seed from `lexemeId`, which was right when the plan was one image per word: the seed's
+job is to keep a word looking like itself across regenerations. Per-sense images make `senseId` the
+right stable key instead. Seeding both senses of `venom` from the lexeme would hand the same
+starting noise to two pictures that the whole design is trying to make look different — same key,
+same tendencies. The property §09 wanted survives: a sense keeps its look across regenerations,
+because the key is stable. The retry counter is mixed in, so deleting a picture you disliked and
+running again gives you a genuinely different one rather than the same picture back.
 
 ### The gap: nothing records a failure
 
@@ -198,8 +203,15 @@ tones, old-master lighting"*.
 > to say about *bitterness*, and forcing it produces the bad image. Giving the writer an escape
 > hatch costs one sentence of instruction. Letting it *invent* a style, though, breaks the record:
 > an invented style has no id, so `styleId` stops naming anything and the look is not reproducible.
-> Instead, every menu includes `cinematic-photoreal` as its last entry, which can express anything.
-> The writer must return the id it picked.
+> Instead the writer must return an id from its own menu, and the parser rejects the reply if it
+> does not — an off-menu style is an error, not a nudge.
+
+The fallback slot is a *role*, not a fixed style. It happens to be filled by `cinematic-photoreal`
+only because photorealism is the one register that can carry any meaning at all: an abstraction, a
+a thing you can photograph, a joke, a threat. It is the least likely to be the reason a picture fails.
+Nothing else about it is special, and it is not privileged in the sampling — it is one of
+twenty-four with the same weight, so it will not dominate the deck. If a menu of three happens not
+to include it, the writer picks the best of the three it has, which is the normal case.
 
 Sampling is weighted random without replacement, seeded from `senseId`, so re-running the sweep
 proposes the same menu and the whole stage is idempotent. Within one lexeme the writer is told not
@@ -392,49 +404,60 @@ each. `--limit` and a `--only` selector cover it.
 
 ### Budget and wall clock
 
-The finalist report measures Gemini 3.1 Flash Lite Image at **$0.0336 per image and 16.3 s mean**.
-Against the ingestion in flight:
+The finalist report's $0.0336 per image is a **configured constant** in `config/image-benchmark.yaml`,
+not a measured bill — it was there so the benchmark could rank candidates by cost, and no invoice
+has been checked against it. What the first runs actually measure is **1,120 output tokens per
+image**, consistently. The real figure is whatever the billing page says per output image token;
+treat $0.0336 as an order of magnitude, not an amount.
+
+Against the Spanish half of the ingestion, measured on 2026-09-05 with ingestion still running:
 
 | | |
 |---|---|
-| Lexemes, once ingestion finishes | ~1,500 |
-| Senses per lexeme, assumed | ~2.3 |
-| Images | **~3,450** |
-| Image spend | **~$116** |
-| Brief-writing calls | ~1,500 text calls, small next to the above |
-| Serial wall clock | **~15.6 hours** |
-| At 6 concurrent | **~2.6 hours** |
+| Spanish words in the graph so far | 538 |
+| Senses | 843 |
+| Senses per word | ~1.57 — well under the 2.3 first assumed |
+| Projected Spanish senses at ~900 words | ~1,400 |
+| Measured throughput | **~1.15 images/min** |
 
-Concurrency is the thing to get right, not cost. Serial generation does not fit in an overnight run
-comfortably; six concurrent workers does, with room for retries. The rate limiter and retry policy
-already in `src/vocabgen/provider/` cover the Vertex quota side.
+**Quota, not cost, is the binding constraint.** The project is new, and its per-minute allowance for
+`gemini-3.1-flash-lite-image` is small enough that three workers spend most of a run waiting. Ten
+images took 8m45s wall clock with seven pool-wide quota pauses; every one eventually succeeded, so
+nothing is lost — it is just slow. At that rate the Spanish backlog is roughly **20 hours**, which is
+an overnight run and a bit, not the 2.6 hours first estimated.
 
----
+The fix is a quota increase in the Cloud console (IAM & Admin → Quotas, filter on the Vertex AI
+image model), and it is the single highest-leverage action available, because the credits expire on
+a calendar and the throughput is what decides how much of them can be spent. Everything else — more
+workers, a higher rate limit — is downstream of that number.
 
-## §11 · Open questions
+Pacing is one shared gate rather than per-worker backoff (`pacing.py`): a 429 pauses the whole pool
+and the pause doubles while refusals continue, because workers that back off privately just arrive
+together again.
 
-1. **Brief or full prompt in `prompt`?** I recommend the brief (§04). Say if you would rather have
-   the exact bytes stored and accept the article view showing a wall of text.
-2. **Every sense, or a subset?** Every sense is ~3,450 images and ~$116. Capping at the first three
-   senses of a lexeme, or skipping `archived` lexemes, would cut it materially. My instinct is to
-   generate everything while the credits exist and prune later, because the credits are the scarce
-   thing — but it is your budget.
-3. **Menu of three, or one forced style?** I recommend three with a guaranteed-expressive fallback
-   (§05).
-4. **Where do per-owner style weights live?** Deferred to Phase D. It needs server-side owner state
-   and there is no preferences collection yet; `sync_state` is exempt from replication and is the
-   wrong place. Worth deciding before D, not before A.
-5. **1:1, or 4:3?** Square by default. If the article view wants a wide image, now is the cheap time
-   to say so — regenerating later costs the credits twice.
-6. **`attempts` / `failureReason` (§04)** — agreed as the one schema change, or would you rather the
-   worker keep failure state locally and leave the schema alone?
-7. **Are the generated images backed up anywhere?** They are regenerable in principle, but not once
-   the Vertex credits are gone. If the answer is "restic over the media directory", that should be
-   arranged before the overnight run, not after.
-8. **How much of the remaining credit is this allowed to spend?** Everything above assumes one full
-   pass plus a margin for regenerating rejects.
+## §11 · Settled, and still open
 
----
+Settled in review:
+
+| | |
+|---|---|
+| What `prompt` stores | The brief. It is also what the article view will show. |
+| Scope | Every sense, no cap. **Spanish first**, English after. |
+| Style menu | Three, sampled by owner weight, writer picks one, may not invent. |
+| Style weights | Equal for now; they move into owner state when Settings grows the screen. |
+| Aspect | 1:1. Square suits the article fold and an Anki card, and it is the model's native output. |
+| `attempts` / `failureReason` | Agreed, and deferred to Phase C with the rest of the schema change. |
+| Backups of the masters | The owner copies them off periodically. Out of scope here. |
+| Budget | Uncapped. The credits expire; spending them is the point. |
+
+Still open:
+
+1. **Where do per-owner style weights live?** Needs server-side owner state, and there is no
+   preferences collection. Decide before Phase D, not before then.
+2. **Does the quota increase come through?** Everything about the schedule depends on it (§10).
+3. **Do the abstract senses actually work as mnemonics?** The briefs read well and the pictures are
+   beautiful; whether a glowing knot of woven threads recalls *abundar en un tema* specifically, or
+   merely recalls "convergence", is a judgement only review answers. This is what the ladder is for.
 
 ## §12 · What this deliberately does not do
 
