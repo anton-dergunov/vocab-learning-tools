@@ -24,7 +24,7 @@ export default function Settings({ update, email, status, snapshot, language, pa
   language: string;
   /** Which section to open on, so the Mac menu can point straight at the one it names. */
   page?: Page;
-  /** A menu item ending in "…" promises a dialog, so Delete All Vocabulary opens its own. */
+  /** A menu item ending in "…" promises a dialog, so Delete All Words opens its own. */
   arm?: "delete" | null;
   onSignOut(): void;
   onClose(): void;
@@ -75,7 +75,7 @@ export default function Settings({ update, email, status, snapshot, language, pa
   }
 
   async function deleteEverything() {
-    await run(() => syncEngine.resetVocabulary(), "The vocabulary could not be deleted.");
+    await run(() => syncEngine.resetWords(), "The words could not be deleted.");
     setConfirming(false);
     setTyped("");
   }
@@ -186,11 +186,11 @@ export default function Settings({ update, email, status, snapshot, language, pa
           {snapshot && <ExportPanel snapshot={snapshot} />}
           <ImportPanel onChanged={onChanged} />
           <div className="danger-zone">
-          <h3>Delete all vocabulary</h3>
+          <h3>Delete all words</h3>
           {!confirming && <>
             <p>Removes every entry from the server and from every device you use. This needs a
               connection to the server, like any other change.</p>
-            <button className="tb-btn danger" onClick={() => setConfirming(true)}>Delete all vocabulary…</button>
+            <button className="tb-btn danger" onClick={() => setConfirming(true)}>Delete all words…</button>
           </>}
           {confirming && <>
             <p role="alert">
@@ -211,7 +211,7 @@ export default function Settings({ update, email, status, snapshot, language, pa
               <button
                 className="tb-btn danger" disabled={typed.trim() !== CONFIRMATION || working}
                 onClick={() => void deleteEverything()}
-              >Delete everything</button>
+              >Delete all words</button>
             </div>
           </>}
           </div>

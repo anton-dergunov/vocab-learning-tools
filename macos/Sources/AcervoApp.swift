@@ -31,7 +31,7 @@ func makeVocabularyMenu(target: AnyObject?) -> NSMenu {
     menu.addItem(.separator())
     // No shortcut on deletion: it is the one action re-syncing cannot undo.
     menu.addItem(
-        withTitle: "Delete All Vocabulary…", action: #selector(AppDelegate.deleteVocabulary), keyEquivalent: ""
+        withTitle: "Delete All Words…", action: #selector(AppDelegate.deleteAllWords), keyEquivalent: ""
     )
     for item in menu.items where item.action != nil { item.target = target }
     return menu
@@ -278,7 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     @objc fileprivate func exportVocabulary() { open("export") }
     @objc fileprivate func importVocabulary() { open("import") }
-    @objc fileprivate func deleteVocabulary() { open("delete") }
+    @objc fileprivate func deleteAllWords() { open("delete") }
 
     /// Every confirmation, and every write, stays on the side that owns the vocabulary.
     private func open(_ command: String) {

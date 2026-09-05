@@ -42,8 +42,11 @@ Consonant - согласный
 class Stub:
     """Stands in for the server: hands back a fixed sequence of capture answers."""
 
-    def __init__(self, answers: list[dict]) -> None:
+    def __init__(self, answers: list[dict], languages: list[str] | None = None,
+                 topics: list[str] | None = None) -> None:
         self.answers = answers
+        self.languages = languages if languages is not None else ["en"]
+        self.topics = topics if topics is not None else ["Slang"]
         self.requests: list[dict] = []
         self.calls = 0
 
@@ -79,6 +82,23 @@ def server():
                     body, status = {"data": answer}, 200
             encoded = json.dumps(body).encode()
             self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler's interface
+            stub = holder["stub"]
+            body = {"data": {"changes": {
+                "vocabularies": [
+                    {"language": language, "deleted": False} for language in stub.languages
+                ],
+                "topics": [
+                    {"name": topic, "deleted": False} for topic in stub.topics
+                ],
+            }}}
+            encoded = json.dumps(body).encode()
+            self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
@@ -203,6 +223,75 @@ def test_an_unconfigured_language_stops_the_run_rather_than_failing_every_entry(
 
     assert run(server, source, tmp_path / "state", monkeypatch) == 1
     assert server["stub"].calls == 1
+
+
+def test_preflight_refuses_a_missing_language_and_topic_before_capture(server, tmp_path, monkeypatch, capsys):
+    source = tmp_path / "notes.md"
+    source.write_text(NOTES, encoding="utf-8")
+    checkpoints = tmp_path / "state"
+    server["stub"] = Stub([answer("inquisitive", 2)], languages=["es"], topics=["Food"])
+
+    assert run(server, source, checkpoints, monkeypatch, "--language", "en") == 1
+    assert server["stub"].calls == 0
+    assert not checkpoints.exists()
+    assert "no en vocabulary" in capsys.readouterr().err
+
+    server["stub"] = Stub([answer("inquisitive", 2)], languages=["en"], topics=["Food"])
+    assert run(server, source, checkpoints, monkeypatch, "--topic", "Actions") == 1
+    assert server["stub"].calls == 0
+    assert "missing Actions" in capsys.readouterr().err
+
+
+def test_transient_provider_failures_retry_then_succeed(server, tmp_path, monkeypatch, capsys):
+    source = tmp_path / "notes.md"
+    source.write_text(NOTES, encoding="utf-8")
+    server["stub"] = Stub([
+        {"error": {"code": "llm_rate_limited", "message": "Busy.", "status": 503}},
+        {"error": {"code": "llm_unavailable", "message": "Unavailable.", "status": 503}},
+        answer("inquisitive", 2),
+    ])
+    sleeps = []
+    monkeypatch.setattr(ingest.time, "sleep", sleeps.append)
+
+    assert run(server, source, tmp_path / "state", monkeypatch, "--limit", "1") == 0
+    assert server["stub"].calls == 3
+    assert sleeps == [15, 30]
+    assert "1 created" in capsys.readouterr().out
+
+
+def test_exhausted_transient_retries_do_not_advance_checkpoint(server, tmp_path, monkeypatch):
+    source = tmp_path / "notes.md"
+    source.write_text(NOTES, encoding="utf-8")
+    checkpoints = tmp_path / "state"
+    failure = {"error": {"code": "llm_rate_limited", "message": "Busy.", "status": 503}}
+    server["stub"] = Stub([failure, failure, failure, failure])
+    monkeypatch.setattr(ingest.time, "sleep", lambda _seconds: None)
+
+    assert run(server, source, checkpoints, monkeypatch, "--limit", "1") == 1
+    assert server["stub"].calls == 4
+    assert not checkpoints.exists()
+
+
+def test_checkpoints_are_specific_to_the_resolved_source_path(server, tmp_path, monkeypatch, capsys):
+    first = tmp_path / "one" / "notes.md"
+    second = tmp_path / "two" / "notes.md"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_text(NOTES, encoding="utf-8")
+    second.write_text(NOTES, encoding="utf-8")
+    checkpoints = tmp_path / "state"
+
+    server["stub"] = Stub([answer("inquisitive", 2)])
+    assert run(server, first, checkpoints, monkeypatch, "--limit", "1") == 0
+    capsys.readouterr()
+    server["stub"] = Stub([answer("inquisitive", 2)])
+    assert run(server, second, checkpoints, monkeypatch, "--limit", "1") == 0
+    capsys.readouterr()
+    assert len(list(checkpoints.glob("notes.md.*.json"))) == 2
+
+    server["stub"] = Stub([answer("turmoil", 2)])
+    assert run(server, first, checkpoints, monkeypatch, "--limit", "1") == 0
+    assert server["stub"].received[0].startswith("turmoil")
 
 
 def test_a_dry_run_creates_nothing_and_leaves_no_checkpoint(server, tmp_path, monkeypatch, capsys):

@@ -23,7 +23,7 @@ const API_PATH = "/api/acervo/v1";
 const DICTIONARY_PATH = "/api/acervo/dictionaries";
 const REQUEST_TIMEOUT = 15_000;
 /** Capture is two model calls deep, so the sync timeout would abort a request that is working. */
-const CAPTURE_TIMEOUT = 120_000;
+const CAPTURE_TIMEOUT = 300_000;
 
 /* ── capture ────────────────────────────────────────────────────────────
    The ingest endpoint of design §05. What comes back is a *proposal*: a draft the interface renders
@@ -267,7 +267,7 @@ export const backendSession = {
   resetGraph(deviceId: string): Promise<ResetResponse> {
     return client.call<ResetResponse>("/graph/reset", {
       method: "POST",
-      body: JSON.stringify({ schemaVersion: SCHEMA_VERSION, deviceId, confirm: "delete-all-vocabulary" })
+      body: JSON.stringify({ schemaVersion: SCHEMA_VERSION, deviceId, confirm: "delete-all-words" })
     });
   }
 };

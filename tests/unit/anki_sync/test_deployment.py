@@ -233,7 +233,9 @@ def test_release_archive_excludes_deployment_secrets(tmp_path: Path) -> None:
     with tarfile.open(archive) as package:
         members = package.getnames()
     assert not any(name.endswith("secrets.env") for name in members)
+    assert "deploy/acervo/llm.env" not in members
     assert "deploy/acervo/secrets.env.example" in members
+    assert "deploy/acervo/llm.env.example" in members
     assert "deploy/acervo/pocketbase/pb_public/manifest.webmanifest" in members
     assert "deploy/acervo/pocketbase/pb_hooks/acervo.js" in members
     assert "deploy/acervo/pocketbase/pb_migrations/1787868000_acervo_core.js" in members
@@ -305,6 +307,56 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
     assert "test-password" not in commands
 
 
+def test_remote_llm_configuration_streams_the_key_without_exposing_it(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    ssh_log = tmp_path / "ssh.log"
+    release_upload = tmp_path / "release.tar.gz"
+    llm_upload = tmp_path / "llm-credentials"
+    ssh = bin_dir / "ssh"
+    ssh.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_SSH_LOG\"\n"
+        "case \"$*\" in\n"
+        "  *'deploy-acervo check'*) printf 'helper\\n' ;;\n"
+        "  *'deploy-acervo deploy'*) cat >\"$ACERVO_TEST_RELEASE\" ;;\n"
+        "  *'cat > /tmp/acervo-llm-credentials-'*) cat >\"$ACERVO_TEST_LLM\" ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    ssh.chmod(0o755)
+    env = os.environ.copy()
+    env.update({
+        "PATH": f"{bin_dir}:{env['PATH']}",
+        "ACERVO_TEST_SSH_LOG": str(ssh_log),
+        "ACERVO_TEST_RELEASE": str(release_upload),
+        "ACERVO_TEST_LLM": str(llm_upload),
+        "ACERVO_SKIP_MACOS_RELEASE": "true",
+        "ACERVO_SKIP_APP_BUILD": "true",
+    })
+
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy.sh"), "--target", "deployer@server.example.test",
+            "--root", "/volume1/docker/acervo", "--configure-llm",
+            "--llm-provider", "vertex", "--llm-project", "personal-project",
+            "--llm-location", "global", "--llm-model", "gemini-3.7-flash",
+            "--llm-api-key-stdin",
+        ],
+        cwd=REPO_ROOT, env=env, input="vertex-key\n", text=True,
+        capture_output=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert llm_upload.read_text(encoding="utf-8") == (
+        "vertex\ngemini-3.7-flash\npersonal-project\nglobal\nvertex-key\n"
+    )
+    commands = ssh_log.read_text(encoding="utf-8")
+    assert "cat > /tmp/acervo-llm-credentials-" in commands
+    assert "--llm-credentials-file /tmp/acervo-llm-credentials-" in commands
+    assert "vertex-key" not in commands + result.stdout + result.stderr
+
+
 def test_installer_accepts_streamed_credential_file_and_network_options(
     tmp_path: Path,
 ) -> None:
@@ -356,6 +408,39 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
     assert "ACERVO_APP_PORT=27802\n" in deployment
     assert f"ACERVO_PB_DATA={root}/data/pocketbase\n" in deployment
     assert f"ACERVO_DOWNLOADS={root}/downloads\n" in deployment
+
+
+def test_installer_updates_only_llm_env_and_preserves_both_provider_keys(tmp_path: Path) -> None:
+    env, root = deployment_env(tmp_path)
+    original_secrets = (root / "secrets.env").read_bytes()
+
+    def configure(contents: str) -> subprocess.CompletedProcess[str]:
+        settings = tmp_path / "llm-credentials"
+        settings.write_text(contents, encoding="utf-8")
+        settings.chmod(0o600)
+        return subprocess.run(
+            [
+                str(REPO_ROOT / "deploy/acervo/install.sh"),
+                "--root", str(root),
+                "--llm-credentials-file", str(settings),
+                "--bind-address", "127.0.0.1", "--port", "27701",
+                "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+            ],
+            cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+        )
+
+    result = configure("vertex\ngemini-3.7-flash\npersonal-project\nglobal\nvertex-key\n")
+    assert result.returncode == 0, result.stderr
+    result = configure("gemini\ngemini-3.1-flash-lite\n\nglobal\ngemini-key\n")
+    assert result.returncode == 0, result.stderr
+
+    assert (root / "secrets.env").read_bytes() == original_secrets
+    llm = (root / "llm.env").read_text(encoding="utf-8")
+    assert "ACERVO_LLM_PROVIDER=gemini\n" in llm
+    assert "ACERVO_LLM_MODEL=gemini-3.1-flash-lite\n" in llm
+    assert "VERTEX_API_KEY=vertex-key\n" in llm
+    assert "GEMINI_API_KEY=gemini-key\n" in llm
+    assert (root / "llm.env").stat().st_mode & 0o777 == 0o600
 
 
 def test_remote_status_does_not_build_or_upload(tmp_path: Path) -> None:

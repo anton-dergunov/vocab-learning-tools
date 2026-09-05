@@ -485,11 +485,11 @@ function mergeGraph(app, ownerId, device, changes) {
   return written;
 }
 
-/** Tombstones everything this owner still holds. Rows are never removed; a reset stays undoable. */
-function tombstoneAll(app, ownerId, device) {
+/** Tombstones every word and its descendants, while retaining language and topic configuration. */
+function tombstoneAllWords(app, ownerId, device) {
   const at = new Date().toISOString();
   let count = 0;
-  COLLECTIONS.slice().reverse().forEach((entry) => {
+  COLLECTIONS.slice(2).reverse().forEach((entry) => {
     app.findRecordsByFilter(entry.name, "owner = {:owner}", "", 0, 0, { owner: ownerId })
       .forEach((record) => {
         if (record.getBool("deleted")) return;
@@ -517,16 +517,26 @@ const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const PROMPT_CACHE = {};
 
 function llmSettings() {
-  const endpoint = trimmed($os.getenv("ACERVO_LLM_ENDPOINT")) || "https://generativelanguage.googleapis.com";
+  const provider = trimmed($os.getenv("ACERVO_LLM_PROVIDER")) || "gemini";
   return {
-    key: trimmed($os.getenv("GEMINI_API_KEY")),
+    provider: provider,
+    key: provider === "vertex"
+      ? trimmed($os.getenv("VERTEX_API_KEY"))
+      : trimmed($os.getenv("GEMINI_API_KEY")),
     model: trimmed($os.getenv("ACERVO_LLM_MODEL")) || "gemini-3.1-flash-lite",
-    endpoint: endpoint.replace(/\/+$/, ""),
+    // Kept as a test seam for the disposable real-PocketBase integration server. Vertex always
+    // uses Google's full project/location endpoint and cannot be redirected.
+    geminiEndpoint: trimmed($os.getenv("ACERVO_LLM_ENDPOINT")) || "https://generativelanguage.googleapis.com",
+    project: trimmed($os.getenv("ACERVO_VERTEX_PROJECT")),
+    location: trimmed($os.getenv("ACERVO_VERTEX_LOCATION")) || "global",
   };
 }
 
 function captureAvailable() {
-  return Boolean(llmSettings().key);
+  const settings = llmSettings();
+  if (settings.provider === "gemini") return Boolean(settings.key);
+  if (settings.provider === "vertex") return Boolean(settings.key && settings.project && settings.location);
+  return false;
 }
 
 /** 15 lowercase alphanumerics, the one id format §03 allows, minted the same way everywhere. */
@@ -572,20 +582,38 @@ function unfenced(text) {
 
 function llmJson(system, user) {
   const settings = llmSettings();
+  if (settings.provider !== "gemini" && settings.provider !== "vertex") {
+    throw apiError(503, "llm_configuration",
+      "This Acervo server has an invalid language model provider configured, so it cannot build entries.");
+  }
   if (!settings.key) {
     throw apiError(503, "capture_unavailable",
       "This Acervo server has no language model configured, so it cannot build entries.");
   }
+  if (settings.provider === "vertex" && (!settings.project || !settings.location)) {
+    throw apiError(503, "llm_configuration",
+      "This Acervo server is missing its Vertex project or location, so it cannot build entries.");
+  }
+  const vertex = settings.provider === "vertex";
+  const url = vertex
+    ? "https://aiplatform.googleapis.com/v1/projects/" + encodeURIComponent(settings.project)
+      + "/locations/" + encodeURIComponent(settings.location)
+      + "/publishers/google/models/" + encodeURIComponent(settings.model) + ":generateContent"
+    : settings.geminiEndpoint.replace(/\/+$/, "") + "/v1beta/models/"
+      + encodeURIComponent(settings.model) + ":generateContent";
+  const generationConfig = { responseMimeType: "application/json" };
+  if (vertex) generationConfig.thinkingConfig = { thinkingLevel: "MEDIUM" };
+  else generationConfig.temperature = 0.2;
   let response;
   try {
     response = $http.send({
-      url: settings.endpoint + "/v1beta/models/" + encodeURIComponent(settings.model) + ":generateContent",
+      url: url,
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": settings.key },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents: [{ role: "user", parts: [{ text: user }] }],
-        generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
+        generationConfig: generationConfig,
       }),
       timeout: LLM_TIMEOUT_SECONDS,
     });
@@ -593,13 +621,36 @@ function llmJson(system, user) {
     throw apiError(502, "llm_unreachable", "The language model could not be reached, so nothing was created.");
   }
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw apiError(502, "llm_failed",
-      "The language model refused the request (HTTP " + response.statusCode + "), so nothing was created.");
+    if (response.statusCode === 401 || response.statusCode === 403) {
+      throw apiError(503, "llm_authentication",
+        "The language model credential was rejected, so nothing was created.");
+    }
+    if (response.statusCode === 400 || response.statusCode === 404) {
+      throw apiError(503, "llm_configuration",
+        "The language model configuration was rejected, so nothing was created.");
+    }
+    if (response.statusCode === 429) {
+      throw apiError(503, "llm_rate_limited",
+        "The language model is temporarily rate limited, so nothing was created.");
+    }
+    if (response.statusCode >= 500) {
+      throw apiError(503, "llm_unavailable",
+        "The language model is temporarily unavailable, so nothing was created.");
+    }
+    throw apiError(502, "llm_failed", "The language model refused the request, so nothing was created.");
   }
   const payload = response.json || jsonValue(response.body);
   const candidate = payload && payload.candidates && payload.candidates[0];
   const parts = candidate && candidate.content && candidate.content.parts;
-  const text = parts && parts.length ? String(parts[0].text || "") : "";
+  let text = "";
+  if (Array.isArray(parts)) {
+    for (let index = 0; index < parts.length; index += 1) {
+      if (!parts[index].thought && trimmed(parts[index].text)) {
+        text = String(parts[index].text);
+        break;
+      }
+    }
+  }
   if (!trimmed(text)) throw apiError(502, "llm_empty", "The language model returned nothing, so nothing was created.");
   try {
     return JSON.parse(unfenced(text));
@@ -745,6 +796,12 @@ function resolveCapture(app, ownerId, request) {
       sentences.push({ text: text, translation: trimmed(item.translation) || null });
     });
   }
+  const consumedLines = stream ? Math.max(1, Math.min(consumed || 1, lines.length)) : lines.length;
+  const consumedText = trimmed(answer.consumedText);
+  if (stream && consumedText !== trimmed(lines.slice(0, consumedLines).join("\n"))) {
+    throw apiError(502, "stream_boundary_mismatch",
+      "The language model returned an unsafe stream boundary, so nothing was created.");
+  }
   return {
     language: language,
     headword: headword,
@@ -753,8 +810,8 @@ function resolveCapture(app, ownerId, request) {
     sentences: sentences,
     note: trimmed(answer.note) || null,
     // At least one line, always: a walk that consumes nothing loops on the same block forever.
-    consumedLines: stream ? Math.max(1, Math.min(consumed || 1, lines.length)) : lines.length,
-    consumedText: trimmed(answer.consumedText) || null,
+    consumedLines: consumedLines,
+    consumedText: consumedText || null,
   };
 }
 
@@ -1296,14 +1353,14 @@ function dispatch(event) {
       const request = body(event);
       requireSchemaVersion(request);
       const device = requireDeviceId(request.deviceId);
-      // Deleting the whole vocabulary is the one genuinely dangerous call in this API. The
+      // Deleting every word is the one genuinely dangerous call in this API. The
       // interface asks for the word to be typed; the token is what stops a stray request.
-      if (trimmed(request.confirm) !== "delete-all-vocabulary") {
-        throw apiError(400, "confirmation_required", "This request must confirm that all vocabulary is to be deleted.");
+      if (trimmed(request.confirm) !== "delete-all-words") {
+        throw apiError(400, "confirmation_required", "This request must confirm that all words are to be deleted.");
       }
       let result;
       event.app.runInTransaction((tx) => {
-        const deleted = tombstoneAll(tx, ownerId, device);
+        const deleted = tombstoneAllWords(tx, ownerId, device);
         const sequence = sequenceRecord(tx, ownerId);
         result = {
           schemaVersion: SCHEMA_VERSION,

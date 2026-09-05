@@ -57,7 +57,7 @@ fi
 
 release=$(cat "$acervo_root/current-release")
 compose_file="$release/deploy/acervo/compose.yaml"
-common_args="-p acervo --env-file $acervo_root/deployment.env --env-file $acervo_root/secrets.env -f $compose_file"
+common_args="-p acervo --env-file $acervo_root/deployment.env --env-file $acervo_root/secrets.env --env-file $acervo_root/llm.env -f $compose_file"
 
 input_dir=
 cleanup() {

@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import hashlib
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -36,7 +38,9 @@ from vocabgen.provider.rate_limiter import RateLimiter  # noqa: E402
 API_PATH = "/api/acervo/v1"
 SCHEMA_VERSION = 5
 DEVICE_ID = "ingestscript01"
-REQUEST_TIMEOUT = 180
+REQUEST_TIMEOUT = 600
+RETRY_DELAYS = (15, 30, 60)
+TRANSIENT_CAPTURE_ERRORS = {"llm_rate_limited", "llm_unavailable", "llm_unreachable"}
 DEFAULT_CHECKPOINTS = Path.home() / ".acervo" / "ingest"
 SEPARATORS = {"", "---", "***", "___"}
 
@@ -107,7 +111,9 @@ def leading_blanks(lines: list[str]) -> int:
 
 
 def checkpoint_path(directory: Path, source: Path) -> Path:
-    return directory / f"{source.resolve().name}.json"
+    resolved = str(source.resolve())
+    identity = hashlib.sha256(resolved.encode()).hexdigest()[:12]
+    return directory / f"{source.resolve().name}.{identity}.json"
 
 
 def read_offset(path: Path, source: Path) -> int:
@@ -117,7 +123,7 @@ def read_offset(path: Path, source: Path) -> int:
         return 0
     # A checkpoint against a file that has since changed length is meaningless, and resuming from
     # it would skip or repeat entries silently.
-    if state.get("lines") != count_lines(source):
+    if state.get("file") != str(source.resolve()) or state.get("lines") != count_lines(source):
         return 0
     return int(state.get("offset", 0))
 
@@ -145,6 +151,33 @@ def capture(client: Client, text: str, language: str, topics: list[str], apply: 
         "topics": topics,
         "sourceKind": "unknown",
     })
+
+
+def preflight(client: Client, language: str, topics: list[str]) -> None:
+    """Verify owner configuration before the first model call can spend money."""
+    query = urllib.parse.urlencode({"schemaVersion": SCHEMA_VERSION, "since": 0})
+    graph = client.call(f"/graph?{query}")
+    changes = graph.get("changes") or {}
+    vocabularies = [item for item in changes.get("vocabularies", []) if not item.get("deleted")]
+    configured_languages = {str(item.get("language", "")).lower() for item in vocabularies}
+    if language and language.lower() not in configured_languages:
+        raise AcervoError(
+            f"The account has no {language} vocabulary. Add it in Settings before ingesting this file.",
+            "language_not_configured",
+            409,
+        )
+    live_topics = {
+        str(item.get("name", "")).strip().lower()
+        for item in changes.get("topics", [])
+        if not item.get("deleted")
+    }
+    missing = [topic for topic in topics if topic.strip().lower() not in live_topics]
+    if missing:
+        raise AcervoError(
+            "The account is missing " + ", ".join(missing) + ". Add or rename the topic before ingesting this file.",
+            "topic_not_configured",
+            409,
+        )
 
 
 def main() -> int:
@@ -189,6 +222,11 @@ def main() -> int:
     except AcervoError as error:
         print(f"Could not sign in: {error}", file=sys.stderr)
         return 1
+    try:
+        preflight(client, args.language, args.topic)
+    except AcervoError as error:
+        print(f"Preflight failed: {error}", file=sys.stderr)
+        return 1
 
     if args.consume and not args.dry_run:
         backup = source.with_suffix(source.suffix + ".bak")
@@ -219,15 +257,24 @@ def main() -> int:
             continue
 
         window = lines[offset:offset + args.window_lines]
-        limiter.acquire()
-        try:
-            result = capture(client, "\n".join(window), args.language, args.topic, not args.dry_run)
-        except AcervoError as error:
-            if error.code == "language_not_configured":
-                # Every entry in the file will hit this, so stopping is kinder than 700 failures.
-                print(f"\n{error}", file=sys.stderr)
-                return 1
-            if error.code in {"capture_unavailable", "prompt_missing", "schema_version_mismatch"}:
+        result = None
+        error = None
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            limiter.acquire()
+            try:
+                result = capture(client, "\n".join(window), args.language, args.topic, not args.dry_run)
+                error = None
+                break
+            except AcervoError as caught:
+                error = caught
+                if caught.code not in TRANSIENT_CAPTURE_ERRORS or attempt >= len(RETRY_DELAYS):
+                    break
+                delay = RETRY_DELAYS[attempt]
+                print(f"  ↻ {caught} — retrying in {delay} seconds")
+                time.sleep(delay)
+
+        if error is not None:
+            if error.code != "unreadable_input":
                 print(f"\n{error}", file=sys.stderr)
                 return 1
             step = logical_block(window)
@@ -236,6 +283,7 @@ def main() -> int:
             consumed = step
             headword = None
         else:
+            assert result is not None
             resolution = result.get("resolution") or {}
             consumed = max(1, int(resolution.get("consumedLines") or 1))
             headword = resolution.get("headword")

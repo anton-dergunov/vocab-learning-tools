@@ -146,8 +146,8 @@ class SyncEngine implements RemoteGraph {
     }
   }
 
-  /** Tombstones every record, server-side. Destructive, replicated, and confirmed by the caller. */
-  async resetVocabulary(): Promise<void> {
+  /** Tombstones every word and descendant, retaining languages and topics. */
+  async resetWords(): Promise<void> {
     const snapshot = repository.snapshot();
     try {
       const response = await backendSession.resetGraph(snapshot.deviceId);

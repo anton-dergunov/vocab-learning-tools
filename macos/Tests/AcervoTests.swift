@@ -56,7 +56,7 @@ final class AcervoTests: XCTestCase {
         let menu = makeVocabularyMenu(target: nil)
         XCTAssertEqual(
             menu.items.map(\.title),
-            ["Export Vocabulary…", "Import Vocabulary…", "", "Delete All Vocabulary…"]
+            ["Export Vocabulary…", "Import Vocabulary…", "", "Delete All Words…"]
         )
         // Deleting has no shortcut on purpose: it is the one action re-syncing cannot undo.
         XCTAssertEqual(menu.items[0].keyEquivalent, "e")

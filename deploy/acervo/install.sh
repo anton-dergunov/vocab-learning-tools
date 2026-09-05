@@ -7,7 +7,7 @@ PATH="$PATH:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/pa
 export PATH
 
 usage() {
-  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data] [--reset-pocketbase]" >&2
+  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--llm-credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data] [--reset-pocketbase]" >&2
   exit 2
 }
 
@@ -34,6 +34,7 @@ acervo_root=
 archive=
 credentials_stdin=false
 credentials_file=
+llm_credentials_file=
 reset_data=false
 reset_pocketbase=false
 requested_bind_address=
@@ -46,6 +47,7 @@ while [ "$#" -gt 0 ]; do
     --archive) [ "$#" -ge 2 ] || usage; archive=$2; shift 2 ;;
     --credentials-stdin) credentials_stdin=true; shift ;;
     --credentials-file) [ "$#" -ge 2 ] || usage; credentials_file=$2; shift 2 ;;
+    --llm-credentials-file) [ "$#" -ge 2 ] || usage; llm_credentials_file=$2; shift 2 ;;
     --bind-address) [ "$#" -ge 2 ] || usage; requested_bind_address=$2; shift 2 ;;
     --port) [ "$#" -ge 2 ] || usage; requested_anki_port=$2; shift 2 ;;
     --app-bind-address) [ "$#" -ge 2 ] || usage; requested_app_bind_address=$2; shift 2 ;;
@@ -154,6 +156,58 @@ chmod 600 "$acervo_root/secrets.env"
 : "${ACERVO_PB_SUPERUSER_EMAIL:?Set ACERVO_PB_SUPERUSER_EMAIL in $acervo_root/secrets.env}"
 : "${ACERVO_PB_SUPERUSER_PASSWORD:?Set ACERVO_PB_SUPERUSER_PASSWORD in $acervo_root/secrets.env}"
 
+# Provider credentials are deliberately independent of the server and Anki credentials. Switching
+# between paid Vertex ingestion and a Gemini Developer key rewrites only this file, and retains the
+# inactive provider's key for a later switch back.
+if [ ! -f "$acervo_root/llm.env" ]; then
+  : >"$acervo_root/llm.env"
+fi
+chmod 600 "$acervo_root/llm.env"
+if [ -n "$llm_credentials_file" ]; then
+  [ -f "$llm_credentials_file" ] || { echo "Missing LLM credentials file" >&2; exit 2; }
+  exec 3<"$llm_credentials_file"
+  IFS= read -r llm_provider <&3 || { echo "Missing LLM provider" >&2; exit 2; }
+  IFS= read -r llm_model <&3 || { echo "Missing LLM model" >&2; exit 2; }
+  IFS= read -r vertex_project <&3 || { echo "Missing Vertex project line" >&2; exit 2; }
+  IFS= read -r vertex_location <&3 || { echo "Missing Vertex location line" >&2; exit 2; }
+  IFS= read -r llm_api_key <&3 || { echo "Missing LLM API key" >&2; exit 2; }
+  exec 3<&-
+  case "$llm_provider" in gemini|vertex) ;; *) echo "LLM provider must be gemini or vertex" >&2; exit 2 ;; esac
+  case "$llm_model$vertex_project$vertex_location$llm_api_key" in
+    *[!A-Za-z0-9._-]*) echo "Unsafe LLM configuration value" >&2; exit 2 ;;
+  esac
+  [ -n "$llm_model" ] && [ -n "$llm_api_key" ] || {
+    echo "An LLM model and API key are required" >&2
+    exit 2
+  }
+  if [ "$llm_provider" = vertex ]; then
+    [ -n "$vertex_project" ] && [ -n "$vertex_location" ] || {
+      echo "Vertex requires a project and location" >&2
+      exit 2
+    }
+    configured_key=VERTEX_API_KEY
+  else
+    configured_key=GEMINI_API_KEY
+  fi
+  llm_tmp="$acervo_root/llm.env.tmp.$$"
+  trap 'rm -f "$llm_tmp"' EXIT HUP INT TERM
+  awk -F= -v configured_key="$configured_key" '
+    $1 != "ACERVO_LLM_PROVIDER" && $1 != "ACERVO_LLM_MODEL" &&
+    $1 != "ACERVO_VERTEX_PROJECT" && $1 != "ACERVO_VERTEX_LOCATION" &&
+    $1 != configured_key { print }
+  ' "$acervo_root/llm.env" >"$llm_tmp"
+  {
+    printf 'ACERVO_LLM_PROVIDER=%s\n' "$llm_provider"
+    printf 'ACERVO_LLM_MODEL=%s\n' "$llm_model"
+    printf 'ACERVO_VERTEX_PROJECT=%s\n' "$vertex_project"
+    printf 'ACERVO_VERTEX_LOCATION=%s\n' "$vertex_location"
+    printf '%s=%s\n' "$configured_key" "$llm_api_key"
+  } >>"$llm_tmp"
+  chmod 600 "$llm_tmp"
+  mv "$llm_tmp" "$acervo_root/llm.env"
+  trap - EXIT HUP INT TERM
+fi
+
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup_dir="$acervo_root/backups/$timestamp"
 mkdir -p "$backup_dir/anki-server" "$backup_dir/acervo-worker"
@@ -248,6 +302,7 @@ if [ "$reset_pocketbase" = true ]; then
   compose -p "$compose_project" \
     --env-file "$acervo_root/deployment.env" \
     --env-file "$acervo_root/secrets.env" \
+    --env-file "$acervo_root/llm.env" \
     -f "$compose_file" stop pocketbase >/dev/null 2>&1 || true
   # Copied only once the container is stopped: copying a live WAL database is the classic route to
   # a backup that looks fine until the day you need it.
@@ -264,14 +319,15 @@ echo "Building and starting containers..."
 run_quietly "Building and starting containers" compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
   --env-file "$acervo_root/secrets.env" \
+  --env-file "$acervo_root/llm.env" \
   -f "$compose_file" up -d --build anki-sync-server pocketbase
 
 echo "Waiting for anki-sync-server to become healthy..."
 attempt=0
-until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" ps --format json anki-sync-server 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
+until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" ps --format json anki-sync-server 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
-    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" logs anki-sync-server >&2
+    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" logs anki-sync-server >&2
     exit 1
   fi
   sleep 2
@@ -279,10 +335,10 @@ done
 
 echo "Waiting for pocketbase to become healthy..."
 attempt=0
-until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" ps --format json pocketbase 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
+until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" ps --format json pocketbase 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
-    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" logs pocketbase >&2
+    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" logs pocketbase >&2
     exit 1
   fi
   sleep 2
@@ -291,7 +347,7 @@ done
 # Quiet on purpose: PocketBase confirms the upsert by echoing the account's address, and the
 # summary below already says the server is up.
 run_quietly "Configuring the PocketBase superuser" \
-  compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" -f "$compose_file" \
+  compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" \
   exec -T pocketbase /pb/pocketbase superuser upsert "$ACERVO_PB_SUPERUSER_EMAIL" "$ACERVO_PB_SUPERUSER_PASSWORD"
 
 printf '%s\n' "$release_dir" >"$acervo_root/current-release"

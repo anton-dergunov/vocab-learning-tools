@@ -539,7 +539,9 @@ Two destructive actions exist, and they are not the same action:
 
 - **Download this device's copy again** — discard the replica, pull from zero. Costs nothing; the
   server is unaffected.
-- **Delete all vocabulary** — tombstone every record, server-side, replicating to every device. This
+- **Delete all words** — tombstone every lexeme and its senses, attestations, examples, image prompts,
+  and study states, server-side, replicating to every device. Vocabulary-language settings, topics,
+  the user and the dataset identity remain. This
   is the one genuinely dangerous button in the application, so it quotes the live counts and requires
   the word `DELETE` to be typed. It is a write, so it needs the server like any other. It never
   removes a row: §17's rule that tombstones are never collected means even this stays undoable.
@@ -1464,7 +1466,8 @@ The §03 foundation is the only application model, and §04's protocol is now bu
   and none of them can produce a record no client would ever receive.
 - Three authenticated, owner-scoped routes carry everything: `GET /graph?since=` returns the delta
   above a cursor with tombstones included, `POST /graph` applies a change set in one transaction
-  and returns the canonical rows, and `POST /graph/reset` tombstones the account. All three refuse
+  and returns the canonical rows, and `POST /graph/reset` tombstones the account's words while
+  retaining its vocabularies and topics. All three refuse
   a client whose `schemaVersion` differs. Generic collection access stays closed.
 - A record written to the server states the revision it was edited from; a stale one is refused
   rather than merged, and an invalid record in a batch refuses the whole batch.

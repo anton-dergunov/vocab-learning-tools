@@ -411,9 +411,15 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
             "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "confirm": "yes",
         }, user_token)[0] == 400
         status, reset = request(base, "POST", "/api/acervo/v1/graph/reset", {
-            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "confirm": "delete-all-vocabulary",
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "confirm": "delete-all-words",
         }, user_token)
-        assert status == 200 and reset["data"]["deleted"] == sum(expected.values()) + sum(captured.values()), reset
+        word_collections = {
+            "lexemes": "lexemes", "senses": "senses", "attestations": "attestations",
+            "examples": "examples", "imagePrompts": "image_prompts", "studyStates": "study_states",
+        }
+        assert status == 200 and reset["data"]["deleted"] == sum(
+            expected[collection] + captured[key] for key, collection in word_collections.items()
+        ), reset
         assert reset["data"]["datasetId"] == dataset_id
 
         # Nothing is removed: a full pull still carries every row, now as a tombstone. That is
@@ -424,9 +430,11 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         assert len(emptied["lexemes"]) == expected["lexemes"] + captured["lexemes"]
         assert all(record["deleted"] for record in emptied["lexemes"])
         assert all(record["deleted"] for record in emptied["senses"])
+        assert all(not record["deleted"] for record in emptied["vocabularies"])
+        assert all(not record["deleted"] for record in emptied["topics"])
         # A second reset has nothing left to tombstone.
         status, again = request(base, "POST", "/api/acervo/v1/graph/reset", {
-            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "confirm": "delete-all-vocabulary",
+            "schemaVersion": SCHEMA_VERSION, "deviceId": "integrationtest", "confirm": "delete-all-words",
         }, user_token)
         assert status == 200 and again["data"]["deleted"] == 0
 

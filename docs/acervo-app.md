@@ -271,6 +271,7 @@ The application additions live beside the existing Anki data:
 ```text
 data/pocketbase
 downloads
+llm.env
 ```
 
 Deployment preserves both directories, along with `data/anki-server`, `data/acervo-worker`, inputs,
@@ -288,3 +289,29 @@ alone — `--reset-data` is the separate flag for that, and review history is no
 rebuild should take with it. Accounts must be recreated and the seeder re-run afterwards; device
 replicas are untouched, and each will notice the new dataset identity and stop rather than
 overwrite itself.
+
+## Language-model provider
+
+Capture can use either the Gemini Developer API or Vertex AI. Provider settings and both API keys
+live in the server's mode-600 `llm.env`, separately from PocketBase and Anki credentials. Re-running
+the configuration retains the inactive provider's key, so switching routes does not require
+recreating credentials.
+
+Configure Vertex without putting the key in shell history:
+
+```bash
+gcloud services api-keys get-key-string acervo-vertex \
+  --project project-example \
+  --format='value(keyString)' |
+./deploy.sh --configure-llm \
+  --llm-provider vertex \
+  --llm-project project-example \
+  --llm-location global \
+  --llm-model gemini-3.7-flash \
+  --llm-api-key-stdin
+```
+
+The Vertex capture route uses JSON output and medium thinking. Authentication and configuration
+errors stop an ingestion run immediately; rate limits and provider 5xx responses are retried by the
+file importer. To switch back to a Gemini Developer API key, run the same command with
+`--llm-provider gemini`, omit `--llm-project`, and choose the Gemini model.

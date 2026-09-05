@@ -465,7 +465,7 @@ describe("Acervo application", () => {
     fireEvent.click(settings.getByRole("tab", { name: "Sync" }));
     expect(settings.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
     fireEvent.click(settings.getByRole("tab", { name: "Data" }));
-    expect(settings.getByRole("button", { name: /Delete all vocabulary/ })).toBeInTheDocument();
+    expect(settings.getByRole("button", { name: /Delete all words/ })).toBeInTheDocument();
   });
 
   it("puts export, import and deletion together on the Data page", async () => {
@@ -478,7 +478,7 @@ describe("Acervo application", () => {
     expect(settings.getByRole("button", { name: "Export…" })).toBeInTheDocument();
     expect(settings.getByRole("combobox")).toHaveValue("all");
     expect(settings.getByRole("heading", { name: "Import" })).toBeInTheDocument();
-    expect(settings.getByRole("button", { name: /Delete all vocabulary/ })).toBeInTheDocument();
+    expect(settings.getByRole("button", { name: /Delete all words/ })).toBeInTheDocument();
   });
 
   it("opens the Data page armed for deletion when the Mac menu asks", async () => {

@@ -27,6 +27,7 @@ old_prototypes/
 /macos/Acervo.xcodeproj/
 /macos/Resources/Assets.xcassets/
 .acervo-deploy
+/deploy/acervo/llm.env
 *.swp
 *.swo
 

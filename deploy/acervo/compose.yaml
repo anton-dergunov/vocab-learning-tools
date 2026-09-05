@@ -13,9 +13,12 @@ services:
       ACERVO_DOWNLOADS_PATH: /pb/downloads
       ACERVO_DICTIONARIES_PATH: /pb/dictionaries
       ACERVO_PROMPTS_PATH: /pb/pb_hooks/prompts
+      ACERVO_LLM_PROVIDER: "${ACERVO_LLM_PROVIDER:-gemini}"
       ACERVO_LLM_MODEL: "${ACERVO_LLM_MODEL:-gemini-3.1-flash-lite}"
-      ACERVO_LLM_ENDPOINT: "${ACERVO_LLM_ENDPOINT:-https://generativelanguage.googleapis.com}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      VERTEX_API_KEY: "${VERTEX_API_KEY:-}"
+      ACERVO_VERTEX_PROJECT: "${ACERVO_VERTEX_PROJECT:-}"
+      ACERVO_VERTEX_LOCATION: "${ACERVO_VERTEX_LOCATION:-global}"
     ports:
       - "${ACERVO_APP_BIND_ADDRESS:-127.0.0.1}:${ACERVO_APP_PORT:-27702}:8090"
     volumes:
@@ -78,6 +81,12 @@ services:
       # sources stay in the worker's own data directory and are never exposed.
       ACERVO_DICTIONARIES_PATH: /var/lib/acervo/dictionaries
       ACERVO_DICTIONARY_CACHE: /var/lib/acervo/worker/dictionary-sources
+      ACERVO_LLM_PROVIDER: "${ACERVO_LLM_PROVIDER:-gemini}"
+      ACERVO_LLM_MODEL: "${ACERVO_LLM_MODEL:-gemini-3.1-flash-lite}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      VERTEX_API_KEY: "${VERTEX_API_KEY:-}"
+      ACERVO_VERTEX_PROJECT: "${ACERVO_VERTEX_PROJECT:-}"
+      ACERVO_VERTEX_LOCATION: "${ACERVO_VERTEX_LOCATION:-global}"
     volumes:
       - "${ACERVO_WORKER_DATA:?Set ACERVO_WORKER_DATA}:/var/lib/acervo/worker"
       - "${ACERVO_DICTIONARIES:-acervo-dictionaries}:/var/lib/acervo/dictionaries"

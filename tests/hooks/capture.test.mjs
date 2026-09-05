@@ -20,7 +20,14 @@ const PROMPTS = path.join(here, "..", "..", "prompts");
 
 /* ── the PocketBase surface the hook uses ───────────────────────────────── */
 
-let llm = { resolution: {}, article: {}, calls: [] };
+const GEMINI_ENV = {
+  ACERVO_LLM_PROVIDER: "gemini",
+  GEMINI_API_KEY: "stub-key",
+  ACERVO_LLM_MODEL: "stub-model",
+  ACERVO_PROMPTS_PATH: PROMPTS,
+};
+let environment = { ...GEMINI_ENV };
+let llm = { resolution: {}, article: {}, calls: [], requests: [], errors: [], statusCode: 200, hiddenThinking: false };
 
 class FakeRecord {
   constructor(collection, fields = {}) {
@@ -86,17 +93,12 @@ class FakeApp {
     if (!rows.includes(record)) rows.push(record);
   }
   runInTransaction(work) { work(this); }
-  logger() { return { error() {} }; }
+  logger() { return { error: (...args) => { llm.errors.push(args); } }; }
 }
 
 function installGlobals() {
   globalThis.$os = {
-    getenv: (name) => ({
-      GEMINI_API_KEY: "stub-key",
-      ACERVO_LLM_MODEL: "stub-model",
-      ACERVO_LLM_ENDPOINT: "https://model.example.com",
-      ACERVO_PROMPTS_PATH: PROMPTS,
-    }[name] ?? ""),
+    getenv: (name) => environment[name] ?? "",
     readFile: (file) => createRequire(import.meta.url)("node:fs").readFileSync(file, "utf8"),
   };
   globalThis.toString = (value) => String(value);
@@ -114,11 +116,15 @@ function installGlobals() {
     send: (options) => {
       const payload = JSON.parse(options.body);
       llm.calls.push(payload);
+      llm.requests.push(options);
       const system = payload.systemInstruction.parts[0].text;
       const answer = system.includes("You decide what a learner") ? llm.resolution : llm.article;
+      const parts = [{ text: JSON.stringify(answer) }];
+      if (llm.hiddenThinking) parts.unshift({ thought: true, text: "private reasoning" });
       return {
-        statusCode: 200,
-        json: { candidates: [{ content: { parts: [{ text: JSON.stringify(answer) }] }}] },
+        statusCode: llm.statusCode,
+        body: "provider details that must stay private",
+        json: { candidates: [{ content: { parts } }] },
       };
     },
   };
@@ -128,12 +134,12 @@ function installGlobals() {
 
 /* ── a request, and what came back ──────────────────────────────────────── */
 
-function event(app, ownerId, body) {
+function event(app, ownerId, body, route = "/capture") {
   const captured = {};
   return {
     app,
     auth: { id: ownerId, collection: () => ({ name: "users" }) },
-    request: { url: { path: "/api/acervo/v1/capture" }, method: "POST" },
+    request: { url: { path: `/api/acervo/v1${route}` }, method: "POST" },
     requestInfo: () => ({ body, query: {} }),
     json: (status, payload) => { captured.status = status; captured.payload = payload; return captured; },
     captured,
@@ -161,7 +167,8 @@ function seed() {
     deleted: false, revision: 1, created_at: "2026-01-01T00:00:00.000Z",
     edited_at: "2026-01-01T00:00:00.000Z", edited_by: "seed",
   });
-  llm = { resolution: {}, article: {}, calls: [] };
+  environment = { ...GEMINI_ENV };
+  llm = { resolution: {}, article: {}, calls: [], requests: [], errors: [], statusCode: 200, hiddenThinking: false };
 }
 
 const RESOLUTION = {
@@ -191,6 +198,12 @@ function capture(body) {
   return hook.dispatch(event(app, OWNER, {
     schemaVersion: 5, deviceId: "device000000001", mode: "single", text: "some text", ...body,
   })).payload;
+}
+
+function resetGraph(confirm = "delete-all-words") {
+  return hook.dispatch(event(app, OWNER, {
+    schemaVersion: 5, deviceId: "device000000001", confirm,
+  }, "/graph/reset")).payload;
 }
 
 describe("the capture endpoint", () => {
@@ -361,10 +374,78 @@ describe("the capture endpoint", () => {
 
   it("never consumes zero lines in a stream, so a walk cannot stall", () => {
     seed();
-    llm.resolution = { ...RESOLUTION, consumedLines: 0 };
+    llm.resolution = { ...RESOLUTION, consumedLines: 0, consumedText: "line one" };
     llm.article = ARTICLE;
     const result = capture({ mode: "stream", text: "line one\nline two\nline three" }).data;
     assert.equal(result.resolution.consumedLines, 1);
+  });
+
+  it("uses the Gemini Developer API with its key and sampling setting", () => {
+    seed();
+    llm.resolution = RESOLUTION;
+    llm.article = ARTICLE;
+    capture({});
+    const request = llm.requests[0];
+    assert.equal(request.url,
+      "https://generativelanguage.googleapis.com/v1beta/models/stub-model:generateContent");
+    assert.equal(request.headers["x-goog-api-key"], "stub-key");
+    assert.equal(llm.calls[0].generationConfig.temperature, 0.2);
+    assert.equal(llm.calls[0].generationConfig.thinkingConfig, undefined);
+  });
+
+  it("uses the full Vertex URL, Vertex key, JSON output and medium thinking", () => {
+    seed();
+    environment = {
+      ...GEMINI_ENV,
+      ACERVO_LLM_PROVIDER: "vertex",
+      VERTEX_API_KEY: "vertex-key",
+      ACERVO_VERTEX_PROJECT: "personal-project",
+      ACERVO_VERTEX_LOCATION: "global",
+      ACERVO_LLM_MODEL: "gemini-3.7-flash",
+    };
+    llm.resolution = RESOLUTION;
+    llm.article = ARTICLE;
+    capture({});
+    const request = llm.requests[0];
+    assert.equal(request.url,
+      "https://aiplatform.googleapis.com/v1/projects/personal-project/locations/global/publishers/google/models/gemini-3.7-flash:generateContent");
+    assert.equal(request.headers["x-goog-api-key"], "vertex-key");
+    assert.deepEqual(llm.calls[0].generationConfig, {
+      responseMimeType: "application/json",
+      thinkingConfig: { thinkingLevel: "MEDIUM" },
+    });
+  });
+
+  it("ignores hidden thinking parts and parses only the article JSON", () => {
+    seed();
+    llm.hiddenThinking = true;
+    llm.resolution = RESOLUTION;
+    llm.article = ARTICLE;
+    assert.equal(capture({}).data.draft.headword, "el garfio");
+  });
+
+  for (const [status, code] of [[401, "llm_authentication"], [403, "llm_authentication"],
+    [400, "llm_configuration"], [404, "llm_configuration"], [429, "llm_rate_limited"],
+    [500, "llm_unavailable"], [503, "llm_unavailable"]]) {
+    it(`classifies provider HTTP ${status} without exposing its response`, () => {
+      seed();
+      llm.statusCode = status;
+      llm.resolution = RESOLUTION;
+      const result = capture({});
+      assert.equal(result.error.code, code);
+      assert.doesNotMatch(result.error.message, /provider details/);
+    });
+  }
+
+  it("refuses a mismatched stream boundary before composing or writing", () => {
+    seed();
+    llm.resolution = { ...RESOLUTION, consumedLines: 1, consumedText: "different text" };
+    llm.article = ARTICLE;
+    const result = capture({ mode: "stream", text: "line one\nline two", apply: true });
+    assert.equal(result.error.code, "stream_boundary_mismatch");
+    assert.equal(llm.calls.length, 1);
+    assert.equal(app.records.attestations.length, 0);
+    assert.equal(app.records.examples.length, 0);
   });
 
   it("reports a model that answers with nothing usable, rather than half an entry", () => {
@@ -378,5 +459,33 @@ describe("the capture endpoint", () => {
     seed();
     llm.resolution = { error: "!!! ???" };
     assert.equal(capture({ text: "!!! ???" }).error.code, "unreadable_input");
+  });
+});
+
+describe("delete all words", () => {
+  it("tombstones words and every descendant while retaining vocabularies and topics", () => {
+    seed();
+    const lexeme = app.records.lexemes[0];
+    app.add("senses", { id: "sense0000000001", owner: OWNER, lexeme: lexeme.id, deleted: false });
+    app.add("attestations", { id: "attest000000001", owner: OWNER, lexeme: lexeme.id, deleted: false });
+    app.add("examples", { id: "example00000001", owner: OWNER, sense: "sense0000000001", deleted: false });
+    app.add("image_prompts", { id: "image0000000001", owner: OWNER, lexeme: lexeme.id, deleted: false });
+    app.add("study_states", { id: "study0000000001", owner: OWNER, lexeme: lexeme.id, deleted: false });
+
+    const datasetId = app.records.sync_state[0].id;
+    const result = resetGraph();
+    assert.equal(result.data.deleted, 6);
+    for (const collection of ["lexemes", "senses", "attestations", "examples", "image_prompts", "study_states"]) {
+      assert.ok(app.records[collection].every((record) => record.getBool("deleted")), collection);
+    }
+    assert.ok(app.records.vocabularies.every((record) => !record.getBool("deleted")));
+    assert.ok(app.records.topics.every((record) => !record.getBool("deleted")));
+    assert.equal(result.data.datasetId, datasetId);
+  });
+
+  it("requires the delete-all-words confirmation token", () => {
+    seed();
+    assert.equal(resetGraph("delete-all-vocabulary").error.code, "confirmation_required");
+    assert.ok(app.records.lexemes.every((record) => !record.getBool("deleted")));
   });
 });

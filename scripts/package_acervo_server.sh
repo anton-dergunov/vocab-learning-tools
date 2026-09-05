@@ -17,7 +17,7 @@ eval "$("$repo_root/scripts/version.sh")"
 mkdir -p "$output_dir" "$bundle"
 for directory in deploy dictionaries docs prompts requirements scripts src templates; do
   mkdir -p "$bundle/$directory"
-  rsync -a --exclude .DS_Store --exclude __pycache__ --exclude '*.pyc' \
+  rsync -a --exclude .DS_Store --exclude __pycache__ --exclude '*.pyc' --exclude 'llm.env' \
     "$repo_root/$directory/" "$bundle/$directory/"
 done
 cp "$repo_root/package.json" "$bundle/package.json"
