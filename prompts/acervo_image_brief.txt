@@ -74,12 +74,39 @@ Carry over every concrete fact it gives you, and do not contradict any of them:
 - **when** — the time of day and the era. A sentence about ordinary modern life gets an ordinary
   modern setting
 
-Then exaggerate the **one element that carries the word**, and leave everything else plausible. A
-river that abounds in trout has a great many trout and still has water.
+### Exaggerate by adding to the subject, never by diminishing the scene
+
+Exaggerate the **one element that carries the word** — `subject`, and nothing else. Everything else
+in the frame stays at its natural size, quantity and condition.
+
+There are two ways to make something dominate a picture, and only one of them is safe. You may make
+the subject **larger, brighter, more numerous, closer to the camera, more intensely lit**. You may
+not make it dominant by **shrinking, draining, emptying or degrading what surrounds it**, because
+what surrounds it usually carries the meaning too, and diminishing it flips the sense.
+
+That is a real failure, not a hypothetical one. *The river abounds in trout* was written as a
+**shallow** river, crystal clear, stones barely covered — so the fish would fill it. The fish did
+fill it, and the picture became a river drying up: scarcity, not abundance. The fix is not fewer
+fish. It is a **deep, full, wide** river that is nonetheless thick with them.
+
+Before you write, ask: *if I exaggerate this, what am I shrinking?* If the answer is anything the
+meaning depends on, exaggerate something else.
 
 Only when a sense has **no examples at all** do you invent the scene, from the definition and the
 glosses. Set `anchorExampleId` to null in that case. Departing from an anchor that exists needs a
 real reason — it cannot be drawn at all — and it is rare.
+
+### When the sense is grammar rather than a thing
+
+Some senses are aspect, tense, modality or discourse — *to have just done something*, *to be about
+to*, *it turns out that*. There is nothing to photograph, and the example sentence is often abstract
+too, sometimes a fragment the learner copied out of a conversation.
+
+Do not give up and draw two people talking in an office. Build a **small human situation in which
+the grammar is the point**, and let it be funny — a joke is memorable, and memorable is the entire
+job. For *he has just done it*, a man stands beside the thing he was told not to do, still holding
+the tool, while his wife looks at him: the picture is *about* the fact that it has only now
+happened. Humour and mild absurdity are welcome here and nowhere are they a refusal.
 
 ---
 

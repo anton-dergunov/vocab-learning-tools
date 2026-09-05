@@ -64,3 +64,45 @@ time with light, wear or a shadow's length.
 Round 2 is a clear pass on what round 1 rejected. Both new problems are prompt-level and both are
 already patched; neither needs the images redrawn to be believed, so round 3 should be **new** words
 rather than a third pass over these fourteen.
+
+---
+
+## Review verdict
+
+**16 of 17 kept.** The reviewer's summary of the four fixes: *"not just better — a different
+category."* Specifically noted as working: the ghosted repeats for `a menudo`, the recovered daylight
+abundance of `abundar #1`, the sofa returning to `acariciar`, the family with backpack and suitcase
+at the door for `acogedor #2`, and the free style choice picking well rather than by dice.
+
+Two of the reviewer's own conclusions overturned earlier positions:
+
+- **Text in a picture is not always wrong.** The countdown clock in `a pie` was judged acceptable —
+  the objection was that a wall clock does not display a countdown like that, i.e. *implausibility*,
+  not text. The ban stays anyway, narrowed to its real justification: the model renders lettering
+  badly, and a card must never show its own answer.
+- **Topics must not be passed to the writer.** They are the owner's filing system and mean whatever
+  the owner decides; they are not a fact about the word and should not steer a picture. Removed.
+
+### The one rejection, and the general fix
+
+`abundar #2`, *the river abounds in trout*. The brief asked for a **shallow, crystal-clear** river so
+the fish would crowd it. They did, and the picture reads as a river drying out — mud, not plenty.
+The reviewer preferred round 1's ukiyo-e version, which is restored as the live image; round 2's is
+kept under `output/images/round-2-superseded/`.
+
+The diagnosis generalises, and it is the most useful thing to come out of this round. There are two
+ways to make a subject dominate, and only one is safe:
+
+- **Adding to the subject** — larger, brighter, more numerous, closer, more intensely lit. Safe.
+- **Subtracting from the scene** — shrinking, draining, emptying or degrading its surroundings.
+  Unsafe, because the surroundings usually carry the meaning too, and diminishing them flips it.
+
+Making the river shallow is the second kind. The template now names both and adds the check: *if I
+exaggerate this, what am I shrinking?*
+
+### And one gap
+
+`acabar de`, *to have just done something*, produced two colleagues in an office — competent and
+forgettable. Aspect and modality have nothing to photograph and their example sentences are often
+fragments. The template now asks for a **small human situation in which the grammar is the point**,
+and explicitly licenses humour, which is memorable and was previously nowhere permitted.

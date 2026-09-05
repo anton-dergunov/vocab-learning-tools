@@ -69,7 +69,6 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
         "dialect": lexeme.get("dialect"),
         "shortGloss": lexeme.get("shortGloss"),
         "notes": lexeme.get("notes") or [],
-        "topics": article.topics,
         "glossLangs": vocabulary.get("glossLangs") or [],
         "senses": senses,
         "styles": [
@@ -91,7 +90,8 @@ def parse_reply(text: str, article: ArticleView, offered: tuple[str, ...]) -> li
     if not isinstance(entries, list):
         raise ValueError("The brief writer returned no `senses` list.")
 
-    known = {sense.id for sense in article.senses}
+    by_sense = {sense.id: sense for sense in article.senses}
+    known = set(by_sense)
     out: list[SenseBrief] = []
     for entry in entries:
         if not isinstance(entry, dict):
@@ -112,8 +112,10 @@ def parse_reply(text: str, article: ArticleView, offered: tuple[str, ...]) -> li
         brief = str(entry.get("brief") or "").strip()
         if not brief:
             raise ValueError(f"The brief writer returned an empty brief for sense {sense_id}.")
-        anchor = entry.get("anchorExampleId")
-        out.append(SenseBrief(sense_id, style_id, str(anchor) if anchor else None,
+        anchor = str(entry.get("anchorExampleId") or "")
+        if anchor not in {example.get("id") for example in by_sense[sense_id].examples}:
+            anchor = ""      # an id from another sense, or invented: it names nothing here
+        out.append(SenseBrief(sense_id, style_id, anchor or None,
                               str(entry.get("subject") or "").strip(), brief, False, None))
 
     missing = known - {item.sense_id for item in out}

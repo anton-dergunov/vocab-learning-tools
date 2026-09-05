@@ -13,7 +13,8 @@ That separation is the whole reason the pipeline has two calls.
 | Round | Date | n | Verdict | Change it argued for |
 |---|---|---:|---|---|
 | [1](results/round-1.md) | 2026-09-05 | 14 | 7 rejected | The style must stop authoring the scene; the example sentence must be honoured; the meaning must be *depicted*, not implied |
-| [2](results/round-2.md) | 2026-09-05 | 14 redrawn + 3 | all four failures fixed | Free style choice collapsed the variety — rotate the list and hint against the safe styles; the no-text rule must bind the brief, not just the picture |
+| [2](results/round-2.md) | 2026-09-05 | 14 redrawn + 3 | 16 of 17 kept | Exaggerate by adding to the subject, never by diminishing the scene; give aspect and modality a human situation; stop passing the owner's topics |
+| [3](results/round-3.md) | 2026-09-05 | 11 new | all kept pending review | — |
 
 ## Method
 

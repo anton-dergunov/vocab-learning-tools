@@ -108,6 +108,27 @@ def test_the_learners_own_sentence_is_the_anchor():
     assert articles[0].senses[1].anchor is None
 
 
+def test_the_owners_topics_do_not_steer_the_picture():
+    """Topics are the owner's filing system, not a fact about the word."""
+    request = build_request(build_articles(changes(), "es")[0], load_styles(STYLES))
+    assert "topics" not in request
+
+
+def test_an_anchor_from_another_sense_is_dropped():
+    styles = load_styles(STYLES)
+    article = build_articles(changes(), "es")[0]
+    text, offered = _reply(article, styles, patch={1: {"anchorExampleId": "e00000000000002"}})
+    briefs = parse_reply(text, article, offered)
+    assert briefs[1].anchor_example_id is None      # that example belongs to sense one
+
+
+def test_an_anchor_from_this_sense_is_kept():
+    styles = load_styles(STYLES)
+    article = build_articles(changes(), "es")[0]
+    text, offered = _reply(article, styles, patch={0: {"anchorExampleId": "e00000000000002"}})
+    assert parse_reply(text, article, offered)[0].anchor_example_id == "e00000000000002"
+
+
 def test_the_request_offers_every_style_and_marks_the_anchor():
     styles = load_styles(STYLES)
     request = build_request(build_articles(changes(), "es")[0], styles)
