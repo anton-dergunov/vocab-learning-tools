@@ -82,16 +82,24 @@ class Store:
         return int((record or {}).get("attempts", 0))
 
 
-def plan(articles: Iterable[ArticleView], store: Store, *, redo: bool = False) -> list[Job]:
+def plan(articles: Iterable[ArticleView], store: Store, *, redo: bool = False,
+         only: Iterable[str] | None = None) -> list[Job]:
     """Every sense that has no picture yet, in a stable order.
 
     Re-reading the graph on every run is what makes this pick up words ingested since last time:
-    the work is derived from the data, never from a queue.
+    the work is derived from the data, never from a queue. That is also why `--limit` alone cannot
+    name a set of senses — the graph grows underneath it and the alphabet shifts. `only` names them:
+    a headword, a sense id, or an image id.
     """
+    wanted = {item.strip().lower() for item in (only or ()) if item.strip()}
     jobs: list[Job] = []
     for article in articles:
         for sense in article.senses:
             prompt_id = image_prompt_id(sense.id)
+            if wanted and not (
+                {article.headword.lower(), sense.id.lower(), prompt_id.lower()} & wanted
+            ):
+                continue
             if sense.has_image and not redo:
                 continue          # the graph already holds a drawn image for this sense
             if store.is_drawn(prompt_id) and not redo:
@@ -143,7 +151,8 @@ class Runner:
                 return {
                     item["senseId"]: SenseBrief(
                         item["senseId"], item.get("styleId", ""), item.get("anchorExampleId"),
-                        item.get("brief", ""), bool(item.get("refused")), item.get("refusalReason"),
+                        item.get("subject", ""), item.get("brief", ""),
+                        bool(item.get("refused")), item.get("refusalReason"),
                     )
                     for item in cached.get("senses", [])
                 }
@@ -158,8 +167,9 @@ class Runner:
                 "senses": [
                     {
                         "senseId": item.sense_id, "styleId": item.style_id,
-                        "anchorExampleId": item.anchor_example_id, "brief": item.brief,
-                        "refused": item.refused, "refusalReason": item.refusal_reason,
+                        "anchorExampleId": item.anchor_example_id, "subject": item.subject,
+                        "brief": item.brief, "refused": item.refused,
+                        "refusalReason": item.refusal_reason,
                     }
                     for item in briefs
                 ],
@@ -272,6 +282,7 @@ class Runner:
                 "language": article.language,
                 "topics": article.topics,
                 "senseOrder": sense.order,
+                "subject": brief.subject,
                 "definition": sense.definition,
                 "glosses": sense.glosses,
                 "anchorExample": {"text": anchor.get("text"), "translation": anchor.get("translation"),

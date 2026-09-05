@@ -7,6 +7,10 @@
 # `mono` marks a style with no colour to spend — the brief writer is told to avoid one when the
 # meaning depends on colour.
 #
+# `stained-glass` was here and was removed in round 1 of experiments/sense-images: leaded glass
+# implies a building, so it kept dragging the scene into a church whatever the sentence said,
+# and the objects it drew read as painted onto glass rather than made of it.
+#
 # Deliberately absent from every entry: flat, schematic, simple shapes, silhouette, icon, minimal,
 # "readable at small size". These pictures are looked at on a tablet at the size of a photo in a
 # feed. The finalist benchmark asked for legible silhouettes at 192 px and its own report calls that
@@ -169,13 +173,6 @@ styles:
     brief: >-
       expressive charcoal and white chalk on toned grey paper, smudged tone, decisive dark accents,
       the paper left bare where the light falls
-
-  stained-glass:
-    label: Stained glass
-    weight: 1
-    brief: >-
-      a leaded stained-glass window backlit by daylight, saturated jewel colour between black
-      cames, radiating geometry
 
   folk-naive:
     label: Naïve folk painting

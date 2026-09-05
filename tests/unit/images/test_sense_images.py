@@ -12,7 +12,7 @@ from vocabgen.images.compose import FRAME, compose, prompt_version
 from vocabgen.images.graph import build_articles
 from vocabgen.images.ids import ID_LENGTH, image_prompt_id, seed_for
 from vocabgen.images.run import Store, plan
-from vocabgen.images.styles import MENU_SIZE, load_styles
+from vocabgen.images.styles import load_styles
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STYLES = REPO_ROOT / "config" / "image-styles.yaml"
@@ -77,21 +77,22 @@ def test_a_retry_draws_a_different_seed():
     assert seed_for("s00000000000001", 1) != seed_for("s00000000000001", 2)
 
 
-def test_the_menu_is_three_distinct_styles_and_deterministic():
+def test_every_style_is_offered():
     styles = load_styles(STYLES)
-    menu = styles.menu("s00000000000001")
-    assert len(menu) == MENU_SIZE
-    assert len({style.id for style in menu}) == MENU_SIZE
-    assert [style.id for style in menu] == [style.id for style in styles.menu("s00000000000001")]
+    assert [style.id for style in styles.offer()] == [style.id for style in styles.styles]
 
 
 def test_a_zero_weight_switches_a_style_off():
     styles = load_styles(STYLES)
     weights = {style.id: 0.0 for style in styles.styles}
-    for style in styles.styles[:MENU_SIZE]:
+    for style in styles.styles[:2]:
         weights[style.id] = 1.0
-    menu = styles.menu("s00000000000009", weights)
-    assert {style.id for style in menu} == {style.id for style in styles.styles[:MENU_SIZE]}
+    assert {style.id for style in styles.offer(weights)} == {style.id for style in styles.styles[:2]}
+
+
+def test_the_style_that_authored_scenes_is_gone():
+    """Round 1: leaded glass implies a building, so it kept relocating the scene to a church."""
+    assert "stained-glass" not in load_styles(STYLES)
 
 
 def test_only_the_senses_worth_drawing_are_in_scope():
@@ -107,67 +108,68 @@ def test_the_learners_own_sentence_is_the_anchor():
     assert articles[0].senses[1].anchor is None
 
 
-def test_the_request_carries_a_menu_and_marks_the_anchor():
-    articles = build_articles(changes(), "es")
-    request = build_request(articles[0], load_styles(STYLES))
+def test_the_request_offers_every_style_and_marks_the_anchor():
+    styles = load_styles(STYLES)
+    request = build_request(build_articles(changes(), "es")[0], styles)
     assert len(request["senses"]) == 2
-    assert len(request["senses"][0]["styleMenu"]) == MENU_SIZE
+    assert len(request["styles"]) == len(styles.styles)
     marked = [item for item in request["senses"][0]["examples"] if item["isAnchor"]]
     assert [item["id"] for item in marked] == ["e00000000000002"]
 
 
-def _reply(article, styles, **overrides) -> tuple[str, dict]:
-    menus = {sense.id: tuple(style.id for style in styles.menu(sense.id)) for sense in article.senses}
+def _reply(article, styles, **overrides) -> tuple[str, tuple[str, ...]]:
+    offered = tuple(style.id for style in styles.offer())
     senses = [
-        {"senseId": sense.id, "styleId": menus[sense.id][0], "anchorExampleId": None,
-         "brief": "A scene.", "refused": False, "refusalReason": None}
-        for sense in article.senses
+        {"senseId": sense.id, "styleId": offered[index], "anchorExampleId": None,
+         "subject": "the thing", "brief": "A scene.", "refused": False, "refusalReason": None}
+        for index, sense in enumerate(article.senses)
     ]
     for index, patch in overrides.get("patch", {}).items():
         senses[index].update(patch)
-    return json.dumps({"senses": senses}), menus
+    return json.dumps({"senses": senses}), offered
 
 
 def test_a_well_formed_reply_parses():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, menus = _reply(article, styles)
-    briefs = parse_reply(text, article, styles, menus)
+    text, offered = _reply(article, styles)
+    briefs = parse_reply(text, article, offered)
     assert [item.sense_id for item in briefs] == [sense.id for sense in article.senses]
     assert all(not item.refused for item in briefs)
+    assert briefs[0].subject == "the thing"
 
 
 def test_a_fenced_reply_still_parses():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, menus = _reply(article, styles)
-    assert len(parse_reply(f"```json\n{text}\n```", article, styles, menus)) == 2
+    text, offered = _reply(article, styles)
+    assert len(parse_reply(f"```json\n{text}\n```", article, offered)) == 2
 
 
-def test_a_style_off_the_menu_is_refused():
+def test_an_invented_style_is_refused():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, menus = _reply(article, styles, patch={0: {"styleId": "no-such-style"}})
-    with pytest.raises(ValueError, match="not on its menu"):
-        parse_reply(text, article, styles, menus)
+    text, offered = _reply(article, styles, patch={0: {"styleId": "no-such-style"}})
+    with pytest.raises(ValueError, match="not a style"):
+        parse_reply(text, article, offered)
 
 
 def test_a_skipped_sense_is_refused():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, menus = _reply(article, styles)
+    text, offered = _reply(article, styles)
     payload = json.loads(text)
     payload["senses"] = payload["senses"][:1]
     with pytest.raises(ValueError, match="skipped"):
-        parse_reply(json.dumps(payload), article, styles, menus)
+        parse_reply(json.dumps(payload), article, offered)
 
 
 def test_a_refusal_needs_no_style_or_brief():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, menus = _reply(article, styles, patch={
+    text, offered = _reply(article, styles, patch={
         1: {"refused": True, "styleId": "", "brief": None, "refusalReason": "hate insignia"}})
-    briefs = parse_reply(text, article, styles, menus)
+    briefs = parse_reply(text, article, offered)
     assert briefs[1].refused and briefs[1].refusal_reason == "hate insignia"
 
 

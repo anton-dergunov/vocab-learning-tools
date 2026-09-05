@@ -27,6 +27,7 @@ class SenseBrief:
     sense_id: str
     style_id: str
     anchor_example_id: str | None
+    subject: str
     brief: str
     refused: bool
     refusal_reason: str | None
@@ -43,13 +44,12 @@ def _example_payload(example: dict, anchor_id: str | None) -> dict[str, Any]:
 
 
 def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, float] | None = None) -> dict[str, Any]:
-    """Everything the writer sees about one word, including a style menu per sense."""
+    """Everything the writer sees about one word, and every style it may choose from."""
     lexeme = article.lexeme
     vocabulary = article.vocabulary or {}
     senses = []
     for sense in article.senses:
         anchor = sense.anchor
-        menu = styles.menu(sense.id, weights)
         senses.append(
             {
                 "senseId": sense.id,
@@ -58,10 +58,6 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
                 "glosses": sense.glosses,
                 "examples": [_example_payload(example, anchor.get("id") if anchor else None)
                              for example in sense.examples],
-                "styleMenu": [
-                    {"styleId": style.id, "label": style.label, "mono": style.mono}
-                    for style in menu
-                ],
             }
         )
     return {
@@ -76,12 +72,15 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
         "topics": article.topics,
         "glossLangs": vocabulary.get("glossLangs") or [],
         "senses": senses,
+        "styles": [
+            {"styleId": style.id, "label": style.label, "mono": style.mono}
+            for style in styles.offer(weights, rotate=article.id)
+        ],
     }
 
 
-def parse_reply(text: str, article: ArticleView, styles: StyleTable,
-                menus: dict[str, tuple[str, ...]]) -> list[SenseBrief]:
-    """Treat the reply as untrusted: a style off the menu or an unknown sense id is an error."""
+def parse_reply(text: str, article: ArticleView, offered: tuple[str, ...]) -> list[SenseBrief]:
+    """Treat the reply as untrusted: an unknown style or sense id is an error, not a nudge."""
     cleaned = FENCE.sub("", text.strip())
     try:
         payload = json.loads(cleaned)
@@ -102,19 +101,20 @@ def parse_reply(text: str, article: ArticleView, styles: StyleTable,
             raise ValueError(f"The brief writer named an unknown sense {sense_id!r}.")
         refused = bool(entry.get("refused"))
         if refused:
-            out.append(SenseBrief(sense_id, "", None, "", True,
+            out.append(SenseBrief(sense_id, "", None, "", "", True,
                                   str(entry.get("refusalReason") or "unstated")))
             continue
         style_id = str(entry.get("styleId", ""))
-        if style_id not in menus.get(sense_id, ()):  # off-menu is unreproducible, so it is an error
+        if style_id not in offered:  # an invented style names nothing, so it cannot be reproduced
             raise ValueError(
-                f"The brief writer chose {style_id!r} for sense {sense_id}, which was not on its menu."
+                f"The brief writer chose {style_id!r} for sense {sense_id}, which is not a style."
             )
         brief = str(entry.get("brief") or "").strip()
         if not brief:
             raise ValueError(f"The brief writer returned an empty brief for sense {sense_id}.")
         anchor = entry.get("anchorExampleId")
-        out.append(SenseBrief(sense_id, style_id, str(anchor) if anchor else None, brief, False, None))
+        out.append(SenseBrief(sense_id, style_id, str(anchor) if anchor else None,
+                              str(entry.get("subject") or "").strip(), brief, False, None))
 
     missing = known - {item.sense_id for item in out}
     if missing:
@@ -133,10 +133,7 @@ class BriefWriter:
 
     def write(self, article: ArticleView) -> tuple[list[SenseBrief], dict[str, Any]]:
         request = build_request(article, self.styles, self.weights)
-        menus = {
-            sense["senseId"]: tuple(item["styleId"] for item in sense["styleMenu"])
-            for sense in request["senses"]
-        }
+        offered = tuple(style["styleId"] for style in request["styles"])
         contents = f"{self.template}\n\n{json.dumps(request, ensure_ascii=False, indent=2)}\n"
         response = self.client.models.generate_content(
             model=self.model,
@@ -144,12 +141,12 @@ class BriefWriter:
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
         text = response.text or ""
-        briefs = parse_reply(text, article, self.styles, menus)
+        briefs = parse_reply(text, article, offered)
         usage = response.usage_metadata
         return briefs, {
             "model": self.model,
             "promptTokens": getattr(usage, "prompt_token_count", None),
             "outputTokens": getattr(usage, "candidates_token_count", None),
             "thoughtTokens": getattr(usage, "thoughts_token_count", None),
-            "menus": {sense_id: list(menu) for sense_id, menu in menus.items()},
+            "stylesOffered": len(offered),
         }

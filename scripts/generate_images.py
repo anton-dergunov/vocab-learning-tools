@@ -100,7 +100,7 @@ def command_check(args: argparse.Namespace) -> int:
 def command_plan(args: argparse.Namespace) -> int:
     articles = load_graph(args)
     store = Store(args.output)
-    jobs = plan(articles, store, redo=args.redo)
+    jobs = plan(articles, store, redo=args.redo, only=args.only.split(','))
     senses = sum(len(article.senses) for article in articles)
     print(f"{len(articles)} words, {senses} senses in scope"
           + (f" (language {args.language})" if args.language else ""))
@@ -122,7 +122,7 @@ def command_run(args: argparse.Namespace) -> int:
 
     articles = load_graph(args)
     store = Store(args.output)
-    jobs = plan(articles, store, redo=args.redo)
+    jobs = plan(articles, store, redo=args.redo, only=args.only.split(','))
     if args.limit:
         jobs = jobs[: args.limit]
     if not jobs:
@@ -179,6 +179,8 @@ def main() -> int:
         target.add_argument("--limit", type=int, default=0)
         target.add_argument("--redo", action="store_true",
                             help="Include senses that already have a picture.")
+        target.add_argument("--only", default="",
+                            help="Comma-separated headwords, sense ids or image ids to restrict to.")
 
     sub.add_parser("check", help="Say which Google account and prompt version a run would use")
 

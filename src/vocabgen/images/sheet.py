@@ -45,6 +45,10 @@ PAGE = """<!doctype html>
   .ex { font-size:13px; border-left:2px solid var(--line); padding-left:9px; }
   .ex i { color:var(--dim); font-style:normal; display:block; }
   .br { font-size:12.5px; color:var(--dim); }
+  .sb { font-size:12px; text-transform:uppercase; letter-spacing:.06em; font-weight:650; }
+  .pr { font-size:12px; color:var(--dim); }
+  .pr summary { cursor:pointer; }
+  .pr p { margin:7px 0 0; font:11.5px/1.55 ui-monospace, Menlo, monospace; }
   .st { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); }
   .row { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:2px; }
   label { font-size:13px; display:flex; gap:7px; align-items:center; cursor:pointer; user-select:none; }
@@ -84,7 +88,9 @@ CARD = """<figure>
     <div class="gl">{gloss}</div>
     <div class="df">{definition}</div>
     {example}
+    <div class="sb">{subject}</div>
     <div class="br">{brief}</div>
+    <details class="pr"><summary>prompt sent to the image model</summary><p>{prompt}</p></details>
     <div class="row">
       <span class="st">{style} · {seconds}s · {kib} KiB</span>
       <label><input type="checkbox" id="c-{id}" value="{id}" onchange="this.closest('figure').classList.toggle('out', this.checked)">reject</label>
@@ -129,6 +135,8 @@ def write_sheet(store: Store, output: Path | None = None) -> Path:
             definition=html.escape(run.get("definition") or ""),
             example=example,
             brief=html.escape(record.get("prompt") or ""),
+            subject=html.escape(run.get("subject") or ""),
+            prompt=html.escape(run.get("composedPrompt") or ""),
             style=html.escape(record.get("styleId") or ""),
             seconds=run.get("seconds", 0),
             kib=int(run.get("bytes", 0)) // 1024,
