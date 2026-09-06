@@ -15,7 +15,8 @@ That separation is the whole reason the pipeline has two calls.
 | [1](results/round-1.md) | 2026-09-05 | 14 | 7 rejected | The style must stop authoring the scene; the example sentence must be honoured; the meaning must be *depicted*, not implied |
 | [2](results/round-2.md) | 2026-09-05 | 14 redrawn + 3 | 16 of 17 kept | Exaggerate by adding to the subject, never by diminishing the scene; give aspect and modality a human situation; stop passing the owner's topics |
 | [3](results/round-3.md) | 2026-09-05 | 11 new | all 11 kept | Drama belongs to the rendering, not the stakes — match the sentence's register and let a light sentence be funny; a change of state needs both states in frame |
-| [4](results/round-4.md) | 2026-09-05 | 100 | in progress | — |
+| [4](results/round-4.md) | 2026-09-05 | 100 | 126 of 127 kept | Gender must be written into the brief; commit to a concrete situation before writing; take the joke; every style needs to say what it is for |
+| [5](results/round-5.md) | 2026-09-05 | 100 | 97 of 100 kept | The style hints backfired — stop sending them; text is banned only where it gives the answer away; draw the word, not only the sentence |
 
 ## Method
 

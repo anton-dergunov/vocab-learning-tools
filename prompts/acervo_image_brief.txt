@@ -85,6 +85,13 @@ emotion, and the learner already has a word for that. *Her voice was full of ven
 woman: it is her words leaving her mouth as a thin green corrosive vapour that blisters the varnish
 on the table, and her rival leaning away from it.
 
+**The subject is the word, not the sentence.** Honouring the sentence is step two; step one is that
+the picture teaches *this word*. *We need at least three people to start* is a sentence about a game,
+but the word is **at least** — so the picture must make a minimum visible: exactly three, the third
+being dragged in, no fourth. *How much will you charge?* is a scene in a repair shop, but the word is
+**charge** — so money changing hands or a price being named has to be the loudest thing in it. If you
+can draw the sentence without drawing the word, you have drawn the wrong picture.
+
 **Check your brief against the antonym.** If the picture could equally illustrate the opposite word,
 it has failed. A frightened woman among grapes at night does not depict *abundance*; it depicts
 scarcity, whatever the sentence said.
@@ -210,22 +217,31 @@ contrast is why each sense gets its own picture.
 **Reach past the safe ones.** `cinematic-photoreal` and `golden-hour` fit almost anything, which is
 exactly why they are easy to over-use, and a deck where every picture is a photograph stops being
 memorable — distinctiveness is what makes these images work at all. Treat them as the answer when
-nothing else genuinely suits, not as the first thing you reach for. If a scene would be *just as
-well* served by clay, woodblock, gouache or charcoal, use that instead. Fitness still wins: never
-choose a style that fights the sentence.
+nothing else genuinely suits, not as the first thing you reach for.
+
+**And do not settle into a new favourite.** Whatever style you found yourself choosing last, prefer
+a different one now unless this scene has a real reason for it. Every style in the list should turn
+up about as often as every other across many words; none is the house style. Fitness still wins —
+never choose a style that fights the sentence — but between two that both fit, take the rarer.
 
 ---
 
-## Never render text
+## Text: never the answer, otherwise as the scene requires
 
-No letters, captions, signage, labels, logos, watermarks, numbers, pseudo-text. Above all never the
-vocabulary word or its translation. A flashcard with the answer written on it is broken.
+The rule is not "no text". It is **never the answer**:
 
-**This binds your brief, not only the picture.** Do not put an object in the scene whose whole
-purpose is to display writing or numbers: a clock face, a countdown, a screen, a road sign, a price
-tag, a shop front, an open book with legible writing, a whiteboard. Asking for one and then asking
-for no text is a contradiction, and the model resolves it by drawing the text. If you want to show
-elapsed time, show it with light, wear or a shadow's length instead.
+- Never the vocabulary word, never its lemma, never a translation of it, never the example sentence.
+  A flashcard with the answer written on it is broken, and that is the whole reason for this rule.
+- Never a caption, label or title explaining the picture. The picture explains itself or it fails.
+
+Everything else is allowed when the scene genuinely calls for it. A ticket, a price on a till, a
+verb table on a classroom board, a clock, a street sign, a newspaper — if the situation is about one
+of those, put it in. Round 5 lost pictures to the old blanket ban: a lesson on conjugating irregular
+verbs became a man wrestling nothing, and return tickets became blank diagrams.
+
+Two cautions. Keep any lettering **short and incidental** — a few words at most, never a paragraph,
+because the model draws long text as mush. And it must be text that would be there anyway, not text
+doing the explaining.
 
 ## Writing the brief
 
@@ -234,6 +250,11 @@ person describing a picture they can see — no camera jargon, no keyword lists,
 adjectives, because the style text is appended for you.
 
 Say plainly what dominates and how the rest is arranged around it.
+
+**Every object you name has to earn its place.** A detail invented for texture — a heap of pink
+erasers across half the table — reads as significant precisely because you bothered to mention it,
+and pulls the eye away from the word. If it is not the subject, not from the sentence, and not
+needed to make the place legible, leave it out.
 
 ## What you must refuse
 

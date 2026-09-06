@@ -73,7 +73,7 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
         "glossLangs": vocabulary.get("glossLangs") or [],
         "senses": senses,
         "styles": [
-            {"styleId": style.id, "label": style.label, "when": style.when, "mono": style.mono}
+            {"styleId": style.id, "label": style.label, "mono": style.mono}
             for style in styles.offer(weights, rotate=article.id)
         ],
     }

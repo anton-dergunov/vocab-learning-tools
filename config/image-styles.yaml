@@ -78,8 +78,9 @@ styles:
     label: Art nouveau
     weight: 1
     brief: >-
-      art nouveau in the manner of Mucha, sinuous ornamental linework, muted jewel tones with gold
-      leaf, decorative arch framing the figure
+      art nouveau in the manner of Mucha, sinuous ornamental linework and flowing organic curves,
+      muted jewel tones with gold leaf, a decorative arch or halo of pattern behind the figure.
+      Suits any scene with a person at its centre, and lends elegance to an ordinary moment
     when: >-
       beauty, vanity, seduction, growth and ornament; anything botanical or sensuous, and abstract nouns that want an allegorical female figure
 
@@ -142,17 +143,20 @@ styles:
     label: Cut-paper diorama
     weight: 1
     brief: >-
-      a layered cut-paper diorama in a shallow box, real depth between the layers, crisp cast
-      shadows, textured card and tissue, raking side light
+      layered cut paper filling the whole frame, real depth between the layers, crisp cast shadows,
+      visibly fibrous card and translucent tissue, raking side light. Never a box, a shadow-box or a
+      picture frame around the scene — the paper IS the world, not an object sitting inside one
     when: >-
       structure and arrangement — rooms, layers, cross-sections, a thing shown as built
 
   retro-futurism:
-    label: 1970s sci-fi paperback
+    label: Retro-futurism
     weight: 1
     brief: >-
-      a 1970s science-fiction paperback cover, airbrushed gradients, muted offset-print palette with
-      visible halftone, vast scale against a small figure
+      a 1970s science-fiction paperback cover, airbrushed gradients, a muted offset-print palette
+      with visible halftone, dramatic scale and a confident optimistic mood. It renders an ordinary
+      modern scene as though it were the future someone once imagined, so it suits machinery,
+      travel, work and plans as readily as spacecraft
     when: >-
       ambition, machinery, travel, prediction and expertise; anything about the future, progress, or a plan on a grand scale
 

@@ -61,7 +61,7 @@ PAGE = """<!doctype html>
 </style>
 <header>
   <h1>Sense images</h1>
-  <span class="meta">__COUNT__ drawn · __REFUSED__ refused · __VERSION__</span>
+  <span class="meta">__COUNT__ drawn · __REFUSED__ refused · newest first · __VERSION__</span>
   <button onclick="build()">Build delete list</button>
 </header>
 <main>__CARDS__</main>
@@ -94,7 +94,7 @@ CARD = """<figure>
     <div class="br">{brief}</div>
     <details class="pr"><summary>prompt sent to the image model</summary><p>{prompt}</p></details>
     <div class="row">
-      <span class="st">{style} · {seconds}s · {kib} KiB</span>
+      <span class="st">{style} · {batch} · {kib} KiB</span>
       <label><input type="checkbox" id="c-{id}" value="{id}" onchange="this.closest('figure').classList.toggle('out', this.checked)">reject</label>
     </div>
   </div>
@@ -115,7 +115,19 @@ def write_sheet(store: Store, output: Path | None = None) -> Path:
         record = store.read(path)
         if record and record.get("imageRef") and store.is_drawn(record["id"]):
             records.append(record)
-    records.sort(key=lambda record: (record["run"]["headword"].lower(), record["run"]["senseOrder"]))
+    # Newest first. Alphabetical order scattered each round through the whole sheet, so reviewing
+    # "what changed" meant scrolling past everything already judged and guessing which was which.
+    for record in records:
+        record["_at"] = store.image_path(record["id"]).stat().st_mtime
+    records.sort(key=lambda record: -record["_at"])
+
+    # Label each image with the prompt revision that produced it, oldest v1, so a sheet mixing
+    # rounds says at a glance which is which.
+    versions = sorted({record["promptVersion"] for record in records},
+                      key=lambda version: min(r["_at"] for r in records
+                                              if r["promptVersion"] == version))
+    for record in records:
+        record["_batch"] = f"v{versions.index(record['promptVersion']) + 1}"
 
     cards = []
     for record in records:
@@ -141,12 +153,12 @@ def write_sheet(store: Store, output: Path | None = None) -> Path:
             situation=html.escape(run.get("situation") or ""),
             prompt=html.escape(run.get("composedPrompt") or ""),
             style=html.escape(record.get("styleId") or ""),
-            seconds=run.get("seconds", 0),
+            batch=html.escape(record["_batch"]),
             kib=int(run.get("bytes", 0)) // 1024,
         ))
 
     refused = len(list(store.refusals.glob("*.json")))
-    version = records[0]["promptVersion"] if records else ""
+    version = f"{len(versions)} prompt revisions, newest v{len(versions)}" if records else ""
     page = (PAGE
             .replace("__CARDS__", "\n".join(cards))
             .replace("__COUNT__", str(len(records)))

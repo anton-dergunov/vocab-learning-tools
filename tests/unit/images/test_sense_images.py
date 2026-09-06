@@ -90,12 +90,16 @@ def test_a_zero_weight_switches_a_style_off():
     assert {style.id for style in styles.offer(weights)} == {style.id for style in styles.styles[:2]}
 
 
-def test_every_style_says_what_it_is_for():
-    """Round 4 skipped three styles outright: nothing said what meaning they carried."""
+def test_the_style_hints_are_not_sent():
+    """Round 5: `when` was read as a matching rule, and two styles took 44% of the deck.
+
+    It stays in the file as a record of intent, but the writer chooses on the style's own
+    description and on the scene.
+    """
     styles = load_styles(STYLES)
-    assert all(style.when for style in styles.styles)
+    assert all(style.when for style in styles.styles)          # still documented
     request = build_request(build_articles(changes(), "es")[0], styles)
-    assert all(item["when"] for item in request["styles"])
+    assert all("when" not in item for item in request["styles"])
 
 
 def test_the_style_that_authored_scenes_is_gone():
