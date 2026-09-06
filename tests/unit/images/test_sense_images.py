@@ -90,6 +90,14 @@ def test_a_zero_weight_switches_a_style_off():
     assert {style.id for style in styles.offer(weights)} == {style.id for style in styles.styles[:2]}
 
 
+def test_every_style_says_what_it_is_for():
+    """Round 4 skipped three styles outright: nothing said what meaning they carried."""
+    styles = load_styles(STYLES)
+    assert all(style.when for style in styles.styles)
+    request = build_request(build_articles(changes(), "es")[0], styles)
+    assert all(item["when"] for item in request["styles"])
+
+
 def test_the_style_that_authored_scenes_is_gone():
     """Round 1: leaded glass implies a building, so it kept relocating the scene to a church."""
     assert "stained-glass" not in load_styles(STYLES)
@@ -142,7 +150,8 @@ def _reply(article, styles, **overrides) -> tuple[str, tuple[str, ...]]:
     offered = tuple(style.id for style in styles.offer())
     senses = [
         {"senseId": sense.id, "styleId": offered[index], "anchorExampleId": None,
-         "subject": "the thing", "brief": "A scene.", "refused": False, "refusalReason": None}
+         "situation": "A specific thing happening.", "subject": "the thing",
+         "brief": "A scene.", "refused": False, "refusalReason": None}
         for index, sense in enumerate(article.senses)
     ]
     for index, patch in overrides.get("patch", {}).items():
@@ -158,6 +167,7 @@ def test_a_well_formed_reply_parses():
     assert [item.sense_id for item in briefs] == [sense.id for sense in article.senses]
     assert all(not item.refused for item in briefs)
     assert briefs[0].subject == "the thing"
+    assert briefs[0].situation == "A specific thing happening."
 
 
 def test_a_fenced_reply_still_parses():
@@ -233,3 +243,19 @@ def test_a_sense_the_graph_already_holds_an_image_for_is_skipped(tmp_path: Path)
         **sync_fields(),
     }]
     assert len(plan(build_articles(payload, "es"), Store(tmp_path))) == 1
+
+
+def test_each_model_has_its_own_bucket():
+    """Measured: about one image per minute PER MODEL, so two models run at twice the rate."""
+    from vocabgen.images.pacing import ModelPool
+    pool = ModelPool([("lite", 1), ("flash", 1)])
+    assert sorted([pool.acquire(), pool.acquire()]) == ["flash", "lite"]
+    assert pool.gates["lite"].delay() > 0 and pool.gates["flash"].delay() > 0
+
+
+def test_a_quota_pause_is_per_model_not_pool_wide():
+    from vocabgen.images.pacing import ModelPool
+    pool = ModelPool([("lite", 60), ("flash", 60)])
+    pool.penalise("lite")
+    assert pool.gates["lite"].delay() > 0
+    assert pool.acquire() == "flash"      # the other model keeps working

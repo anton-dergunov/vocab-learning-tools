@@ -9,7 +9,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from google import genai
 from google.genai import types
@@ -30,16 +30,16 @@ class Rendered:
 
 
 class Renderer:
-    def __init__(self, client: genai.Client, model: str, aspect_ratio: str = "1:1",
+    def __init__(self, client: genai.Client, models: Sequence[str], aspect_ratio: str = "1:1",
                  image_size: str = "1K") -> None:
         self.client = client
-        self.model = model
+        self.models = tuple(models)
         self.aspect_ratio = aspect_ratio
         self.image_size = image_size
 
-    def draw(self, prompt: str, seed: int, output: Path) -> Rendered:
+    def draw(self, prompt: str, seed: int, output: Path, model: str) -> Rendered:
         response = self.client.models.generate_content(
-            model=self.model,
+            model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
@@ -59,7 +59,7 @@ class Renderer:
                     written = _save_webp(inline.data, output)
                     usage = response.usage_metadata
                     return Rendered(output, written, {
-                        "model": self.model,
+                        "model": model,
                         "promptTokens": getattr(usage, "prompt_token_count", None),
                         "outputTokens": getattr(usage, "candidates_token_count", None),
                         "totalTokens": getattr(usage, "total_token_count", None),

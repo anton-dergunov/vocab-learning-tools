@@ -26,6 +26,7 @@ class Style:
     id: str
     label: str
     brief: str
+    when: str
     weight: float
     mono: bool
 
@@ -87,6 +88,7 @@ def load_styles(path: str | Path) -> StyleTable:
                 id=str(style_id),
                 label=str(fields.get("label", style_id)),
                 brief=brief,
+                when=str(fields.get("when", "")).strip(),
                 weight=float(fields.get("weight", 1)),
                 mono=bool(fields.get("mono", False)),
             )

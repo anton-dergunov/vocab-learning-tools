@@ -27,6 +27,7 @@ class SenseBrief:
     sense_id: str
     style_id: str
     anchor_example_id: str | None
+    situation: str
     subject: str
     brief: str
     refused: bool
@@ -72,7 +73,7 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
         "glossLangs": vocabulary.get("glossLangs") or [],
         "senses": senses,
         "styles": [
-            {"styleId": style.id, "label": style.label, "mono": style.mono}
+            {"styleId": style.id, "label": style.label, "when": style.when, "mono": style.mono}
             for style in styles.offer(weights, rotate=article.id)
         ],
     }
@@ -101,7 +102,7 @@ def parse_reply(text: str, article: ArticleView, offered: tuple[str, ...]) -> li
             raise ValueError(f"The brief writer named an unknown sense {sense_id!r}.")
         refused = bool(entry.get("refused"))
         if refused:
-            out.append(SenseBrief(sense_id, "", None, "", "", True,
+            out.append(SenseBrief(sense_id, "", None, "", "", "", True,
                                   str(entry.get("refusalReason") or "unstated")))
             continue
         style_id = str(entry.get("styleId", ""))
@@ -116,6 +117,7 @@ def parse_reply(text: str, article: ArticleView, offered: tuple[str, ...]) -> li
         if anchor not in {example.get("id") for example in by_sense[sense_id].examples}:
             anchor = ""      # an id from another sense, or invented: it names nothing here
         out.append(SenseBrief(sense_id, style_id, anchor or None,
+                              str(entry.get("situation") or "").strip(),
                               str(entry.get("subject") or "").strip(), brief, False, None))
 
     missing = known - {item.sense_id for item in out}

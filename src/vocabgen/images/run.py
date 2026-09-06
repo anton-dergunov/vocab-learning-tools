@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections import Counter
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ from .brief import BriefWriter, SenseBrief
 from .compose import compose, prompt_version
 from .graph import ArticleView, SenseView
 from .ids import image_prompt_id, seed_for
-from .pacing import Pace, is_quota_error
+from .pacing import ModelPool, is_quota_error
 from .render import Rendered, RenderRefused, Renderer
 from .styles import StyleTable
 
@@ -119,15 +120,16 @@ class Runner:
         self.version = prompt_version(template_path, styles.digest)
         self.workers = workers
         self.attempts = max(1, attempts)
-        # The text calls are cheap and generous; the image model is the scarce one, so only it is
-        # paced. Both share the cooldown, because a quota refusal is about the project, not the model.
-        self.pace = Pace(rate_limit)
+        # The text calls are cheap and generous; the image models are the scarce ones, and each has
+        # its own bucket, so each gets its own gate and a job takes whichever is free soonest.
+        self.pace = ModelPool([(model, rate_limit) for model in renderer.models])
         self.report = report
         self._lock = threading.Lock()
         self._brief_locks: dict[str, threading.Lock] = {}
         self._refreshed: set[str] = set()
         self.stats = {"drawn": 0, "refused": 0, "failed": 0, "throttled": 0,
                       "briefTokens": 0, "imageTokens": 0}
+        self.by_model: Counter[str] = Counter()
 
     def _brief_lock(self, lexeme_id: str) -> threading.Lock:
         with self._lock:
@@ -151,7 +153,7 @@ class Runner:
                 return {
                     item["senseId"]: SenseBrief(
                         item["senseId"], item.get("styleId", ""), item.get("anchorExampleId"),
-                        item.get("subject", ""), item.get("brief", ""),
+                        item.get("situation", ""), item.get("subject", ""), item.get("brief", ""),
                         bool(item.get("refused")), item.get("refusalReason"),
                     )
                     for item in cached.get("senses", [])
@@ -167,7 +169,8 @@ class Runner:
                 "senses": [
                     {
                         "senseId": item.sense_id, "styleId": item.style_id,
-                        "anchorExampleId": item.anchor_example_id, "subject": item.subject,
+                        "anchorExampleId": item.anchor_example_id, "situation": item.situation,
+                        "subject": item.subject,
                         "brief": item.brief, "refused": item.refused,
                         "refusalReason": item.refusal_reason,
                     }
@@ -215,10 +218,10 @@ class Runner:
         drawn: Rendered | None = None
         failure = ""
         for attempt in range(1, self.attempts + 1):
-            self.pace.acquire()
+            model = self.pace.acquire()
             try:
-                drawn = self.renderer.draw(prompt, seed, self.store.image_path(job.prompt_id))
-                self.pace.succeeded()
+                drawn = self.renderer.draw(prompt, seed, self.store.image_path(job.prompt_id), model)
+                self.pace.succeeded(model)
                 break
             except RenderRefused as error:
                 # The provider looked at the prompt and declined. Retrying is pointless and costs
@@ -232,10 +235,10 @@ class Runner:
                 failure = str(error)
                 if not is_quota_error(error) or attempt == self.attempts:
                     break
-                delay = self.pace.penalise()
+                delay = self.pace.penalise(model)
                 with self._lock:
                     self.stats["throttled"] += 1
-                self.report(f"  ⏳ {label}: over quota, the pool waits {delay:.0f}s")
+                self.report(f"  ⏳ {label}: {model} over quota, it waits {delay:.0f}s")
 
         if drawn is None:
             self._record(job, brief, style.id, seed, prompt, attempts, None, failure, 0.0)
@@ -249,6 +252,7 @@ class Runner:
         with self._lock:
             self.stats["drawn"] += 1
             self.stats["imageTokens"] += int(drawn.usage.get("outputTokens") or 0)
+            self.by_model[str(drawn.usage.get("model") or "?")] += 1
         self.report(f"  ✓ {label} · {style.id} · {elapsed:.1f}s · {drawn.bytes_written // 1024} KiB")
 
     def _record(self, job: Job, brief: SenseBrief, style_id: str, seed: int, prompt: str,
@@ -274,7 +278,7 @@ class Runner:
             # `images/`, so a contact sheet and a Finder window are both easy to work in; the
             # import is what fans it out into per-lexeme directories.
             "imageRef": f"images/{article.id}/{job.prompt_id}.webp" if drawn else None,
-            "imageModelId": self.renderer.model if drawn else None,
+            "imageModelId": (drawn.usage.get("model") if drawn else None),
             "attempts": attempts,
             "failureReason": failure,
             "run": {
@@ -282,6 +286,7 @@ class Runner:
                 "language": article.language,
                 "topics": article.topics,
                 "senseOrder": sense.order,
+                "situation": brief.situation,
                 "subject": brief.subject,
                 "definition": sense.definition,
                 "glosses": sense.glosses,
@@ -299,4 +304,5 @@ class Runner:
         started = time.time()
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             list(pool.map(self._run_one, jobs))
-        return {**self.stats, "jobs": len(jobs), "seconds": round(time.time() - started, 1)}
+        return {**self.stats, "jobs": len(jobs), "byModel": self.by_model,
+                "seconds": round(time.time() - started, 1)}

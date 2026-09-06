@@ -4,6 +4,9 @@
 #
 # `brief` is spliced into the image prompt verbatim, so write art direction, not a label.
 # `weight` is the default sampling weight; per-owner weights will override it later.
+# `when` says what this style is FOR. Round 4 used 20 of 23 and skipped art-nouveau, manga-panel
+# and retro-futurism entirely: nothing in their wording said what meaning they carry, so the
+# writer never had a reason to reach for them.
 # `mono` marks a style with no colour to spend — the brief writer is told to avoid one when the
 # meaning depends on colour.
 #
@@ -23,6 +26,8 @@ styles:
     brief: >-
       a photorealistic cinematic still, 35mm anamorphic, shallow depth of field, dramatic key light
       with deep falloff, filmic colour grade, natural skin and material texture
+    when: >-
+      an everyday modern situation that needs no interpretation; the fallback when nothing else suits
 
   golden-hour:
     label: Golden-hour photography
@@ -30,6 +35,8 @@ styles:
     brief: >-
       naturalistic photography in low golden-hour sun, long warm rim light, soft haze in the air,
       rich shadow detail, gentle lens bloom
+    when: >-
+      warmth, affection, nostalgia, arrival, the end of a day
 
   oil-painting:
     label: Oil on canvas
@@ -37,6 +44,8 @@ styles:
     brief: >-
       thick impasto oil on canvas, visible loaded brushwork and palette-knife ridges, deep varnish
       tones, old-master lighting
+    when: >-
+      weight and dignity; craft, labour, portraits of a person in their element
 
   baroque-chiaroscuro:
     label: Baroque chiaroscuro
@@ -44,6 +53,8 @@ styles:
     brief: >-
       a baroque painting in the manner of Caravaggio, one hard light source out of deep black,
       sculpted flesh and fabric, theatrical gesture
+    when: >-
+      a single charged moment — confession, judgement, dread, revelation
 
   watercolour-storybook:
     label: Watercolour storybook
@@ -51,6 +62,8 @@ styles:
     brief: >-
       loose watercolour washes over confident ink linework, blooms and granulation in the pigment,
       warm paper grain, the warmth of a picture book for adults
+    when: >-
+      domestic warmth, childhood, small kindnesses, gentle comedy
 
   gouache-poster:
     label: Mid-century gouache poster
@@ -58,6 +71,8 @@ styles:
     brief: >-
       a mid-century travel poster painted in gouache, rich opaque colour, confident simplified
       forms with real painted texture, strong diagonal composition
+    when: >-
+      collective action and public life — crowds, work, civic scenes, announcements
 
   art-nouveau:
     label: Art nouveau
@@ -65,6 +80,8 @@ styles:
     brief: >-
       art nouveau in the manner of Mucha, sinuous ornamental linework, muted jewel tones with gold
       leaf, decorative arch framing the figure
+    when: >-
+      beauty, vanity, seduction, growth and ornament; anything botanical or sensuous, and abstract nouns that want an allegorical female figure
 
   ukiyo-e:
     label: Japanese woodblock
@@ -72,6 +89,8 @@ styles:
     brief: >-
       a Japanese ukiyo-e woodblock print, flat layered colour planes, Prussian blue and vermilion,
       visible woodgrain and registration edges, weather and motion stylised into pattern
+    when: >-
+      nature and weather as forces; water, fish, mountains, wind, and stylised violence
 
   anime-cel:
     label: Anime cel
@@ -79,6 +98,8 @@ styles:
     brief: >-
       a modern anime cel over a painted background, expressive face, crisp rim lighting, saturated
       skies, a single held dramatic moment
+    when: >-
+      adolescent feeling at full volume — embarrassment, crushes, determination, school life
 
   manga-panel:
     label: Manga panel
@@ -87,6 +108,8 @@ styles:
     brief: >-
       a single black-and-white manga panel, dense screentone, hard ink blacks, dramatic foreshortening
       and speed lines, one held expression
+    when: >-
+      a single shocking beat: a threat landing, a realisation, a blow beginning. Sound and speed with no colour to spend
 
   comic-book:
     label: Comic-book ink and halftone
@@ -94,6 +117,8 @@ styles:
     brief: >-
       American comic-book art, bold confident inks, benday halftone colour, heavy cast shadow, a low
       heroic camera angle
+    when: >-
+      bravado, heroics and physical action, and a punchline delivered with a straight face
 
   pixar-3d:
     label: 3D animated feature
@@ -101,6 +126,8 @@ styles:
     brief: >-
       a frame from a 3D animated feature, appealing stylised character design with large readable
       expression, soft global illumination, subsurface scattering, glossy production polish
+    when: >-
+      family, animals, appealing characters, and anything that should read as kind
 
   claymation:
     label: Stop-motion clay
@@ -108,6 +135,8 @@ styles:
     brief: >-
       a stop-motion plasticine set photographed with a macro lens, thumbprints and tool marks in the
       clay, tiny practical lights, visible felt and cardboard scenery
+    when: >-
+      everyday domestic objects and small absurdity; comfort with a handmade texture
 
   papercraft-diorama:
     label: Cut-paper diorama
@@ -115,6 +144,8 @@ styles:
     brief: >-
       a layered cut-paper diorama in a shallow box, real depth between the layers, crisp cast
       shadows, textured card and tissue, raking side light
+    when: >-
+      structure and arrangement — rooms, layers, cross-sections, a thing shown as built
 
   retro-futurism:
     label: 1970s sci-fi paperback
@@ -122,6 +153,8 @@ styles:
     brief: >-
       a 1970s science-fiction paperback cover, airbrushed gradients, muted offset-print palette with
       visible halftone, vast scale against a small figure
+    when: >-
+      ambition, machinery, travel, prediction and expertise; anything about the future, progress, or a plan on a grand scale
 
   film-noir:
     label: Film noir
@@ -130,6 +163,8 @@ styles:
     brief: >-
       high-contrast black-and-white film noir, venetian-blind shadows across the frame, wet street
       reflections, cigarette haze in a hard key light
+    when: >-
+      suspicion, surveillance, guilt, threat and secrecy
 
   surrealism:
     label: Surrealist dream logic
@@ -137,6 +172,8 @@ styles:
     brief: >-
       surrealism in the manner of Magritte and Dalí, one impossible juxtaposition rendered with
       complete photographic conviction, still air, an empty horizon
+    when: >-
+      an abstraction with no physical form — memory, doubt, obligation, time
 
   vintage-botanical:
     label: 19th-century engraved plate
@@ -144,6 +181,8 @@ styles:
     brief: >-
       a nineteenth-century engraved scientific plate, fine hatching, hand-tinted washes, aged rag
       paper, the specimen isolated and reverently observed
+    when: >-
+      a specimen observed closely: plants, food, animals, anatomy, taste and texture
 
   constructivist-poster:
     label: Constructivist poster
@@ -151,6 +190,8 @@ styles:
     brief: >-
       a constructivist poster, aggressive diagonal geometry, a limited palette of red, black and
       cream, photomontage fragments, monumental low-angle figure
+    when: >-
+      power, protest, labour, institutions and mass movement
 
   neon-cyberpunk:
     label: Neon night
@@ -158,6 +199,8 @@ styles:
     brief: >-
       a rain-slick neon night street, teal and magenta signage bleeding into volumetric haze, wet
       reflections, high dynamic range
+    when: >-
+      night, cities, speed, technology and emergency
 
   pixel-art:
     label: 16-bit pixel art
@@ -165,6 +208,8 @@ styles:
     brief: >-
       detailed 16-bit pixel art, a rich limited palette with careful dithering, chunky readable
       sprites in a densely furnished scene, side-lit
+    when: >-
+      games, systems, repetition and anything with rules or steps
 
   charcoal-sketch:
     label: Charcoal on toned paper
@@ -173,6 +218,8 @@ styles:
     brief: >-
       expressive charcoal and white chalk on toned grey paper, smudged tone, decisive dark accents,
       the paper left bare where the light falls
+    when: >-
+      grief, exhaustion, poverty and effort; a body under strain, with no colour to spend
 
   folk-naive:
     label: Naïve folk painting
@@ -180,3 +227,6 @@ styles:
     brief: >-
       a naïve folk painting, flattened perspective, decorative repeating pattern in the borders and
       fabrics, warm earthy palette, everything lovingly overfilled
+    when: >-
+      tradition, festivity, village and family life, and a story being told
+

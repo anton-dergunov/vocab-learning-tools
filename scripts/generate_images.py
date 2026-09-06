@@ -49,8 +49,21 @@ from vocabgen.images.styles import load_styles  # noqa: E402
 DEFAULT_OUTPUT = REPO_ROOT / "output" / "images"
 DEFAULT_STYLES = REPO_ROOT / "config" / "image-styles.yaml"
 DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "acervo_image_brief.txt"
-BRIEF_MODEL = "gemini-3.1-flash-lite"
-IMAGE_MODEL = "gemini-3.1-flash-lite-image"
+# The brief writer now reasons in two steps — commit to a concrete situation, then draw it — so it
+# gets the strongest Flash this project can reach rather than the Lite the capture hook uses. Text
+# calls are cheap and generously quota'd next to the images; the reasoning is what limits quality.
+# `gemini-3.1-flash` is NOT available here — check `models.list()` before changing this.
+BRIEF_MODEL = "gemini-3.8-flash"
+# Flash Lite alone by default: the cheapest of the three at roughly half the price of Flash, and
+# within a point of it in the finalist benchmark. Each image model has its own quota bucket, so
+# passing several to `--image-models` multiplies the rate — about one image per minute per model —
+# but it multiplies the bill too, and the budget is the binding constraint rather than the clock.
+IMAGE_MODELS = ("gemini-3.1-flash-lite-image",)
+IMAGE_COST_USD = {
+    "gemini-3.1-flash-lite-image": 0.0336,
+    "gemini-3.1-flash-image": 0.067,
+    "gemini-3-pro-image": 0.134,
+}
 
 
 def confirm_account(assume_yes: bool) -> preflight.Identity:
@@ -93,7 +106,8 @@ def command_check(args: argparse.Namespace) -> int:
     print(f"Styles          {len(styles.styles)} ({styles.digest})")
     print(f"Prompt version  {prompt_version(args.template, styles.digest)}")
     print(f"Brief model     {BRIEF_MODEL}")
-    print(f"Image model     {IMAGE_MODEL}")
+    for model in IMAGE_MODELS:
+        print(f"Image model     {model}  (~${IMAGE_COST_USD.get(model, 0):.4f}/image)")
     return 0
 
 
@@ -130,11 +144,12 @@ def command_run(args: argparse.Namespace) -> int:
         return 0
 
     styles = load_styles(args.styles)
+    models = tuple(m.strip() for m in args.image_models.split(",") if m.strip())
     client = make_client(project, args.location)
     runner = Runner(
         store=store,
-        writer=BriefWriter(client, BRIEF_MODEL, args.template, styles),
-        renderer=Renderer(client, IMAGE_MODEL),
+        writer=BriefWriter(client, args.brief_model, args.template, styles),
+        renderer=Renderer(client, models),
         styles=styles,
         template_path=args.template,
         workers=args.workers,
@@ -142,11 +157,16 @@ def command_run(args: argparse.Namespace) -> int:
         attempts=args.attempts,
     )
     print(f"Drawing {len(jobs)} senses · {args.workers} workers · "
-          f"{args.rate_limit or 'un'}capped per minute → {store.root}")
+          f"{len(models)} model(s) × {args.rate_limit or '∞'}/min → {store.root}")
     result = runner.run(jobs)
     print(f"\n{result['drawn']} drawn, {result['refused']} refused, {result['failed']} failed "
           f"in {result['seconds']}s ({result['throttled']} quota waits)")
     print(f"Image output tokens: {result['imageTokens']:,}")
+    spend = sum(IMAGE_COST_USD.get(model, 0) for model in result["byModel"].elements()) \
+        if hasattr(result["byModel"], "elements") else 0
+    for model, count in sorted(result["byModel"].items()):
+        print(f"  {count:>4} × {model}  ≈ ${count * IMAGE_COST_USD.get(model, 0):.2f}")
+    print(f"Estimated spend this run: ${spend:.2f}")
 
     sheet = write_sheet(store)
     print(f"Contact sheet: {sheet}")
@@ -190,9 +210,12 @@ def main() -> int:
     runner = sub.add_parser("run", help="Write briefs and draw pictures")
     graph_arguments(runner)
     runner.add_argument("--workers", type=int, default=3)
-    runner.add_argument("--rate-limit", type=int, default=10,
-                        help="Image calls per minute across the whole pool. 0 removes the gate.")
-    runner.add_argument("--attempts", type=int, default=5,
+    runner.add_argument("--rate-limit", type=int, default=1,
+                        help="Image calls per minute PER MODEL. Measured ceiling is 1. 0 removes it.")
+    runner.add_argument("--brief-model", default=BRIEF_MODEL)
+    runner.add_argument("--image-models", default=",".join(IMAGE_MODELS),
+                        help="Comma-separated image models. Each has its own quota bucket.")
+    runner.add_argument("--attempts", type=int, default=12,
                         help="Tries per sense when the project is over quota.")
     runner.add_argument("--project", default=os.environ.get("GOOGLE_CLOUD_PROJECT", ""))
     runner.add_argument("--location", default=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"))

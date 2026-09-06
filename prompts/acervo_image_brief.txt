@@ -14,6 +14,7 @@ Return one JSON object and nothing else. No prose, no code fences.
       "senseId": "7k2m9qx4wbz1af0",
       "styleId": "cinematic-photoreal",
       "anchorExampleId": "3jd8slq0zn5tv2c",
+      "situation": "A man at his own kitchen table has just been bitten by a snake he was handling.",
       "subject": "the venom",
       "brief": "A viper has struck a man's bare forearm on a kitchen table, and at each fang tip a single luminous chartreuse droplet swells, impossibly bright, beading down his skin. His face and the snake are dim; the two drops are the brightest things in the room.",
       "refused": false,
@@ -23,6 +24,34 @@ Return one JSON object and nothing else. No prose, no code fences.
 }
 
 Every sense you are given gets exactly one entry, in the order given.
+
+## Before the brief: commit to a situation
+
+`situation` is one plain sentence naming **a specific thing happening to specific people in a
+specific place**. Write it before the brief, and write the brief from it.
+
+This exists because of one recurring failure. Many example sentences name no situation at all —
+*your comment didn't bother me, on the contrary it helped me a lot*, *it was a bitter experience for
+everyone*, *I need to find out the truth*. Handed one of those, it is tempting to draw the *idea*:
+a floating arrow, a broken speech bubble, a symbolic shape. Those pictures are forgettable, because
+nothing happened in them.
+
+So do the opposite of generalising. Ask **where would a real person actually say this**, pick the
+most ordinary and recognisable answer, and put it in `situation`:
+
+| Sentence | Situation |
+|---|---|
+| Your comment didn't bother me, on the contrary it helped me a lot | Two colleagues after a design review; one had braced for offence and is thanking the other instead. |
+| It was a bitter experience for everyone | A five-a-side team in the changing room after losing a final they expected to win. |
+| I need to find out the truth | A woman at midnight reading her partner's phone, which she has never done before. |
+
+Then draw *that*. A concrete scene carrying an abstract word beats an abstract picture of it nearly
+every time.
+
+**Nearly.** Some abstractions genuinely land as an image — a memory dissolving as it leaves a mouth,
+a law being trodden into the ground. Keep an abstract treatment when it is **striking**: when it
+makes the viewer stop and work it out for a second. Reject it when it is merely *diagrammatic* —
+arrows, glows and symbols standing in for a scene you could not think of.
 
 ## The one rule
 
@@ -48,6 +77,7 @@ for someone to read this word off the picture, and put that in:
 | a hidden threat — *to lurk, to loom* | the threat itself **present in the frame** and visible to the viewer, even if not to the person in the scene |
 | speech or thought — *to advise, to dwell on, to protest* | a person **doing it**, mouth open, gesturing, another person receiving it |
 | a quantity — *to abound, scarce* | the quantity **against something for scale**, so it reads as much or little |
+| a change of state — *to lose weight, to ripen, to fade* | **both states in one frame**, so the difference itself is the subject: the belt's old worn notch beside the one now used, the waistband gathered in a fist, the faded half against the unfaded half |
 | an abstract quality — *bitterness, cosiness, disgrace* | the quality given a **physical presence**: a substance, a light, a temperature, a weight, a deformation of the space |
 
 That last one is the hardest and the most valuable. A face wearing an emotion is a picture of the
@@ -68,7 +98,12 @@ in, so the picture attaching to it is worth a great deal. **Draw that sentence.*
 
 Carry over every concrete fact it gives you, and do not contradict any of them:
 
-- **who** — how many people, and their gender and rough age if the sentence says
+- **who** — how many people, their rough age, and **their gender**. This one is not optional and it
+  is the failure that recurs most: the image model never sees the sentence, only your brief, so a
+  gender you do not write down is a gender that is lost. *Grab her*, *she has a broad knowledge*,
+  *he cheered up* — each of those must produce a brief that says "a woman", "she", "a man", "he" in
+  so many words. Take the gender from the original-language sentence first and its translation
+  second; where the original is genderless and the translation is not, follow the translation.
 - **where** — the place named, and indoors or out
 - **what** — the objects named. If the sentence says sofa, there is a sofa
 - **when** — the time of day and the era. A sentence about ordinary modern life gets an ordinary
@@ -91,6 +126,38 @@ fish. It is a **deep, full, wide** river that is nonetheless thick with them.
 
 Before you write, ask: *if I exaggerate this, what am I shrinking?* If the answer is anything the
 meaning depends on, exaggerate something else.
+
+### Take the joke when there is one
+
+Where a situation can be funny without becoming less clear, **make it funny**. A picture that makes
+someone snort is remembered; a competent one is not. This applies everywhere, not only to the
+grammatical senses: the guest count that has plainly outrun the food, the interview outfit that is
+catastrophically wrong, the man walking a girder to show he takes risks.
+
+Two limits. The illustration comes first — a joke that obscures the meaning is a failed picture, not
+a funny one. And the register still rules: a sentence about grief or harm is not a place for a gag.
+
+Ambiguous sentences are where this pays best. *Can you guess how old I am?* has no obvious scene,
+and the answer that works is the one with a joke in it.
+
+### Match the emotional stakes of the sentence
+
+Drama belongs to the **light, the composition, the scale and the style**. It does not belong to the
+**stakes**. Exaggerate how *visible* the meaning is, never how *serious* the situation is.
+
+*No me acuerdo* — "I don't remember" — is something people say twenty times a week about where they
+left their keys. Written as a man alone in a derelict room, head in his hands, something torn out of
+his mouth, it becomes a picture of trauma or dementia. The learner then has a long way to travel
+from that back to an ordinary phrase, and the picture has made the word harder, not easier.
+
+Read the register off the sentence and keep it. An ordinary sentence gets an ordinary situation,
+rendered vividly. A grave sentence may be grave. And where the sentence is light, **let the picture
+be funny** — a schoolboy caught blank in front of the class, a man patting every pocket in turn.
+Comedy is as memorable as anguish and far more often the truthful register.
+
+**When the sentence names no setting, choose an ordinary one.** A bare fragment like *No me acuerdo*
+is not an invitation to a symbolic void. Put it in a kitchen, a classroom, a bus stop. An empty
+decaying room is itself a claim about the meaning, and usually the wrong one.
 
 Only when a sense has **no examples at all** do you invent the scene, from the definition and the
 glosses. Set `anchorExampleId` to null in that case. Departing from an anchor that exists needs a
@@ -128,7 +195,13 @@ Then keep it in its place. The style controls medium, palette, light, brushwork 
 - the **clothing and props** — these come from the sentence, not from the style's period
 
 If honouring the sentence and honouring the style pull against each other, the sentence wins and you
-should pick a different style.
+should pick a different style. **A contemporary situation needs a style that can hold one.** A man
+waiting on his medical test results belongs in a modern clinic; baroque chiaroscuro will light that
+beautifully but keeps trying to make it a seventeenth-century one, so it is the wrong choice here
+even though it suits the dread. Check the period your situation implies before you commit.
+
+Each style comes with a `when` — the kind of meaning it carries best. Read it. A style you never
+reach for is a style the learner never sees.
 
 **Vary across the senses of one word.** You can see them all at once. Two senses of the same word
 should look nothing alike — different style, different setting, different palette — because that

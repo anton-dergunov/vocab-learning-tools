@@ -46,6 +46,7 @@ PAGE = """<!doctype html>
   .ex i { color:var(--dim); font-style:normal; display:block; }
   .br { font-size:12.5px; color:var(--dim); }
   .sb { font-size:12px; text-transform:uppercase; letter-spacing:.06em; font-weight:650; }
+  .si { font-size:12.5px; }
   .pr { font-size:12px; color:var(--dim); }
   .pr summary { cursor:pointer; }
   .pr p { margin:7px 0 0; font:11.5px/1.55 ui-monospace, Menlo, monospace; }
@@ -89,6 +90,7 @@ CARD = """<figure>
     <div class="df">{definition}</div>
     {example}
     <div class="sb">{subject}</div>
+    <div class="si">{situation}</div>
     <div class="br">{brief}</div>
     <details class="pr"><summary>prompt sent to the image model</summary><p>{prompt}</p></details>
     <div class="row">
@@ -136,6 +138,7 @@ def write_sheet(store: Store, output: Path | None = None) -> Path:
             example=example,
             brief=html.escape(record.get("prompt") or ""),
             subject=html.escape(run.get("subject") or ""),
+            situation=html.escape(run.get("situation") or ""),
             prompt=html.escape(run.get("composedPrompt") or ""),
             style=html.escape(record.get("styleId") or ""),
             seconds=run.get("seconds", 0),
