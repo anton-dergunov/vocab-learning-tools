@@ -217,9 +217,30 @@ Sampling is weighted random without replacement, seeded from `senseId`, so re-ru
 proposes the same menu and the whole stage is idempotent. Within one lexeme the writer is told not
 to pick the same style twice.
 
-**Weights are per owner.** For the local phase they live in the run's config file. Where they live
-in the product is deferred — see §11 — but not on the device: generation runs on the server, so the
-weights have to be server state, unlike the editor's wrapping preference.
+### What the owner controls
+
+Two settings, and deliberately not a third. Rounds 1–7 tried weights, a sampled three-style menu, and
+per-style applicability hints; what survived is that the owner should say *which styles exist for
+them* and *how adventurously to choose among them*, and nothing finer.
+
+| Control | Shape | Default |
+|---|---|---|
+| **The styles** | one switch per style, on or off. A style switched off is never offered. | all on |
+| **Boost variety** | one switch. On, each style is presented with a few of its example subjects, sampled per word, which pushes the writer toward styles it would otherwise pass over. Off, styles are offered on their own descriptions alone. | **on** |
+
+No per-style weight, no sampling temperature. A weight is a number nobody can set meaningfully
+without running a few hundred images and counting, which is what the histogram in
+`experiments/sense-images/` is for and not what a settings screen is for.
+
+**Boost variety defaults to on** because both modes were reviewed and both produce good pictures.
+Round 6 (off) was judged *"on point, and not uniform"*; round 7 (on) was judged less predictable and
+equally apt, with two styles appearing that had never been chosen in 300 images. On is the more
+interesting of two good options, and the switch exists because the distinction is genuinely a matter
+of taste rather than of correctness.
+
+**These are per owner, and therefore server state.** Generation runs on the server, so unlike the
+editor's wrapping preference they cannot live on the device. For the local phase they live in the
+run's config file; where they live in the product is §11.
 
 ---
 
@@ -452,8 +473,9 @@ Settled in review:
 
 Still open:
 
-1. **Where do per-owner style weights live?** Needs server-side owner state, and there is no
-   preferences collection. Decide before Phase D, not before then.
+1. **Where do the two style settings live?** (§05 — the style switches and "boost variety".) Needs
+   server-side owner state, and there is no preferences collection. Decide before Phase D, not
+   before then.
 2. **Does the quota increase come through?** Everything about the schedule depends on it (§10).
 3. **Do the abstract senses actually work as mnemonics?** The briefs read well and the pictures are
    beautiful; whether a glowing knot of woven threads recalls *abundar en un tema* specifically, or

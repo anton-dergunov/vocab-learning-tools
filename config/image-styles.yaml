@@ -121,17 +121,18 @@ styles:
     weight: 1
     brief: >-
       art nouveau in the manner of Mucha, sinuous ornamental linework and flowing organic curves,
-      muted jewel tones with gold leaf, a decorative arch or halo of pattern behind the figure.
-      Suits any scene with a person at its centre, and lends elegance to an ordinary moment
+      muted jewel tones with gold leaf, a decorative arch or halo of pattern behind the figure. The
+      ornament stays behind and around the subject and never competes with it: the pattern frames
+      what matters rather than filling the frame
     when:
-      - a person absorbed in something beautiful
-      - hair, fabric or smoke moving in one continuous line
-      - a woman at a mirror
-      - flowers outgrowing their container
-      - an invitation extended
-      - someone dressed for an evening out
-      - a body relaxing into comfort
-      - a moment made ceremonial by attention
+      - something growing or spreading in one continuous line
+      - a gesture that deserves to be treated as ceremony
+      - vanity, seduction or self-regard
+      - an ordinary act given more grandeur than it has earned
+      - flowers or hair outgrowing what should contain them
+      - an invitation, an offer, a temptation
+      - a person who knows they are being looked at
+      - beauty used as an argument
 
   ukiyo-e:
     label: Japanese woodblock

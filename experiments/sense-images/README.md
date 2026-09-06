@@ -18,6 +18,7 @@ That separation is the whole reason the pipeline has two calls.
 | [4](results/round-4.md) | 2026-09-05 | 100 | 126 of 127 kept | Gender must be written into the brief; commit to a concrete situation before writing; take the joke; every style needs to say what it is for |
 | [5](results/round-5.md) | 2026-09-05 | 100 | 97 of 100 kept | The style hints backfired — stop sending them; text is banned only where it gives the answer away; draw the word, not only the sentence |
 | [6](results/round-6.md) | 2026-09-06 | ~100 | 98 of 100 kept | The original-language definition outranks the English gloss; check the situation back before drawing it; a metaphor's vehicle must not read as something else |
+| [7](results/round-7.md) | 2026-09-06 | 84 | 83 of 84 kept | Sampled hints work — keep both modes as a setting; keep the cast small so a bystander cannot outrank the subject; the style must not be doing the explaining |
 
 ## Method
 
