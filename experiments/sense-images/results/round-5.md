@@ -92,3 +92,48 @@ Added: if you can draw the sentence without drawing the word, you have drawn the
 - **The contact sheet is now newest-first and labels each image with its prompt revision.**
   Alphabetical order scattered each round through the whole sheet, so reviewing "what changed" meant
   scrolling past everything already judged and guessing which was which.
+
+---
+
+## Measured: the hints were not the cause
+
+![Style distribution across three eras](style-distribution.png)
+
+`style_distribution.py` in this directory rebuilds the chart from the run directory. Three eras,
+each as a share of itself because they differ in size.
+
+| | styles used | top two |
+|---|---:|---:|
+| before hints (n=125) | 20/22 | 35% · gouache-poster, baroque-chiaroscuro |
+| with hints (n=100) | 17/22 | 43% · claymation, comic-book |
+| hints removed (n=499) | 20/22 | **45%** · gouache-poster, comic-book |
+
+**Concentration is not something the hints introduced.** It is present in every era; only the
+identity of the favourite changes. Removing the hints produced the *most* concentrated distribution
+of the three, not the least. The writer converges on two or three styles whatever the input, and the
+round-5 diagnosis — "the hints caused the collapse" — was reading a coincidence of timing as a
+cause.
+
+Two things the hints genuinely did do:
+
+- **`manga-panel` was unstuck by them** — 0 before, 2 with, 3 after — and stayed unstuck.
+- **`art-nouveau` was not.** It stayed at 0 through the hints era and only appeared (8, 1.6%) after
+  its *description* was broadened. The description is the lever that works; the hint was not.
+
+## The redesign: hints as a shifting sample
+
+The reviewer's proposal, and it addresses the real mechanism rather than the coincidence. `when`
+becomes a list of eight concrete subjects per style — 184 in all — and each request shows **three of
+them, sampled per lexeme**.
+
+A style therefore presents differently from word to word, so it cannot be matched against: the fixed
+sentence "everyday domestic objects and small absurdity" was a rule the writer could apply, whereas
+"food that has gone wrong / a queue of small identical things / furniture being moved through a
+doorway" is a reminder of what clay can do. The template now says so explicitly — associations, not
+a lookup table; a style whose `suits` name your scene may still be the wrong choice.
+
+The prediction to test next round: variety improves relative to the 45% top-two, and the
+on-pointness the reviewer valued in the hints era returns. If concentration holds at ~45% regardless,
+the next lever is structural rather than textual — offer a *subset* of styles per lexeme, say eight
+of twenty-three, which guarantees spread arithmetically while leaving the choice on fitness. That is
+round 1's menu idea with a weak enough constraint to avoid round 1's failure.

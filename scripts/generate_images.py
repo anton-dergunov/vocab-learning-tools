@@ -176,7 +176,7 @@ def command_run(args: argparse.Namespace) -> int:
 
 
 def command_sheet(args: argparse.Namespace) -> int:
-    sheet = write_sheet(Store(args.output))
+    sheet = write_sheet(Store(args.output), args.to, args.limit)
     print(sheet)
     if args.open:
         webbrowser.open(sheet.as_uri())
@@ -223,6 +223,8 @@ def main() -> int:
     runner.add_argument("--open", action="store_true", help="Open the contact sheet when finished")
 
     sheet = sub.add_parser("sheet", help="Rebuild the contact sheet from what is on disk")
+    sheet.add_argument("--limit", type=int, default=0, help="Show only the newest N images.")
+    sheet.add_argument("--to", type=Path, default=None, help="Write somewhere other than sheet.html.")
     sheet.add_argument("--open", action="store_true")
 
     args = parser.parse_args()

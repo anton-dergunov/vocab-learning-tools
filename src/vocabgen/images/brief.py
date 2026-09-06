@@ -54,7 +54,10 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
         senses.append(
             {
                 "senseId": sense.id,
+                # Named so the writer can see that the definition is in the language being learned
+                # and the glosses are not: the definition rules, the glosses are hints.
                 "definition": sense.definition,
+                "definitionLang": sense.definition_lang,
                 "domain": sense.domain,
                 "glosses": sense.glosses,
                 "examples": [_example_payload(example, anchor.get("id") if anchor else None)
@@ -73,7 +76,8 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
         "glossLangs": vocabulary.get("glossLangs") or [],
         "senses": senses,
         "styles": [
-            {"styleId": style.id, "label": style.label, "mono": style.mono}
+            {"styleId": style.id, "label": style.label, "mono": style.mono,
+             "suits": list(styles.hints(style, article.id))}
             for style in styles.offer(weights, rotate=article.id)
         ],
     }

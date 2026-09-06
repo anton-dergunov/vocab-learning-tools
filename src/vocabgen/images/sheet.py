@@ -109,7 +109,7 @@ def _gloss(glosses: list[dict]) -> str:
     return ""
 
 
-def write_sheet(store: Store, output: Path | None = None) -> Path:
+def write_sheet(store: Store, output: Path | None = None, limit: int = 0) -> Path:
     records = []
     for path in sorted(store.records.glob("*.json")):
         record = store.read(path)
@@ -129,8 +129,11 @@ def write_sheet(store: Store, output: Path | None = None) -> Path:
     for record in records:
         record["_batch"] = f"v{versions.index(record['promptVersion']) + 1}"
 
+    # Newest N, so a sample of the most recent run can be reviewed without the whole archive.
+    shown = records[:limit] if limit else records
+
     cards = []
-    for record in records:
+    for record in shown:
         run = record["run"]
         anchor = run.get("anchorExample")
         example = ""
@@ -161,7 +164,7 @@ def write_sheet(store: Store, output: Path | None = None) -> Path:
     version = f"{len(versions)} prompt revisions, newest v{len(versions)}" if records else ""
     page = (PAGE
             .replace("__CARDS__", "\n".join(cards))
-            .replace("__COUNT__", str(len(records)))
+            .replace("__COUNT__", f"{len(shown)} of {len(records)}" if limit else str(len(records)))
             .replace("__REFUSED__", str(refused))
             .replace("__VERSION__", html.escape(version))
             .replace("__ROOT__", json.dumps(str(store.root.resolve()))))

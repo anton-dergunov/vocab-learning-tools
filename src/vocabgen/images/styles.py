@@ -14,11 +14,14 @@ directly instead, and whether that is enough is the open question round 2 measur
 from __future__ import annotations
 
 import hashlib
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
 import yaml
+
+HINT_SAMPLE = 3
 
 
 @dataclass(frozen=True)
@@ -26,7 +29,7 @@ class Style:
     id: str
     label: str
     brief: str
-    when: str
+    when: tuple[str, ...]
     weight: float
     mono: bool
 
@@ -42,6 +45,21 @@ class StyleTable:
 
     def __contains__(self, style_id: object) -> bool:
         return style_id in self._by_id
+
+    def hints(self, style: Style, key: str, count: int = HINT_SAMPLE) -> tuple[str, ...]:
+        """A few of this style's example subjects, varying per lexeme.
+
+        Round 5 sent every style's whole `when` as one sentence and the writer used it as a lookup
+        table: "everyday domestic objects" matched most sentences, so most sentences became clay.
+        A short sample instead means the same style presents differently from word to word, so it
+        cannot be matched on, while the associations that made its choices feel apt are still there.
+        """
+        if not style.when:
+            return ()
+        rng = random.Random(
+            int.from_bytes(hashlib.sha256(f"{key}:{style.id}".encode()).digest()[:8], "big")
+        )
+        return tuple(rng.sample(style.when, min(count, len(style.when))))
 
     def offer(self, weights: Mapping[str, float] | None = None,
               rotate: str | None = None) -> tuple[Style, ...]:
@@ -88,7 +106,7 @@ def load_styles(path: str | Path) -> StyleTable:
                 id=str(style_id),
                 label=str(fields.get("label", style_id)),
                 brief=brief,
-                when=str(fields.get("when", "")).strip(),
+                when=tuple(str(item).strip() for item in (fields.get("when") or []) if str(item).strip()),
                 weight=float(fields.get("weight", 1)),
                 mono=bool(fields.get("mono", False)),
             )

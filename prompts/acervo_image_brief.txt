@@ -25,6 +25,26 @@ Return one JSON object and nothing else. No prose, no code fences.
 
 Every sense you are given gets exactly one entry, in the order given.
 
+## The word means what it means in its own language
+
+You are given the headword, its definition **in the language being learned**, and glosses into other
+languages. **The definition in the original language is the authority. The glosses are hints, and
+they can mislead you.**
+
+An English gloss is a rough handle, chosen because it is close, not because it is equivalent. Its
+own metaphors are not the word's metaphors, and reaching for them produces a picture of the *gloss*
+rather than of the word.
+
+That is a real failure. *Estar fundado* is defined as *tener su base, origen o justificación
+principal en algo determinado* — to have its basis or justification in something. Nothing in it is
+physical, and nothing is about earth. Glossed as "to be grounded in", the picture became a man in a
+sub-basement beside bedrock pillars: an illustration of the English word *ground*, not of the
+Spanish one.
+
+So read the original definition first and let it rule. When gloss and definition pull apart, follow
+the definition. When the gloss carries an image the definition does not, that image is not yours to
+use.
+
 ## Before the brief: commit to a situation
 
 `situation` is one plain sentence naming **a specific thing happening to specific people in a
@@ -47,6 +67,12 @@ most ordinary and recognisable answer, and put it in `situation`:
 
 Then draw *that*. A concrete scene carrying an abstract word beats an abstract picture of it nearly
 every time.
+
+**Read your situation back against the word before you write the brief.** Each step invents a
+little, and the inventions compound: the sentence suggests a situation, the situation suggests a
+scene, the scene suggests detail, and four steps later the picture is about something else. Ask
+plainly: *does this situation still show what the original definition says?* If it has drifted, fix
+the situation — do not carry on and elaborate the drift.
 
 **Nearly.** Some abstractions genuinely land as an image — a memory dissolving as it leaves a mouth,
 a law being trodden into the ground. Keep an abstract treatment when it is **striking**: when it
@@ -92,6 +118,17 @@ being dragged in, no fourth. *How much will you charge?* is a scene in a repair 
 **charge** — so money changing hands or a price being named has to be the loudest thing in it. If you
 can draw the sentence without drawing the word, you have drawn the wrong picture.
 
+**A metaphor is only as good as the thing you pick to carry it.** Giving an abstraction a body works,
+but the body must not read as something else. *Estar hasta las narices* — fed up — became a commuter
+buried to the nose in bus tickets, and the pile reads as banknotes: the picture says "rich" or
+"corrupt" before it says "fed up". Choose your object, then look at it cold and ask what a stranger
+would call it. If the honest answer is a different word, pick a different object.
+
+**Small reinforcing props are worth adding.** One extra element that quietly restates the meaning
+makes a picture land harder — a thick rope looped between two people at a family dinner, for
+*strengthening bonds*. It must be a second voice saying the same thing, never a new idea competing
+with the subject.
+
 **Check your brief against the antonym.** If the picture could equally illustrate the opposite word,
 it has failed. A frightened woman among grapes at night does not depict *abundance*; it depicts
 scarcity, whatever the sentence said.
@@ -115,6 +152,12 @@ Carry over every concrete fact it gives you, and do not contradict any of them:
 - **what** — the objects named. If the sentence says sofa, there is a sofa
 - **when** — the time of day and the era. A sentence about ordinary modern life gets an ordinary
   modern setting
+
+**Carry the facts; do not enlarge the asides.** A qualifier like *every day*, *a little*, *always* or
+*again* is usually the sentence's texture, not its subject. *Waiting for the bus every day* wants one
+weary person at one bus stop, not a heap of tickets from every previous day, and heaping them buries
+the picture in a detail nobody asked about. The exception is when the qualifier **is** the target
+word — *a menudo* is the frequency, and there the repetition is the whole picture.
 
 ### Exaggerate by adding to the subject, never by diminishing the scene
 
@@ -146,6 +189,11 @@ a funny one. And the register still rules: a sentence about grief or harm is not
 
 Ambiguous sentences are where this pays best. *Can you guess how old I am?* has no obvious scene,
 and the answer that works is the one with a joke in it.
+
+**Wordplay counts as a joke.** When a word is abstract, or is a bare number or a function word with
+nothing to picture, a pun or a near-rhyme on the word itself can be a stronger hook than any literal
+scene — that is how people actually remember vocabulary. Build the scene around the pun. Only in the
+language being learned, or in the learner's own; never a pun that needs a third language explained.
 
 ### Match the emotional stakes of the sentence
 
@@ -207,8 +255,11 @@ waiting on his medical test results belongs in a modern clinic; baroque chiarosc
 beautifully but keeps trying to make it a seventeenth-century one, so it is the wrong choice here
 even though it suits the dread. Check the period your situation implies before you commit.
 
-Each style comes with a `when` — the kind of meaning it carries best. Read it. A style you never
-reach for is a style the learner never sees.
+Each style carries a few examples under `suits` — scenes it has served well. **They are associations,
+not a lookup table.** They are a small, shifting sample of a longer list, so they are there to remind
+you what a style can do, never to be matched against your sentence. A style whose `suits` say nothing
+about your scene may still be the right one; a style whose `suits` seem to name your scene may still
+be the wrong one. Choose on what the picture needs.
 
 **Vary across the senses of one word.** You can see them all at once. Two senses of the same word
 should look nothing alike — different style, different setting, different palette — because that
@@ -239,9 +290,14 @@ verb table on a classroom board, a clock, a street sign, a newspaper — if the 
 of those, put it in. Round 5 lost pictures to the old blanket ban: a lesson on conjugating irregular
 verbs became a man wrestling nothing, and return tickets became blank diagrams.
 
-Two cautions. Keep any lettering **short and incidental** — a few words at most, never a paragraph,
-because the model draws long text as mush. And it must be text that would be there anyway, not text
+Three cautions. Keep any lettering **short and incidental** — a few words at most, never a paragraph,
+because the model draws long text as mush. It must be text that would be there anyway, not text
 doing the explaining.
+
+And **never specify the exact words or figures.** The image model cannot render a given string
+reliably: ask for "a price on the till display", not "€85"; "a page of verb forms", not the verbs
+themselves. Say what kind of writing is there and let it be whatever it turns out to be. Nothing in
+these pictures ever depends on a reader being able to make out a particular number.
 
 ## Writing the brief
 

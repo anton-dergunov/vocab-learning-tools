@@ -24,10 +24,17 @@ styles:
     label: Cinematic photograph
     weight: 1
     brief: >-
-      a photorealistic cinematic still, 35mm anamorphic, shallow depth of field, dramatic key light
-      with deep falloff, filmic colour grade, natural skin and material texture
-    when: >-
-      an everyday modern situation that needs no interpretation; the fallback when nothing else suits
+      a photorealistic cinematic still, 35mm anamorphic, shallow depth of field, dramatic key
+      light with deep falloff, filmic colour grade, natural skin and material texture
+    when:
+      - a phone call that changes someone's day
+      - a stranger asking for directions
+      - waiting in a corridor for news
+      - a small kindness between commuters
+      - an argument overheard in a car park
+      - the moment a decision is made at a kitchen table
+      - someone arriving home later than they said
+      - a queue that has stopped moving
 
   golden-hour:
     label: Golden-hour photography
@@ -35,8 +42,15 @@ styles:
     brief: >-
       naturalistic photography in low golden-hour sun, long warm rim light, soft haze in the air,
       rich shadow detail, gentle lens bloom
-    when: >-
-      warmth, affection, nostalgia, arrival, the end of a day
+    when:
+      - a reunion at an airport gate
+      - the last hour of a long drive
+      - a grandmother teaching a grandchild something
+      - the walk home after a good day
+      - two people who have run out of things to say, comfortably
+      - a field at the end of harvest
+      - a dog waiting at a gate
+      - the first warm day of the year
 
   oil-painting:
     label: Oil on canvas
@@ -44,8 +58,15 @@ styles:
     brief: >-
       thick impasto oil on canvas, visible loaded brushwork and palette-knife ridges, deep varnish
       tones, old-master lighting
-    when: >-
-      weight and dignity; craft, labour, portraits of a person in their element
+    when:
+      - a craftsman at the moment of judgement over their work
+      - a portrait of someone defined by their trade
+      - hands that have done one job for forty years
+      - a meal laid out before anyone sits down
+      - a person alone in the room they built
+      - an old animal being fed
+      - the weight of an inherited object
+      - someone dressed up for an occasion that matters
 
   baroque-chiaroscuro:
     label: Baroque chiaroscuro
@@ -53,8 +74,15 @@ styles:
     brief: >-
       a baroque painting in the manner of Caravaggio, one hard light source out of deep black,
       sculpted flesh and fabric, theatrical gesture
-    when: >-
-      a single charged moment — confession, judgement, dread, revelation
+    when:
+      - a confession nobody expected
+      - the instant a lie is caught
+      - a letter read by one candle
+      - someone deciding whether to open a door
+      - an accusation across a table
+      - a person praying who does not usually pray
+      - the second before a blow
+      - grief arriving late at night
 
   watercolour-storybook:
     label: Watercolour storybook
@@ -62,8 +90,15 @@ styles:
     brief: >-
       loose watercolour washes over confident ink linework, blooms and granulation in the pigment,
       warm paper grain, the warmth of a picture book for adults
-    when: >-
-      domestic warmth, childhood, small kindnesses, gentle comedy
+    when:
+      - a child negotiating with a parent
+      - a cat that has knocked something over
+      - a picnic in weather that turned
+      - learning to ride a bicycle
+      - a shop where the owner knows everyone
+      - a small animal in a large kitchen
+      - a bedtime that is being postponed
+      - a neighbour returning something borrowed
 
   gouache-poster:
     label: Mid-century gouache poster
@@ -71,8 +106,15 @@ styles:
     brief: >-
       a mid-century travel poster painted in gouache, rich opaque colour, confident simplified
       forms with real painted texture, strong diagonal composition
-    when: >-
-      collective action and public life — crowds, work, civic scenes, announcements
+    when:
+      - a crowd moving with one purpose
+      - a public announcement being read
+      - the opening of something new
+      - a queue of people who all came for the same thing
+      - a shift changing at a factory gate
+      - a market at its busiest hour
+      - a team photographed before a match
+      - people boarding a train together
 
   art-nouveau:
     label: Art nouveau
@@ -81,8 +123,15 @@ styles:
       art nouveau in the manner of Mucha, sinuous ornamental linework and flowing organic curves,
       muted jewel tones with gold leaf, a decorative arch or halo of pattern behind the figure.
       Suits any scene with a person at its centre, and lends elegance to an ordinary moment
-    when: >-
-      beauty, vanity, seduction, growth and ornament; anything botanical or sensuous, and abstract nouns that want an allegorical female figure
+    when:
+      - a person absorbed in something beautiful
+      - hair, fabric or smoke moving in one continuous line
+      - a woman at a mirror
+      - flowers outgrowing their container
+      - an invitation extended
+      - someone dressed for an evening out
+      - a body relaxing into comfort
+      - a moment made ceremonial by attention
 
   ukiyo-e:
     label: Japanese woodblock
@@ -90,8 +139,15 @@ styles:
     brief: >-
       a Japanese ukiyo-e woodblock print, flat layered colour planes, Prussian blue and vermilion,
       visible woodgrain and registration edges, weather and motion stylised into pattern
-    when: >-
-      nature and weather as forces; water, fish, mountains, wind, and stylised violence
+    when:
+      - weather arriving before people notice
+      - water doing something dangerous
+      - a mountain that dwarfs the road
+      - fish, birds or insects in numbers
+      - a bridge in the rain
+      - wind taking something away
+      - a wave about to break
+      - travellers on a road in bad conditions
 
   anime-cel:
     label: Anime cel
@@ -99,27 +155,48 @@ styles:
     brief: >-
       a modern anime cel over a painted background, expressive face, crisp rim lighting, saturated
       skies, a single held dramatic moment
-    when: >-
-      adolescent feeling at full volume — embarrassment, crushes, determination, school life
+    when:
+      - being caught looking at someone
+      - a promise made too loudly
+      - embarrassment in front of a class
+      - a friendship repaired
+      - running to be somewhere on time
+      - the summer heat as a physical enemy
+      - a small triumph nobody else noticed
+      - someone psyching themselves up
 
   manga-panel:
     label: Manga panel
     weight: 1
     mono: true
     brief: >-
-      a single black-and-white manga panel, dense screentone, hard ink blacks, dramatic foreshortening
-      and speed lines, one held expression
-    when: >-
-      a single shocking beat: a threat landing, a realisation, a blow beginning. Sound and speed with no colour to spend
+      a single black-and-white manga panel, dense screentone, hard ink blacks, dramatic
+      foreshortening and speed lines, one held expression
+    when:
+      - a threat landing
+      - the instant of realisation
+      - someone bracing for impact
+      - a door opening onto something wrong
+      - a shout that stops a room
+      - a hand grabbing a wrist
+      - an unbearable silence between two people
+      - the moment before running
 
   comic-book:
     label: Comic-book ink and halftone
     weight: 1
     brief: >-
-      American comic-book art, bold confident inks, benday halftone colour, heavy cast shadow, a low
-      heroic camera angle
-    when: >-
-      bravado, heroics and physical action, and a punchline delivered with a straight face
+      American comic-book art, bold confident inks, benday halftone colour, heavy cast shadow, a
+      low heroic camera angle
+    when:
+      - someone doing something reckless with total confidence
+      - a rescue that is going badly
+      - a boast being tested
+      - physical comedy at full speed
+      - an ordinary person acting like a hero
+      - a plan going wrong mid-execution
+      - a chase through somewhere unsuitable
+      - a dramatic entrance
 
   pixar-3d:
     label: 3D animated feature
@@ -127,38 +204,69 @@ styles:
     brief: >-
       a frame from a 3D animated feature, appealing stylised character design with large readable
       expression, soft global illumination, subsurface scattering, glossy production polish
-    when: >-
-      family, animals, appealing characters, and anything that should read as kind
+    when:
+      - an animal with more personality than its owner
+      - a family at cross purposes
+      - a small creature attempting something too big
+      - a toy or object treated as a companion
+      - two siblings and one disputed object
+      - someone very small being very determined
+      - a pet's opinion of a household rule
+      - an unlikely friendship
 
   claymation:
     label: Stop-motion clay
     weight: 1
     brief: >-
-      a stop-motion plasticine set photographed with a macro lens, thumbprints and tool marks in the
-      clay, tiny practical lights, visible felt and cardboard scenery
-    when: >-
-      everyday domestic objects and small absurdity; comfort with a handmade texture
+      a stop-motion plasticine set photographed with a macro lens, thumbprints and tool marks in
+      the clay, tiny practical lights, visible felt and cardboard scenery
+    when:
+      - a small absurdity played completely straight
+      - something going wrong in a way nobody is hurt by
+      - a repair attempted with the wrong tool
+      - food behaving badly
+      - a room too small for what is happening in it
+      - a creature or object with more personality than it should have
+      - a queue of small identical things
+      - a hobby that has taken over a space
+      - two people negotiating over something trivial
+      - a scene that would be charming in miniature
 
   papercraft-diorama:
     label: Cut-paper diorama
     weight: 1
     brief: >-
-      layered cut paper filling the whole frame, real depth between the layers, crisp cast shadows,
-      visibly fibrous card and translucent tissue, raking side light. Never a box, a shadow-box or a
-      picture frame around the scene — the paper IS the world, not an object sitting inside one
-    when: >-
-      structure and arrangement — rooms, layers, cross-sections, a thing shown as built
+      layered cut paper filling the whole frame, real depth between the layers, crisp cast
+      shadows, visibly fibrous card and translucent tissue, raking side light. Never a box, a
+      shadow-box or a picture frame around the scene — the paper IS the world, not an object
+      sitting inside one
+    when:
+      - a building shown with one wall removed
+      - the layers of something explained
+      - a route across a landscape
+      - a room arranged just so
+      - things stacked, shelved or sorted
+      - a cross-section of a day
+      - a model of something larger
+      - a place seen from directly above
 
   retro-futurism:
     label: Retro-futurism
     weight: 1
     brief: >-
       a 1970s science-fiction paperback cover, airbrushed gradients, a muted offset-print palette
-      with visible halftone, dramatic scale and a confident optimistic mood. It renders an ordinary
-      modern scene as though it were the future someone once imagined, so it suits machinery,
-      travel, work and plans as readily as spacecraft
-    when: >-
-      ambition, machinery, travel, prediction and expertise; anything about the future, progress, or a plan on a grand scale
+      with visible halftone, dramatic scale and a confident optimistic mood. It renders an
+      ordinary modern scene as though it were the future someone once imagined, so it suits
+      machinery, travel, work and plans as readily as spacecraft
+    when:
+      - a machine that promises to solve everything
+      - a plan drawn on a very large scale
+      - a journey being prepared for
+      - someone confidently predicting the future
+      - an ordinary appliance treated as a marvel
+      - a control panel with too many switches
+      - progress arriving in a small town
+      - an expert explaining their invention
 
   film-noir:
     label: Film noir
@@ -167,8 +275,15 @@ styles:
     brief: >-
       high-contrast black-and-white film noir, venetian-blind shadows across the frame, wet street
       reflections, cigarette haze in a hard key light
-    when: >-
-      suspicion, surveillance, guilt, threat and secrecy
+    when:
+      - someone watching a door they should not be watching
+      - an alibi being tested
+      - a secret carried through a public place
+      - the person who knows and the person who does not
+      - money changing hands quietly
+      - following someone at a distance
+      - a room searched while its owner is out
+      - a question asked too casually
 
   surrealism:
     label: Surrealist dream logic
@@ -176,8 +291,15 @@ styles:
     brief: >-
       surrealism in the manner of Magritte and Dalí, one impossible juxtaposition rendered with
       complete photographic conviction, still air, an empty horizon
-    when: >-
-      an abstraction with no physical form — memory, doubt, obligation, time
+    when:
+      - a memory behaving like an object
+      - time made physical
+      - a thought escaping its owner
+      - two things that cannot both be true
+      - a feeling with weight and volume
+      - a room that continues where it should stop
+      - an absence given a shape
+      - doubt as a substance
 
   vintage-botanical:
     label: 19th-century engraved plate
@@ -185,8 +307,15 @@ styles:
     brief: >-
       a nineteenth-century engraved scientific plate, fine hatching, hand-tinted washes, aged rag
       paper, the specimen isolated and reverently observed
-    when: >-
-      a specimen observed closely: plants, food, animals, anatomy, taste and texture
+    when:
+      - a single specimen studied closely
+      - the anatomy of something edible
+      - a plant at three stages at once
+      - texture examined at close range
+      - an animal drawn with reverence
+      - something cut open to be understood
+      - the parts of a thing laid out
+      - a taste rendered as structure
 
   constructivist-poster:
     label: Constructivist poster
@@ -194,8 +323,15 @@ styles:
     brief: >-
       a constructivist poster, aggressive diagonal geometry, a limited palette of red, black and
       cream, photomontage fragments, monumental low-angle figure
-    when: >-
-      power, protest, labour, institutions and mass movement
+    when:
+      - a crowd that has become a force
+      - work presented as heroic
+      - an institution seen from below
+      - a demand being made
+      - many hands doing one thing
+      - a figure addressing a multitude
+      - machinery and people as one system
+      - a decision imposed from above
 
   neon-cyberpunk:
     label: Neon night
@@ -203,8 +339,15 @@ styles:
     brief: >-
       a rain-slick neon night street, teal and magenta signage bleeding into volumetric haze, wet
       reflections, high dynamic range
-    when: >-
-      night, cities, speed, technology and emergency
+    when:
+      - a city that never turned its lights off
+      - an emergency at night
+      - a screen that is the only light source
+      - rain and traffic and hurry
+      - someone alone in a crowd of strangers
+      - a machine failing at the worst moment
+      - speed through a wet street
+      - a transaction in a doorway
 
   pixel-art:
     label: 16-bit pixel art
@@ -212,25 +355,45 @@ styles:
     brief: >-
       detailed 16-bit pixel art, a rich limited palette with careful dithering, chunky readable
       sprites in a densely furnished scene, side-lit
-    when: >-
-      games, systems, repetition and anything with rules or steps
+    when:
+      - a task with clearly numbered steps
+      - a system with rules being followed
+      - an inventory of small things
+      - a repeated action, over and over
+      - a game being taken too seriously
+      - progress along a fixed path
+      - a puzzle mid-solution
+      - something counted out precisely
 
   charcoal-sketch:
     label: Charcoal on toned paper
     weight: 1
     mono: true
     brief: >-
-      expressive charcoal and white chalk on toned grey paper, smudged tone, decisive dark accents,
-      the paper left bare where the light falls
-    when: >-
-      grief, exhaustion, poverty and effort; a body under strain, with no colour to spend
+      expressive charcoal and white chalk on toned grey paper, smudged tone, decisive dark
+      accents, the paper left bare where the light falls
+    when:
+      - exhaustion at the end of physical work
+      - a body under strain
+      - grief that has stopped being loud
+      - someone sitting with bad news
+      - hunger, cold or want
+      - a person too tired to hold a pose
+      - hands resting after effort
+      - the weight of carrying something far
 
   folk-naive:
     label: Naïve folk painting
     weight: 1
     brief: >-
-      a naïve folk painting, flattened perspective, decorative repeating pattern in the borders and
-      fabrics, warm earthy palette, everything lovingly overfilled
-    when: >-
-      tradition, festivity, village and family life, and a story being told
-
+      a naïve folk painting, flattened perspective, decorative repeating pattern in the borders
+      and fabrics, warm earthy palette, everything lovingly overfilled
+    when:
+      - a festival in a small place
+      - a family meal with too many people
+      - a story being told to children
+      - a village doing something together
+      - a wedding, a funeral, a harvest
+      - a superstition taken seriously
+      - a house full of pattern and objects
+      - an animal treated as a member of the family

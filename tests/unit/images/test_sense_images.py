@@ -90,16 +90,21 @@ def test_a_zero_weight_switches_a_style_off():
     assert {style.id for style in styles.offer(weights)} == {style.id for style in styles.styles[:2]}
 
 
-def test_the_style_hints_are_not_sent():
-    """Round 5: `when` was read as a matching rule, and two styles took 44% of the deck.
+def test_the_style_hints_are_a_shifting_sample():
+    """Round 5 sent each style's whole hint as one sentence and it became a lookup table.
 
-    It stays in the file as a record of intent, but the writer chooses on the style's own
-    description and on the scene.
+    A short sample per lexeme keeps the associations without letting a style be matched on.
     """
     styles = load_styles(STYLES)
-    assert all(style.when for style in styles.styles)          # still documented
+    assert all(len(style.when) >= 6 for style in styles.styles)
+    clay = styles["claymation"]
+    first, second = styles.hints(clay, "lex000000000001"), styles.hints(clay, "lex000000000002")
+    assert len(first) == 3 and set(first) <= set(clay.when)
+    assert first != second                                     # varies per word
+    assert first == styles.hints(clay, "lex000000000001")       # but is stable for one word
+
     request = build_request(build_articles(changes(), "es")[0], styles)
-    assert all("when" not in item for item in request["styles"])
+    assert all(len(item["suits"]) == 3 for item in request["styles"])
 
 
 def test_the_style_that_authored_scenes_is_gone():
@@ -263,3 +268,13 @@ def test_a_quota_pause_is_per_model_not_pool_wide():
     pool.penalise("lite")
     assert pool.gates["lite"].delay() > 0
     assert pool.acquire() == "flash"      # the other model keeps working
+
+
+def test_the_definition_is_labelled_with_its_own_language():
+    """An English gloss carries metaphors the original word does not: `estar fundado` is not about
+    earth, but "to be grounded in" is, and the picture followed the gloss."""
+    request = build_request(build_articles(changes(), "es")[0], load_styles(STYLES))
+    sense = request["senses"][0]
+    assert sense["definitionLang"] == "es"
+    assert sense["definition"] == "Fluido tóxico."
+    assert sense["glosses"] == [{"lang": "en", "terms": ["venom"]}]
