@@ -19,7 +19,16 @@ That separation is the whole reason the pipeline has two calls.
 | [5](results/round-5.md) | 2026-09-05 | 100 | 97 of 100 kept | The style hints backfired — stop sending them; text is banned only where it gives the answer away; draw the word, not only the sentence |
 | [6](results/round-6.md) | 2026-09-06 | ~100 | 98 of 100 kept | The original-language definition outranks the English gloss; check the situation back before drawing it; a metaphor's vehicle must not read as something else |
 | [7](results/round-7.md) | 2026-09-06 | 84 | 83 of 84 kept | Sampled hints work — keep both modes as a setting; keep the cast small so a bystander cannot outrank the subject; the style must not be doing the explaining |
-| [8](results/round-8-english.md) | 2026-09-07 | 20 (English) | 17 of 20 kept | The qualifier separating a sense must be in the frame; a quality of speech lives in the listener, never as vapour from a mouth; concrete-but-hard-to-draw is not abstract |
+| [8](results/round-8-english.md) | 2026-09-07 | 20 + 848 (English) | 17 of 20, then **50 of 50** | The qualifier separating a sense must be in the frame; a quality of speech lives in the listener, never as vapour from a mouth; concrete-but-hard-to-draw is not abstract. **Iteration closed.** |
+
+## Outcome
+
+Closed on 2026-09-07 with **2,285 images** — 1,437 Spanish senses and 848 of 851 English — and a
+final review of 50 that rejected none. Twenty numbered failures were found and fixed across eight
+rounds; the last three rounds went 83/84, 98/100 and 50/50.
+
+The reject rate is the summary: 7 of 14 in round 1, none in 50 at the end. Everything that changed
+in between is a prompt or a style-table edit, never a different image model.
 
 ## Method
 

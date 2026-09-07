@@ -344,3 +344,50 @@ def test_a_brief_failure_that_is_not_quota_is_raised_at_once():
     with pytest.raises(ValueError):
         writer.write(build_articles(changes(), "es")[0], wait=lambda _: None)
     assert writer.calls == 1
+
+
+def _stored(store: Store, sense_id: str, **overrides) -> str:
+    identifier = image_prompt_id(sense_id)
+    record = {"id": identifier, "senseId": sense_id, "imageRef": f"images/x/{identifier}.webp"}
+    record.update(overrides)
+    store.write(store.record_path(identifier), record)
+    return identifier
+
+
+def test_a_consistent_run_directory_verifies(tmp_path: Path):
+    from vocabgen.images.verify import verify
+    store = Store(tmp_path)
+    identifier = _stored(store, "s00000000000001")
+    store.image_path(identifier).write_bytes(b"webp")
+    report = verify(store)
+    assert report.ok and report.drawn == 1 and report.images == 1
+
+
+def test_verify_catches_what_would_break_the_import(tmp_path: Path):
+    from vocabgen.images.verify import verify
+    store = Store(tmp_path)
+
+    _stored(store, "s00000000000001")                      # claims an image that is not there
+    orphan = _stored(store, "s00000000000002", imageRef=None)
+    store.image_path(orphan).write_bytes(b"webp")          # image whose record claims none
+    store.image_path("zzzzzzzzzzzzzzz").write_bytes(b"webp")  # image with no record at all
+    store.write(store.record_path("nnnnnnnnnnnnnnn"),
+                {"id": "nnnnnnnnnnnnnnn", "senseId": "s00000000000003", "imageRef": None})
+
+    report = verify(store)
+    assert not report.ok
+    assert set(report.problems) == {
+        "record claims an image that is not on disk",
+        "image on disk whose record claims none",
+        "image with no record",
+        "id is not derived from its senseId",
+    }
+
+
+def test_a_blocked_record_is_not_a_problem(tmp_path: Path):
+    """`snort` was blocked by the provider. A sense with no image is complete, not a fault."""
+    from vocabgen.images.verify import verify
+    store = Store(tmp_path)
+    _stored(store, "s00000000000001", imageRef=None, blocked=True, failureReason="IMAGE_SAFETY")
+    report = verify(store)
+    assert report.ok and report.blocked == 1 and report.drawn == 0

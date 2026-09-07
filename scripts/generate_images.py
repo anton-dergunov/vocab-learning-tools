@@ -45,6 +45,7 @@ from vocabgen.images.render import Renderer  # noqa: E402
 from vocabgen.images.run import Runner, Store, plan  # noqa: E402
 from vocabgen.images.sheet import write_sheet  # noqa: E402
 from vocabgen.images.styles import load_styles  # noqa: E402
+from vocabgen.images.verify import verify  # noqa: E402
 
 DEFAULT_OUTPUT = REPO_ROOT / "output" / "images"
 DEFAULT_STYLES = REPO_ROOT / "config" / "image-styles.yaml"
@@ -175,6 +176,17 @@ def command_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_verify(args: argparse.Namespace) -> int:
+    store = Store(args.output)
+    report = verify(store)
+    print(f"{report.images} images · {report.records} records · {report.drawn} drawn · "
+          f"{report.refused} refused by the writer · {report.blocked} blocked by the provider")
+    for kind, subjects in sorted(report.problems.items()):
+        print(f"  [FAIL] {kind}: {len(subjects)} -> {', '.join(subjects[:5])}")
+    print("safe to import" if report.ok else "NOT safe to import")
+    return 0 if report.ok else 1
+
+
 def command_sheet(args: argparse.Namespace) -> int:
     sheet = write_sheet(Store(args.output), args.to, args.limit)
     print(sheet)
@@ -222,13 +234,16 @@ def main() -> int:
     runner.add_argument("--yes", action="store_true", help="Skip the billing confirmation")
     runner.add_argument("--open", action="store_true", help="Open the contact sheet when finished")
 
+    sub.add_parser("verify", help="Check the run directory is internally consistent before import")
+
     sheet = sub.add_parser("sheet", help="Rebuild the contact sheet from what is on disk")
     sheet.add_argument("--limit", type=int, default=0, help="Show only the newest N images.")
     sheet.add_argument("--to", type=Path, default=None, help="Write somewhere other than sheet.html.")
     sheet.add_argument("--open", action="store_true")
 
     args = parser.parse_args()
-    handlers = {"check": command_check, "plan": command_plan, "run": command_run, "sheet": command_sheet}
+    handlers = {"check": command_check, "plan": command_plan, "run": command_run,
+                "sheet": command_sheet, "verify": command_verify}
     try:
         return handlers[args.command](args)
     except AcervoError as error:

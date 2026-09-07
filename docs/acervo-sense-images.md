@@ -6,7 +6,10 @@ article, that style variety is pedagogical, that a master is 1024×1024 WebP, an
 no image is complete. What was missing was *what the picture is of*, *how the prompt is written*,
 and *where the work runs first*. That is this document.
 
-Status: Phase A is built and running. §10 records what is decided and what is still open.
+Status: **Phase A is complete.** 2,285 images sit in `output/images/` and `output/images-en/`, and
+`generate_images.py verify` says both directories are safe to import. Phase B — writing them into the
+graph — is next. §10 records the phases; the prompt iteration that produced them is in
+`experiments/sense-images/`.
 
 ---
 
@@ -381,16 +384,38 @@ already sitting at their final paths.
 
 | | What | Touches the server | Blocked by |
 |---|---|---|---|
-| **A** | Local generation: brief writer, style sampling, renderer, contact sheet | reads only | nothing |
-| **B** | One-off import of the run into the graph and the media directory | writes | A reviewed and accepted |
+| **A** | Local generation: brief writer, style sampling, renderer, contact sheet | reads only | **done** |
+| **B** | One-off import of the run into the graph and the media directory | writes | A verified — it is |
 | **C** | `acervo-worker images sweep`, plus `attempts` / `failureReason` | writes, schema | **a transfer bundle of the real vocabulary must exist first** |
-| **D** | Article view: render, regenerate, delete; style weights in Settings | | C |
+| **D** | Article view: render, regenerate, delete; the two style settings | | C |
 | **E** | Anki cards, one per example, with the sense image | | D and the Anki generator, which does not exist |
 
 The ordering constraint that matters: **C requires `--reset-pocketbase`, which destroys the
 database.** The sequence is finish ingesting → export a bundle → verify the bundle imports into a
 throwaway database → only then change the schema. Nothing about the image work justifies risking
 1,500 hand-collected entries.
+
+### Phase A, as built
+
+| | Spanish | English |
+|---|---:|---:|
+| Senses in scope | 1,437 | 851 |
+| Drawn | **1,437** | **848** |
+| Refused by the writer | 0 | 2 |
+| Blocked by the provider | 0 | 1 |
+
+Cost was about **$77** at ~$0.0336 an image, over roughly 38 hours of unattended running at the one
+image per minute the project's quota allows. Eight review rounds found and fixed twenty numbered
+failures in the brief-writing prompt; the reject rate went from 7 in 14 to 0 in 50, and the image
+model never changed.
+
+Two operational lessons worth carrying into Phase C, because both cost real work:
+
+- **Pace every model, not just the expensive one.** The image path had a gate and twelve retries; the
+  brief path had neither, and one text-quota refusal silently lost every sense of that lexeme — ten
+  senses in a thirteen-hour run.
+- **A terminal outcome must be recorded as terminal.** A writer refusal and a provider block are
+  both finished, and both were being re-planned on every subsequent run until they were marked.
 
 ### Phase A, concretely
 

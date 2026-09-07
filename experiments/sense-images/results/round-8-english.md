@@ -60,3 +60,53 @@ Added: stay literal and put the relation on the page. Similarity is **two things
 resemblance is the subject** — two faces mid-conversation understanding each other perfectly, two
 nearly identical objects with one small difference. And give the pair real separation, because asking
 for two near-identical objects touching invites exactly the merge that happened here.
+
+---
+
+## The full English run · 2026-09-07
+
+848 of 851 senses. **50 reviewed, none rejected.**
+
+| | |
+|---|---:|
+| Drawn | 848 |
+| Refused by the writer | 2 — `molest`, `molestation` |
+| Blocked by the provider | 1 — `snort`, the cocaine sense |
+
+The two refusals are the narrow rule working. Both are the child-abuse sense, where there genuinely
+is no scene that means the word without depicting what is forbidden — the rare case the rule
+reserves, and unlike `joder` they were not overridden. Two other words the reviewer expected to be
+declined, `warbag` and the vile-treatment sense of `vile`, were drawn safely.
+
+### 21 · Ten senses were lost to an unpaced text call
+
+Every one of the run's ten failures was `brief failed — 429`, on the **text** model. The image path
+had a pace gate and twelve retries; the brief path had neither, so one text-quota refusal lost every
+sense of that lexeme. The brief writer now backs off on quota — and only on quota, so a malformed
+reply still fails at once rather than being retried six times.
+
+A provider block is now terminal too, recorded as `blocked` on the record. `snort` would otherwise
+have been re-planned on every future run, spending a text call and an image call to rediscover the
+same block, exactly as `joder` was before refusals became terminal.
+
+## The style question, resolved
+
+Eight rounds argued about the distribution. The reviewer's verdict on the final 50 settles it:
+
+> *"Even though we do have classes that are overrepresented, the choice of style according to the
+> word was nice."*
+
+English ended at 22 of 23 styles with 42% in the top two — `oil-painting` 210, `comic-book` 150 —
+more concentrated than Spanish and leaning literary. The explanation is the **word list**, not the
+language: an advanced English vocabulary of `abysmal`, `vitriolic`, `vindication` pulls toward
+painterly registers, and the reviewer names the individual choices as apt each time.
+
+So the conclusion is that **evenness was the wrong thing to measure.** A flat histogram was never the
+goal; distinctiveness across a deck was, and it is achieved by 22 styles being *available and
+correctly chosen*, not by each appearing equally often. `film-noir` for surveillance, `vintage-
+botanical` for a worm in soil, photoreal for a weeping burn — the concentration is a property of what
+the words are about.
+
+`experiments/sense-images/style_distribution.py` and its chart stay as the record of how that was
+established, including the finding that concentration appeared in every era and was never caused by
+the hints.
