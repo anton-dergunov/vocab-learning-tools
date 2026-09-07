@@ -74,6 +74,18 @@ scene, the scene suggests detail, and four steps later the picture is about some
 plainly: *does this situation still show what the original definition says?* If it has drifted, fix
 the situation — do not carry on and elaborate the drift.
 
+**A sentence can be concrete and still be hard to draw, and that is not the same thing.** *There is a
+close affinity between Spanish and Portuguese* names two real things and a real relation. The
+temptation is to treat "hard to draw" as "abstract" and reach for a scene *around* it — a scholar,
+an archive, a lamp, a pair of antique volumes — which illustrates *philology* and leaves the
+affinity unshown.
+
+Stay literal and put the relation itself on the page. Similarity is shown by **two things side by
+side whose resemblance is the subject**: two faces mid-conversation understanding each other
+perfectly, two nearly identical objects with one small difference, two shapes that clearly rhyme.
+Give the pair real separation — asking for two near-identical objects touching invites them to be
+drawn as one mangled thing.
+
 **Nearly.** Some abstractions genuinely land as an image — a memory dissolving as it leaves a mouth,
 a law being trodden into the ground. Keep an abstract treatment when it is **striking**: when it
 makes the viewer stop and work it out for a second. Reject it when it is merely *diagrammatic* —
@@ -111,12 +123,39 @@ emotion, and the learner already has a word for that. *Her voice was full of ven
 woman: it is her words leaving her mouth as a thin green corrosive vapour that blisters the varnish
 on the table, and her rival leaning away from it.
 
+**Put the qualifier in the frame.** A sense is usually distinguished from its siblings by one or two
+words, and those words are the ones a picture drops. *An economic abyss* was drawn as a city street
+shearing into a bottomless void — a fine picture of *abyss*, and nothing in it is economic, so it
+cannot be told apart from the cliff drawn for the literal sense. Something has to carry the
+qualifier: a plunging market board, shuttered shopfronts, a bank queue at the lip of the drop.
+
+Read the definition and ask which words in it are doing the distinguishing, then check that each one
+has something in the frame answering to it. This matters most for the rarer, more precise words —
+*abysmal*, *acrid*, *affront* — where the whole value of the entry is the shade of meaning, and a
+picture of the general area teaches nothing.
+
 **The subject is the word, not the sentence.** Honouring the sentence is step two; step one is that
 the picture teaches *this word*. *We need at least three people to start* is a sentence about a game,
 but the word is **at least** — so the picture must make a minimum visible: exactly three, the third
 being dragged in, no fourth. *How much will you charge?* is a scene in a repair shop, but the word is
 **charge** — so money changing hands or a price being named has to be the loudest thing in it. If you
 can draw the sentence without drawing the word, you have drawn the wrong picture.
+
+**For a quality of speech, draw what the words do — not the words themselves.** Rendering an
+utterance as a visible substance leaving the mouth is the single most tempting move here and it fails
+in a specific, embarrassing way: anything streaming from a person's lips reads as **breath**. *An
+acrid remark* became a ribbon of green vapour from a woman's mouth with the listener recoiling, and
+the picture says halitosis. It cannot say anything else — recoiling from someone's mouth has one
+overwhelmingly common cause.
+
+Draw the effect instead, on the person hearing it and on the room: the listener's face as it lands,
+a hand stopped halfway to a cup, the others looking anywhere else, the speaker perfectly composed.
+*Acrid*, *cutting*, *withering*, *snide* all live in the listener, not in the air.
+
+The rule generalises: **do not render an abstraction as something the body emits.** Vapour, breath,
+smoke and fluid from a mouth or a wound have obvious literal readings that will beat yours. A
+substance in the world is fine — venom beading on a fang, ink soaking a floorboard — the mouth is
+where it goes wrong.
 
 **A metaphor is only as good as the thing you pick to carry it.** Giving an abstraction a body works,
 but the body must not read as something else. *Estar hasta las narices* — fed up — became a commuter
@@ -353,6 +392,19 @@ The line is: **depict the emotion or the situation, not the anatomy, and not the
 detail.** A word for a body part gets a scene that implies it — a medical plate, a gesture, a
 reaction — not a rendering of it. A word for a massacre gets aftermath, scale, silence, a single
 abandoned shoe — not bodies.
+
+**A word whose subject is on that list is not itself a refusal.** The list forbids *drawing* those
+things; it does not forbid the vocabulary. Almost always there is a scene that means the word
+unmistakably without depicting anything on it, and that scene is your job.
+
+*Acostarse con alguien* — to sleep with someone — was drawn as a closed bedroom door in a dark
+hallway, a dress and a necktie discarded outside it. Nothing is shown, nothing is refused, and the
+meaning is not in doubt. *Joder* in its literal sense wants the same treatment, and refusing it was
+wrong: the learner needs that word, and a bed with two sets of clothes on the floor, a headboard
+against a wall, a morning after, a couple's silhouette behind a lit blind all say it.
+
+Refuse when there is **no** way to mean it without drawing it. That is rare. Reaching for the refusal
+because a word's subject sounds like the list is the failure this paragraph exists to prevent.
 
 Refusing a sense is a normal, successful outcome. It costs the learner one picture out of thousands.
 Refusing a sense that merely sounds unpleasant costs them the word.

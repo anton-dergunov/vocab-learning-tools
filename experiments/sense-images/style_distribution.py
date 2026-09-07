@@ -26,25 +26,35 @@ import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# The style-table digest is the second field of a prompt version, and it changed exactly when the
-# hints were added and again when they were removed, so it identifies the eras.
-HINTS_ADDED = "3f5c6ec25"
-HINTS_REMOVED = "ab741596e"
+# The style-table digest is the second field of a prompt version, and it changed at each of these
+# points, so it identifies the eras.
+FIXED_HINTS = "3f5c6ec25"      # round 5: one `when` sentence per style, sent every time
+NO_HINTS = "ab741596e"         # round 6: nothing but each style's own description
+SAMPLED_HINTS = "729604463a61" # round 7: three of a style's example subjects, drawn per lexeme
 
 SURFACE, INK, INK_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e6e5e1"
-SERIES = ("#2a78d6", "#eb6834", "#1baf7a")     # validated slots 1-3, light mode
+SERIES = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100")   # validated slots 1-4, light mode
+
+ERAS = (
+    ("before", "no hints yet"),
+    ("fixed", "one fixed hint each"),
+    ("none", "hints removed"),
+    ("sampled", "three sampled hints"),
+)
 
 
 def era_of(prompt_version: str) -> str:
-    if HINTS_REMOVED in prompt_version:
-        return "after"
-    if HINTS_ADDED in prompt_version:
-        return "hints"
+    if SAMPLED_HINTS in prompt_version:
+        return "sampled"
+    if NO_HINTS in prompt_version:
+        return "none"
+    if FIXED_HINTS in prompt_version:
+        return "fixed"
     return "before"
 
 
 def collect(run_dir: Path) -> dict[str, Counter]:
-    counts = {"before": Counter(), "hints": Counter(), "after": Counter()}
+    counts = {era: Counter() for era, _ in ERAS}
     for path in (run_dir / "records").glob("*.json"):
         record = json.loads(path.read_text(encoding="utf-8"))
         if not (run_dir / "images" / f"{record['id']}.webp").exists():
@@ -55,19 +65,18 @@ def collect(run_dir: Path) -> dict[str, Counter]:
 
 def chart(counts: dict[str, Counter], styles: list[str], output: Path) -> None:
     labels = [
-        ("before", f"before hints (n={sum(counts['before'].values())})", SERIES[0]),
-        ("hints", f"with hints (n={sum(counts['hints'].values())})", SERIES[1]),
-        ("after", f"hints removed (n={sum(counts['after'].values())})", SERIES[2]),
+        (era, f"{name} (n={sum(counts[era].values())})", SERIES[index])
+        for index, (era, name) in enumerate(ERAS)
     ]
     totals = {era: sum(counts[era].values()) or 1 for era, _, _ in labels}
     even = 100 / len(styles)
 
-    height = 0.26
-    fig, axes = plt.subplots(figsize=(11.5, 12.4), facecolor=SURFACE)
+    height = 0.21
+    fig, axes = plt.subplots(figsize=(11.5, 13.6), facecolor=SURFACE)
     axes.set_facecolor(SURFACE)
 
     for offset, (era, label, colour) in enumerate(labels):
-        centres = [index + (1 - offset) * height for index in range(len(styles))]
+        centres = [index + (1.5 - offset) * height for index in range(len(styles))]
         shares = [counts[era][style] / totals[era] * 100 for style in styles]
         axes.barh(centres, shares, height=height * 0.92, color=colour, label=label,
                   linewidth=0.8, edgecolor=SURFACE, zorder=3)
@@ -122,22 +131,21 @@ def main() -> int:
     chart(counts, styles, args.out)
 
     totals = {era: sum(value.values()) or 1 for era, value in counts.items()}
-    print(f"\n{'style':<24}{'before':>16}{'hints':>16}{'after':>16}")
+    print("\n" + f"{'style':<24}" + "".join(f"{era:>16}" for era, _ in ERAS))
     for style in styles:
         cells = "".join(
             f"{counts[era][style]:>9} {counts[era][style] / totals[era] * 100:>5.1f}%"
-            for era in ("before", "hints", "after")
+            for era, _ in ERAS
         )
         print(f"{style:<24}{cells}")
-    print(f"{'TOTAL':<24}" + "".join(f"{totals[era]:>9} {'100.0':>5}%"
-                                     for era in ("before", "hints", "after")))
+    print(f"{'TOTAL':<24}" + "".join(f"{totals[era]:>9} {'100.0':>5}%" for era, _ in ERAS))
     print()
-    for era in ("before", "hints", "after"):
+    for era, name in ERAS:
         used = len(counts[era])
         top = counts[era].most_common(2)
         share = sum(count for _, count in top) / totals[era] * 100
-        print(f"{era:>7}: {used}/{len(styles)} styles used, top two = {share:.0f}%  "
-              f"({', '.join(name for name, _ in top)})")
+        print(f"{name:>22}: {used}/{len(styles)} styles used, top two = {share:.0f}%  "
+              f"({', '.join(style for style, _ in top)})")
     return 0
 
 

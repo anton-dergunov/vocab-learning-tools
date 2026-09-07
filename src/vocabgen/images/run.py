@@ -66,6 +66,15 @@ class Store:
         path = self.image_path(prompt_id)
         return path.exists() and path.stat().st_size > 0
 
+    def is_refused(self, prompt_id: str) -> bool:
+        """A refusal is a finished outcome, not a gap.
+
+        Design §06: a sense the writer declines gets no picture and is not retried. Without this
+        every later run spends a text call rediscovering the same refusal — `joder` was re-planned
+        on every Spanish pass. Delete the file under `refusals/` to ask again.
+        """
+        return self.refusal_path(prompt_id).exists()
+
     def read(self, path: Path) -> dict[str, Any] | None:
         try:
             return json.loads(path.read_text(encoding="utf-8"))
@@ -105,6 +114,8 @@ def plan(articles: Iterable[ArticleView], store: Store, *, redo: bool = False,
                 continue          # the graph already holds a drawn image for this sense
             if store.is_drawn(prompt_id) and not redo:
                 continue          # this run directory already holds one
+            if store.is_refused(prompt_id) and not redo:
+                continue          # declined, which is a successful outcome
             jobs.append(Job(article=article, sense=sense, prompt_id=prompt_id))
     return jobs
 

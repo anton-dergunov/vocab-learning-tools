@@ -278,3 +278,15 @@ def test_the_definition_is_labelled_with_its_own_language():
     assert sense["definitionLang"] == "es"
     assert sense["definition"] == "Fluido tóxico."
     assert sense["glosses"] == [{"lang": "en", "terms": ["venom"]}]
+
+
+def test_a_refusal_is_not_planned_again(tmp_path: Path):
+    """§06: declining a sense is a finished outcome. Re-planning it spends a call to rediscover it."""
+    articles = build_articles(changes(), "es")
+    store = Store(tmp_path)
+    assert len(plan(articles, store)) == 2
+
+    store.write(store.refusal_path(image_prompt_id("s00000000000001")),
+                {"refusalReason": "sexualised imagery"})
+    assert [job.sense_id for job in plan(articles, store)] == ["s00000000000002"]
+    assert len(plan(articles, store, redo=True)) == 2        # unless asked

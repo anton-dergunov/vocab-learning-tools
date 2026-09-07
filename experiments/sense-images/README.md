@@ -19,11 +19,14 @@ That separation is the whole reason the pipeline has two calls.
 | [5](results/round-5.md) | 2026-09-05 | 100 | 97 of 100 kept | The style hints backfired — stop sending them; text is banned only where it gives the answer away; draw the word, not only the sentence |
 | [6](results/round-6.md) | 2026-09-06 | ~100 | 98 of 100 kept | The original-language definition outranks the English gloss; check the situation back before drawing it; a metaphor's vehicle must not read as something else |
 | [7](results/round-7.md) | 2026-09-06 | 84 | 83 of 84 kept | Sampled hints work — keep both modes as a setting; keep the cast small so a bystander cannot outrank the subject; the style must not be doing the explaining |
+| [8](results/round-8-english.md) | 2026-09-07 | 20 (English) | 17 of 20 kept | The qualifier separating a sense must be in the frame; a quality of speech lives in the listener, never as vapour from a mouth; concrete-but-hard-to-draw is not abstract |
 
 ## Method
 
 One round is a `run --limit N` against real entries in the learner's own vocabulary, reviewed on the
-contact sheet. Rejection is deleting the file; the rejects are copied to `output/images/round-N-rejected/`
+contact sheet. Spanish runs live in `output/images/`, English in `output/images-en/` — separate
+directories because they are separate review cycles, and the vocabularies differ in difficulty as
+much as in language. Rejection is deleting the file; the rejects are copied to `output/images/round-N-rejected/`
 first, so a later round can be compared against them on the same senses. Regenerating a rejected
 sense writes a fresh brief and draws with a new seed, so a round is a genuine A/B on the same word
 rather than a fresh sample of different words.
