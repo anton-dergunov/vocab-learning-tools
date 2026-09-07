@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from google import genai
 from google.genai import types
+
+from .pacing import is_quota_error
 
 from .graph import ArticleView
 from .styles import StyleTable
@@ -139,7 +142,25 @@ class BriefWriter:
         self.styles = styles
         self.weights = weights
 
-    def write(self, article: ArticleView) -> tuple[list[SenseBrief], dict[str, Any]]:
+    def write(self, article: ArticleView, attempts: int = 6,
+              wait: Callable[[float], None] = time.sleep) -> tuple[list[SenseBrief], dict[str, Any]]:
+        """Write the briefs, retrying while the text model is over quota.
+
+        The image model is paced by `ModelPool`; the text model is not, because its allowance is
+        generous — but it is not unlimited, and a long run does eventually meet it. Without a retry
+        a single 429 loses every sense of that lexeme, which is how ten English senses went missing
+        from an otherwise clean 13-hour run.
+        """
+        for attempt in range(1, attempts + 1):
+            try:
+                return self._write_once(article)
+            except Exception as error:  # noqa: BLE001 - only quota is worth waiting out
+                if not is_quota_error(error) or attempt == attempts:
+                    raise
+                wait(min(15.0 * 2 ** (attempt - 1), 240.0))
+        raise AssertionError("unreachable")
+
+    def _write_once(self, article: ArticleView) -> tuple[list[SenseBrief], dict[str, Any]]:
         request = build_request(article, self.styles, self.weights)
         offered = tuple(style["styleId"] for style in request["styles"])
         contents = f"{self.template}\n\n{json.dumps(request, ensure_ascii=False, indent=2)}\n"

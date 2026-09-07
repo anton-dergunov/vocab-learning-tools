@@ -290,3 +290,57 @@ def test_a_refusal_is_not_planned_again(tmp_path: Path):
                 {"refusalReason": "sexualised imagery"})
     assert [job.sense_id for job in plan(articles, store)] == ["s00000000000002"]
     assert len(plan(articles, store, redo=True)) == 2        # unless asked
+
+
+def test_a_provider_block_is_not_planned_again(tmp_path: Path):
+    """A blocked prompt is terminal. Ten senses were lost to a text 429 and one to an image block;
+    only the first kind should come back."""
+    articles = build_articles(changes(), "es")
+    store = Store(tmp_path)
+    blocked = image_prompt_id("s00000000000001")
+    store.write(store.record_path(blocked), {"id": blocked, "imageRef": None, "blocked": True})
+    transient = image_prompt_id("s00000000000002")
+    store.write(store.record_path(transient),
+                {"id": transient, "imageRef": None, "failureReason": "429 RESOURCE_EXHAUSTED"})
+
+    assert [job.sense_id for job in plan(articles, store)] == ["s00000000000002"]
+    assert len(plan(articles, store, redo=True)) == 2
+
+
+def test_the_brief_writer_waits_out_a_quota_refusal():
+    """A text 429 used to lose every sense of that lexeme outright."""
+    from vocabgen.images.brief import BriefWriter
+
+    class Flaky(BriefWriter):
+        def __init__(self):                    # no client, no template read
+            self.model = "test"
+            self.calls = 0
+
+        def _write_once(self, article):
+            self.calls += 1
+            if self.calls < 3:
+                raise RuntimeError("429 RESOURCE_EXHAUSTED")
+            return ["ok"], {"model": self.model}
+
+    writer, slept = Flaky(), []
+    briefs, _ = writer.write(build_articles(changes(), "es")[0], wait=slept.append)
+    assert briefs == ["ok"] and writer.calls == 3
+    assert slept == [15.0, 30.0]               # and it backs off rather than hammering
+
+
+def test_a_brief_failure_that_is_not_quota_is_raised_at_once():
+    from vocabgen.images.brief import BriefWriter
+
+    class Broken(BriefWriter):
+        def __init__(self):
+            self.model = "test"
+            self.calls = 0
+
+        def _write_once(self, article):
+            self.calls += 1
+            raise ValueError("the brief writer did not return JSON")
+
+    writer = Broken()
+    with pytest.raises(ValueError):
+        writer.write(build_articles(changes(), "es")[0], wait=lambda _: None)
+    assert writer.calls == 1

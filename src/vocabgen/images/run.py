@@ -66,6 +66,11 @@ class Store:
         path = self.image_path(prompt_id)
         return path.exists() and path.stat().st_size > 0
 
+    def is_blocked(self, prompt_id: str) -> bool:
+        """The image provider declined this prompt. Terminal, like a writer refusal."""
+        record = self.read(self.record_path(prompt_id))
+        return bool(record and record.get("blocked"))
+
     def is_refused(self, prompt_id: str) -> bool:
         """A refusal is a finished outcome, not a gap.
 
@@ -115,7 +120,9 @@ def plan(articles: Iterable[ArticleView], store: Store, *, redo: bool = False,
             if store.is_drawn(prompt_id) and not redo:
                 continue          # this run directory already holds one
             if store.is_refused(prompt_id) and not redo:
-                continue          # declined, which is a successful outcome
+                continue          # the writer declined, which is a successful outcome
+            if store.is_blocked(prompt_id) and not redo:
+                continue          # the image provider declined; §01, a sense with no image is fine
             jobs.append(Job(article=article, sense=sense, prompt_id=prompt_id))
     return jobs
 
@@ -237,7 +244,8 @@ class Runner:
             except RenderRefused as error:
                 # The provider looked at the prompt and declined. Retrying is pointless and costs
                 # quota that a drawable sense could have had.
-                self._record(job, brief, style.id, seed, prompt, attempts, None, str(error), 0.0)
+                self._record(job, brief, style.id, seed, prompt, attempts, None, str(error), 0.0,
+                             blocked=True)
                 self.report(f"  · {label}: not drawn — {error}")
                 with self._lock:
                     self.stats["refused"] += 1
@@ -267,7 +275,8 @@ class Runner:
         self.report(f"  ✓ {label} · {style.id} · {elapsed:.1f}s · {drawn.bytes_written // 1024} KiB")
 
     def _record(self, job: Job, brief: SenseBrief, style_id: str, seed: int, prompt: str,
-                attempts: int, drawn: Rendered | None, failure: str | None, elapsed: float) -> None:
+                attempts: int, drawn: Rendered | None, failure: str | None, elapsed: float,
+                blocked: bool = False) -> None:
         """The row a later import will write, plus everything needed to explain or redo it.
 
         `prompt` is the brief — what §04 says is stored. `composedPrompt` is kept here in the run
@@ -292,6 +301,9 @@ class Runner:
             "imageModelId": (drawn.usage.get("model") if drawn else None),
             "attempts": attempts,
             "failureReason": failure,
+            # The provider looked at the prompt and declined, as opposed to a transport or quota
+            # error. Terminal: `plan` will not offer this sense again.
+            "blocked": blocked,
             "run": {
                 "headword": article.headword,
                 "language": article.language,
