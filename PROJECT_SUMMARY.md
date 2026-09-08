@@ -46,4 +46,4 @@ Healthy: unit tests cover the processor, data models, provider architecture, fai
   provides the complete test environment.
 - **Scratch/legacy data** (untracked or gitignored): `old_prototypes/`,
   `checking/`, `venv_bad/`, and `test-data-bkp/`.
-**In short:** both pipelines now use validated domain models and provider abstractions. The remaining roughness is concentrated in configuration typing, provider details, and the still-manual transition from short Markdown articles to extended JSON.
+**In short:** both pipelines now use validated domain models. The remaining roughness is concentrated in configuration typing, the four unrelated places a model is actually called from, and the still-manual transition from short Markdown articles to extended JSON.

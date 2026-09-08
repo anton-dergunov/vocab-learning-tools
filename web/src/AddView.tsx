@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import type { CaptureRequest, CaptureResult } from "./api";
+import type { CaptureHealth, CaptureRequest, CaptureResult } from "./api";
 import Composer from "./Composer";
 import type { VocabularyGraph } from "./domain";
 import { useEditorPreferences } from "./editorPreferences";
@@ -48,12 +48,19 @@ export interface CaptureSeed {
  * hand-written document takes, so there is one writer, one validator and one diff.
  */
 export default function AddView({
-  tab, onTab, graph, problems, busy, seed, onClose, onCreate, onCapture, onOpenLexeme, onNotify
+  tab, onTab, graph, problems, busy, seed, captureHealth,
+  onClose, onCreate, onCapture, onOpenLexeme, onNotify
 }: {
   tab: AddTab;
   onTab(tab: AddTab): void;
   /** Where this composition started, when it did not start empty. */
   seed?: CaptureSeed | null;
+  /**
+   * What the server can build entries with, or `undefined` while that is unknown. Unknown is not
+   * unavailable: only a definite refusal turns Capture off, and then it says which setting is
+   * missing rather than letting someone discover it by pressing the button.
+   */
+  captureHealth?: CaptureHealth;
   /** The replica, for resolving the topic names a document carries. Null only during startup. */
   graph: VocabularyGraph | null;
   problems: YamlProblem[];
@@ -74,6 +81,9 @@ export default function AddView({
   const [failure, setFailure] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<CaptureResult["duplicates"]>([]);
   const { wrap, numbers } = useEditorPreferences();
+
+  /** The server has told us it cannot build entries. Writing YAML by hand still can. */
+  const cannotBuild = captureHealth && !captureHealth.available ? captureHealth : null;
 
   /** Nothing has been proposed or written yet, so there is nothing to render. */
   const untouched = draft === YAML_TEMPLATE;
@@ -133,7 +143,8 @@ export default function AddView({
      someone and the thing they already asked for. */
   const started = useRef(false);
   useEffect(() => {
-    if (!seed || started.current) return;
+    // A seed that processes itself would fail on arrival on a server that cannot build entries.
+    if (!seed || started.current || cannotBuild) return;
     started.current = true;
     void process();
     // Deliberately once, on arrival. `seed` is fixed for the life of this view: App remounts it.
@@ -168,12 +179,18 @@ export default function AddView({
           </ul>
           <span>Nothing was created. Open the entry to see what it already says.</span>
         </div>}
+        {cannotBuild && <div className="validation bad" role="alert">
+          <strong>This server cannot build entries right now.</strong>
+          <span>It is set to {cannotBuild.provider} with the model {cannotBuild.model},
+            and {cannotBuild.reason}. You can still write the entry yourself.</span>
+        </div>}
         {failure && <div className="validation bad" role="alert"><strong>{failure}</strong></div>}
         <div className="composer-buttons">
           <span className="spacer" />
           <button className="tb-btn" onClick={() => onTab("yaml")}>Write YAML instead</button>
           <button
-            className="tb-btn primary" disabled={(!capture.trim() && !headword.trim()) || working}
+            className="tb-btn primary"
+            disabled={(!capture.trim() && !headword.trim()) || working || Boolean(cannotBuild)}
             onClick={() => void process()}
           >
             {working ? "Building…" : "Process"}

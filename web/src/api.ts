@@ -14,6 +14,28 @@ interface SyncEnvelope {
   cursor: number;
   serverTime: string;
 }
+
+/**
+ * What this server can build entries with.
+ *
+ * `reason` names an environment variable and never a value, so it is safe to show. It exists so the
+ * Capture control can be off *with a reason* rather than live and failing at the moment it is used.
+ */
+export interface CaptureHealth {
+  available: boolean;
+  provider: string;
+  model: string;
+  reason: string | null;
+}
+
+export interface ServerHealth {
+  name: string;
+  version: string;
+  build: string;
+  schemaVersion: number;
+  capture: CaptureHealth;
+}
+
 export type PullResponse = SyncEnvelope & { changes: VocabularyGraph };
 export type PushResponse = SyncEnvelope & { records: Partial<VocabularyGraph> };
 export type ResetResponse = SyncEnvelope & { deleted: number };
@@ -210,6 +232,15 @@ export const backendSession = {
   /** Drops the token but keeps the replica: the vocabulary is still the owner's. */
   async reject() { const current = client.current(); client.configure(null); if (current) await sessionStore.clear(); },
   onUnauthorized(handler: (() => void) | null) { client.handleUnauthorized(handler); },
+
+  /**
+   * A server fact, read once. Unauthenticated on the server, and asked for anonymously here so it
+   * still answers while a session is being restored — but it goes through `client.call` like every
+   * other route, because on the native host the server is not the page's origin.
+   */
+  health(): Promise<ServerHealth> {
+    return client.call<ServerHealth>("/health", {}, true);
+  },
 
   pullGraph(since: number): Promise<PullResponse> {
     return client.call<PullResponse>(`/graph?schemaVersion=${SCHEMA_VERSION}&since=${since}`);

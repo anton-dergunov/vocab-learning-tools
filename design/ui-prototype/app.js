@@ -582,6 +582,12 @@ let addTab = "capture";
    nothing to render before that, and says so rather than showing an empty entry. */
 let addDraft = null;
 
+/* The server reports on health what it builds entries with, and whether it can. In the application
+   that is a fetch; here it is `?capture=off`, so the refusal can be seen. Off is not a mode anyone
+   chooses — it is a provider whose key is missing — and the point of drawing it is that the button
+   is dead *with a reason* rather than live and failing when it is finally pressed. */
+let captureBlocked = null;
+
 function renderSheet() {
   const host = $("#composer");
   host.innerHTML = `
@@ -619,10 +625,15 @@ function renderSheet() {
           </details>
       </div>
       <div class="composer-actions">
+        ${captureBlocked ? `<div class="validation bad" role="alert">
+          <b>This server cannot build entries right now.</b>
+          <span>It is set to ${captureBlocked.provider} with the model ${captureBlocked.model},
+            and ${captureBlocked.reason}. You can still write the entry yourself.</span>
+        </div>` : ""}
         <div class="composer-buttons">
           <span class="spacer"></span>
           <button class="tb-btn" id="switchYaml">Write YAML instead</button>
-          <button class="tb-btn primary" id="processBtn">Process</button>
+          <button class="tb-btn primary" id="processBtn" ${captureBlocked ? "disabled" : ""}>Process</button>
         </div>
       </div>`
         : addTab === "article" ? `
@@ -873,6 +884,9 @@ if (params.get("open")) {
   if (hit) { state.openId = hit.id; state.lang = hit.language; state.mode = mode === "yaml" || mode === "edit" ? mode : "read"; }
 }
 if (params.get("topic")) state.topic = params.get("topic");
+if (params.get("capture") === "off") {
+  captureBlocked = { provider: "vertex", model: "gemini-3.7-flash", reason: "VERTEX_API_KEY is not set" };
+}
 if (params.get("wrap") === "off") editorWrap = false;
 if (params.get("numbers") === "on") editorNumbers = true;
 if (params.get("theme")) setTheme(params.get("theme"));

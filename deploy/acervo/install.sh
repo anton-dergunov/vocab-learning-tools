@@ -123,9 +123,6 @@ if [ "$credentials_stdin" = true ] || [ -n "$credentials_file" ]; then
   IFS= read -r password <&3 || { echo "Missing sync password" >&2; exit 2; }
   IFS= read -r pb_email <&3 || { echo "Missing PocketBase superuser email" >&2; exit 2; }
   IFS= read -r pb_password <&3 || { echo "Missing PocketBase superuser password" >&2; exit 2; }
-  # Optional, so end-of-input here is not an error: a server without a key serves everything except
-  # capture, and says so.
-  IFS= read -r gemini_api_key <&3 || gemini_api_key=""
   exec 3<&-
   case "$username$password" in
     *:*) echo "Anki sync credentials may not contain a colon" >&2; exit 2 ;;
@@ -134,13 +131,11 @@ if [ "$credentials_stdin" = true ] || [ -n "$credentials_file" ]; then
   password_env=$(printf '%s' "$password" | sed "s/'/\\\\'/g")
   pb_email_env=$(printf '%s' "$pb_email" | sed "s/'/\\\\'/g")
   pb_password_env=$(printf '%s' "$pb_password" | sed "s/'/\\\\'/g")
-  gemini_api_key_env=$(printf '%s' "$gemini_api_key" | sed "s/'/\\\\'/g")
   {
     printf "ACERVO_ANKI_SYNC_USERNAME='%s'\n" "$username_env"
     printf "ACERVO_ANKI_SYNC_PASSWORD='%s'\n" "$password_env"
     printf "ACERVO_PB_SUPERUSER_EMAIL='%s'\n" "$pb_email_env"
     printf "ACERVO_PB_SUPERUSER_PASSWORD='%s'\n" "$pb_password_env"
-    printf "GEMINI_API_KEY='%s'\n" "$gemini_api_key_env"
   } >"$credentials_tmp"
   chmod 600 "$credentials_tmp"
   mv "$credentials_tmp" "$acervo_root/secrets.env"
@@ -163,6 +158,22 @@ if [ ! -f "$acervo_root/llm.env" ]; then
   : >"$acervo_root/llm.env"
 fi
 chmod 600 "$acervo_root/llm.env"
+
+# A model key used to be written to secrets.env as well, and compose passes llm.env last — so one
+# variable was defined in two files and the loser was silent. Move any such line here once. This
+# erases itself: after the first run there is nothing left to move.
+if grep -q '^GEMINI_API_KEY=' "$acervo_root/secrets.env"; then
+  if [ -n "${GEMINI_API_KEY:-}" ] && ! grep -q '^GEMINI_API_KEY=' "$acervo_root/llm.env"; then
+    printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >>"$acervo_root/llm.env"
+  fi
+  secrets_tmp="$acervo_root/secrets.env.tmp.$$"
+  trap 'rm -f "$secrets_tmp"' EXIT HUP INT TERM
+  # `|| true` because grep reports "no lines matched" as a failure, and set -e would take it.
+  grep -v '^GEMINI_API_KEY=' "$acervo_root/secrets.env" >"$secrets_tmp" || true
+  chmod 600 "$secrets_tmp"
+  mv "$secrets_tmp" "$acervo_root/secrets.env"
+  trap - EXIT HUP INT TERM
+fi
 if [ -n "$llm_credentials_file" ]; then
   [ -f "$llm_credentials_file" ] || { echo "Missing LLM credentials file" >&2; exit 2; }
   exec 3<"$llm_credentials_file"

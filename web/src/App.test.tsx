@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 import App from "./App";
-import { AcervoApiError, backendSession, SCHEMA_VERSION } from "./api";
+import { AcervoApiError, backendSession, SCHEMA_VERSION, type CaptureHealth } from "./api";
 import { hydrateGlosses, lookup as lookupDictionaries, searchDictionaries } from "./dictionaries";
 import { INSTALLED_EVENT, UPDATE_EVENT } from "./pwa";
 import { repository } from "./repository";
@@ -44,8 +44,17 @@ function numberedGraph() {
   return { graph, cursor: revision };
 }
 
+/** A server that can build entries, which is the ordinary case every other test assumes. */
+function serverHealth(capture: Partial<CaptureHealth> = {}) {
+  vi.spyOn(backendSession, "health").mockResolvedValue({
+    name: "Acervo", version: "0.1.0", build: "1", schemaVersion: SCHEMA_VERSION,
+    capture: { available: true, provider: "gemini", model: "gemini-3.1-flash-lite", reason: null, ...capture },
+  });
+}
+
 function signedIn() {
   const { graph, cursor } = numberedGraph();
+  serverHealth();
   vi.spyOn(backendSession, "restore").mockResolvedValue(SESSION);
   vi.spyOn(backendSession, "current").mockReturnValue(SESSION);
   vi.spyOn(backendSession, "refresh").mockResolvedValue(SESSION);
@@ -861,5 +870,46 @@ describe("Acervo application", () => {
     const link = await screen.findByRole("link", { name: /Download Acervo for macOS/ });
     expect(link).toHaveAttribute("href", "/api/acervo/downloads/Acervo.zip");
     expect(link).toHaveAttribute("download", "Acervo.zip");
+  });
+
+  /* The failure this guards against is a configured provider whose key is absent: the button looked
+     live, and the only way to learn otherwise was to press it and read a 503. */
+  it("turns Capture off with a reason when the server cannot build entries", async () => {
+    signedIn();
+    serverHealth({ available: false, provider: "vertex", model: "gemini-3.7-flash", reason: "VERTEX_API_KEY is not set" });
+    const capture = vi.spyOn(backendSession, "captureText");
+    await openList();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    const refusal = await screen.findByRole("alert");
+    expect(refusal).toHaveTextContent("This server cannot build entries right now.");
+    expect(refusal).toHaveTextContent("VERTEX_API_KEY is not set");
+    expect(refusal).toHaveTextContent("gemini-3.7-flash");
+
+    fireEvent.change(screen.getByLabelText(/Paste a word/), { target: { value: "el garfio" } });
+    expect(screen.getByRole("button", { name: "Process" })).toBeDisabled();
+    expect(capture).not.toHaveBeenCalled();
+    // Writing the entry by hand needs no model, so that way out stays open.
+    expect(screen.getByRole("button", { name: "Write YAML instead" })).toBeEnabled();
+  });
+
+  it("leaves Capture live when the server never answered about it", async () => {
+    signedIn();
+    vi.spyOn(backendSession, "health").mockRejectedValue(new Error("offline"));
+    await openList();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.change(await screen.findByLabelText(/Paste a word/), { target: { value: "el garfio" } });
+    // Unknown is not unavailable: a write is allowed to try, and to fail loudly if it must.
+    expect(screen.getByRole("button", { name: "Process" })).toBeEnabled();
+  });
+
+  it("names the provider and model that build entries, in settings", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
+    expect(settings.getByText("Entries are built by gemini")).toBeInTheDocument();
+    expect(settings.getByText(/gemini-3.1-flash-lite/)).toBeInTheDocument();
   });
 });

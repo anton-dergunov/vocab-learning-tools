@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { CaptureHealth } from "./api";
 import { TopicEditor, VocabularyEditor } from "./Configuration";
 import DictionaryPanel from "./DictionaryPanel";
 import { fetchMacRelease, type MacRelease } from "./macRelease";
@@ -15,9 +16,14 @@ const CONFIRMATION = "DELETE";
 
 export type Page = "general" | "vocabularies" | "topics" | "dictionaries" | "editor" | "sync" | "data";
 
-export default function Settings({ update, email, status, snapshot, language, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
+export default function Settings({ update, email, status, snapshot, language, captureHealth, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
   update?: UpdateStage;
   email: string;
+  /**
+   * What this server builds entries with, or `undefined` while that is unknown. Reported here, not
+   * chosen: choosing needs a catalogue of providers, which does not exist yet.
+   */
+  captureHealth?: CaptureHealth;
   status: SyncStatus;
   snapshot: ReplicaSnapshot | null;
   /** Which vocabulary the topic counts are shown for — the one the list is currently filtered to. */
@@ -134,6 +140,16 @@ export default function Settings({ update, email, status, snapshot, language, pa
           {offerMacApplication && macRelease === null && <div className="update-status"><strong>macOS application</strong><span>No native release has been published by this server yet.</span></div>}
           {offerMacApplication && macRelease === undefined && !releaseError && <div className="update-status"><strong>macOS application</strong><span>Checking for a native release…</span></div>}
           {offerMacApplication && releaseError && <div className="update-status"><strong>macOS application</strong><span>The native release could not be checked right now.</span></div>}
+          {captureHealth && (captureHealth.available
+            ? <div className="update-status">
+                <strong>Entries are built by {captureHealth.provider}</strong>
+                <span>Using the model {captureHealth.model}.</span>
+              </div>
+            : <div className="update-status">
+                <strong>This server cannot build entries</strong>
+                <span>It is set to {captureHealth.provider} with the model {captureHealth.model},
+                  and {captureHealth.reason}.</span>
+              </div>)}
           {native && <div className="update-status">
             <strong>Updates and server address</strong>
             <span>Acervo ▸ Settings, in the menu bar.</span>

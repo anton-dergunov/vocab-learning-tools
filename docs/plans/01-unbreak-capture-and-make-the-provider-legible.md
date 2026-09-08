@@ -1,6 +1,6 @@
 # Plan 01: Unbreak capture and make the provider legible
 
-**Status:** Planned.
+**Status:** Complete.
 **Depends on:** nothing. This is the first plan and the only one that can be done in an hour.
 
 ## Outcome
@@ -251,3 +251,55 @@ grep -n -i 'Python is the server language' AGENTS.md
   exactly three of them.
 - **No attempt to make Vertex work.** Whether that key was ever minted, and whether Vertex text is
   worth keeping at all, is the spike that opens plan 02.
+
+## Implementation and verification record
+
+Built on 2026-09-08.
+
+**What was found on arrival, and what it changed.** Health already answered `capture: true`, so there
+was no live outage left to restore — the premise of "recover before touching code" was already
+satisfied. `sudo` over ssh is refused by this environment, so the server's `llm.env` could not be read
+to see which provider was selected. The recovery was therefore folded into the single deploy at the
+end, which reconfigures to `gemini` / `gemini-3.1-flash-lite` *and* ships the readout, rather than
+spending two full release builds. The new health object is what now answers the question the shell
+could not.
+
+**What was built.**
+
+- `llmSettings()` gained `reason`, derived by a new `llmReason()`; `captureAvailable()` is deleted and
+  a new `captureHealth()` builds the health object. `llmJson()`'s three pre-flight checks were left
+  untouched on purpose — each raises a different error code, and the taxonomy is a non-goal here. A
+  hook test asserts the two views agree for every broken configuration.
+- Health returns the `{available, provider, model, reason}` object. `web/src/api.ts` gained
+  `CaptureHealth`, `ServerHealth` and `backendSession.health()`, which goes through `client.call`
+  anonymously rather than copying `macRelease.ts`'s relative `fetch` — on the native host the server
+  is not the page's origin.
+- `App.tsx` asks once per session and passes the answer to `AddView` and `Settings`. Three states, and
+  the third is the load-bearing one: `undefined` means *unknown*, which never disables anything.
+- `AddView` shows the refusal in the pinned actions region, disables Process, and skips the seeded
+  auto-process. `Settings ▸ General` names the provider and model. The prototype mirrors the banner
+  behind `?capture=off`, in its existing query-parameter idiom.
+- One CSS rule was needed after all — `.validation strong, .validation b { display: block; }`, added to
+  `styles.css` and `acervo.css` together — because this banner is the first `.validation` with a
+  title *and* a sentence and no list between them. The prototype writes `<b>` where the application
+  writes `<strong>`, hence both selectors.
+- The real defect behind step 5 was not the awk filter, which already retained both keys, but that
+  `GEMINI_API_KEY` was defined in **two** files. `secrets.env` no longer carries a model key at all —
+  the fifth credentials line and its prompt are gone — and `install.sh` moves any stranded line into
+  `llm.env` once, then leaves nothing to move again.
+- `deploy.sh` refuses `--llm-provider gemini` with a `gemini-3.7-*` or `gemini-3.8-*` model. A
+  known-wrong list, deliberately not an allowlist, so a model released tomorrow is never refused for
+  being new; a test asserts that too.
+- `vertex-remote-config.txt` was moved to `~/.acervo/`, and the privacy test now asserts all three
+  local operational notes stay ignored.
+
+**What the verification printed.** `npm run test:hooks` 46 passed (39 before). `npm --prefix web run
+test` 266 passed (263 before). `npm --prefix web run build` succeeded. `.venv/bin/python -m pytest`
+229 passed, 7 skipped. `.venv/bin/python -m pytest tests/unit -k "privacy or deployment"` 29 passed
+(24 before). `npm run test:pwa` and `npm run test:mac` both passed.
+
+**Note for plan 02.** The roadmap's locked contract "the hook carries two wire shapes" was
+contradicted this session: model access is to live in Python, with the hook a thin authenticating
+proxy. Plans 02 and 04 need re-aiming around that before either is started. The obstacle to name
+there is that `acervo-worker` is a one-shot container (`profiles: ["tools"]`, no ports), so a
+synchronous capture route needs a genuinely always-on Python service.

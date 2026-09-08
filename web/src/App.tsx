@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AddView, { type AddTab, type CaptureSeed } from "./AddView";
-import { backendSession, type CaptureRequest } from "./api";
+import { backendSession, type CaptureHealth, type CaptureRequest } from "./api";
 import {
   forgetCachedLookups, hydrateGlosses, lookup as lookupDictionaries, searchDictionaries,
   type SearchTier
@@ -156,6 +156,11 @@ export default function App() {
   const [armed, setArmed] = useState<"delete" | null>(null);
   const [toast, setToast] = useState("");
   const [update, setUpdate] = useState<UpdateStage | undefined>(() => updateStage());
+  /* What the server can build entries with. `undefined` means unknown — still checking, or the
+     server is unreachable — and unknown never disables anything: reads are offline-first, and a
+     write that fails loudly is the behaviour everywhere else. Only a definite `available: false`
+     turns Capture off, and then it says why. */
+  const [captureHealth, setCaptureHealth] = useState<CaptureHealth | undefined>(undefined);
 
   const search = useRef<HTMLInputElement>(null);
   const main = useRef<HTMLElement>(null);
@@ -465,6 +470,18 @@ export default function App() {
     return backendSession.captureText(deviceId, request);
   }, []);
 
+  /* Asked once for the session, here rather than in the two views that show it: AddView is keyed
+     and remounts for every seeded composition, so an effect of its own would re-ask on each one.
+     Nothing awaits this and every failure is silence — startup must not depend on the server. */
+  useEffect(() => {
+    if (!session) return;
+    let live = true;
+    void backendSession.health()
+      .then((health) => { if (live) setCaptureHealth(health?.capture); })
+      .catch(() => { /* unknown, which is not the same as unavailable */ });
+    return () => { live = false; };
+  }, [session]);
+
   async function removeLexeme(id: string) {
     try {
       await repository.delete("lexemes", id);
@@ -603,7 +620,7 @@ export default function App() {
             // word, then that one" start clean rather than editing the previous draft.
             key={addSeed?.headword ?? "blank"}
             tab={addTab} onTab={setAddTab} graph={snapshot} problems={problems} busy={saving}
-            seed={addSeed}
+            seed={addSeed} captureHealth={captureHealth}
             onClose={() => { setProblems([]); setAddTab(null); setAddSeed(null); }}
             onCreate={(draft) => void createFromYaml(draft)}
             onCapture={captureText}
@@ -661,6 +678,7 @@ export default function App() {
       // armed confirmation are where it starts, and it navigates itself from there.
       key={`${settings}:${armed ?? ""}`}
       update={update} email={session.email} status={syncStatus} snapshot={snapshot} language={language}
+      captureHealth={captureHealth}
       page={settings} arm={armed}
       onSignOut={() => void signOut()}
       onClose={() => { setSettings(null); setArmed(null); }}

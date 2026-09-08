@@ -39,11 +39,11 @@ Caddyfile
 *-key.pem
 
 # Local working files that carry deployment specifics: `ingest.sh` holds the account password and
-# the tailnet hostname of the live server, `TODO.txt` holds pasted terminal output with home paths.
-# Both are untracked but were not ignored, which is one `git add -A` away from publishing them —
-# and it is what `tests/unit/test_public_repository_privacy.py` was failing on.
+# the tailnet hostname of the live server, `TODO.txt` holds pasted terminal output with home paths,
 # and `vertex-remote-config.txt` is a pasted agent report carrying a personal Google account, a GCP
-# project and organization id, and home paths.
+# project and organization id, and home paths. All three are untracked but were not ignored, which
+# is one `git add -A` away from publishing them — and it is what
+# `tests/unit/test_public_repository_privacy.py` was failing on.
 /ingest.sh
 /TODO.txt
 /vertex-remote-config.txt

@@ -163,7 +163,11 @@ def test_pocketbase_core_auth_seed_validation_and_persistence(tmp_path: Path) ->
         assert status == 200
         assert health["data"] == {
                 "name": "Acervo", "version": "0.1.0", "build": "202608280000",
-                "schemaVersion": SCHEMA_VERSION, "capture": True,
+                "schemaVersion": SCHEMA_VERSION,
+                "capture": {
+                    "available": True, "provider": "gemini",
+                    "model": "stub-model", "reason": None,
+                },
         }
         assert b"<title>Acervo</title>" in get_bytes(base + "/")[1]
 

@@ -39,7 +39,7 @@ conversation state, no tool use. Anything grander than that is not being paid fo
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
-| [01 · Unbreak capture and make the provider legible](01-unbreak-capture-and-make-the-provider-legible.md) | Planned | — | Words can be added again, and a misconfigured model is visible before the button is pressed rather than after |
+| [01 · Unbreak capture and make the provider legible](01-unbreak-capture-and-make-the-provider-legible.md) | Complete | — | Words can be added again, and a misconfigured model is visible before the button is pressed rather than after |
 
 ### Stage 2 · One provider model
 
@@ -66,6 +66,13 @@ conversation state, no tool use. Anything grander than that is not being paid fo
 
 These are decided. A plan may not quietly change one; changing one is its own change, applied to
 every plan that names it.
+
+> **One of them is contested and must be settled before plan 02 starts.** "The hook carries two wire
+> shapes" assumes the hook keeps calling models. The decision taken on 2026-09-08 is the opposite:
+> model access belongs in Python, with the hook a thin authenticating proxy. Re-aim plans 02 and 04
+> around that first — the obstacle to name is that `acervo-worker` is a one-shot container
+> (`profiles: ["tools"]`, no ports), so a synchronous capture route needs an always-on Python
+> service. Plan 01 was implemented as written and deliberately did not touch this.
 
 **A provider is a row, not a class.** `models/catalogue.json` is tracked, ships the *list* and never
 a secret, and is the only place a provider's endpoint and model id are written down. It is read by

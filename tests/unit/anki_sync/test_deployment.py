@@ -363,7 +363,7 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
     root = tmp_path / "acervo"
     credential_file = tmp_path / "credentials"
     credential_file.write_text(
-        "sync-user\ntest-password\nadmin@account.example.com\npb-password\nmodel-key\n",
+        "sync-user\ntest-password\nadmin@account.example.com\npb-password\n",
         encoding="utf-8",
     )
     credential_file.chmod(0o600)
@@ -399,8 +399,10 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
         "ACERVO_ANKI_SYNC_PASSWORD='test-password'\n"
         "ACERVO_PB_SUPERUSER_EMAIL='admin@account.example.com'\n"
         "ACERVO_PB_SUPERUSER_PASSWORD='pb-password'\n"
-        "GEMINI_API_KEY='model-key'\n"
     )
+    # A model credential belongs in llm.env and nowhere else: compose passes llm.env last, so a key
+    # defined in both files has a silent loser, which is what took capture down.
+    assert "GEMINI_API_KEY" not in (root / "secrets.env").read_text(encoding="utf-8")
     deployment = (root / "deployment.env").read_text(encoding="utf-8")
     assert "ACERVO_BIND_ADDRESS=0.0.0.0\n" in deployment
     assert "ACERVO_ANKI_PORT=27801\n" in deployment
@@ -408,6 +410,72 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
     assert "ACERVO_APP_PORT=27802\n" in deployment
     assert f"ACERVO_PB_DATA={root}/data/pocketbase\n" in deployment
     assert f"ACERVO_DOWNLOADS={root}/downloads\n" in deployment
+
+
+def test_installer_moves_a_model_key_out_of_secrets_env(tmp_path: Path) -> None:
+    """One variable defined in two files has a silent loser, and llm.env is passed last."""
+    env, root = deployment_env(tmp_path)
+    secrets = root / "secrets.env"
+    secrets.write_text(
+        secrets.read_text(encoding="utf-8") + "GEMINI_API_KEY='stranded-key'\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy/acervo/install.sh"),
+            "--root", str(root),
+            "--bind-address", "127.0.0.1", "--port", "27701",
+            "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+        ],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "GEMINI_API_KEY" not in secrets.read_text(encoding="utf-8")
+    assert "GEMINI_API_KEY=stranded-key\n" in (root / "llm.env").read_text(encoding="utf-8")
+    # The move happens once and leaves nothing behind to move again.
+    assert (root / "llm.env").read_text(encoding="utf-8").count("GEMINI_API_KEY") == 1
+
+
+def run_configure_llm(tmp_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_docker_path(tmp_path)}:{env['PATH']}"
+    # Hermetic: the real .acervo-deploy names a live server.
+    env["ACERVO_DEPLOY_PROFILE"] = str(tmp_path / "absent-profile")
+    return subprocess.run(
+        [str(REPO_ROOT / "deploy.sh"), "--local", "--configure-llm", *arguments],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False, input="a-key\n",
+    )
+
+
+def test_a_vertex_model_id_is_refused_for_the_gemini_developer_api(tmp_path: Path) -> None:
+    """A 404 from the wrong model looks exactly like a missing project from the outside."""
+    result = run_configure_llm(
+        tmp_path, "--llm-provider", "gemini", "--llm-model", "gemini-3.7-flash",
+        "--llm-api-key-stdin",
+    )
+    assert result.returncode == 2
+    assert "gemini-3.7-flash" in result.stderr
+    assert "Vertex" in result.stderr
+    assert "gemini-3.1-flash-lite" in result.stderr
+
+
+def test_a_model_id_that_is_merely_new_is_not_refused(tmp_path: Path) -> None:
+    """A known-wrong list, not an allowlist: tomorrow's model must not need a script change."""
+    result = run_configure_llm(
+        tmp_path, "--llm-provider", "gemini", "--llm-model", "gemini-9-flash",
+        "--llm-api-key-stdin",
+    )
+    assert "is a Vertex model id" not in result.stderr
+
+
+def test_credentials_and_llm_are_configured_in_separate_commands(tmp_path: Path) -> None:
+    result = run_configure_llm(
+        tmp_path, "--configure-credentials", "--llm-provider", "gemini", "--llm-api-key-stdin",
+    )
+    assert result.returncode == 2
+    assert "separate commands" in result.stderr
 
 
 def test_installer_updates_only_llm_env_and_preserves_both_provider_keys(tmp_path: Path) -> None:

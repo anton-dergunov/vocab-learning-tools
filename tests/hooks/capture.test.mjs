@@ -134,12 +134,12 @@ function installGlobals() {
 
 /* ── a request, and what came back ──────────────────────────────────────── */
 
-function event(app, ownerId, body, route = "/capture") {
+function event(app, ownerId, body, route = "/capture", method = "POST") {
   const captured = {};
   return {
     app,
     auth: { id: ownerId, collection: () => ({ name: "users" }) },
-    request: { url: { path: `/api/acervo/v1${route}` }, method: "POST" },
+    request: { url: { path: `/api/acervo/v1${route}` }, method },
     requestInfo: () => ({ body, query: {} }),
     json: (status, payload) => { captured.status = status; captured.payload = payload; return captured; },
     captured,
@@ -198,6 +198,11 @@ function capture(body) {
   return hook.dispatch(event(app, OWNER, {
     schemaVersion: 6, deviceId: "device000000001", mode: "single", text: "some text", ...body,
   })).payload;
+}
+
+/** Health is a GET and its status matters, so this one keeps the whole response. */
+function health() {
+  return hook.dispatch(event(app, OWNER, {}, "/health", "GET"));
 }
 
 function resetGraph(confirm = "delete-all-words") {
@@ -487,5 +492,89 @@ describe("delete all words", () => {
     seed();
     assert.equal(resetGraph("delete-all-vocabulary").error.code, "confirmation_required");
     assert.ok(app.records.lexemes.every((record) => !record.getBool("deleted")));
+  });
+});
+
+/* Health is the only place a misconfigured model is visible before someone presses the button, so
+   what it says has to be specific enough to act on. Each case pairs the readout with the refusal
+   capture itself gives, because the two are computed separately on purpose and could drift. */
+describe("what the server says it can build entries with", () => {
+  before(() => {
+    installGlobals();
+    hook = createRequire(import.meta.url)(HOOK);
+  });
+  after(() => { delete globalThis.$http; });
+
+  it("reports the provider and model it is configured with", () => {
+    seed();
+    const response = health();
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.payload.data.capture, {
+      available: true, provider: "gemini", model: "stub-model", reason: null,
+    });
+  });
+
+  it("names GEMINI_API_KEY when the Gemini key is missing", () => {
+    seed();
+    environment = { ...GEMINI_ENV, GEMINI_API_KEY: "" };
+    const capture = health().payload.data.capture;
+    assert.equal(capture.available, false);
+    assert.equal(capture.reason, "GEMINI_API_KEY is not set");
+  });
+
+  it("names VERTEX_API_KEY when Vertex is selected without one", () => {
+    seed();
+    environment = {
+      ...GEMINI_ENV, ACERVO_LLM_PROVIDER: "vertex", ACERVO_VERTEX_PROJECT: "personal-project",
+    };
+    const capture = health().payload.data.capture;
+    assert.equal(capture.available, false);
+    assert.equal(capture.reason, "VERTEX_API_KEY is not set");
+    // The Gemini key is still in the environment and still unreachable: that is the whole outage.
+    assert.equal(capture.provider, "vertex");
+  });
+
+  it("names ACERVO_VERTEX_PROJECT when Vertex has a key but no project", () => {
+    seed();
+    environment = { ...GEMINI_ENV, ACERVO_LLM_PROVIDER: "vertex", VERTEX_API_KEY: "vertex-key" };
+    const capture = health().payload.data.capture;
+    assert.equal(capture.available, false);
+    assert.equal(capture.reason, "ACERVO_VERTEX_PROJECT is not set");
+  });
+
+  it("lists the providers it accepts when the configured one is unknown", () => {
+    seed();
+    environment = { ...GEMINI_ENV, ACERVO_LLM_PROVIDER: "cloudflare" };
+    const capture = health().payload.data.capture;
+    assert.equal(capture.available, false);
+    assert.equal(capture.reason, "ACERVO_LLM_PROVIDER is not one of gemini, vertex");
+  });
+
+  it("never puts a key, an endpoint or a project id in an unauthenticated response", () => {
+    seed();
+    environment = {
+      ...GEMINI_ENV, ACERVO_LLM_PROVIDER: "vertex", VERTEX_API_KEY: "vertex-key",
+      ACERVO_VERTEX_PROJECT: "personal-project",
+    };
+    const serialized = JSON.stringify(health().payload);
+    assert.doesNotMatch(serialized, /vertex-key|stub-key|personal-project|googleapis/);
+  });
+
+  it("refuses capture for every configuration it reports as unavailable", () => {
+    const broken = [
+      { ...GEMINI_ENV, GEMINI_API_KEY: "" },
+      { ...GEMINI_ENV, ACERVO_LLM_PROVIDER: "vertex", ACERVO_VERTEX_PROJECT: "personal-project" },
+      { ...GEMINI_ENV, ACERVO_LLM_PROVIDER: "vertex", VERTEX_API_KEY: "vertex-key" },
+      { ...GEMINI_ENV, ACERVO_LLM_PROVIDER: "cloudflare" },
+    ];
+    broken.forEach((configuration) => {
+      seed();
+      environment = configuration;
+      assert.equal(health().payload.data.capture.available, false);
+      const result = capture({});
+      // The code differs by cause — the taxonomy is deliberately unchanged — but nothing is built.
+      assert.ok(["capture_unavailable", "llm_configuration"].includes(result.error.code));
+      assert.equal(llm.requests.length, 0);
+    });
   });
 });

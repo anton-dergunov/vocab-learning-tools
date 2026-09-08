@@ -64,3 +64,11 @@ def test_editor_swap_files_are_ignored():
     ignored = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "*.swp" in ignored
     assert "*.swo" in ignored
+
+
+def test_local_operational_notes_stay_ignored():
+    """These carry an account, a hostname and home paths, and the scan above only sees what git
+    would publish — so the ignore rule is the whole defence."""
+    ignored = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    for path in ("/ingest.sh", "/TODO.txt", "/vertex-remote-config.txt"):
+        assert path in ignored

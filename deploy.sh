@@ -234,6 +234,20 @@ else
   if [ -z "$llm_model" ]; then
     if [ "$llm_provider" = vertex ]; then llm_model=gemini-3.7-flash; else llm_model=gemini-3.1-flash-lite; fi
   fi
+  # A model id that cannot belong to the selected provider is a shell-level mistake, and it costs a
+  # deployment cycle to find: the Developer API answers an unknown model with a 404, which the hook
+  # reports as llm_configuration — indistinguishable from a missing Vertex project. This is a
+  # *known-wrong* list rather than an allowlist, so a model released tomorrow is never refused for
+  # being new.
+  if [ "$llm_provider" = gemini ]; then
+    case "$llm_model" in
+      gemini-3.7-*|gemini-3.8-*)
+        echo "$llm_model is a Vertex model id; the Gemini Developer API will not serve it" >&2
+        echo "Use --llm-provider vertex, or --llm-model gemini-3.1-flash-lite" >&2
+        exit 2
+        ;;
+    esac
+  fi
   llm_location=${llm_location:-global}
   if [ "$llm_provider" = vertex ] && [ -z "$llm_project" ]; then
     echo "Vertex configuration requires --llm-project" >&2
@@ -321,19 +335,6 @@ prompt_credentials() {
     echo "PocketBase superuser email and password are required" >&2
     exit 2
   }
-  # Optional: without it the server simply reports that it cannot build entries, and every other
-  # part of Acervo works exactly as before.
-  printf '%s' 'Gemini API key for capture (blank to disable capture): ' >&2
-  if [ -t 0 ]; then
-    stty -echo
-    trap 'stty echo' EXIT HUP INT TERM
-    IFS= read -r gemini_api_key
-    stty echo
-    trap - EXIT HUP INT TERM
-  else
-    IFS= read -r gemini_api_key || gemini_api_key=""
-  fi
-  printf '\n' >&2
 }
 
 build_release_archive() {
@@ -388,7 +389,7 @@ if [ "$mode" = local ]; then
   [ "$reset_data" = false ] || set -- "$@" --reset-data
   [ "$reset_pocketbase" = false ] || set -- "$@" --reset-pocketbase
   if [ -n "$credential_args" ]; then
-    printf '%s\n%s\n%s\n%s\n%s\n' "$sync_username" "$sync_password" "$pb_superuser_email" "$pb_superuser_password" "$gemini_api_key" | "$repo_root/deploy/acervo/install.sh" "$@"
+    printf '%s\n%s\n%s\n%s\n' "$sync_username" "$sync_password" "$pb_superuser_email" "$pb_superuser_password" | "$repo_root/deploy/acervo/install.sh" "$@"
   else
     "$repo_root/deploy/acervo/install.sh" "$@"
   fi

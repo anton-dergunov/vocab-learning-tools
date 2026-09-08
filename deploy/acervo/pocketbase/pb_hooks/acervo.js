@@ -518,27 +518,61 @@ const LLM_TIMEOUT_SECONDS = 120;
 const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const PROMPT_CACHE = {};
 
+/**
+ * What this server is configured to build entries with, and — when it cannot — why.
+ *
+ * `reason` exists because a bare "capture is unavailable" is what let a real outage stay invisible:
+ * false could equally mean no key, the wrong key name, a missing Vertex project or an unknown
+ * provider, and nobody could tell which without shell access to the server. It names the first
+ * unmet requirement as an environment variable, and deliberately never carries a value — health
+ * serves it unauthenticated.
+ */
 function llmSettings() {
   const provider = trimmed($os.getenv("ACERVO_LLM_PROVIDER")) || "gemini";
+  const key = provider === "vertex"
+    ? trimmed($os.getenv("VERTEX_API_KEY"))
+    : trimmed($os.getenv("GEMINI_API_KEY"));
+  const project = trimmed($os.getenv("ACERVO_VERTEX_PROJECT"));
   return {
     provider: provider,
-    key: provider === "vertex"
-      ? trimmed($os.getenv("VERTEX_API_KEY"))
-      : trimmed($os.getenv("GEMINI_API_KEY")),
+    key: key,
     model: trimmed($os.getenv("ACERVO_LLM_MODEL")) || "gemini-3.1-flash-lite",
     // Kept as a test seam for the disposable real-PocketBase integration server. Vertex always
     // uses Google's full project/location endpoint and cannot be redirected.
     geminiEndpoint: trimmed($os.getenv("ACERVO_LLM_ENDPOINT")) || "https://generativelanguage.googleapis.com",
-    project: trimmed($os.getenv("ACERVO_VERTEX_PROJECT")),
+    project: project,
     location: trimmed($os.getenv("ACERVO_VERTEX_LOCATION")) || "global",
+    reason: llmReason(provider, key, project),
   };
 }
 
-function captureAvailable() {
+/**
+ * The first unmet requirement, or null when the configuration can work.
+ *
+ * `llmJson` re-checks these same three conditions rather than reading this, and that is deliberate:
+ * each one raises a *different* error code there, and `scripts/ingest_vocabulary_file.py` retries
+ * on exactly three codes. This is the reporting view of those facts, not a second gate.
+ *
+ * `ACERVO_VERTEX_LOCATION` can never be the reason: it defaults to `global`.
+ */
+function llmReason(provider, key, project) {
+  if (provider !== "gemini" && provider !== "vertex") {
+    return "ACERVO_LLM_PROVIDER is not one of gemini, vertex";
+  }
+  if (!key) return provider === "vertex" ? "VERTEX_API_KEY is not set" : "GEMINI_API_KEY is not set";
+  if (provider === "vertex" && !project) return "ACERVO_VERTEX_PROJECT is not set";
+  return null;
+}
+
+/** What health says about capture. Never a key, an endpoint or a project id. */
+function captureHealth() {
   const settings = llmSettings();
-  if (settings.provider === "gemini") return Boolean(settings.key);
-  if (settings.provider === "vertex") return Boolean(settings.key && settings.project && settings.location);
-  return false;
+  return {
+    available: settings.reason === null,
+    provider: settings.provider,
+    model: settings.model,
+    reason: settings.reason,
+  };
 }
 
 /** 15 lowercase alphanumerics, the one id format §03 allows, minted the same way everywhere. */
@@ -1275,8 +1309,10 @@ function dispatch(event) {
         build: trimmed($os.getenv("ACERVO_APP_BUILD")) || "0",
         schemaVersion: SCHEMA_VERSION,
         // Whether this server can build entries at all, so the app can say why the button is off
-        // rather than failing at the moment someone finally uses it.
-        capture: captureAvailable(),
+        // rather than failing at the moment someone finally uses it. Provider and model are
+        // identifiers the owner chose and needs to see; the key, the endpoint and the Vertex
+        // project are deployment details and stay on the server.
+        capture: captureHealth(),
       });
     }
     if (method === "GET" && relative === "/mac-release") return respond(event, releaseManifest());
