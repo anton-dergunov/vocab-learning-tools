@@ -42,5 +42,8 @@ Caddyfile
 # the tailnet hostname of the live server, `TODO.txt` holds pasted terminal output with home paths.
 # Both are untracked but were not ignored, which is one `git add -A` away from publishing them —
 # and it is what `tests/unit/test_public_repository_privacy.py` was failing on.
+# and `vertex-remote-config.txt` is a pasted agent report carrying a personal Google account, a GCP
+# project and organization id, and home paths.
 /ingest.sh
 /TODO.txt
+/vertex-remote-config.txt

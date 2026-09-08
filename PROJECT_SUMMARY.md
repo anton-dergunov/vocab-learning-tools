@@ -21,11 +21,9 @@ The `preview` subcommand validates `ArticleExtended` JSON and renders standalone
 
 ## The library (`src/vocabgen/`)
 
-- **Provider factory** (`provider/factory.py`) — dynamic dispatch: `create_provider("llm", {"provider":"gemini",...})` imports `vocabgen.llm.gemini.GeminiProvider`. Three families, each an ABC + backends:
-  - `llm/`: `openai`, `gemini`, `ollama` — all implement `generate(system, user)`, wrapped with `@retry()` and a `RateLimiter`.
-  - `tts/`: `kokoro` → mp3 with silence padding (`helpers.py`).
-  - `vision/`: `stable_diffusion` → resized jpg.
-- **Cross-cutting** `provider/`: `retry.py` (exponential backoff + jitter) and `rate_limiter.py` (sliding-window).
+- **Provider factory** (`provider/factory.py`) — **superseded, and reachable only from tests.** Dynamic dispatch: `create_provider("llm", {"provider":"gemini",...})` imports `vocabgen.llm.gemini.GeminiProvider`. Three families, each an ABC + backends: `llm/` (`openai`, `gemini`, `ollama`, each `generate(system, user)` wrapped with `@retry()` and a `RateLimiter`), `tts/` (`kokoro` → mp3 with silence padding via `helpers.py`), `vision/` (`stable_diffusion` → resized jpg). No production script imports any of it.
+- **Where model calls actually happen**, in four unrelated places: `images/` and `scripts/generate_images.py` (direct `google-genai` against Vertex), `image_benchmark/` and `scripts/image_benchmark_runner.py` (a subprocess registry of eleven backends), and the PocketBase capture hook (raw HTTP). Consolidating all four onto one catalogue and one Python package is planned in `docs/plans/`.
+- **Cross-cutting** `provider/`: `retry.py` (exponential backoff + jitter) and `rate_limiter.py` (sliding-window, not thread-safe — `images/pacing.py` is the thread-safe fork that the live pipeline uses).
 - **Core logic** `vocab_processor.py` (pure parsing/matching functions) and **isolated I/O** `fileops.py` (atomic write, append, backup, slugify).
 - **Data classes** `data/`: `ArticleShort` (validated Markdown), `DraftInbox` (mutable inbox wrapper), and Pydantic v2 `ArticleExtended`/nested models (validated canonical JSON). `ArticleExtendedCollection` manages JSON files and `MediaCollection` manages generated media caches.
 - **Anki library** `anki/`: deterministic media paths/generation, stable note identities and package building, and lightweight standalone HTML previews.
