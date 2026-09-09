@@ -556,7 +556,39 @@ else
      result=\$?; rm -f $remote_installer $remote_archive $remote_credentials $remote_llm_credentials; exit \$result" || remote_failed
 fi
 
+# The address to open, which is the one thing a deployment summary was not saying. The tailnet
+# suffix is a property of the tailnet, not of a machine, so this machine's answer is the server's
+# answer — and it is read at the moment it is printed rather than remembered anywhere, because a
+# tailnet name is deployment-specific and belongs in no tracked file.
+tailnet_suffix() {
+  suffix_tool=$(command -v tailscale 2>/dev/null || true)
+  for candidate in /Applications/Tailscale.app/Contents/MacOS/Tailscale \
+                   /usr/local/bin/tailscale \
+                   /var/packages/Tailscale/target/bin/tailscale; do
+    [ -z "$suffix_tool" ] || break
+    [ ! -x "$candidate" ] || suffix_tool=$candidate
+  done
+  [ -n "$suffix_tool" ] || return 0
+  # `--json` prints one field per line, so this is a line match rather than a parser.
+  "$suffix_tool" status --json 2>/dev/null \
+    | sed -n 's/.*"MagicDNSSuffix"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | head -n 1
+}
+
 echo "Acervo deployment completed."
+if [ -n "$service" ]; then
+  suffix=$(tailnet_suffix)
+  if [ -n "$suffix" ]; then
+    echo "Open Acervo at:        https://$service.$suffix/"
+  else
+    echo "Open Acervo at:        https://$service.<your tailnet>.ts.net/ (\`tailscale status\` names the suffix)"
+  fi
+else
+  case "${target#*@}" in
+    *.ts.net) echo "Open Acervo at:        https://${target#*@}:$effective_https_port/" ;;
+    *) echo "Open Acervo at:        https://<the server's tailnet name>:$effective_https_port/" ;;
+  esac
+fi
 echo "Internal HTTP backend: http://$effective_app_bind_address:$effective_app_port"
 if [ -n "$service" ]; then
   echo "Dedicated Tailscale service: svc:$service on HTTPS 443 (configure explicitly with ./deploy.sh --configure-https)"

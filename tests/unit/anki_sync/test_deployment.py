@@ -662,6 +662,84 @@ def test_the_launcher_refuses_an_address_that_is_not_one(tmp_path: Path, address
     assert "implausible shape" in result.stderr or "Missing account" in result.stderr
 
 
+def test_a_finished_deployment_says_where_to_open_acervo(tmp_path: Path) -> None:
+    """A summary that named a loopback port and a service id was not telling the operator the one
+    thing they needed. The tailnet suffix is a property of the tailnet, so the deploying machine's
+    answer is the server's answer."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    ssh = bin_dir / "ssh"
+    ssh.write_text(
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        "  *'deploy-acervo check'*) printf 'helper\\n' ;;\n"
+        "  *) cat >/dev/null 2>&1 || true ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    ssh.chmod(0o755)
+    tailscale = bin_dir / "tailscale"
+    tailscale.write_text(
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        '  "status --json") printf \'{\\n  "MagicDNSSuffix": "tailexample.ts.net"\\n}\\n\' ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    tailscale.chmod(0o755)
+    env, _ = deployment_env(tmp_path)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy.sh"),
+            "--target", "deployer@server.example.test",
+            "--service", "acervo",
+        ],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "https://acervo.tailexample.ts.net/" in result.stdout
+
+
+def test_the_summary_says_the_shape_of_the_address_when_it_cannot_read_the_tailnet(
+    tmp_path: Path,
+) -> None:
+    """Guessing is worse than saying where to look."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    ssh = bin_dir / "ssh"
+    ssh.write_text(
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        "  *'deploy-acervo check'*) printf 'helper\\n' ;;\n"
+        "  *) cat >/dev/null 2>&1 || true ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    ssh.chmod(0o755)
+    # A `tailscale` that is present but says nothing useful, which is the same situation as none.
+    tailscale = bin_dir / "tailscale"
+    tailscale.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    tailscale.chmod(0o755)
+    env, _ = deployment_env(tmp_path)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy.sh"),
+            "--target", "deployer@server.example.test",
+            "--service", "acervo",
+        ],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "https://acervo.<your tailnet>.ts.net/" in result.stdout
+    assert "tailscale status" in result.stdout
+
+
 def run_configure_llm(tmp_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PATH"] = f"{fake_docker_path(tmp_path)}:{env['PATH']}"

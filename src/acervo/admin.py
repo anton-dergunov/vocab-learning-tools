@@ -53,7 +53,10 @@ def create_account(settings: Settings, email: str) -> int:
     except (ValueError, accounts.AccountExists) as refusal:
         print(str(refusal), file=sys.stderr)
         return 2
-    print(f"Created {created['email']} ({created['id']}).")
+    # Deliberately not the record id. It is the `ownerId` on every record this account will hold,
+    # not a secret — but an unexplained 15-character string next to a password prompt reads like one,
+    # and nobody typing this command has a use for it.
+    print(f"Created {created['email']}.")
     return 0
 
 
