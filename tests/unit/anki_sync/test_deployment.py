@@ -71,15 +71,40 @@ def fake_tailscale_service_path(
     return bin_dir, state, log
 
 
-def fake_docker_path(tmp_path: Path) -> Path:
+def fake_docker_path(
+    tmp_path: Path,
+    *,
+    existing: tuple[str, ...] = (),
+    published: bool = True,
+) -> Path:
+    """A `docker` that answers the four questions the installer asks it.
+
+    `existing` names containers `inspect` should find, and finds them stopped — which is the state a
+    create that could not bind its port leaves behind. `published` is whether `port` reports a host
+    binding; without one a container can be healthy and still unreachable, which is the failure the
+    installer now refuses to report as success.
+    """
     bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
+    bin_dir.mkdir(exist_ok=True)
     docker = bin_dir / "docker"
     docker.write_text(
         "#!/bin/sh\n"
-        "case \" $* \" in\n"
-        "  *\" ps --format json \"*) echo '{\"Health\":\"healthy\"}' ;;\n"
+        'known_containers="' + " ".join(existing) + '"\n'
+        '[ -z "${ACERVO_TEST_DOCKER_LOG:-}" ] || echo "$*" >>"$ACERVO_TEST_DOCKER_LOG"\n'
+        'case " $* " in\n'
+        '  *" ps --format json "*) echo \'{"Health":"healthy"}\'; exit 0 ;;\n'
+        '  *" port "*) ' + ('echo 127.0.0.1:27702' if published else ':') + '; exit 0 ;;\n'
         "esac\n"
+        'if [ "$1" = inspect ]; then\n'
+        "  for known in $known_containers; do\n"
+        '    for word in "$@"; do\n'
+        '      [ "$word" = "$known" ] || continue\n'
+        '      case " $* " in *State.Running*) echo false ;; esac\n'
+        "      exit 0\n"
+        "    done\n"
+        "  done\n"
+        "  exit 1\n"
+        "fi\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -479,6 +504,67 @@ def test_installer_strips_the_retired_superuser_pair_and_mints_a_signing_secret(
     again = secrets.read_text(encoding="utf-8")
     assert again.count("ACERVO_JWT_SECRET") == 1
     assert minted.group(1) in again
+
+
+def run_installer(root: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            str(REPO_ROOT / "deploy/acervo/install.sh"),
+            "--root", str(root),
+            "--bind-address", "127.0.0.1", "--port", "27701",
+            "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+        ],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+
+
+def test_installer_retires_the_container_that_was_holding_the_app_port(tmp_path: Path) -> None:
+    """Renaming the compose service left the old container running on an already-deployed server, and
+    it still held the app port: the new one failed to bind with "port is already allocated". Compose
+    calls it an orphan and warns rather than removing it."""
+    env, root = deployment_env(tmp_path)
+    log = tmp_path / "docker.log"
+    env["ACERVO_TEST_DOCKER_LOG"] = str(log)
+    fake_docker_path(tmp_path, existing=("acervo-pocketbase-1",))
+
+    result = run_installer(root, env)
+
+    assert result.returncode == 0, result.stderr
+    assert "acervo-pocketbase-1" in result.stdout
+    assert "rm -f acervo-pocketbase-1" in log.read_text(encoding="utf-8")
+    # The words in it are the owner's. An export is the documented way to carry them across, and
+    # deleting the last copy on their behalf is not the installer's call.
+    assert "rm -rf" not in log.read_text(encoding="utf-8")
+
+
+def test_installer_discards_a_server_container_that_failed_to_bind(tmp_path: Path) -> None:
+    """The nastier half of the same failure. A create that cannot bind leaves the container behind,
+    and its host binding is never programmed — not on a later start, and not on a restart. Compose
+    then finds a matching container, starts it, and reports success while nothing is published,
+    because the healthcheck runs inside the container."""
+    env, root = deployment_env(tmp_path)
+    log = tmp_path / "docker.log"
+    env["ACERVO_TEST_DOCKER_LOG"] = str(log)
+    fake_docker_path(tmp_path, existing=("acervo-server-1",))
+
+    result = run_installer(root, env)
+
+    assert result.returncode == 0, result.stderr
+    assert "rm -f acervo-server-1" in log.read_text(encoding="utf-8")
+
+
+def test_installer_refuses_to_call_an_unpublished_server_healthy(tmp_path: Path) -> None:
+    """Asking the container whether it is healthy is not asking whether anyone can reach it."""
+    env, root = deployment_env(tmp_path)
+    fake_docker_path(tmp_path, published=False)
+
+    result = run_installer(root, env)
+
+    assert result.returncode == 1
+    assert "port is not published" in result.stderr
+    assert "docker rm -f acervo-server-1" in result.stderr
+    # The claim it used to make regardless.
+    assert "internal HTTP backend is healthy" not in result.stdout
 
 
 def run_configure_llm(tmp_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -1047,6 +1133,11 @@ def test_app_and_anki_ports_are_distinct_and_collisions_are_rejected(tmp_path: P
     compose = (REPO_ROOT / "deploy/acervo/compose.yaml").read_text(encoding="utf-8")
     assert "${ACERVO_ANKI_PORT:-27701}:8080" in compose
     assert "${ACERVO_APP_PORT:-27702}:8000" in compose
+    # The installer asks `docker port` about the same container port to check that publishing
+    # actually happened, so the two statements of it have to agree. They disagree loudly rather than
+    # quietly — an unanswered `docker port` fails the deployment — but agreeing is cheaper.
+    installer = (REPO_ROOT / "deploy/acervo/install.sh").read_text(encoding="utf-8")
+    assert 'docker port "$compose_project-server-1" 8000' in installer
 
     env, _ = deployment_env(tmp_path)
     result = subprocess.run(

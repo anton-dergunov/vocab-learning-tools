@@ -339,6 +339,38 @@ if [ "$reset_database" = true ]; then
   echo "Vocabulary database replaced; the previous one is in $backup_dir/server"
 fi
 
+# Replacing PocketBase renamed the compose service, so an already-deployed server still carries the
+# old container — and it still holds the app port, which makes the new one fail to bind with "port is
+# already allocated". Compose calls it an orphan and warns rather than removing it, and the warning
+# scrolls past in the build output. Retire it here instead. This erases itself: after the first run
+# there is nothing left to remove.
+#
+# Only ever this one container, by exact name. `--remove-orphans` would do the same job and any
+# future one, but it decides for itself what in this project is surplus, and that is not a decision
+# to hand to a flag on a shared host.
+retired_container="$compose_project-pocketbase-1"
+if docker inspect "$retired_container" >/dev/null 2>&1; then
+  run_quietly "Retiring the superseded $retired_container container" \
+    docker rm -f "$retired_container"
+  echo "Removed the superseded $retired_container container, which was holding the app port"
+  if [ -d "$acervo_root/data/pocketbase" ]; then
+    # Left where it is on purpose. The words in it are the owner's, an export is the documented way
+    # to carry them across, and deleting the last copy on their behalf is not this script's call.
+    echo "Its old database is untouched at $acervo_root/data/pocketbase; remove it when you no longer want it"
+  fi
+fi
+
+# The other half of that failure, and the nastier one. A create that cannot bind its port leaves the
+# container behind in `Created` state, and its host binding is never programmed — not on a later
+# start, and not on a restart either. Compose then finds a container whose configuration matches,
+# starts it, and reports success; the healthcheck runs *inside* the container, so it goes green while
+# nothing is published. Recreating is free — the database is on a mounted volume — so a server
+# container that is not running is discarded rather than started.
+if docker inspect "$compose_project-server-1" >/dev/null 2>&1 \
+   && [ "$(docker inspect -f '{{.State.Running}}' "$compose_project-server-1" 2>/dev/null || echo false)" != true ]; then
+  run_quietly "Discarding a stopped server container" docker rm -f "$compose_project-server-1"
+fi
+
 echo "Building and starting containers..."
 run_quietly "Building and starting containers" compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
@@ -367,6 +399,18 @@ until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env
   fi
   sleep 2
 done
+
+# Asking the container whether it is healthy is not the same question as asking whether anyone can
+# reach it: the healthcheck runs inside the container and knows nothing about publishing. This is the
+# check that catches a container serving perfectly on a port bound to nothing, which is what the line
+# below used to claim its way past. `docker port` rather than an HTTP request on purpose — it is the
+# precise signal, and it needs no client this host might not have.
+published=$(docker port "$compose_project-server-1" 8000 2>/dev/null || true)
+if [ -z "$published" ]; then
+  echo "The Acervo server is running but its port is not published, so nothing can reach it." >&2
+  echo "Remove the container and deploy again: docker rm -f $compose_project-server-1" >&2
+  exit 1
+fi
 
 printf '%s\n' "$release_dir" >"$acervo_root/current-release"
 echo "Acervo Anki sync server is healthy at $bind_address:$anki_port"

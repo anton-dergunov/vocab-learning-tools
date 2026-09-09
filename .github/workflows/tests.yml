@@ -33,6 +33,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements/dev.txt
+        pip install -e .
         npm install --prefix web
 
     - name: Stage the Acervo PWA
@@ -80,8 +81,14 @@ jobs:
         path: build/anki-sync-evidence/ci
         if-no-files-found: warn
 
-  anki-sync-multi-arch-build:
+  multi-arch-build:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        image:
+          - deploy/acervo/server/Dockerfile
+          - deploy/acervo/Dockerfile
 
     steps:
     - uses: actions/checkout@v4
@@ -96,8 +103,8 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         context: .
-        file: deploy/acervo/Dockerfile
+        file: ${{ matrix.image }}
         platforms: linux/amd64,linux/arm64
         push: false
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=gha,scope=${{ matrix.image }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.image }}
