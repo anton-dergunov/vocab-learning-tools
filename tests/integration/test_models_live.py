@@ -41,6 +41,16 @@ def gated():
         pytest.skip("set RUN_LIVE_MODEL_TESTS=true to spend real money on real providers")
 
 
+def pairs(kind: str) -> list[tuple[str, str]]:
+    """Every (row, model) this catalogue offers for a kind — each one gets its own case.
+
+    Per pair rather than per row, because a row's second model is exactly the thing a stub cannot
+    check: it is listed so that the first one's 429 has somewhere to go, and a model id that has
+    been retired sits there silently until the day the first bucket runs out.
+    """
+    return [(row.id, model) for row in CATALOGUE.serving(kind) for model in row.models_for(kind)]
+
+
 def row_for(kind: str, identifier: str):
     row = CATALOGUE.find(identifier)
     if not row.serves(kind):
@@ -78,23 +88,29 @@ def reachable(row, kind):
     return run
 
 
-@pytest.mark.parametrize("identifier", ["gemini-free", "cloudflare"])
-def test_text_comes_back_as_json_from_a_real_provider(identifier):
+@pytest.mark.parametrize(("identifier", "model"), pairs("text"), ids=lambda v: v.split("/")[-1])
+def test_text_comes_back_as_json_from_a_real_provider(identifier, model):
     row = row_for("text", identifier)
-    result = reachable(row, "text")(lambda: call.text(TEXT_PROMPT, row=row, system="You answer with JSON only.", as_json=True))
+    result = reachable(row, "text")(
+        lambda: call.text(
+            TEXT_PROMPT, row=row, model=model, system="You answer with JSON only.", as_json=True
+        )
+    )
     check(result.answer, row)
     assert isinstance(result.parsed, dict), f"unparseable reply: {result.text[:200]!r}"
     assert result.parsed.get("word") == WORD
+    assert result.answer.model == model
     # `native` rows are sent `response_format`; `prompt` rows are asked in prose and parsed after.
     # Either way the caller gets a dict, which is the whole point of the capability declaration.
-    print(f"\n{identifier}: {row.model_for('text')} in {result.answer.seconds:.1f}s "
-          f"cost={result.answer.cost_usd}")
+    print(f"\n{identifier}: {model} in {result.answer.seconds:.1f}s cost={result.answer.cost_usd}")
 
 
-@pytest.mark.parametrize("identifier", ["vertex", "cloudflare"])
-def test_an_image_comes_back_as_bytes_from_a_real_provider(identifier):
+@pytest.mark.parametrize(("identifier", "model"), pairs("image"), ids=lambda v: v.split("/")[-1])
+def test_an_image_comes_back_as_bytes_from_a_real_provider(identifier, model):
     row = row_for("image", identifier)
-    result = reachable(row, "image")(lambda: call.image(IMAGE_PROMPT, row=row, size=(512, 512)))
+    result = reachable(row, "image")(
+        lambda: call.image(IMAGE_PROMPT, row=row, model=model, size=(512, 512))
+    )
     check(result.answer, row)
     assert len(result.data) > 1000, "that is too small to be an image"
     # PNG, JPEG or WebP — enough to prove these are pixels and not a URL or a base64 string nobody
@@ -102,17 +118,18 @@ def test_an_image_comes_back_as_bytes_from_a_real_provider(identifier):
     assert result.data[:4] in (b"\x89PNG", b"\xff\xd8\xff\xe0", b"\xff\xd8\xff\xe1", b"RIFF"), (
         f"unexpected leading bytes {result.data[:8]!r}"
     )
-    print(f"\n{identifier}: {row.model_for('image')} → {len(result.data)} bytes "
-          f"in {result.answer.seconds:.1f}s")
+    print(f"\n{identifier}: {model} → {len(result.data)} bytes in {result.answer.seconds:.1f}s")
 
 
-@pytest.mark.parametrize("identifier", ["gemini-free", "cloudflare"])
-def test_speech_comes_back_as_audio_from_a_real_provider(identifier):
+@pytest.mark.parametrize(("identifier", "model"), pairs("audio"), ids=lambda v: v.split("/")[-1])
+def test_speech_comes_back_as_audio_from_a_real_provider(identifier, model):
     row = row_for("audio", identifier)
-    result = reachable(row, "audio")(lambda: call.speech(WORD, row=row))
+    result = reachable(row, "audio")(lambda: call.speech(WORD, row=row, model=model))
     check(result.answer, row)
     assert len(result.data) > 500, "that is too small to be a spoken word"
-    print(f"\n{identifier}: {row.model_for('audio')} → {len(result.data)} bytes "
+    # Sniffed from the bytes, not asserted by the row: Gemini answers WAV and Aura answers MP3.
+    assert result.mime != "application/octet-stream", f"unrecognised audio {result.data[:8]!r}"
+    print(f"\n{identifier}: {model} → {len(result.data)} bytes {result.mime} "
           f"in {result.answer.seconds:.1f}s")
 
 

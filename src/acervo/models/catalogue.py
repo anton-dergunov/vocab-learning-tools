@@ -6,8 +6,15 @@ model id, endpoint and capabilities are written down, and — unlike the diction
 described twice because one reader runs in a browser — it is described once, here, because the only
 reader is Python.
 
-Row order is the default preference order. With no chain configured, every row this deployment is
-credentialed for serves the kind, in file order.
+Row order is the default preference order, and within a row so is model order. With no chain
+configured the walk is provider by provider and, inside each, model by model: every credentialed row
+that serves the kind, each of its models for that kind in turn. A row names *several* models per kind
+because a free tier is metered per model — two models with 500 requests a day each are a thousand
+requests a day, and the second is reached by the first one's 429.
+
+The unit of choice is therefore a (provider, model) pair, not a provider. Plan 03's Settings pane
+enables, disables and reorders those pairs; this file is the list they are chosen from and the order
+they fall back in when nobody has chosen.
 """
 
 from __future__ import annotations
@@ -37,13 +44,19 @@ class Row:
     id: str
     label: str
     kinds: tuple[str, ...]
-    litellm: dict[str, str] = field(default_factory=dict)
+    # {kind: [model, ...]}, in the order they are tried. Always a list, even of one: a free tier
+    # is metered per model, so "which model" is as much a choice as "which provider".
+    litellm: dict[str, list[str]] = field(default_factory=dict)
     adapter: dict[str, str] = field(default_factory=dict)
-    models: dict[str, str] = field(default_factory=dict)
+    models: dict[str, list[str]] = field(default_factory=dict)
     keyEnv: str | None = None
     requires: tuple[str, ...] = ()
     auth: str | None = None
     baseUrl: str | None = None
+    # Where the owner reads their own usage and spend. Interpolated like `baseUrl` and under the
+    # same rule — a `requires` name, never a key. Plan 03's Settings pane is what renders it; there
+    # is no way to ask a provider for a usage figure over its API, so a link is the honest answer.
+    usageUrl: str | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
     params: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Call arguments whose values live in the environment: {argument: VARIABLE}. Vertex needs
@@ -55,13 +68,16 @@ class Row:
     def serves(self, kind: str) -> bool:
         return kind in self.kinds
 
-    def model_for(self, kind: str) -> str:
-        """The model id for this kind — LiteLLM's `provider/model` form, or the adapter's own."""
-        if kind in self.litellm:
-            return self.litellm[kind]
-        if kind in self.models:
-            return self.models[kind]
-        raise CatalogueError(f"{self.id} declares {kind} but names no model for it")
+    def models_for(self, kind: str) -> tuple[str, ...]:
+        """Every model this row offers for a kind, in the order they are tried.
+
+        LiteLLM's `provider/model` form, or the adapter's own ids where the row routes that kind
+        through an adapter.
+        """
+        found = self.litellm.get(kind) or self.models.get(kind)
+        if not found:
+            raise CatalogueError(f"{self.id} declares {kind} but names no model for it")
+        return tuple(found)
 
     def params_for(self, kind: str) -> dict[str, Any]:
         return dict(self.params.get(kind) or {})
@@ -113,17 +129,26 @@ def _validate(row: Row) -> None:
             raise CatalogueError(f"{row.id} declares {kind} but names neither a model nor an adapter")
         if by_adapter and kind not in row.models:
             raise CatalogueError(f"{row.id} routes {kind} through an adapter but names no model")
+        named = row.litellm.get(kind) if by_library else row.models.get(kind)
+        if not isinstance(named, list) or not named or not all(isinstance(m, str) and m for m in named):
+            raise CatalogueError(
+                f"{row.id} must name {kind} models as a non-empty list, even for a single model"
+            )
+        if len(set(named)) != len(named):
+            raise CatalogueError(f"{row.id} names the same {kind} model twice")
     if row.schema_mode not in SCHEMA_MODES:
         raise CatalogueError(f"{row.id} declares an unknown jsonSchema mode {row.schema_mode!r}")
     if row.keyEnv and row.keyEnv in row.passes.values():
         raise CatalogueError(f"{row.id} passes its key as an ordinary call argument")
-    for name in _PLACEHOLDER.findall(row.baseUrl or ""):
-        # A key does not belong in a URL. This is the locked contract as an assertion rather than
-        # as a comment, because a base URL is the one field that travels into logs and error text.
-        if name == row.keyEnv:
-            raise CatalogueError(f"{row.id} interpolates its key into baseUrl")
-        if name not in row.requires:
-            raise CatalogueError(f"{row.id} interpolates {name}, which it does not require")
+    for field_name, template in (("baseUrl", row.baseUrl), ("usageUrl", row.usageUrl)):
+        for name in _PLACEHOLDER.findall(template or ""):
+            # A key does not belong in a URL. This is the locked contract as an assertion rather
+            # than as a comment: a base URL travels into logs and error text, and a usage link is
+            # rendered in the interface and clicked into a browser's history.
+            if name == row.keyEnv:
+                raise CatalogueError(f"{row.id} interpolates its key into {field_name}")
+            if name not in row.requires:
+                raise CatalogueError(f"{row.id} interpolates {name}, which it does not require")
 
 
 def load_catalogue(path: Path | None = None) -> Catalogue:
@@ -183,9 +208,23 @@ def _adc_present() -> bool:
 
 def base_url(row: Row) -> str | None:
     """This row's base URL with its `requires` variables filled in, or None when it has none."""
-    if not row.baseUrl:
+    return _filled(row.baseUrl)
+
+
+def usage_url(row: Row) -> str | None:
+    """Where the owner reads their own usage for this provider, or None when the row names nowhere.
+
+    No provider Acervo speaks to serves a usage figure over its API, so this is a link rather than a
+    number. It is filled in from the environment for the same reason `baseUrl` is: a console URL
+    wants the account or project, and that is a deployment fact rather than a tracked one.
+    """
+    return _filled(row.usageUrl)
+
+
+def _filled(template: str | None) -> str | None:
+    if not template:
         return None
-    return _PLACEHOLDER.sub(lambda match: os.environ.get(match.group(1), ""), row.baseUrl)
+    return _PLACEHOLDER.sub(lambda match: os.environ.get(match.group(1), ""), template)
 
 
 def key(row: Row) -> str | None:

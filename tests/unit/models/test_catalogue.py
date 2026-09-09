@@ -14,12 +14,14 @@ import pytest
 
 from acervo.models.catalogue import (
     CATALOGUE_PATH,
+    _PLACEHOLDER,
     CatalogueError,
     Row,
     available,
     base_url,
     load_catalogue,
     reason,
+    usage_url,
 )
 
 SHIPPED = load_catalogue()
@@ -38,7 +40,7 @@ def a_row(**overrides):
         "id": "row",
         "label": "Row",
         "kinds": ["text"],
-        "litellm": {"text": "gemini/x"},
+        "litellm": {"text": ["gemini/x"]},
         "keyEnv": "A_KEY",
         **overrides,
     }
@@ -48,12 +50,82 @@ def test_every_shipped_row_names_a_model_or_an_adapter_for_every_kind_it_declare
     """Plan 04's "assert every row has one", in the form a row with three kinds actually needs.
 
     A scalar `litellm` field could not have said this: a row serving text, image and audio names
-    three different models, and Cloudflare reaches two of those three through the adapter.
+    different models for each, Cloudflare reaches two of those three through the adapter, and a kind
+    may name several models because a free tier is metered per model.
     """
     for row in SHIPPED:
         for kind in row.kinds:
             assert (kind in row.litellm) != (kind in row.adapter), (row.id, kind)
-            assert row.model_for(kind)
+            assert row.models_for(kind)
+
+
+def test_a_kind_named_as_a_bare_string_rather_than_a_list_is_refused(tmp_path):
+    """Always a list, even of one: a scalar would make the single-model case a different shape from
+    the two-model case, and every reader would have to handle both."""
+    path = written(tmp_path, a_row(litellm={"text": "gemini/x"}))
+    with pytest.raises(CatalogueError, match="non-empty list"):
+        load_catalogue(path)
+
+
+def test_an_empty_model_list_is_refused(tmp_path):
+    path = written(tmp_path, a_row(litellm={"text": []}))
+    with pytest.raises(CatalogueError, match="non-empty list"):
+        load_catalogue(path)
+
+
+def test_the_same_model_named_twice_in_one_row_is_refused(tmp_path):
+    """It would be asked twice in a row for the same bucket, which is a typo, not a fallback."""
+    path = written(tmp_path, a_row(litellm={"text": ["gemini/x", "gemini/x"]}))
+    with pytest.raises(CatalogueError, match="same text model twice"):
+        load_catalogue(path)
+
+
+def test_the_free_tier_row_offers_two_text_models_because_each_has_its_own_daily_quota():
+    """Two buckets of 500 a day are a thousand a day. The second is reached by the first's 429."""
+    assert SHIPPED.find("gemini-free").models_for("text") == (
+        "gemini/gemini-3.1-flash-lite",
+        "gemini/gemini-3.5-flash-lite",
+    )
+
+
+def test_the_free_tier_row_does_not_claim_it_can_make_an_image():
+    """Every image model on that tier is allowed zero requests, so a row listing one would put a
+    pair in the chain that can only ever 429 — slower and more confusing than not being there."""
+    assert "image" not in SHIPPED.find("gemini-free").kinds
+    assert [row.id for row in SHIPPED.serving("image")] == ["vertex", "cloudflare", "openai"]
+
+
+def test_every_row_that_costs_money_says_where_to_read_the_bill():
+    """No provider serves a usage figure over its API, so a link is the honest answer. The one row
+    without a link is the one with no bill."""
+    for row in SHIPPED:
+        if row.id == "ollama-local":
+            assert row.usageUrl is None
+            continue
+        assert row.usageUrl, f"{row.id} names nowhere to read its usage"
+        assert row.usageUrl.startswith("https://")
+
+
+@pytest.mark.parametrize("row", SHIPPED.rows, ids=lambda row: row.id)
+def test_a_usage_link_carries_no_account_project_or_billing_id(row):
+    """The links the owner actually uses carry a project and a billing account. This file is
+    public, so the row carries the shape and the environment carries the identity."""
+    for placeholder in _PLACEHOLDER.findall(row.usageUrl or ""):
+        assert placeholder in row.requires
+    assert "gen-lang-client-" not in (row.usageUrl or "")
+
+
+def test_a_usage_link_is_filled_in_from_the_environment(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
+    assert usage_url(SHIPPED.find("cloudflare")) == (
+        "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/ai/workers-ai"
+    )
+
+
+def test_a_usage_link_may_not_embed_the_key(tmp_path):
+    path = written(tmp_path, a_row(usageUrl="https://x/{A_KEY}/usage"))
+    with pytest.raises(CatalogueError, match="interpolates its key into usageUrl"):
+        load_catalogue(path)
 
 
 def test_the_shipped_catalogue_carries_no_credential():
@@ -77,13 +149,13 @@ def test_ids_are_unique(tmp_path):
 
 
 def test_a_kind_routed_through_both_litellm_and_an_adapter_is_refused(tmp_path):
-    path = written(tmp_path, a_row(adapter={"text": "cloudflare"}, models={"text": "@cf/x"}))
+    path = written(tmp_path, a_row(adapter={"text": "cloudflare"}, models={"text": ["@cf/x"]}))
     with pytest.raises(CatalogueError, match="both LiteLLM and an adapter"):
         load_catalogue(path)
 
 
 def test_a_kind_with_no_route_at_all_is_refused(tmp_path):
-    path = written(tmp_path, a_row(kinds=["text", "image"]))
+    path = written(tmp_path, a_row(kinds=["text", "image"]))  # image is declared, never named
     with pytest.raises(CatalogueError, match="neither a model nor an adapter"):
         load_catalogue(path)
 
@@ -146,11 +218,10 @@ def test_serving_keeps_catalogue_order():
 
 
 def test_params_are_data_rather_than_code():
-    """Vertex's thinking level used to be an `if provider == "vertex"` in the call path."""
-    assert SHIPPED.find("vertex").params_for("text") == {
-        "reasoning_effort": "medium",
-        "vertex_location": "global",
-    }
+    """Vertex's location used to be a settings field and its thinking level an
+    `if provider == "vertex"` in the call path. Both are now the row's business, which is what let
+    `reasoning_effort` be dropped — LiteLLM refuses it for these models — without touching code."""
+    assert SHIPPED.find("vertex").params_for("text") == {"vertex_location": "global"}
     assert SHIPPED.find("gemini-free").params_for("text") == {}
 
 

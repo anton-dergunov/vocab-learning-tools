@@ -73,6 +73,30 @@ def speech_synthesis(**kwargs: Any) -> Any:
     return _litellm().speech(**kwargs)
 
 
+_AUDIO_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"RIFF", "audio/wav"),
+    (b"OggS", "audio/ogg"),
+    (b"fLaC", "audio/flac"),
+    (b"ID3", "audio/mpeg"),
+    (b"\xff\xfb", "audio/mpeg"),
+    (b"\xff\xf3", "audio/mpeg"),
+    (b"\xff\xf2", "audio/mpeg"),
+)
+
+
+def audio_mime(data: bytes) -> str:
+    """What these bytes actually are, rather than what the caller hoped.
+
+    Gemini's speech models answer WAV and Cloudflare's Aura answers MP3, so a hardcoded type is
+    wrong for one of them — and a stored clip labelled as the wrong container is a file nothing will
+    play, discovered long after the call that made it.
+    """
+    for signature, mime in _AUDIO_SIGNATURES:
+        if data.startswith(signature):
+            return mime
+    return "application/octet-stream"
+
+
 def unfenced(text: str) -> str:
     """Models wrap JSON in ``` often enough that not handling it would be the top cause of failure."""
     value = (text or "").strip()
@@ -131,7 +155,7 @@ def _answer(row: Row, model: str, started: float, response: Any, warnings: Seque
         seconds=time.monotonic() - started,
         cost_usd=_cost(response),
         warnings=tuple(warnings),
-        attempts=(row.id,),
+        attempts=((row.id, model),),
     )
 
 
@@ -151,12 +175,15 @@ def text(
     prompt: str,
     *,
     row: Row,
+    model: str | None = None,
     system: str | None = None,
     schema: Any | None = None,
     as_json: bool = False,
     timeout: float = TIMEOUT_SECONDS,
 ) -> TextResult:
     """One text call against one row.
+
+    `model` is the one the chain chose from this row's list; without it the row's first is used.
 
     `as_json` asks for a JSON object without naming its shape, which is what the two capture prompts
     want: they return free-form documents, not a fixed model. `schema` names a shape and is used by
@@ -165,7 +192,7 @@ def text(
     reply is parsed and validated afterwards. `parsed` is None when the reply was not readable as
     JSON — deciding whether that is an error belongs to the caller.
     """
-    model = row.model_for("text")
+    model = model or row.models_for("text")[0]
     messages = [{"role": "system", "content": system}] if system else []
     messages.append({"role": "user", "content": prompt})
 
@@ -201,12 +228,13 @@ def image(
     prompt: str,
     *,
     row: Row,
+    model: str | None = None,
     seed: int | None = None,
     size: tuple[int, int] | None = None,
     timeout: float = TIMEOUT_SECONDS,
 ) -> ImageResult:
     """One image call against one row, through LiteLLM or through the row's own adapter."""
-    model = row.model_for("image")
+    model = model or row.models_for("image")[0]
     started = time.monotonic()
     if row.adapter.get("image"):
         from acervo.models import cloudflare
@@ -252,6 +280,7 @@ def speech(
     words: str,
     *,
     row: Row,
+    model: str | None = None,
     voice: str | None = None,
     style: str | None = None,
     timeout: float = TIMEOUT_SECONDS,
@@ -262,14 +291,16 @@ def speech(
     `capabilities.audio.style` as `unsupported` drops it with a warning rather than sending an
     instruction the provider will read aloud.
     """
-    model = row.model_for("audio")
+    model = model or row.models_for("audio")[0]
     started = time.monotonic()
     if row.adapter.get("audio"):
         from acervo.models import cloudflare
 
-        data, mime = cloudflare.speech(row, model, words, voice=voice, timeout=timeout)
+        data, _declared = cloudflare.speech(row, model, words, voice=voice, timeout=timeout)
         warnings = ("style is not supported by this provider",) if style else ()
-        return AudioResult(data=data, mime=mime, answer=_answer(row, model, started, None, warnings))
+        return AudioResult(
+            data=data, mime=audio_mime(data), answer=_answer(row, model, started, None, warnings)
+        )
 
     audio = (row.capabilities.get("audio") or {}) if isinstance(row.capabilities, dict) else {}
     request: dict[str, Any] = {
@@ -295,5 +326,7 @@ def speech(
         raise
 
     return AudioResult(
-        data=response.content, mime="audio/mpeg", answer=_answer(row, model, started, response, warnings)
+        data=response.content,
+        mime=audio_mime(response.content),
+        answer=_answer(row, model, started, response, warnings),
     )

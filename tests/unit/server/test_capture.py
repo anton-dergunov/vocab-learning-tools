@@ -364,20 +364,30 @@ def test_the_chain_setting_decides_which_row_is_asked_first(seeded, monkeypatch)
     assert "response_format" not in call
 
 
-def test_a_rate_limited_row_falls_through_and_the_entry_records_who_answered(seeded, monkeypatch):
-    """The locked provenance contract, end to end. `modelId` naming the first choice is a bug."""
-    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
-    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
-    seeded.model.errors = [
-        litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m"),  # resolve
-        None,
-        litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m"),  # compose
-        None,
-    ]
+def test_a_rate_limited_model_falls_through_to_the_next_model_of_the_same_provider(seeded):
+    """The reason a row lists several models: they are separate free-tier buckets, so the second is
+    reached by the first one's 429 rather than being a spare."""
+    limited = lambda: litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m")
+    seeded.model.errors = [limited(), None, limited(), None]  # one per call, resolve then compose
 
     draft = seeded.capture().json()["data"]["draft"]
     asked = [call["model"] for call in seeded.model.calls]
-    assert asked[0].startswith("gemini/") and asked[1].startswith("cloudflare/")
+    assert asked[:2] == ["gemini/gemini-3.1-flash-lite", "gemini/gemini-3.5-flash-lite"]
+    _own, invented = draft["senses"][0]["examples"]
+    assert invented["modelId"] == "gemini/gemini-3.5-flash-lite"
+
+
+def test_an_exhausted_provider_falls_through_and_the_entry_records_who_answered(seeded, monkeypatch):
+    """The locked provenance contract, end to end. `modelId` naming the first choice is a bug."""
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
+    limited = lambda: litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m")
+    # Both of gemini-free's models, on both calls, before Cloudflare is asked at all.
+    seeded.model.errors = [limited(), limited(), None, limited(), limited(), None]
+
+    draft = seeded.capture().json()["data"]["draft"]
+    asked = [call["model"] for call in seeded.model.calls]
+    assert [m.split("/")[0] for m in asked[:3]] == ["gemini", "gemini", "cloudflare"]
     _own, invented = draft["senses"][0]["examples"]
     assert invented["modelId"].startswith("cloudflare/")
 
@@ -449,7 +459,8 @@ def test_every_row_being_rate_limited_still_reads_as_rate_limited(seeded, monkey
     seeded.model.error = litellm.RateLimitError(message=PRIVATE, llm_provider="p", model="m")
 
     assert seeded.capture().json()["error"]["code"] == "llm_rate_limited"
-    assert len(seeded.model.calls) == 2  # both rows were tried before giving up
+    # Every pair, not every row: gemini-free's two models and then Cloudflare's one.
+    assert len(seeded.model.calls) == 3
 
 
 def test_hidden_reasoning_never_reaches_the_article(seeded):

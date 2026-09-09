@@ -408,3 +408,47 @@ catalogue row id and a LiteLLM model string, so the new code is what is running.
 the chain and the Cloudflare credentials, and the installer accepted every variable name against the
 shipped catalogue, which is the check that replaced the provider whitelist. A capture through the
 interface needs an account password and was left to the owner.
+
+### Second pass: a row names several models, and says where to read the bill
+
+After the first deployment, the owner's own free-tier readout settled several things this plan had
+guessed at, and one of them changed the shape of the catalogue.
+
+**A kind names a list of models, not one.** Gemini's free tier meters *per model*: 500 requests a
+day to `gemini-3.1-flash-lite` and another 500 to `gemini-3.5-flash-lite`, in separate buckets. One
+model per row would have thrown half the free allowance away. So `litellm` and `models` take lists,
+the chain walks (provider, model) pairs — provider by provider, and inside each, model by model —
+and `Answer.attempts` records pairs. Falling through to a second model of the *same* provider is the
+common case now; falling through to the next provider happens when a row is out of models. A
+terminal refusal still stops everything, including the row's own remaining models: a rejected key is
+not fixed by asking the same provider for a different model.
+
+**Every row says where to read its usage.** No provider Acervo speaks to serves a usage figure over
+its API, so `usageUrl` is a link, and plan 03's Settings pane renders it. It is a template filled in
+from the environment under the same rule as `baseUrl` — a `requires` name, never a key — because the
+owner's real links carry a project id and a billing account id and this repository is public.
+Cloudflare's is the one that comes out fully formed, the account id already being a `requires`.
+
+**What the free tier actually allows, which is not what the plan assumed.** Every image model on it,
+Nano Banana included, is allowed **zero** requests, so `gemini-free` no longer declares an `image`
+kind at all — a row that can only 429 is slower and more confusing than a row that is not there.
+Vertex is the only provider that can make an image today. Speech is one model at 10 a day: the tier
+allows a second, `gemini-2.5-flash-preview-tts`, and it is deliberately unlisted because it answers
+a short word with generated *text* often enough to be useless, Gemini refuses that with a 400, and
+LiteLLM's speech bridge surfaces it as `IndexError` rather than as a refusal — which the chain would
+read as terminal and stop on. That is a real hazard for plan 06 and is written into the row.
+
+**Vertex's models are project-specific.** `gemini-3-flash` and `gemini-3.1-flash` both 404 in this
+project, as every Imagen id does. The row now names what the owner's own overnight sense-image run
+used and what a live call confirms: `gemini-3.8-flash` for text and `gemini-3.1-flash-lite-image`
+for images. `reasoning_effort` is gone too — LiteLLM refuses the parameter for these models, where
+the REST call this replaced sent `thinkingLevel: MEDIUM`.
+
+**Audio is labelled by what it is.** Gemini answers WAV and Cloudflare's Aura answers MP3, so the
+hardcoded `audio/mpeg` was wrong for one of them. `audio_mime()` sniffs the bytes; a clip stored
+under the wrong container is a file nothing plays, found much later than the call that made it.
+
+The live test now parametrizes over **every pair in the catalogue** rather than a hand-picked few,
+which is what caught all of the above. It is also the only thing that can: a model id the provider
+has retired, or allows zero requests of, is indistinguishable from a working one until something
+asks. Eleven pairs pass, five skip for want of credentials on this machine.

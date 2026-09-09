@@ -1,19 +1,24 @@
-"""A chain of rows, walked in order, falling through on 429 and 5xx and never on anything else.
+"""A chain of (provider, model) pairs, walked in order.
 
-That rule is the locked one and it is the whole of this module's judgement. An authentication
-failure or a rejected configuration is a mistake to fix, not a condition to route around: falling
-through on it hides the mistake and spends money at the next provider. So `ProviderUnavailable`
-moves to the next row and `ProviderRefused` stops the walk where it happened.
+It falls through on 429 and 5xx and never on anything else. That rule is the locked one and it is
+the whole of this module's judgement: an authentication failure or a rejected configuration is a
+mistake to fix, not a condition to route around, and falling through on it hides the mistake and
+spends money at the next provider.
 
-The other contract here is provenance. `Answer.provider_id` names the row that *answered*, and
-`attempts` names every row tried, oldest first. A fall-through that left `modelId` naming the first
-choice would be a bug, so the answer is rewritten as it comes back out rather than assembled by the
-caller from what it asked for.
+**The unit is a pair, not a provider.** A free tier is metered per model, so two models with 500
+requests a day each are a thousand requests a day and the second is reached by the first one's 429.
+The default walk is therefore provider by provider and, inside each, model by model — the order the
+catalogue lists them in.
+
+The other contract here is provenance. `Answer.provider_id` and `Answer.model` name the pair that
+*answered*, and `attempts` names every pair tried, oldest first. A fall-through that left `modelId`
+naming the first choice would be a bug, so the answer is rewritten as it comes back out rather than
+assembled by the caller from what it asked for.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Callable, Sequence, TypeVar
 
 from acervo.models.catalogue import Catalogue, Row, available, reason
@@ -22,35 +27,50 @@ from acervo.models.errors import ChainExhausted, ProviderRefused, ProviderUnavai
 Result = TypeVar("Result")
 
 
-def resolve(kind: str, ids: Sequence[str] | None, catalogue: Catalogue) -> tuple[Row, ...]:
-    """The rows that will be tried, in order.
+@dataclass(frozen=True)
+class Candidate:
+    """One thing that can be asked: a row and one of its models for a kind."""
 
-    With no ids, every credentialed row that serves this kind, in catalogue order — so a deployment
-    that has configured one provider needs no chain setting at all, and one that has configured
-    three gets them in the order the file lists. With ids, exactly those, skipping the ones this
-    deployment has no credentials for.
+    row: Row
+    model: str
 
-    An id that is not in the catalogue is a mistake in the configuration, not a row to skip past.
+    @property
+    def named(self) -> tuple[str, str]:
+        return (self.row.id, self.model)
+
+
+def resolve(kind: str, ids: Sequence[str] | None, catalogue: Catalogue) -> tuple[Candidate, ...]:
+    """The pairs that will be tried, in order.
+
+    With no ids, every credentialed row that serves this kind in catalogue order, each row's models
+    in the order it lists them — so a deployment that has configured one provider needs no chain
+    setting at all, and one that has configured three gets them in the order the file lists.
+
+    With ids, exactly those rows in that order, skipping the ones this deployment has no credentials
+    for. An id that is not in the catalogue is a mistake in the configuration, not a row to skip
+    past; choosing *which* of a row's models to use is plan 03's, and this list is what it chooses
+    from.
     """
-    serving = catalogue.serving(kind)
     if not ids:
-        return tuple(row for row in serving if available(row))
-
-    chosen: list[Row] = []
-    for identifier in ids:
-        try:
-            row = catalogue.find(identifier)
-        except KeyError:
-            raise ProviderRefused(
-                "configuration", f"no provider {identifier!r} is in the catalogue"
-            ) from None
-        if not row.serves(kind):
-            raise ProviderRefused(
-                "configuration", f"provider {identifier!r} does not serve {kind}"
-            )
-        if available(row):
-            chosen.append(row)
-    return tuple(chosen)
+        rows = [row for row in catalogue.serving(kind) if available(row)]
+    else:
+        rows = []
+        for identifier in ids:
+            try:
+                row = catalogue.find(identifier)
+            except KeyError:
+                raise ProviderRefused(
+                    "configuration", f"no provider {identifier!r} is in the catalogue"
+                ) from None
+            if not row.serves(kind):
+                raise ProviderRefused(
+                    "configuration", f"provider {identifier!r} does not serve {kind}"
+                )
+            if available(row):
+                rows.append(row)
+    return tuple(
+        Candidate(row, model) for row in rows for model in row.models_for(kind)
+    )
 
 
 def unconfigured(kind: str, ids: Sequence[str] | None, catalogue: Catalogue) -> ProviderRefused:
@@ -71,30 +91,30 @@ def walk(
     kind: str,
     ids: Sequence[str] | None,
     catalogue: Catalogue,
-    ask: Callable[[Row], Result],
-    stamp: Callable[[Result, tuple[str, ...]], Result],
+    ask: Callable[[Candidate], Result],
+    stamp: Callable[[Result, tuple[tuple[str, str], ...]], Result],
 ) -> Result:
-    """Ask each row in turn until one answers.
+    """Ask each pair in turn until one answers.
 
     `stamp` writes the attempt list into whatever `ask` returned, because only this function knows
-    how many rows were tried and only the caller knows the shape of its own result.
+    how many pairs were tried and only the caller knows the shape of its own result.
     """
-    rows = resolve(kind, ids, catalogue)
-    if not rows:
+    candidates = resolve(kind, ids, catalogue)
+    if not candidates:
         raise unconfigured(kind, ids, catalogue)
 
-    attempts: list[str] = []
+    attempts: list[tuple[str, str]] = []
     last: ProviderUnavailable | None = None
-    for row in rows:
-        attempts.append(row.id)
+    for candidate in candidates:
+        attempts.append(candidate.named)
         try:
-            return stamp(ask(row), tuple(attempts))
+            return stamp(ask(candidate), tuple(attempts))
         except ProviderUnavailable as error:
             last = error
     assert last is not None
     raise ChainExhausted(tuple(attempts), last)
 
 
-def stamped(result, attempts: tuple[str, ...]):
-    """Rewrite a result's answer with the rows actually tried. The provenance contract, applied."""
+def stamped(result, attempts: tuple[tuple[str, str], ...]):
+    """Rewrite a result's answer with the pairs actually tried. The provenance contract, applied."""
     return replace(result, answer=replace(result.answer, attempts=attempts))

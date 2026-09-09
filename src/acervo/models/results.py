@@ -21,7 +21,10 @@ class Answer:
     seconds: float
     cost_usd: float | None
     warnings: tuple[str, ...] = ()
-    attempts: tuple[str, ...] = ()  # provider ids tried, oldest first, including this one
+    # Every (provider id, model) pair tried, oldest first, including the one that answered. A
+    # pair rather than a provider id because a row offers several models and the chain walks
+    # them: two free tiers of 500 a day are reached one after the other, not one instead.
+    attempts: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

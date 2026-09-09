@@ -80,16 +80,16 @@ def capture_health(settings: Settings) -> dict[str, Any]:
     unmet requirement as an environment variable, and deliberately never carries a value — health
     serves it unauthenticated.
 
-    `provider` and `model` name the row that would be asked *first*. Which row actually answers is
-    only known after a call, and that is what lands in `modelId`.
+    `provider` and `model` name the (provider, model) pair that would be asked *first*. Which pair
+    actually answers is only known after a call, and that is what lands in `modelId`.
     """
     catalogue = load_catalogue()
     ids = chain_for(settings)
     try:
-        rows = chain.resolve("text", ids, catalogue)
+        candidates = chain.resolve("text", ids, catalogue)
     except ProviderError as error:
         return {"available": False, "provider": None, "model": None, "reason": error.detail}
-    if not rows:
+    if not candidates:
         return {
             "available": False,
             "provider": None,
@@ -98,8 +98,8 @@ def capture_health(settings: Settings) -> dict[str, Any]:
         }
     return {
         "available": True,
-        "provider": rows[0].id,
-        "model": rows[0].model_for("text"),
+        "provider": candidates[0].row.id,
+        "model": candidates[0].model,
         "reason": None,
     }
 
@@ -115,7 +115,9 @@ def llm_json(settings: Settings, system: str, user: str) -> tuple[Any, str]:
             "text",
             chain_for(settings),
             load_catalogue(),
-            lambda row: provider.text(user, row=row, system=system, as_json=True),
+            lambda candidate: provider.text(
+                user, row=candidate.row, model=candidate.model, system=system, as_json=True
+            ),
             chain.stamped,
         )
     except ChainExhausted as exhausted:

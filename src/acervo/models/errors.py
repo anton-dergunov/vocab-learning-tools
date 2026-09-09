@@ -68,14 +68,15 @@ class ProviderUnavailable(ProviderError):
 
 
 class ChainExhausted(Exception):
-    """Every row was unavailable.
+    """Every (provider, model) pair was unavailable.
 
     Carries the last error because that is the actionable one, and because it is what preserves the
     retry contract: a chain whose final row was rate limited must still be reported as rate
     limiting, or the file ingestion stops retrying something it should retry.
     """
 
-    def __init__(self, attempts: tuple[str, ...], last: ProviderUnavailable) -> None:
-        super().__init__(f"every provider was unavailable: {', '.join(attempts)}")
+    def __init__(self, attempts: tuple[tuple[str, str], ...], last: ProviderUnavailable) -> None:
+        listed = ", ".join(f"{provider} {model}" for provider, model in attempts)
+        super().__init__(f"every provider was unavailable: {listed}")
         self.attempts = attempts
         self.last = last

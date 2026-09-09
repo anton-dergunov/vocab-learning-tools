@@ -1,98 +1,103 @@
 {
   "version": 1,
-  "note": "Acervo ships this list of providers, never a credential. `keyEnv` and `requires` name environment variables; a value never appears here. Row order is the default preference order: with ACERVO_TEXT_CHAIN unset, every row this deployment is credentialed for serves the kind, in this order, and a 429 from one spends a call on the next.",
+  "note": "Acervo ships this list of providers, never a credential. `keyEnv` and `requires` name environment variables; a value never appears here, and neither does an account, project or billing id — this repository is public, so a console link is a template filled in from the environment. Order is the fallback order, and the unit is a (provider, model) pair rather than a provider: with ACERVO_TEXT_CHAIN unset the walk is provider by provider and, inside each, model by model, because a free tier is metered per model — two models with 500 requests a day each are a thousand requests a day, and the second is reached by the first one's 429.",
   "providers": [
     {
       "id": "gemini-free",
       "label": "Gemini (free tier)",
-      "kinds": ["text", "image", "audio"],
+      "kinds": ["text", "audio"],
       "litellm": {
-        "text": "gemini/gemini-3.1-flash-lite",
-        "image": "gemini/gemini-3-pro-image-preview",
-        "audio": "gemini/gemini-2.5-pro-preview-tts"
+        "text": ["gemini/gemini-3.1-flash-lite", "gemini/gemini-3.5-flash-lite"],
+        "audio": ["gemini/gemini-3.1-flash-tts-preview"]
       },
       "keyEnv": "GEMINI_API_KEY",
+      "usageUrl": "https://aistudio.google.com/rate-limit?timeRange=last-28-days",
       "capabilities": {
         "jsonSchema": "native",
         "audio": { "defaultVoice": "kore" }
       },
       "params": { "text": {} },
-      "notes": "500 text requests a day at no cost; a 429 is the free tier being exhausted, not an outage. Image and audio have their own, much smaller free allowances and are usually exhausted — text is what this row is for. The `pro` speech model rather than `flash`: both are out of free quota, but `flash-preview-tts` answers with no candidates at all and LiteLLM's speech bridge raises IndexError on that instead of reporting the refusal, which would reach the chain as terminal rather than as rate limiting. Temperature is deliberately unset: LiteLLM recommends leaving Gemini 3+ at its default."
+      "notes": "Two text models at 500 requests a day each, which is why both are listed rather than one: they are separate buckets, so the second is a genuine thousand-a-day rather than a spare. Speech is one model at 10 a day — enough for a handful of words, not for a batch. The tier allows a second speech model, `gemini-2.5-flash-preview-tts`, and it is deliberately not listed: it answers a short word with generated *text* often enough to be useless, which Gemini then refuses with a 400, and LiteLLM's speech bridge surfaces that as an IndexError rather than as a refusal — so the chain would read it as terminal and stop rather than falling through. Prompting it as a transcript instruction does not help. Worth revisiting in plan 06, which is where audio gets a caller. There is deliberately no `image` kind: on this tier every image model, Nano Banana included, is allowed 0 requests, so listing one would put a row in the chain that can only 429. Voice names do not carry across providers, so the row names one Gemini accepts; a caller that asks for a specific voice overrides it. Temperature is deliberately unset: LiteLLM recommends leaving Gemini 3+ at its default."
     },
     {
       "id": "vertex",
       "label": "Vertex AI",
       "kinds": ["text", "image"],
       "litellm": {
-        "text": "vertex_ai/gemini-3-flash",
-        "image": "vertex_ai/gemini-3.1-flash-lite-image"
+        "text": ["vertex_ai/gemini-3.8-flash", "vertex_ai/gemini-3.5-flash"],
+        "image": ["vertex_ai/gemini-3.1-flash-lite-image"]
       },
       "auth": "adc",
       "requires": ["ACERVO_VERTEX_PROJECT"],
       "passes": { "vertex_project": "ACERVO_VERTEX_PROJECT" },
+      "usageUrl": "https://console.cloud.google.com/billing?project={ACERVO_VERTEX_PROJECT}",
       "capabilities": {
         "jsonSchema": "native",
         "image": { "responseFormat": null }
       },
       "params": {
-        "text": { "reasoning_effort": "medium", "vertex_location": "global" },
+        "text": { "vertex_location": "global" },
         "image": { "vertex_location": "global" }
       },
-      "notes": "Application default credentials, not an API key: LiteLLM has no Vertex express-key path (BerriAI/litellm#21036). Present on a workstation that has run `gcloud auth application-default login`; on a server it needs a service-account JSON and GOOGLE_APPLICATION_CREDENTIALS. The image model is a Gemini one rather than Imagen, which no Imagen id was reachable in this project: it is also the model the sense-image pipeline already uses. Location stays `global`; the Gemini image models 404 in a named region."
+      "notes": "Application default credentials, not an API key: LiteLLM has no Vertex express-key path (BerriAI/litellm#21036). Present on a workstation that has run `gcloud auth application-default login`; on a server it needs a service-account JSON and GOOGLE_APPLICATION_CREDENTIALS. This is the only row that can generate an image today, the free tier having no image allowance at all. The image model is a Gemini one rather than Imagen, no Imagen id being reachable in this project, and it is also what the sense-image pipeline already uses. Location stays `global`; the Gemini image models 404 in a named region. The text models are the ones this project actually has: `gemini-3-flash` and `gemini-3.1-flash` both 404 here, and `gemini-3.8-flash` is what the sense-image pipeline already asks for briefs. Being paid rather than metered, the second model is availability cover rather than a second quota. There is no `reasoning_effort`: the REST call this replaced sent `thinkingLevel: MEDIUM`, but LiteLLM refuses the parameter for `gemini-3-flash` outright, and `params` is where it goes back if that changes."
     },
     {
       "id": "cloudflare",
       "label": "Cloudflare Workers AI",
       "kinds": ["text", "image", "audio"],
-      "litellm": { "text": "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+      "litellm": { "text": ["cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"] },
       "adapter": { "image": "cloudflare", "audio": "cloudflare" },
       "models": {
-        "image": "@cf/black-forest-labs/flux-2-klein-4b",
-        "audio": "@cf/deepgram/aura-1"
+        "image": ["@cf/black-forest-labs/flux-2-klein-4b"],
+        "audio": ["@cf/deepgram/aura-1"]
       },
       "keyEnv": "CLOUDFLARE_API_TOKEN",
       "requires": ["CLOUDFLARE_ACCOUNT_ID"],
+      "usageUrl": "https://dash.cloudflare.com/{CLOUDFLARE_ACCOUNT_ID}/ai/workers-ai",
       "capabilities": {
         "jsonSchema": "prompt",
         "audio": { "inputField": "text" }
       },
       "params": { "text": {} },
-      "notes": "Workers AI has no account-less endpoint, so the account id is required as well as the token. LiteLLM covers text only: image and audio go through the hand-written adapter, because FLUX.2 Klein needs multipart/form-data even for a text-only prompt. Audio is Deepgram Aura rather than melotts: melotts answers Spanish with AiError 8002 and answered a plain English word with a 500, which is what its own note here used to warn about. Aura takes `text` where melotts took `prompt`."
+      "notes": "Workers AI has no account-less endpoint, so the account id is required as well as the token — and it is what makes the usage link point at the right dashboard. LiteLLM covers text only: image and audio go through the hand-written adapter, because FLUX.2 Klein needs multipart/form-data even for a text-only prompt. Audio is Deepgram Aura rather than melotts: melotts answers Spanish with AiError 8002 and answered a plain English word with a 500. Aura takes `text` where melotts took `prompt`. The model ids here are the ones that answered a live call; the rest of Workers AI's catalogue is unverified."
     },
     {
       "id": "openai",
       "label": "OpenAI",
       "kinds": ["text", "image", "audio"],
       "litellm": {
-        "text": "openai/gpt-5.1",
-        "image": "openai/gpt-image-1",
-        "audio": "openai/gpt-4o-mini-tts"
+        "text": ["openai/gpt-5.1"],
+        "image": ["openai/gpt-image-1"],
+        "audio": ["openai/gpt-4o-mini-tts"]
       },
       "keyEnv": "OPENAI_API_KEY",
+      "usageUrl": "https://platform.openai.com/usage",
       "capabilities": { "jsonSchema": "native" },
-      "params": { "text": {} }
+      "params": { "text": {} },
+      "notes": "Listed, not verified: no live call has been made against this row."
     },
     {
       "id": "openrouter",
       "label": "OpenRouter",
       "kinds": ["text"],
-      "litellm": { "text": "openrouter/meta-llama/llama-3.3-70b-instruct" },
+      "litellm": { "text": ["openrouter/meta-llama/llama-3.3-70b-instruct"] },
       "keyEnv": "OPENROUTER_API_KEY",
+      "usageUrl": "https://openrouter.ai/activity",
       "capabilities": { "jsonSchema": "prompt" },
       "params": { "text": {} },
-      "notes": "One key in front of many models. Whether a schema is honoured depends on the model behind it, so this row claims the weaker guarantee."
+      "notes": "One key in front of many models. Whether a schema is honoured depends on the model behind it, so this row claims the weaker guarantee. Listed, not verified."
     },
     {
       "id": "ollama-local",
       "label": "Ollama (this machine)",
       "kinds": ["text"],
-      "litellm": { "text": "ollama_chat/llama3.3" },
+      "litellm": { "text": ["ollama_chat/llama3.3"] },
       "auth": "none",
       "requires": ["ACERVO_OLLAMA_URL"],
       "baseUrl": "{ACERVO_OLLAMA_URL}",
       "capabilities": { "jsonSchema": "native" },
       "params": { "text": {} },
-      "notes": "No credential, but declared rather than assumed: the row is available only where ACERVO_OLLAMA_URL says a server is listening. A row that were always available would make `capture_unavailable` unreachable and would send every exhausted chain at a port that is usually closed. Plan 07 is where a local model runs somewhere other than this machine."
+      "notes": "No credential, but declared rather than assumed: the row is available only where ACERVO_OLLAMA_URL says a server is listening. A row that were always available would make `capture_unavailable` unreachable and would send every exhausted chain at a port that is usually closed. There is no usage link because there is no bill. Plan 07 is where a local model runs somewhere other than this machine."
     }
   ]
 }

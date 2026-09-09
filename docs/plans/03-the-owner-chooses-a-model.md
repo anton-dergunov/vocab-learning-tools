@@ -7,6 +7,20 @@
 > the Python service rather than a hook and a PocketBase collection — and that it no longer costs a
 > database rebuild, because the schema is being rebuilt anyway. Depends on 04, not 02.
 
+> **Narrowed by [04](04-one-python-provider-package.md), 9 Sep 2026.** The unit this plan selects
+> and reorders is a **(provider, model) pair**, not a provider. A row in `models/catalogue.json`
+> names several models per kind because a free tier is metered per model — Gemini's free tier gives
+> 500 requests a day to `gemini-3.1-flash-lite` *and* 500 to `gemini-3.5-flash-lite`, separately —
+> so the second is reached by the first one's 429 and is worth listing. `chain.resolve()` already
+> returns pairs and `Answer.attempts` already records them; what this plan adds is letting the owner
+> enable, disable and reorder them instead of taking the catalogue's order.
+>
+> Two smaller things 04 left for this plan: `ACERVO_TEXT_CHAIN` names row ids only, so the
+> deployment default cannot yet pin one model of a row — the owner record is where that belongs; and
+> a row now carries `usageUrl`, a console link filled in from the environment, which Settings ▸
+> Models should render beside each provider. No provider serves a usage figure over its API, so a
+> link is the honest answer rather than a number.
+
 **Status:** Planned (re-aimed).
 **Depends on:** [04](04-one-python-provider-package.md) — there must be a catalogue to choose
 from before there is a chooser.

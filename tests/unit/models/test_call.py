@@ -168,10 +168,12 @@ def test_the_row_supplies_its_credential_its_endpoint_and_its_parameters(monkeyp
     assert calls[-1]["api_key"] == "a-gemini-key"
     assert calls[-1]["messages"][0] == {"role": "system", "content": "be brief"}
     assert calls[-1]["timeout"] == 120
-    assert "reasoning_effort" not in calls[-1]
+    assert "vertex_location" not in calls[-1]
 
+    # `params`, not an `if provider == "vertex"` — which is what let `reasoning_effort` be dropped
+    # from this row, LiteLLM refusing it for these models, without touching the call path.
     call.text("hello", row=SHIPPED.find("vertex"))
-    assert calls[-1]["reasoning_effort"] == "medium"  # `params`, not an `if provider == "vertex"`
+    assert calls[-1]["vertex_location"] == "global"
 
 
 def test_litellms_own_retries_are_switched_off_on_every_call(monkeypatch):
@@ -188,13 +190,40 @@ def test_litellms_own_retries_are_switched_off_on_every_call(monkeypatch):
     assert calls[-1]["max_retries"] == 0
 
 
-def test_the_answer_names_the_row_that_answered_and_how_long_it_took(monkeypatch):
+def test_the_answer_names_the_pair_that_answered_and_how_long_it_took(monkeypatch):
     monkeypatch.setattr(call, "completion", _recording([], reply("{}")))
     answer = call.text("hello", row=GEMINI).answer
     assert answer.provider_id == "gemini-free"
-    assert answer.model == "gemini/gemini-3.1-flash-lite"
+    assert answer.model == "gemini/gemini-3.1-flash-lite"  # the row's first, none having been named
     assert answer.seconds >= 0
-    assert answer.attempts == ("gemini-free",)
+    assert answer.attempts == (("gemini-free", "gemini/gemini-3.1-flash-lite"),)
+
+
+def test_the_model_the_chain_chose_is_the_one_asked(monkeypatch):
+    """A row offers several; the caller says which. Without this the second free-tier bucket is
+    listed in the catalogue and never actually reached."""
+    calls = []
+    monkeypatch.setattr(call, "completion", _recording(calls, reply("{}")))
+    result = call.text("hello", row=GEMINI, model="gemini/gemini-3.5-flash-lite")
+    assert calls[-1]["model"] == "gemini/gemini-3.5-flash-lite"
+    assert result.answer.model == "gemini/gemini-3.5-flash-lite"
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (b"RIFF\x00\x00\x00\x00WAVEfmt ", "audio/wav"),
+        (b"ID3\x04\x00", "audio/mpeg"),
+        (b"\xff\xfb\x90", "audio/mpeg"),
+        (b"OggS\x00", "audio/ogg"),
+        (b"nothing recognisable", "application/octet-stream"),
+    ],
+)
+def test_audio_is_labelled_by_what_it_is_rather_than_by_what_was_hoped(data, expected):
+    """Gemini answers WAV and Cloudflare's Aura answers MP3, so a hardcoded type is wrong for one
+    of them — and a clip stored under the wrong container is a file nothing plays, found much
+    later than the call that made it."""
+    assert call.audio_mime(data) == expected
 
 
 def test_a_cost_the_provider_did_not_report_is_none_rather_than_a_failure(monkeypatch):
