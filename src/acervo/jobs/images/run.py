@@ -22,7 +22,7 @@ from .brief import BriefWriter, SenseBrief
 from .compose import compose, prompt_version
 from .graph import ArticleView, SenseView
 from .ids import image_prompt_id, seed_for
-from ..pacing import ModelPool, is_quota_error
+from acervo.pacing import ModelPool, is_quota_error
 from .render import Rendered, RenderRefused, Renderer
 from .styles import StyleTable
 

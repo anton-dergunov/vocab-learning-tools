@@ -7,7 +7,7 @@ import tarfile
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def test_input_bundle_contains_only_manifest_and_referenced_media(tmp_path: Path):

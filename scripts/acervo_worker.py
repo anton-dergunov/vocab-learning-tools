@@ -8,6 +8,7 @@ per job is deliberate: these are one-shot commands run through `docker compose r
 job is a new subcommand and never a new container.
 
     acervo_worker.py anki push /input/runs/<id>/manifest.json
+    acervo_worker.py anki pull-state
     acervo_worker.py dictionary build --id cc-cedict
 """
 
@@ -25,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if arguments else 2
     job, rest = arguments[0], arguments[1:]
     if job == "anki":
-        from acervo.anki_sync.cli import main as anki_main
+        from acervo.consumers.anki.cli import main as anki_main
 
         return anki_main(rest)
     if job == "dictionary":

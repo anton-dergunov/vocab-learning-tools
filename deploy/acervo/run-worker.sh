@@ -6,7 +6,7 @@ export PATH
 
 usage() {
   echo "usage: run-worker.sh [--root PATH] [--input-archive FILE]" >&2
-  echo "         {bootstrap-upload|push|export-state|adopt-server}" >&2
+  echo "         {bootstrap-upload|push|export-state|pull-state|adopt-server}" >&2
   echo "       run-worker.sh [--root PATH] build-dictionary <compiler arguments...>" >&2
   echo "         e.g. build-dictionary --id cc-cedict" >&2
   echo "              build-dictionary --all --language es,en,zh" >&2
@@ -19,7 +19,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
     --input-archive) [ "$#" -ge 2 ] || usage; input_archive=$2; shift 2 ;;
-    bootstrap-upload|push|export-state|adopt-server|build-dictionary) operation=$1; shift; break ;;
+    bootstrap-upload|push|export-state|pull-state|adopt-server|build-dictionary) operation=$1; shift; break ;;
     *) usage ;;
   esac
 done
@@ -57,6 +57,10 @@ fi
 
 release=$(cat "$acervo_root/current-release")
 compose_file="$release/deploy/acervo/compose.yaml"
+# `--build` on every run, because a deployment builds only the two long-running services: the worker
+# is a `profiles: ["tools"]` container that exists to be `run`, so nothing else ever rebuilds it and
+# a job would quietly execute whatever code the last build happened to contain. The layers cache, so
+# an unchanged release costs a second.
 common_args="-p acervo --env-file $acervo_root/deployment.env --env-file $acervo_root/secrets.env --env-file $acervo_root/llm.env -f $compose_file"
 
 input_dir=
@@ -78,22 +82,28 @@ case "$operation" in
     mkdir -p "$input_dir"
     tar -xzf "$input_archive" -C "$input_dir"
     # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm acervo-worker \
+    compose $common_args --profile tools run --rm --build acervo-worker \
       anki "$operation" "/input/runs/$run_id/manifest.json"
     ;;
   export-state)
     # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm acervo-worker anki export-state
+    compose $common_args --profile tools run --rm --build acervo-worker anki export-state
+    ;;
+  pull-state)
+    # The write half of the same read: `export-state` prints the scheduling, this puts it in the
+    # graph where the interface can show it.
+    # shellcheck disable=SC2086
+    compose $common_args --profile tools run --rm --build acervo-worker anki pull-state
     ;;
   adopt-server)
     # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm acervo-worker \
+    compose $common_args --profile tools run --rm --build acervo-worker \
       anki adopt-server --confirm-no-other-clients
     ;;
   build-dictionary)
     # Compiling streams sources that run to gigabytes, so this is deliberately a command the owner
     # runs rather than something a checkbox triggers.
     # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm acervo-worker dictionary build "$@"
+    compose $common_args --profile tools run --rm --build acervo-worker dictionary build "$@"
     ;;
 esac

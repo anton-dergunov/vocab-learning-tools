@@ -34,15 +34,17 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from acervo.images import preflight
-from acervo.images.brief import BriefWriter
-from acervo.images.compose import prompt_version
-from acervo.images.graph import AcervoError, ReadOnlyClient, build_articles
-from acervo.images.render import Renderer
-from acervo.images.run import Runner, Store, plan
-from acervo.images.sheet import write_sheet
-from acervo.images.styles import load_styles
-from acervo.images.verify import verify
+from acervo.jobs.images import preflight
+from acervo.jobs.images.brief import BriefWriter
+from acervo.jobs.images.compose import prompt_version
+from acervo.client import AcervoClient, AcervoError
+from acervo.jobs.images.graph import build_articles
+from acervo.jobs.images.publish import BATCH, publish
+from acervo.jobs.images.render import Renderer
+from acervo.jobs.images.run import Runner, Store, plan
+from acervo.jobs.images.sheet import write_sheet
+from acervo.jobs.images.styles import load_styles
+from acervo.jobs.images.verify import verify
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = REPO_ROOT / "output" / "images"
@@ -80,9 +82,10 @@ def confirm_account(assume_yes: bool) -> preflight.Identity:
 
 def load_graph(args: argparse.Namespace):
     password = os.environ.get("ACERVO_PASSWORD") or getpass.getpass("Acervo password: ")
-    client = ReadOnlyClient(args.server_url)
-    client.sign_in(args.owner_email, password)
-    return build_articles(client.pull(), args.language)
+    with AcervoClient(args.server_url) as client:
+        client.sign_in(args.owner_email, password)
+        # One pull, and nothing else: this stage reads the graph and writes only to the filesystem.
+        return build_articles(client.pull_graph()["changes"], args.language)
 
 
 def make_client(project: str, location: str):
@@ -193,6 +196,24 @@ def command_sheet(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_publish(args: argparse.Namespace) -> int:
+    """Write the rows and copy the images. Verified first, and all-or-nothing about the checks."""
+    password = os.environ.get("ACERVO_PASSWORD") or getpass.getpass("Acervo password: ")
+    store = Store(args.output)
+    with AcervoClient(args.server_url) as client:
+        client.sign_in(args.owner_email, password)
+        outcome = publish(
+            store, client, media=args.media, device_id=args.device_id, batch=args.batch
+        )
+    if not outcome.ok:
+        return 1
+    print(
+        f"Published {outcome.written} image prompts and {outcome.copied} files; "
+        f"{outcome.held} already held, {outcome.undrawn} have no picture."
+    )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -234,6 +255,15 @@ def main() -> int:
 
     sub.add_parser("verify", help="Check the run directory is internally consistent before import")
 
+    publisher = sub.add_parser("publish", help="Write a verified run into the graph and the media directory")
+    publisher.add_argument("--server-url", default=os.environ.get("ACERVO_SERVER_URL", ""))
+    publisher.add_argument("--owner-email", default=os.environ.get("ACERVO_OWNER_EMAIL", ""))
+    publisher.add_argument("--media", type=Path, required=True,
+                           help="The media directory the server serves; images are fanned out under it.")
+    publisher.add_argument("--device-id", default="imagepublish01")
+    publisher.add_argument("--batch", type=int, default=BATCH,
+                           help="Records per write. One stale record refuses a whole batch.")
+
     sheet = sub.add_parser("sheet", help="Rebuild the contact sheet from what is on disk")
     sheet.add_argument("--limit", type=int, default=0, help="Show only the newest N images.")
     sheet.add_argument("--to", type=Path, default=None, help="Write somewhere other than sheet.html.")
@@ -241,7 +271,7 @@ def main() -> int:
 
     args = parser.parse_args()
     handlers = {"check": command_check, "plan": command_plan, "run": command_run,
-                "sheet": command_sheet, "verify": command_verify}
+                "publish": command_publish, "sheet": command_sheet, "verify": command_verify}
     try:
         return handlers[args.command](args)
     except AcervoError as error:

@@ -6,7 +6,7 @@ with an error telling you to install it again."""
 import pathlib
 import re
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 
 def _single(pattern: str, path: pathlib.Path) -> str:

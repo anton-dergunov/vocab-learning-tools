@@ -10,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # including the CC-CEDICT reader, warning rather than failing (docs §11.4).
 RUN python -m pip install --no-cache-dir \
     "anki==${ANKI_VERSION}" \
+    "httpx>=0.28" \
     "pydantic>=2,<3" \
     "python-slugify>=8,<9" \
     "pyglossary==5.4.2" \
@@ -21,6 +22,12 @@ COPY dictionaries /app/dictionaries
 COPY scripts/acervo_worker.py /app/scripts/acervo_worker.py
 COPY scripts/integration/anki_sync_client.py /app/scripts/integration/anki_sync_client.py
 COPY templates /app/templates
+
+# The installer extracts a release under `umask 077`, so the files this image is built from are
+# owner-only — and `COPY` makes them root-owned. The container runs as the deploying user, which
+# then cannot read its own entry point: "can't open file '/app/scripts/acervo_worker.py'". The
+# server image has always done this; the worker never needed to until a job here started writing.
+RUN chmod -R a+rX /app
 
 RUN mkdir -p /var/lib/acervo/anki-server /var/lib/acervo/worker /var/lib/acervo/dictionaries /input
 

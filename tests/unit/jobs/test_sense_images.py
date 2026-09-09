@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from acervo.images.brief import build_request, parse_reply
-from acervo.images.compose import FRAME, compose, prompt_version
-from acervo.images.graph import build_articles
-from acervo.images.ids import ID_LENGTH, image_prompt_id, seed_for
-from acervo.images.run import Store, plan
-from acervo.images.styles import load_styles
+from acervo.jobs.images.brief import build_request, parse_reply
+from acervo.jobs.images.compose import FRAME, compose, prompt_version
+from acervo.jobs.images.graph import build_articles
+from acervo.jobs.images.ids import ID_LENGTH, image_prompt_id, seed_for
+from acervo.jobs.images.run import Store, plan
+from acervo.jobs.images.styles import load_styles
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STYLES = REPO_ROOT / "config" / "image-styles.yaml"
@@ -309,7 +309,7 @@ def test_a_provider_block_is_not_planned_again(tmp_path: Path):
 
 def test_the_brief_writer_waits_out_a_quota_refusal():
     """A text 429 used to lose every sense of that lexeme outright."""
-    from acervo.images.brief import BriefWriter
+    from acervo.jobs.images.brief import BriefWriter
 
     class Flaky(BriefWriter):
         def __init__(self):                    # no client, no template read
@@ -329,7 +329,7 @@ def test_the_brief_writer_waits_out_a_quota_refusal():
 
 
 def test_a_brief_failure_that_is_not_quota_is_raised_at_once():
-    from acervo.images.brief import BriefWriter
+    from acervo.jobs.images.brief import BriefWriter
 
     class Broken(BriefWriter):
         def __init__(self):
@@ -355,7 +355,7 @@ def _stored(store: Store, sense_id: str, **overrides) -> str:
 
 
 def test_a_consistent_run_directory_verifies(tmp_path: Path):
-    from acervo.images.verify import verify
+    from acervo.jobs.images.verify import verify
     store = Store(tmp_path)
     identifier = _stored(store, "s00000000000001")
     store.image_path(identifier).write_bytes(b"webp")
@@ -364,7 +364,7 @@ def test_a_consistent_run_directory_verifies(tmp_path: Path):
 
 
 def test_verify_catches_what_would_break_the_import(tmp_path: Path):
-    from acervo.images.verify import verify
+    from acervo.jobs.images.verify import verify
     store = Store(tmp_path)
 
     _stored(store, "s00000000000001")                      # claims an image that is not there
@@ -386,7 +386,7 @@ def test_verify_catches_what_would_break_the_import(tmp_path: Path):
 
 def test_a_blocked_record_is_not_a_problem(tmp_path: Path):
     """`snort` was blocked by the provider. A sense with no image is complete, not a fault."""
-    from acervo.images.verify import verify
+    from acervo.jobs.images.verify import verify
     store = Store(tmp_path)
     _stored(store, "s00000000000001", imageRef=None, blocked=True, failureReason="IMAGE_SAFETY")
     report = verify(store)

@@ -70,11 +70,24 @@ class Server:
     model: ModelStub
     downloads: Path
     dictionaries: Path
+    media: Path
     web: Path
 
     @property
     def auth(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}"}
+
+    def api(self) -> Any:
+        """An `AcervoClient` pointed at this application rather than at a socket.
+
+        What a job or a script would hold, over the same routes, so a write path is exercised as it
+        actually runs rather than through a second code path built for tests.
+        """
+        from acervo.client import AcervoClient
+
+        client = AcervoClient(str(self.client.base_url), http=self.client)
+        client.token = self.token
+        return client
 
     def get(self, path: str, **kwargs):
         return self.client.get(f"/api/acervo/v1{path}", headers=self.auth, **kwargs)
@@ -103,14 +116,16 @@ class Server:
 def server(tmp_path, monkeypatch) -> Server:
     downloads = tmp_path / "downloads"
     dictionaries = tmp_path / "dictionaries"
+    media = tmp_path / "media"
     web = tmp_path / "web"
-    for directory in (downloads, dictionaries, web):
+    for directory in (downloads, dictionaries, media, web):
         directory.mkdir()
 
     monkeypatch.setenv("ACERVO_DB_PATH", str(tmp_path / "acervo.db"))
     monkeypatch.setenv("ACERVO_WEB_PATH", str(web))
     monkeypatch.setenv("ACERVO_DOWNLOADS_PATH", str(downloads))
     monkeypatch.setenv("ACERVO_DICTIONARIES_PATH", str(dictionaries))
+    monkeypatch.setenv("ACERVO_MEDIA_PATH", str(media))
     monkeypatch.setenv("ACERVO_PROMPTS_PATH", str(PROMPTS))
     monkeypatch.setenv("ACERVO_APP_VERSION", "1.4.2")
     monkeypatch.setenv("ACERVO_APP_BUILD", "218")
@@ -146,6 +161,7 @@ def server(tmp_path, monkeypatch) -> Server:
         model=model,
         downloads=downloads,
         dictionaries=dictionaries,
+        media=media,
         web=web,
     )
 
@@ -168,5 +184,6 @@ def other(server) -> Server:
         model=server.model,
         downloads=server.downloads,
         dictionaries=server.dictionaries,
+        media=server.media,
         web=server.web,
     )

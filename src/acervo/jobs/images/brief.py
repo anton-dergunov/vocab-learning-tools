@@ -17,7 +17,7 @@ from typing import Any, Callable
 from google import genai
 from google.genai import types
 
-from ..pacing import is_quota_error
+from acervo.pacing import is_quota_error
 
 from .graph import ArticleView
 from .styles import StyleTable

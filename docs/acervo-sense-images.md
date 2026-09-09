@@ -6,10 +6,24 @@ article, that style variety is pedagogical, that a master is 1024×1024 WebP, an
 no image is complete. What was missing was *what the picture is of*, *how the prompt is written*,
 and *where the work runs first*. That is this document.
 
-Status: **Phase A is complete.** 2,285 images sit in `output/images/` and `output/images-en/`, and
-`generate_images.py verify` says both directories are safe to import. Phase B — writing them into the
-graph — is next. §10 records the phases; the prompt iteration that produced them is in
-`experiments/sense-images/`.
+Status: **Phase A is complete and Phase B's machinery is built.** 2,285 images sit in
+`output/images/` and `output/images-en/`. `generate_images.py publish` writes a verified run into the
+graph and fans the files out into the media directory, which `GET /api/acervo/media/{path}` now
+serves behind auth.
+
+**What has not happened is publishing *those* 2,285 images, and they cannot be published as they
+stand.** Their `senseId`s were read from the pre-port database. The vocabulary has since been
+exported and re-imported, and `transfer.ts` mints fresh ids on import — a bundle carries no sense
+ids at all — so every `senseId` in those run directories now names a sense nobody holds. Because
+`image_prompt_id` is *derived from* `senseId`, all 2,285 filenames are wrong for the current database
+too. `verify` cannot see this: a run directory is internally consistent either way, and it will keep
+reporting "safe to import". `publish` does see it, refuses the whole run, and says which records are
+stranded.
+
+Landing them therefore needs a matching step first, keyed on something that survived the round trip —
+headword, sense order, definition — after which every id, filename and `imageRef` is re-derived. That
+is a data task with its own decisions, not part of the pipeline. §10 records the phases; the prompt
+iteration that produced the images is in `experiments/sense-images/`.
 
 ---
 
@@ -385,7 +399,7 @@ already sitting at their final paths.
 | | What | Touches the server | Blocked by |
 |---|---|---|---|
 | **A** | Local generation: brief writer, style sampling, renderer, contact sheet | reads only | **done** |
-| **B** | One-off import of the run into the graph and the media directory | writes | A verified — it is |
+| **B** | Import of a run into the graph and the media directory | writes | **built**; the existing runs need re-keying first |
 | **C** | `acervo-worker images sweep`, plus `attempts` / `failureReason` | writes, schema | **a transfer bundle of the real vocabulary must exist first** |
 | **D** | Article view: render, regenerate, delete; the two style settings | | C |
 | **E** | Anki cards, one per example, with the sense image | | D and the Anki generator, which does not exist |
@@ -422,14 +436,16 @@ Two operational lessons worth carrying into Phase C, because both cost real work
 New code, all in new files, so nothing the running ingestion imports is touched:
 
 ```
-config/image-styles.yaml           the style table
-prompts/acervo_image_brief.txt     the brief-writing template
-src/acervo/images/styles.py      load the table, weighted sample seeded from senseId
-src/acervo/images/brief.py       build the LLM request, parse and validate the reply
-src/acervo/images/compose.py     brief + style + template -> the image prompt
-src/acervo/images/render.py      Vertex Gemini 3.1 Flash Lite Image -> WebP master
-src/acervo/images/run.py         plan, execute concurrently, checkpoint, manifest
-scripts/generate_images.py         plan | run | sheet
+config/image-styles.yaml              the style table
+prompts/acervo_image_brief.txt        the brief-writing template
+src/acervo/jobs/images/styles.py      load the table, weighted sample seeded from senseId
+src/acervo/jobs/images/brief.py       build the LLM request, parse and validate the reply
+src/acervo/jobs/images/compose.py     brief + style + template -> the image prompt
+src/acervo/jobs/images/render.py      Vertex Gemini 3.1 Flash Lite Image -> WebP master
+src/acervo/jobs/images/run.py         plan, execute concurrently, checkpoint
+src/acervo/jobs/images/verify.py      is this run directory safe to publish?
+src/acervo/jobs/images/publish.py     the rows into the graph, the files into the media directory
+scripts/generate_images.py            plan | run | verify | publish | sheet
 ```
 
 `google-genai` is already a pinned dependency, so the renderer is a direct call, not the benchmark's

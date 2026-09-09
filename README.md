@@ -85,9 +85,11 @@ generated examples, prompts, study statistics, and a Chinese reading.
 - `src/acervo/` — the server: the canonical schema, the graph routes, capture, the dictionary
   routes, auth and the static surfaces. See [the server design](docs/acervo-server.md).
 - `deploy/acervo/server/` — the image it ships in.
+- `src/acervo/client.py` — the one HTTP client against the API; every job and script goes through it.
 - `src/acervo/dictionaries/` — the external-dictionary compiler.
-- `src/acervo/images/` — the sense-image generation pipeline.
-- `src/acervo/anki_sync/` — headless Anki consumer infrastructure.
+- `src/acervo/jobs/images/` — the sense-image generation pipeline.
+- `src/acervo/consumers/anki/` — headless Anki consumer infrastructure.
+- `research/` — benchmark tooling, outside the distribution and never imported by the service.
 - `macos/` — native host for the shared web interface.
 
 Deployment is designed for shared hosts and uses dedicated configurable listeners. It never assumes

@@ -11,6 +11,7 @@ usage:
   scripts/acervo_anki_remote.sh [--target USER@HOST] [--root PATH] bootstrap-upload MANIFEST
   scripts/acervo_anki_remote.sh [--target USER@HOST] [--root PATH] push MANIFEST
   scripts/acervo_anki_remote.sh [--target USER@HOST] [--root PATH] export-state
+  scripts/acervo_anki_remote.sh [--target USER@HOST] [--root PATH] pull-state
   scripts/acervo_anki_remote.sh [--target USER@HOST] [--root PATH] adopt-server
 EOF
   exit 2
@@ -20,7 +21,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --target) [ "$#" -ge 2 ] || usage; target=$2; shift 2 ;;
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
-    bootstrap-upload|push|export-state|adopt-server) operation=$1; shift; break ;;
+    bootstrap-upload|push|export-state|pull-state|adopt-server) operation=$1; shift; break ;;
     *) usage ;;
   esac
 done

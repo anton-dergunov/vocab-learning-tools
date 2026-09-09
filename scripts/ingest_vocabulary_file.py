@@ -25,65 +25,16 @@ import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from pathlib import Path
 
+from acervo.client import AcervoClient, AcervoError
 from acervo.pacing import Pace
 
-API_PATH = "/api/acervo/v1"
-SCHEMA_VERSION = 6
 DEVICE_ID = "ingestscript01"
-REQUEST_TIMEOUT = 600
 RETRY_DELAYS = (15, 30, 60)
 TRANSIENT_CAPTURE_ERRORS = {"llm_rate_limited", "llm_unavailable", "llm_unreachable"}
 DEFAULT_CHECKPOINTS = Path.home() / ".acervo" / "ingest"
 SEPARATORS = {"", "---", "***", "___"}
-
-
-class AcervoError(Exception):
-    def __init__(self, message: str, code: str = "", status: int = 0) -> None:
-        super().__init__(message)
-        self.code = code
-        self.status = status
-
-
-class Client:
-    def __init__(self, base_url: str) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.token = ""
-
-    def call(self, path: str, payload: dict | None = None) -> dict:
-        url = f"{self.base_url}{API_PATH}{path}"
-        data = json.dumps(payload).encode() if payload is not None else None
-        request = urllib.request.Request(url, data=data, method="POST" if data else "GET")
-        request.add_header("Accept", "application/json")
-        if data:
-            request.add_header("Content-Type", "application/json")
-        if self.token:
-            request.add_header("Authorization", f"Bearer {self.token}")
-        try:
-            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
-                return json.loads(response.read()).get("data") or {}
-        except urllib.error.HTTPError as error:
-            body = {}
-            try:
-                body = json.loads(error.read())
-            except Exception:  # noqa: BLE001 - the body is diagnostic, not required
-                pass
-            problem = body.get("error") or {}
-            raise AcervoError(
-                problem.get("message") or f"The server refused the request ({error.code}).",
-                problem.get("code", ""),
-                error.code,
-            ) from error
-        except urllib.error.URLError as error:
-            raise AcervoError(f"The Acervo server could not be reached: {error.reason}") from error
-
-    def sign_in(self, email: str, password: str) -> None:
-        result = self.call("/session", {"email": email, "password": password})
-        self.token = result["token"]
 
 
 def logical_block(lines: list[str]) -> int:
@@ -137,24 +88,21 @@ def count_lines(source: Path) -> int:
     return len(source.read_text(encoding="utf-8").splitlines())
 
 
-def capture(client: Client, text: str, language: str, topics: list[str], apply: bool) -> dict:
-    return client.call("/capture", {
-        "schemaVersion": SCHEMA_VERSION,
-        "deviceId": DEVICE_ID,
-        "mode": "stream",
-        "apply": apply,
-        "text": text,
-        "language": language or None,
-        "topics": topics,
-        "sourceKind": "unknown",
-    })
+def capture(client: AcervoClient, text: str, language: str, topics: list[str], apply: bool) -> dict:
+    return client.capture(
+        device_id=DEVICE_ID,
+        mode="stream",
+        apply=apply,
+        text=text,
+        language=language or None,
+        topics=topics,
+        sourceKind="unknown",
+    )
 
 
-def preflight(client: Client, language: str, topics: list[str]) -> None:
+def preflight(client: AcervoClient, language: str, topics: list[str]) -> None:
     """Verify owner configuration before the first model call can spend money."""
-    query = urllib.parse.urlencode({"schemaVersion": SCHEMA_VERSION, "since": 0})
-    graph = client.call(f"/graph?{query}")
-    changes = graph.get("changes") or {}
+    changes = client.pull_graph().get("changes") or {}
     vocabularies = [item for item in changes.get("vocabularies", []) if not item.get("deleted")]
     configured_languages = {str(item.get("language", "")).lower() for item in vocabularies}
     if language and language.lower() not in configured_languages:
@@ -213,7 +161,7 @@ def main() -> int:
         print("A server, an account and a password are required", file=sys.stderr)
         return 2
 
-    client = Client(server_url)
+    client = AcervoClient(server_url)
     try:
         client.sign_in(email, password)
     except AcervoError as error:

@@ -156,8 +156,9 @@ docker compose -p acervo \
   bootstrap-upload /input/manifest.json
 ```
 
-Use `push /input/manifest.json` for routine updates and `export-state` to emit
-review state as JSON. A routine push syncs down first, refuses a required full
+Use `push /input/manifest.json` for routine updates, `export-state` to emit
+review state as JSON, and `pull-state` to write that same reading into Acervo
+as `studyState` records. A routine push syncs down first, refuses a required full
 sync in either direction, updates by immutable `AcervoNoteId`, and syncs media
 to completion. It preserves card IDs, scheduling, and non-`acervo::` tags.
 
@@ -214,6 +215,7 @@ Pass `--target` or `--root` only when overriding those values.
 scripts/acervo_anki_remote.sh bootstrap-upload path/to/manifest.json
 scripts/acervo_anki_remote.sh push path/to/manifest.json
 scripts/acervo_anki_remote.sh export-state
+scripts/acervo_anki_remote.sh pull-state
 scripts/acervo_anki_remote.sh adopt-server
 ```
 
@@ -253,6 +255,35 @@ Media paths must be relative to the manifest and cannot escape its directory.
 Media are imported under content-addressed names. Duplicate manifest identities
 or duplicate collection `AcervoNoteId` values fail before any mutation. Notes
 absent from a manifest remain untouched.
+
+## FSRS state back into Acervo
+
+Content goes out through the manifest; scheduling comes back through `run-worker.sh pull-state`. It
+syncs down, reads each card, and writes one `studyState` per *(lexeme, `anki`)* through
+`POST /api/acervo/v1/graph` — the same route, validation and revision allocation a phone gets, so
+there is no second write path to keep in step. `export-state` is the same reading printed rather than
+stored, which is what to run when you want to look.
+
+Three things about the mapping are decisions rather than mechanics:
+
+- **Retrievability is Anki's own number**, asked for only when the card has a memory state. Anki
+  answers `0.0` for a card FSRS knows nothing about, and stored as-is that would read as "certainly
+  forgotten"; re-deriving the forgetting curve here would be a second implementation of something
+  that changes with the FSRS version, wrong in a way that looks right.
+- **A note's cards collapse into one row.** The note type has one template, so in practice that is
+  one card. The rule for when it is not: counts add up, because every review was a review of this
+  word; the memory state comes from the least stable card, because that is the one coming up next;
+  the last review is the most recent of any of them.
+- **A note whose word Acervo no longer holds is skipped, not refused.** That is ordinary — a word
+  removed in Acervo keeps its card until someone deletes it in Anki — and one such note must not stop
+  the rest from being written. A batch is all-or-nothing, so the filtering happens before the write.
+
+`queue`, `suspended` and `flag` are exported and deliberately not stored: there are no columns for
+them, and adding some means rebuilding the database for information nothing reads.
+
+The credential is the **owner's own account**, not a service account. Every record is owner-scoped and
+a cross-owner reference is refused, so a second account could not write against the owner's words at
+all.
 
 ## Bootstrap and adoption
 

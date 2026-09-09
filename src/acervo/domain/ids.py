@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import re
 import secrets
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 # 15 lowercase alphanumerics, minted offline by clients and stored unchanged everywhere: PocketBase,
 # IndexedDB, relations and consumer manifests all carry the same string.
@@ -35,9 +39,20 @@ def is_language(value: str) -> bool:
     return bool(LANGUAGE.match(value))
 
 
+def instant_of(moment: "datetime") -> str:
+    """A moment in the only timestamp shape the wire carries.
+
+    Not `isoformat()`: that yields `+00:00` and six fractional digits, and `INSTANT` accepts neither.
+    Anything that has a `datetime` and needs to put it on the wire comes through here.
+    """
+    from datetime import timezone
+
+    utc = moment.astimezone(timezone.utc)
+    return f"{utc.strftime('%Y-%m-%dT%H:%M:%S')}.{utc.microsecond // 1000:03d}Z"
+
+
 def now_instant() -> str:
     """The current time in the only timestamp shape the wire carries."""
     from datetime import datetime, timezone
 
-    moment = datetime.now(timezone.utc)
-    return f"{moment.strftime('%Y-%m-%dT%H:%M:%S')}.{moment.microsecond // 1000:03d}Z"
+    return instant_of(datetime.now(timezone.utc))

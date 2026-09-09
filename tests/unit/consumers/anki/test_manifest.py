@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from acervo.anki_sync.manifest import SyncManifest
+from acervo.consumers.anki.manifest import SyncManifest
 
 
 NOTE_ID = "note00000000001"

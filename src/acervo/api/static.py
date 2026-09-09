@@ -1,9 +1,9 @@
-"""The three static surfaces, and the two different auth policies among them.
+"""The static surfaces, and the two different auth policies among them.
 
-Downloads are open because the macOS updater fetches them with no credentials. Dictionaries are
-closed because the service worker must not precache tens of MiB and because the data is third-party
-and mostly share-alike — the owner's own server handing it to the owner's own devices is not the same
-thing as publishing it.
+Downloads are open because the macOS updater fetches them with no credentials. Dictionaries and media
+are closed: the service worker must not precache tens of MiB, third-party dictionary data is mostly
+share-alike, and a sense image is the owner's own generated material. The owner's own server handing
+either to the owner's own devices is not the same thing as publishing it.
 
 Both must answer `Range`: the dictionary reader reads artifacts by byte range, so a dictionary the
 device does not hold is read over the network by the same code. There are two silent ways to lose
@@ -52,6 +52,18 @@ def install(app: FastAPI) -> None:
     def dictionaries(request: Request, relative: str) -> FileResponse:
         account_for(app.state.jwt_secret, bearer_token(request))
         return FileResponse(within(Path(settings.dictionaries_path), relative))
+
+    @app.get("/api/acervo/media/{relative:path}", include_in_schema=False)
+    def media(request: Request, relative: str) -> FileResponse:
+        """Sense images, and whatever else a record points at by relative path.
+
+        Closed for the same reason dictionaries are, and one more: `imageRef` is a reference inside a
+        record, so anything that can read the graph can read what it names, and nothing else can.
+        Being behind auth is also why the interface fetches these as blobs rather than putting the
+        URL in an `<img src>`.
+        """
+        account_for(app.state.jwt_secret, bearer_token(request))
+        return FileResponse(within(Path(settings.media_path), relative))
 
     @app.get("/api/acervo/{unmatched:path}", include_in_schema=False)
     def unknown_api_route(unmatched: str) -> None:

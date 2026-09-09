@@ -105,6 +105,7 @@ mkdir -p \
   "$acervo_root/data/acervo-worker" \
   "$acervo_root/data/server" \
   "$acervo_root/data/dictionaries" \
+  "$acervo_root/data/media" \
   "$acervo_root/downloads" \
   "$acervo_root/input" \
   "$acervo_root/backups" \
@@ -130,6 +131,13 @@ if [ "$credentials_stdin" = true ] || [ -n "$credentials_file" ]; then
   {
     printf "ACERVO_ANKI_SYNC_USERNAME='%s'\n" "$username_env"
     printf "ACERVO_ANKI_SYNC_PASSWORD='%s'\n" "$password_env"
+    # Everything this block does not own is carried over. Rewriting the file wholesale would take
+    # the token signing secret with it, and the next block would mint a fresh one — which signs out
+    # every device on the tailnet because someone reconfigured the Anki password.
+    if [ -f "$acervo_root/secrets.env" ]; then
+      grep -v '^ACERVO_ANKI_SYNC_USERNAME=\|^ACERVO_ANKI_SYNC_PASSWORD=' \
+        "$acervo_root/secrets.env" || true
+    fi
   } >"$credentials_tmp"
   chmod 600 "$credentials_tmp"
   mv "$credentials_tmp" "$acervo_root/secrets.env"
@@ -292,6 +300,7 @@ ACERVO_ANKI_SERVER_DATA=$acervo_root/data/anki-server
 ACERVO_WORKER_DATA=$acervo_root/data/acervo-worker
 ACERVO_DICTIONARIES=$acervo_root/data/dictionaries
 ACERVO_SERVER_DATA=$acervo_root/data/server
+ACERVO_MEDIA=$acervo_root/data/media
 ACERVO_DOWNLOADS=$acervo_root/downloads
 ACERVO_INPUT_PATH=$acervo_root/input
 EOF

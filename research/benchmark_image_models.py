@@ -10,11 +10,11 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
-from acervo.image_benchmark.config import BenchmarkConfigError, load_benchmark_config
-from acervo.image_benchmark.harness import prepare_candidates, run_benchmark
-from acervo.image_benchmark.jobs import expand_jobs
-from acervo.image_benchmark.ratings import RatingsError, write_ratings_report
-from acervo.image_benchmark.review import render_review
+from research.image_benchmark.config import BenchmarkConfigError, load_benchmark_config
+from research.image_benchmark.harness import prepare_candidates, run_benchmark
+from research.image_benchmark.jobs import expand_jobs
+from research.image_benchmark.ratings import RatingsError, write_ratings_report
+from research.image_benchmark.review import render_review
 
 
 DEFAULT_CONFIG = _REPO_ROOT / "config" / "image-benchmark.yaml"

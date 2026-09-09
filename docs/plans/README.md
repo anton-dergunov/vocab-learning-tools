@@ -48,7 +48,7 @@ conversation state, no tool use. Anything grander than that is not being paid fo
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
-| [08 · The Python server](08-the-python-server.md) | Phases 0–2 complete; 3 mostly, 4 planned | — | PocketBase and `pb_hooks/` are deleted; one FastAPI service serves the same wire contract, and the client did not change |
+| [08 · The Python server](08-the-python-server.md) | **Complete** (except `models/`, which is 04) | — | PocketBase and `pb_hooks/` are deleted; one FastAPI service serves the same wire contract, the client did not change, and every job writes the graph through one client |
 
 ### Stage 3 · One provider model
 

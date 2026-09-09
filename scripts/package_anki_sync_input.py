@@ -7,7 +7,7 @@ import argparse
 import tarfile
 from pathlib import Path
 
-from acervo.anki_sync.manifest import SyncManifest
+from acervo.consumers.anki.manifest import SyncManifest
 
 
 def portable_tar_info(info: tarfile.TarInfo) -> tarfile.TarInfo:

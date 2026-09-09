@@ -26,6 +26,9 @@ def published(server):
         )
     )
     (server.dictionaries / "cc-cedict.dict").write_bytes(b"packed dictionary bytes")
+    picture = server.media / "images" / "lexemepicar001"
+    picture.mkdir(parents=True)
+    (picture / "promptpicar0001.webp").write_bytes(b"webp image bytes")
     (server.web / "index.html").write_text("<!doctype html><title>Acervo</title>")
     (server.web / "manifest.webmanifest").write_text('{"name":"Acervo"}')
     return server
@@ -61,6 +64,27 @@ def test_a_dictionary_artifact_needs_the_owner_signed_in_and_then_answers_a_rang
 
     whole = published.client.get("/api/acervo/dictionaries/cc-cedict.dict", headers=published.auth)
     assert whole.headers["content-length"] == "23"
+
+
+def test_a_sense_image_needs_the_owner_signed_in_and_then_answers_a_range(published):
+    """`imageRef` is a reference inside a record, so what can read the graph can read what it names,
+    and nothing else can. Being behind auth is also why the interface fetches these as blobs."""
+    path = "/api/acervo/media/images/lexemepicar001/promptpicar0001.webp"
+    assert published.client.get(path).status_code == 401
+
+    ranged = published.client.get(path, headers={**published.auth, "Range": "bytes=0-3"})
+    assert ranged.status_code == 206
+    assert ranged.content == b"webp"
+
+    whole = published.client.get(path, headers=published.auth)
+    assert whole.headers["content-length"] == "16"
+
+
+def test_a_media_path_that_climbs_out_of_the_directory_is_a_404(published):
+    answer = published.client.get(
+        "/api/acervo/media/../acervo.db", headers=published.auth
+    )
+    assert answer.status_code == 404
 
 
 @pytest.mark.parametrize("escape", ["../acervo.db", "..%2Facervo.db", "subdir/../../acervo.db"])
@@ -100,11 +124,15 @@ def test_the_service_starts_and_serves_with_no_downloads_or_dictionaries_directo
 
     shutil.rmtree(server.downloads)
     shutil.rmtree(server.dictionaries)
+    shutil.rmtree(server.media)
 
     assert server.client.get("/api/acervo/v1/health").status_code == 200
     assert server.client.get("/api/acervo/v1/mac-release").json() == {"data": None}
     assert server.get("/dictionaries").json() == {"data": {"dictionaries": []}}
     assert server.client.get("/api/acervo/downloads/anything.zip").status_code == 404
+    assert server.client.get(
+        "/api/acervo/media/images/a/b.webp", headers=server.auth
+    ).status_code == 404
 
 
 def test_the_release_manifest_points_at_the_open_download_route(published):

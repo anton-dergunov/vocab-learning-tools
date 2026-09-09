@@ -9,7 +9,7 @@ import json
 import pathlib
 import re
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+ROOT = pathlib.Path(__file__).resolve().parents[3]
 # Both images are built from the packaged archive, so both have to be checked. The worker one was
 # added with the dictionary compiler, which copies `dictionaries/` for the catalogue.
 DOCKERFILES = (
@@ -71,3 +71,14 @@ def test_the_capture_prompts_are_packaged_and_named_as_the_service_reads_them():
     assert named, "expected the capture service to read prompts by name"
     for name in named:
         assert (ROOT / "prompts" / f"{name}.txt").is_file(), f"prompts/{name}.txt is missing"
+
+
+def test_both_images_leave_their_own_files_readable_by_the_user_they_run_as():
+    """The installer extracts a release under `umask 077` and `COPY` makes the result root-owned, so
+    an image built from a release has owner-only files. Both containers run as the deploying user,
+    which would then be unable to read its own entry point."""
+    for dockerfile in DOCKERFILES:
+        source = dockerfile.read_text()
+        assert "chmod -R a+rX /app" in source, (
+            f"{dockerfile} copies files a non-root container could not read"
+        )

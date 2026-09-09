@@ -1,7 +1,7 @@
 from anki.collection import Collection
 import pytest
 
-from acervo.anki_sync.model import (
+from acervo.consumers.anki.model import (
     FIELD_NAMES,
     MODEL_NAME,
     ModelMismatchError,

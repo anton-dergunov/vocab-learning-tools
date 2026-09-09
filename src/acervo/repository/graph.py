@@ -24,7 +24,7 @@ from acervo.domain.ids import DEVICE_ID, is_instant, is_record_id, new_record_id
 from acervo.domain.projection import COLLECTIONS, WORD_COLLECTIONS, Collection, projected
 from acervo.errors import ApiError, RecordRefused
 from acervo.repository.session import reading, transaction
-from acervo.settings import SCHEMA_VERSION
+from acervo.domain import SCHEMA_VERSION
 
 
 # ── the cursor ──────────────────────────────────────────────────────────────

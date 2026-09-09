@@ -13,10 +13,6 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Bumped when the wire model changes shape. Declared here for the server, in `web/src/api.ts` for the
-# interface, and in the two scripts that speak this API; a mismatch is a 409 by design.
-SCHEMA_VERSION = 6
-
 DEFAULT_LLM_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com"
 
@@ -37,6 +33,9 @@ class Settings(BaseSettings):
     web_path: Path = Field(default=Path("/app/web"), alias="ACERVO_WEB_PATH")
     downloads_path: Path = Field(default=Path("/var/lib/acervo/downloads"), alias="ACERVO_DOWNLOADS_PATH")
     dictionaries_path: Path = Field(default=Path("/var/lib/acervo/dictionaries"), alias="ACERVO_DICTIONARIES_PATH")
+    # Sense images and, later, audio. Served like a dictionary artifact rather than like the
+    # interface: behind auth, Range-capable, and outside anything a service worker precaches.
+    media_path: Path = Field(default=Path("/var/lib/acervo/media"), alias="ACERVO_MEDIA_PATH")
     prompts_path: Path = Field(default=Path("/app/prompts"), alias="ACERVO_PROMPTS_PATH")
 
     llm_provider: str = Field(default="gemini", alias="ACERVO_LLM_PROVIDER")

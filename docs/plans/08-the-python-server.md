@@ -1,7 +1,7 @@
 # Plan 08: The Python server
 
-**Status:** Phases 0–2 complete, and the parts of phase 3 the cutover could not leave behind.
-Phase 3's `models/` package and HTML sanitiser, and phase 4, remain.
+**Status:** Complete, except `models/`, which is [plan 04](04-one-python-provider-package.md)'s
+acceptance boundary rather than this one's.
 **Depends on:** nothing. It unblocks everything else.
 
 The design this executes is [`docs/acervo-server.md`](../acervo-server.md). Read that first — it
@@ -143,7 +143,7 @@ tracked), the PocketBase `Dockerfile`, `scripts/stage-pocketbase.sh` and
 
 ---
 
-## Phase 3 · Capture and dictionaries move into Python — **mostly complete**
+## Phase 3 · Capture and dictionaries move into Python — **complete except `models/`**
 
 **Build**
 
@@ -170,7 +170,7 @@ tracked), the PocketBase `Dockerfile`, `scripts/stage-pocketbase.sh` and
 
 ---
 
-## Phase 4 · The existing Python folds in
+## Phase 4 · The existing Python folds in — **complete**
 
 **Build**
 
@@ -297,3 +297,140 @@ GET  /api/acervo/v1/mac-release                {"data": null}
   3 vocabularies, 13 topics, 1,481 lexemes reconciling against es 914 / en 566 / zh-Hans 1.
 - **The remote deployment.** `PROTOCOL` went 4 → 5, so the server needs
   `./deploy.sh --install-helper` once before `--reset-database` will run there.
+
+---
+
+## Implementation and verification record — phase 4 and the sanitiser
+
+*9 September 2026, after the deployment was verified and the vocabulary re-imported.*
+
+### The sanitiser, chosen by measurement
+
+`plain_text` was one regex. Replaced by a `html.parser` tokeniser in
+`services/dictionaries/markup.py`, having measured the candidates against a fragment carrying every
+failure mode the real Wikimedia markup has:
+
+```
+today's regex   to b">itch.ib-brac{display:none}first sub-sensesecond sub-sense &amp; a&nbsp;gap … inside -->
+lxml            to itch.ib-brac{display:none}first sub-sensesecond sub-sense & a gap, and prose where a < b
+html.parser     to itch first sub-sense second sub-sense & a gap, and prose where a < b
+```
+
+`lxml.html.text_content()` still gets two of five wrong — `<style>` contents leak and list items run
+together, because it inserts no block separator — so reaching for it adds a dependency without
+removing a decision. The deciding point is that this is a **streaming text extraction, not a tree
+query**: the only state needed is "am I inside a discarded element", and a tokeniser has no tree to
+misbuild on a third party's sloppy markup. The discard set is `web/src/externalHtml.ts`'s, so the two
+ends agree about what `<script>` means. Output stays plain text, because the wire contract is frozen.
+
+An availability argument (lxml is in `dev.txt` but not the server image) was written into the plan
+first and was wrong: the server can carry any dependency it needs. The measurement is the reason.
+
+One thing added beyond the five: invisible typesetting characters — soft hyphen, zero-width space,
+BOM — are stripped, because none of them is `\s` and a soft hyphen inside a word makes two strings
+that read identically compare unequal. ZWNJ and ZWJ are deliberately kept: they are semantic in
+Persian, Arabic and Indic scripts and in emoji sequences.
+
+### One client, and why it is httpx
+
+`client.py` replaced two copies of the same thirty lines plus the integration suite's helper. The two
+had drifted in three ways that each mattered — 600-second versus 300-second timeouts, one carrying
+the error `code` and one discarding it, and both inferring the method from the body so a bodyless
+POST could not be expressed at all.
+
+`httpx`, not `urllib`, and again the first argument in the plan was the wrong one. On merit: httpx is
+already the project's outbound client in `services/llm.py` and `services/dictionaries/online.py`, so
+the tree now holds *one* HTTP library rather than two; a reused `httpx.Client` gives connection reuse,
+which a publish of thousands of records and a walk of hundreds of captures both want; and header
+freedom is why the integration test no longer drops to raw urllib for its `Range` case.
+
+Three layers, each the one below plus exactly one decision: `fetch` decides nothing, `raw` decides how
+to read a body, `call` decides what counts as a failure. **No retries in the transport** — the file
+ingestion's own tests assert `sleeps == [15, 30]` and four attempts through a real socket, and they
+still pass unchanged, which was the point.
+
+`http=` accepts a borrowed client, so a write path is testable against the application in-process:
+Starlette's `TestClient` *is* an `httpx.Client`. `ASGITransport` was the obvious route and is
+async-only, which a synchronous client cannot use.
+
+### The tree, and the rule that was doing nothing
+
+`images/` → `jobs/images/`, `anki_sync/` → `consumers/anki/`, `image_benchmark/` and its two entry
+points → a top-level `research/` outside the distribution. The moves cost two real fixes beyond the
+imports: every `from ..pacing import` broke, because the packages went a level deeper, and the moved
+test files compute the repository root by counting parent directories.
+
+The point of the `jobs/` move was not tidiness. `test_the_request_path_does_not_import_batch_work`
+had been **vacuously true** — `acervo.jobs` matched nothing — so the rule the design leans on was
+passing without testing anything. `test_layering.py` now has a guard against exactly that, and two
+new rules: batch work reaches the graph only through `client.py`, and nothing that ships imports
+`research/`. Its import reader also resolves relative imports now; reading only absolute ones was a
+hole big enough to drive `from ...db import engine` through.
+
+`corpus/` was not created. There is no corpus code; an empty package nothing imports is a directory,
+not a boundary, and the separation is stated where a reader looks.
+
+### The two write paths
+
+`jobs/images/publish.py` and `consumers/anki/state.py`, both through `client.py`, neither needing a
+schema change — so no `--reset-database` and the restored vocabulary was never at risk.
+
+Two orderings in the publish are deliberate: **files before rows**, because a row whose file is
+missing is a broken `imageRef` the owner sees while an orphan file is not; and **every check before
+any write**, because a half-published run is worse than an unpublished one.
+
+For the study state, three things the export did not have. `retrievability` was hardcoded `None`
+against a `Float NOT NULL` column bounded to (0, 1); it now comes from Anki's own
+`card_stats_data(...).fsrs_retrievability`, asked for **only when the card has a memory state** —
+Anki answers `0.0` otherwise, and stored as-is that reads as "certainly forgotten". `last_review` was
+`.isoformat()`, which yields `+00:00` and six fractional digits and the route refuses both; there is
+now one `instant_of` in `domain/ids.py` that everything with a `datetime` goes through. And `system`
+and `syncedAt` were not produced at all.
+
+The collapse rule, because a row has one `reps` and a note may have several cards: counts add up, the
+memory state comes from the least stable card, the last review is the most recent, and every id stays
+in `card_ids`. `queue`, `suspended` and `flag` are dropped — no columns, and adding them means
+rebuilding the database for information nothing reads.
+
+### Two decisions taken against the plan
+
+- **The worker does not `depends_on` the server.** The plan asked for it so a `run --rm` could not
+  race an unstarted service. But a dependency applies to *every* verb: it would build and start the
+  whole API service to compile a dictionary, and drag it into an Anki integration test that has
+  nothing to do with it. In production the server is `restart: unless-stopped`; when it is not up the
+  client says "The Acervo server could not be reached" in exactly those words.
+- **The worker's credential is the owner's own account.** The plan said "a service credential", which
+  cannot work: every record is owner-scoped and a cross-owner reference is refused, so a second
+  account could not write study state against the owner's lexemes at all. It is deliberately not
+  given `ACERVO_JWT_SECRET`, which signs every account's tokens.
+
+### Verification
+
+```
+.venv/bin/python -m pytest -m "not integration"     588 passed
+npm --prefix web run test                           266 passed, 0 changes under web/src/
+RUN_DOCKER_INTEGRATION_TESTS=true pytest tests/integration/   passed
+```
+
+Both acceptance clauses, in `tests/unit/server/test_write_paths.py`, against the real routes over an
+in-process client: a verified run lands as `imagePrompts` with derived ids and revisions above zero,
+its files come back through `/api/acervo/media/` behind auth, a second publish writes nothing, and a
+run naming senses the account does not hold publishes *nothing at all* rather than the good half.
+Anki state lands as one `studyStates` row per word with a new revision, a retrievability strictly
+between 0 and 1, and a 24-character `lastReview`; a second pull updates that row rather than adding
+one; and a timestamp in the shape `.isoformat()` would have produced is refused by the route, which is
+the reason `instant_of` exists.
+
+"Exactly one HTTP client" is a test rather than a habit: no module but `client.py` both names
+`/api/acervo` and opens a connection, with an allow-list for the four callers that legitimately speak
+HTTP to Google, to dictionary sources, or to model providers.
+
+### Still not done
+
+- **`models/`** — plan 04, unblocked and next.
+- **Publishing the 2,285 existing images.** They cannot be published as they stand: their `senseId`s
+  came from the pre-port database, the re-import minted fresh ones, and because `image_prompt_id` is
+  derived from `senseId` every filename is wrong too. `verify` cannot see it; `publish` refuses the
+  run and says which records are stranded. `docs/acervo-sense-images.md` records what a re-keying step
+  would have to match on.
+- **A live `pull-state` against the deployed server**, which needs a real Anki round trip on the NAS.

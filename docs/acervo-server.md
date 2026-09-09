@@ -1,6 +1,6 @@
 # The Acervo server
 
-**Design document · 9 Sep 2026 · Rev. B · the port has landed; PocketBase is deleted**
+**Design document · 9 Sep 2026 · Rev. C · the port has landed and the existing Python has folded in**
 
 What runs on the always-on machine, in what language, and how it is arranged so that the features
 in `acervo-design.md` §05–§12 can be added to it rather than squeezed into it.
@@ -9,9 +9,10 @@ This is a companion to the product design, not a restatement of it. `acervo-desi
 Acervo is and what the sync protocol guarantees; this says where the code that keeps those promises
 lives.
 
-> **Status.** Phases 0 through 3 have landed and PocketBase is gone from the tree. Section §7 tracks
-> what is built and what is not, and is the only part of this document that describes the present
-> rather than the target.
+> **Status.** The port is complete. PocketBase is gone, the tree matches §3, and the only piece of
+> this document not yet built is `models/` — plan 04's provider catalogue, which replaces
+> `services/llm.py`. Section §7 tracks it, and is the only part of this document that describes the
+> present rather than the target.
 
 ---
 
@@ -300,8 +301,14 @@ subtly wrong.
 | **0** | Cleanup and ground truth | **done** |
 | **1** | The service skeleton: settings, db, auth, health, the static surfaces | **done** |
 | **2** | The replication core, and cutover — PocketBase deleted here | **done** |
-| **3** | Capture and dictionaries in Python; `pb_hooks/` gone | **done**, except `models/` and the sanitiser |
-| 4 | The existing Python folds in: one client, jobs write the graph | not started |
+| **3** | Capture and dictionaries in Python; `pb_hooks/` gone | **done**, except `models/` |
+| **4** | The existing Python folds in: one client, jobs write the graph | **done** |
+
+What is left of §3 is `models/`, which is [plan 04](plans/04-one-python-provider-package.md)'s whole
+acceptance boundary rather than a footnote of the port: LiteLLM, a tracked catalogue, three functions
+and chains that fall through on 429 and 5xx. `services/llm.py` serves capture until it lands. And
+`corpus/` has no code to put a boundary around yet — the separation is stated here and in AGENTS.md,
+which is where a reader looks; an empty package nothing imports would be a directory, not a rule.
 
 Phase 0 deleted the superseded provider abstraction (`provider/`, `llm/`, `tts/`, `vision/`,
 `config.py` — 392 source lines with no non-test importer, and 798 lines of tests for them), the
@@ -316,3 +323,11 @@ server. What stays for phase 3 proper is `models/` — plan 04's provider catalo
 the sandbox.
 
 `web/src/` did not change, which was the acceptance test for the whole port.
+
+Phase 4 folded the existing Python in. `client.py` replaced the four hand-rolled clients; `images/`
+became `jobs/images/` and `anki_sync/` became `consumers/anki/`, which is what made rule 3 testable
+rather than vacuous — `api/` may not import `jobs/` had matched nothing at all until `jobs/` existed.
+`image_benchmark/` moved out to `research/`, outside the distribution. Two write paths that had never
+existed now do: a verified sense-image run into `imagePrompts` and the media directory, and Anki's
+FSRS state into `studyStates`. Neither needed a schema change, which is why none of it required
+rebuilding the database.

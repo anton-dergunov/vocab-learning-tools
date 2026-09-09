@@ -14,15 +14,15 @@ import shutil
 import socket
 import subprocess
 import time
-import urllib.error
-import urllib.request
 import uuid
 from pathlib import Path
 
 import pytest
 
+from acervo.client import API_PATH, AcervoClient, AcervoError
+
 ROOT = Path(__file__).resolve().parents[2]
-API = "/api/acervo/v1"
+API = API_PATH
 SCHEMA_VERSION = 6
 
 pytestmark = pytest.mark.integration
@@ -38,18 +38,14 @@ def free_port() -> int:
 
 
 def request(base, method, path, body=None, token=""):
-    data = json.dumps(body).encode() if body is not None else None
-    call = urllib.request.Request(f"{base}{path}", data=data, method=method)
-    call.add_header("Accept", "application/json")
-    if data:
-        call.add_header("Content-Type", "application/json")
-    if token:
-        call.add_header("Authorization", token)
-    try:
-        with urllib.request.urlopen(call, timeout=15) as answer:
-            return answer.status, json.loads(answer.read() or b"{}")
-    except urllib.error.HTTPError as refused:
-        return refused.code, json.loads(refused.read() or b"{}")
+    """Status and whole envelope, through the same client every job and script uses.
+
+    `raw` rather than `call` on purpose: this suite asserts on 401s and 409s, so a refusal has to be
+    a return value here rather than an exception.
+    """
+    with AcervoClient(base, timeout=15.0) as client:
+        client.token = token
+        return client.raw(method, path, body=body)
 
 
 def docker(*arguments, **kwargs):
@@ -99,8 +95,8 @@ def running(tmp_path_factory):
             try:
                 if request(base, "GET", f"{API}/health")[0] == 200:
                     return base
-            except OSError:
-                pass
+            except AcervoError:
+                pass  # still starting
             time.sleep(0.25)
         pytest.fail(docker("logs", name).stdout + docker("logs", name).stderr)
 
@@ -149,7 +145,7 @@ def test_a_graph_round_trip_survives_a_restart_of_the_container(running):
     _, session = request(
         running.base, "POST", f"{API}/session", {"email": OWNER_EMAIL, "password": OWNER_PASSWORD}
     )
-    token = f"Bearer {session['data']['token']}"
+    token = session["data"]["token"]
     at = "2026-01-01T00:00:00.000Z"
     stamp = {"deleted": False, "createdAt": at, "editedAt": at, "editedBy": "device000000001",
              "revision": 0}
@@ -171,8 +167,8 @@ def test_a_graph_round_trip_survives_a_restart_of_the_container(running):
         try:
             if request(running.base, "GET", f"{API}/health")[0] == 200:
                 break
-        except OSError:
-            pass
+        except AcervoError:
+            pass  # still starting
         time.sleep(0.25)
 
     status, pulled = request(
@@ -183,8 +179,19 @@ def test_a_graph_round_trip_survives_a_restart_of_the_container(running):
 
 
 def test_a_download_answers_a_byte_range_with_no_credentials(running):
-    call = urllib.request.Request(f"{running.base}/api/acervo/downloads/Acervo-test.zip")
-    call.add_header("Range", "bytes=0-1")
-    with urllib.request.urlopen(call, timeout=15) as answer:
-        assert answer.status == 206
-        assert answer.read() == b"te"
+    """The macOS updater reads the archive in chunks, and with no token at all."""
+    with AcervoClient(running.base, timeout=15.0) as client:
+        answer = client.fetch(
+            "GET", "/api/acervo/downloads/Acervo-test.zip", headers={"Range": "bytes=0-1"}
+        )
+    assert answer.status_code == 206
+    assert answer.content == b"te"
+
+
+def test_an_unreachable_server_is_told_apart_from_one_that_refuses(running):
+    """An empty error code means the request never got an answer, which is not retryable."""
+    with AcervoClient("http://127.0.0.1:1", timeout=2.0) as client:
+        with pytest.raises(AcervoError) as refused:
+            client.health()
+    assert refused.value.code == ""
+    assert refused.value.status == 0

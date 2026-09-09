@@ -1,6 +1,11 @@
 # What every Acervo entry point needs.
+#
+# `httpx` is here because `acervo/client.py` is: it is the one HTTP client against the Acervo API, and
+# a job or a consumer that writes the graph goes through it. It is also what the service calls a model
+# and an online dictionary with, and what FastAPI's TestClient runs on — one HTTP library, not three.
 PyYAML
 google-genai
+httpx
 pillow
 pydantic>=2,<3
 python-slugify

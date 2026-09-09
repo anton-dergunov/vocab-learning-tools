@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 from anki.collection import Collection
 
-from acervo.anki_sync.manifest import SyncManifest
-from acervo.anki_sync.model import create_notetype
-from acervo.anki_sync.robot import (
+from acervo.consumers.anki.manifest import SyncManifest
+from acervo.consumers.anki.model import create_notetype
+from acervo.consumers.anki.robot import (
     AnkiRobot,
     DuplicateIdentityError,
     RobotSettings,
@@ -184,7 +184,38 @@ def test_card_state_exports_review_and_flag_values(tmp_path):
         assert state["reps"] == 4
         assert state["lapses"] == 1
         assert state["flag"] == 3
+        # FSRS knows nothing about this card's scheduling, so there is no retrievability to report.
+        # Anki answers `0.0` for it, which would read as "certainly forgotten".
         assert state["retrievability"] is None
+        assert state["stability"] is None
+    finally:
+        collection.close()
+
+
+def test_card_state_reports_the_retrievability_anki_computes(tmp_path):
+    """Not re-derived here: the forgetting curve is Anki's, it changes with the FSRS version, and a
+    subtly wrong reimplementation would look exactly like a right answer."""
+    import re
+    import time
+
+    from anki.cards_pb2 import FsrsMemoryState
+
+    robot = make_robot(tmp_path)
+    collection = Collection(str(tmp_path / "collection.anki2"))
+    try:
+        create_notetype(collection, robot.css)
+        robot._upsert(collection, manifest(), tmp_path)
+        card = collection.get_card(collection.find_cards("")[0])
+        card.memory_state = FsrsMemoryState(stability=30.0, difficulty=5.0)
+        card.reps = 4
+        card.last_review_time = int(time.time()) - 86400
+        collection.update_card(card)
+
+        state = robot._card_state(collection, collection.get_card(card.id))
+        assert 0.0 < state["retrievability"] <= 1.0
+        assert state["stability"] == pytest.approx(30.0)
+        # And the timestamp is the shape the graph route accepts, not `isoformat()`'s.
+        assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", state["last_review"])
     finally:
         collection.close()
 

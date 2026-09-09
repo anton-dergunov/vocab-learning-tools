@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
+from acervo.domain.ids import instant_of
+
 from .naming import slugify_filename
 from .manifest import SyncManifest, SyncManifestNote
 from .model import MODEL_NAME, create_notetype, load_css, require_notetype
@@ -272,8 +274,24 @@ class AnkiRobot:
                 difficulty = computed.difficulty
             except Exception:
                 pass
+        # Anki computes retrievability itself, from the same forgetting curve it schedules with.
+        # Re-deriving it here would be a second implementation of a formula that changes with the
+        # FSRS version, and getting it subtly wrong would look exactly like a correct answer.
+        #
+        # Only asked for when there is a memory state to compute it from. An unset protobuf float
+        # reads as `0.0`, and a card whose scheduling FSRS knows nothing about would otherwise report
+        # itself as certainly forgotten.
+        retrievability = None
+        if stability is not None:
+            try:
+                answer = collection.card_stats_data(card.id).fsrs_retrievability
+                retrievability = float(answer) if answer else None
+            except Exception:  # noqa: BLE001 - no FSRS, or no trained model; not a sync failure
+                retrievability = None
+        # The wire's own timestamp shape, not `isoformat()`: that gives `+00:00` and six fractional
+        # digits, and the graph route accepts neither.
         last_review = (
-            datetime.fromtimestamp(card.last_review_time, tz=UTC).isoformat()
+            instant_of(datetime.fromtimestamp(card.last_review_time, tz=UTC))
             if card.last_review_time is not None
             else None
         )
@@ -286,7 +304,7 @@ class AnkiRobot:
             "flag": int(card.user_flag()),
             "stability": stability,
             "difficulty": difficulty,
-            "retrievability": None,
+            "retrievability": retrievability,
             "last_review": last_review,
         }
 

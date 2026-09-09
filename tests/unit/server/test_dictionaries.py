@@ -7,6 +7,8 @@ import json
 import httpx
 import pytest
 
+from acervo.services.dictionaries.online import plain_text
+
 
 def write_metadata(directory, identifier, **overrides):
     (directory / f"{identifier}.json").write_text(
@@ -158,6 +160,42 @@ def test_it_strips_the_wiki_markup_wikimedia_returns_inside_its_definitions(serv
     assert entries[0]["senses"][0]["examples"] == [
         {"text": "una tela que pica", "translation": "a cloth that itches"}
     ]
+
+
+@pytest.mark.parametrize(
+    ("markup", "expected"),
+    [
+        # A `>` inside an attribute used to end the tag match early and leak `b">` into the text.
+        ('to <a href="/wiki/itch" title="a > b">itch</a>', "to itch"),
+        # A stylesheet flattened into a definition reads like a translation.
+        ("to itch<style>.ib-brac{display:none}</style>", "to itch"),
+        ("safe<script>alert(1)</script>", "safe"),
+        # Wiktionary nests sub-senses; without a boundary they arrive as one run-on sentence.
+        ("<ul><li>first sub-sense</li><li>second sub-sense</li></ul>", "first sub-sense second sub-sense"),
+        ("one<br/>two", "one two"),
+        # Entities reached the client raw.
+        ("&amp; a&nbsp;gap and &lt;this&gt;", "& a gap and <this>"),
+        # A prose comparison used to swallow everything up to the next `>`.
+        ("prose where a < b holds", "prose where a < b holds"),
+        ("kept<!-- a comment with a > inside -->also kept", "keptalso kept"),
+        # Invisible typesetting characters survive a whitespace collapse and make two strings that
+        # read identically compare unequal.
+        ("soft\u00adhyphen zero\u200bwidth", "softhyphen zerowidth"),
+    ],
+)
+def test_the_markup_a_source_wrapped_a_definition_in_is_read_rather_than_stripped(markup, expected):
+    """Each of these was wrong under the single regex this replaces."""
+    assert plain_text(markup) == expected
+
+
+def test_a_zero_width_joiner_survives_because_it_is_part_of_the_word():
+    """Unlike a soft hyphen, ZWNJ and ZWJ are semantic in Persian, Arabic and Indic scripts."""
+    assert plain_text("\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645") == "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645"
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, ""), (12, "12"), ("", "")])
+def test_an_absent_or_unexpected_definition_is_not_a_crash(value, expected):
+    assert plain_text(value) == expected
 
 
 def test_it_returns_every_language_when_none_is_asked_for(server, source):

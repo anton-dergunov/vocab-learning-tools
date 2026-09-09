@@ -181,7 +181,7 @@ candidates:
     output_extension: svg
     command:
       - "{python}"
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - icon-scene
@@ -218,7 +218,7 @@ candidates:
       - --with
       - "pillow>=11,<13"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - diffusers
@@ -235,7 +235,7 @@ candidates:
       - --with
       - "huggingface-hub>=0.30,<2"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - prepare
       - --model-id
       - dreamlike-art/dreamlike-photoreal-2.0
@@ -264,7 +264,7 @@ candidates:
       - --with
       - "huggingface-hub>=0.30,<2"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - prepare
       - --model-id
       - stabilityai/sdxl-turbo
@@ -369,7 +369,7 @@ candidates:
       - --with
       - "mflux==0.18.0"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - mflux-z-image
@@ -386,7 +386,7 @@ candidates:
       - --with
       - "huggingface-hub>=0.30,<2"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - prepare
       - --model-id
       - filipstrand/Z-Image-Turbo-mflux-4bit
@@ -417,7 +417,7 @@ candidates:
       - --with
       - "mflux==0.18.0"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - mflux
@@ -434,7 +434,7 @@ candidates:
       - --with
       - "huggingface-hub>=0.30,<2"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - prepare
       - --model-id
       - black-forest-labs/FLUX.2-klein-4B
@@ -455,7 +455,7 @@ candidates:
     output_extension: png
     command:
       - "{python}"
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - drawthings
@@ -493,7 +493,7 @@ candidates:
       - --with
       - "transformers>=4.45,<6"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - openverse
@@ -526,7 +526,7 @@ candidates:
       - --with
       - "accelerate>=1,<2"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - starvector
@@ -560,7 +560,7 @@ candidates:
       - --with
       - "pillow>=11,<13"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - cloudflare
@@ -595,7 +595,7 @@ candidates:
       - --with
       - "pillow>=11,<13"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - bfl
@@ -628,7 +628,7 @@ candidates:
       - --with
       - "pillow>=11,<13"
       - python
-      - "{repo_root}/scripts/image_benchmark_runner.py"
+      - "{repo_root}/research/image_benchmark_runner.py"
       - run
       - --backend
       - gemini

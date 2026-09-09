@@ -1,4 +1,4 @@
-from acervo.anki_sync.naming import slugify_filename
+from acervo.consumers.anki.naming import slugify_filename
 
 
 def test_slugify_filename_folds_accents_and_punctuation():

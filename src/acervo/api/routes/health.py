@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from acervo.api.errors import data
 from acervo.services.llm import capture_health
-from acervo.settings import SCHEMA_VERSION
+from acervo.domain import SCHEMA_VERSION
 
 router = APIRouter()
 

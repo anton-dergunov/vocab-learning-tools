@@ -467,6 +467,42 @@ def test_installer_moves_a_model_key_out_of_secrets_env(tmp_path: Path) -> None:
     assert (root / "llm.env").read_text(encoding="utf-8").count("GEMINI_API_KEY") == 1
 
 
+def test_reconfiguring_credentials_does_not_sign_every_device_out(tmp_path: Path) -> None:
+    """The credential stream owns two lines. Rewriting the file wholesale would take the token
+    signing secret with it and the next block would mint a fresh one — so reconfiguring the Anki
+    password would sign out every device, for no reason anyone could have guessed."""
+    env, root = deployment_env(tmp_path)
+    secrets = root / "secrets.env"
+    secrets.write_text(
+        "ACERVO_ANKI_SYNC_USERNAME=old\nACERVO_ANKI_SYNC_PASSWORD=old-password\n"
+        "ACERVO_JWT_SECRET='the-secret-every-device-holds-a-token-from'\n"
+        "ACERVO_OWNER_EMAIL=learner@account.example.com\n"
+        "ACERVO_OWNER_PASSWORD=the-account-batch-jobs-write-through\n",
+        encoding="utf-8",
+    )
+    credentials = tmp_path / "credentials"
+    credentials.write_text("sync-user\nnew-password\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy/acervo/install.sh"),
+            "--root", str(root), "--credentials-file", str(credentials),
+            "--bind-address", "127.0.0.1", "--port", "27701",
+            "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+        ],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    written = secrets.read_text(encoding="utf-8")
+    assert "ACERVO_ANKI_SYNC_PASSWORD='new-password'" in written
+    assert "ACERVO_JWT_SECRET='the-secret-every-device-holds-a-token-from'" in written
+    assert written.count("ACERVO_JWT_SECRET") == 1
+    # The account batch jobs write through survives too, for the same reason.
+    assert "ACERVO_OWNER_PASSWORD=the-account-batch-jobs-write-through" in written
+    assert written.count("ACERVO_ANKI_SYNC_PASSWORD") == 1
+
+
 def test_installer_strips_the_retired_superuser_pair_and_mints_a_signing_secret(
     tmp_path: Path,
 ) -> None:

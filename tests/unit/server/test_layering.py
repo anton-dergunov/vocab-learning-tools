@@ -1,9 +1,14 @@
 """The layering, enforced by imports rather than by remembering it.
 
-Two rules, each of which stops being true silently. `api/` may not import `jobs/`, because capture,
-review and the sync API must work with the orchestrator down and must not know one exists. And
-nothing outside `repository/` may touch the database, which is the server-side twin of the rule the
-interface already lives by.
+Four rules, each of which stops being true silently:
+
+- `api/` may not import `jobs/`, because capture, review and the sync API must work with the
+  orchestrator down and must not know one exists.
+- Nothing outside `repository/` may touch the database — the server-side twin of the rule the
+  interface already lives by.
+- `jobs/` and `consumers/` reach the graph through `client.py`, against the service's own route:
+  same validation and same revision allocation as a phone. One writer, one pipeline.
+- Nothing that ships imports `research/`.
 """
 
 from __future__ import annotations
@@ -13,17 +18,31 @@ from pathlib import Path
 
 import pytest
 
-PACKAGE = Path(__file__).resolve().parents[3] / "src" / "acervo"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+PACKAGE = REPOSITORY_ROOT / "src" / "acervo"
 
 
 def imports_of(path: Path) -> set[str]:
+    """Every module `path` imports, by absolute name.
+
+    Relative imports are resolved rather than skipped. Reading only `level == 0` was a hole big
+    enough to drive through: `from ...db import engine` inside `api/routes/` is the very thing two of
+    these rules forbid, and it would have passed in silence.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"))
+    package = ["acervo", *path.relative_to(PACKAGE).parts[:-1]]
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             found.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            found.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0:
+                if node.module:
+                    found.add(node.module)
+                continue
+            # `level` counts how far up from this module's own package to start.
+            base = package[: len(package) - node.level + 1]
+            found.add(".".join([*base, node.module] if node.module else base))
     return found
 
 
@@ -31,13 +50,52 @@ def modules_under(*parts: str) -> list[Path]:
     return sorted((PACKAGE.joinpath(*parts)).rglob("*.py"))
 
 
-@pytest.mark.parametrize("path", modules_under("api"), ids=lambda path: path.name)
+def identify(path: Path) -> str:
+    return str(path.relative_to(PACKAGE))
+
+
+def test_the_import_reader_resolves_a_relative_import(tmp_path):
+    """The rules below are only as good as this. Reading absolute imports alone was a hole: the
+    forbidden reach — `from ...db import engine` inside `api/routes/` — is expressed relatively."""
+    module = PACKAGE / "api" / "routes" / "__probe__.py"
+    module.write_text(
+        "from ...db import engine\n"
+        "from ..errors import data\n"
+        "from .graph import router\n"
+        "from acervo.repository import graph\n"
+        "import httpx\n",
+        encoding="utf-8",
+    )
+    try:
+        assert imports_of(module) == {
+            "acervo.db",
+            "acervo.api.errors",
+            "acervo.api.routes.graph",
+            "acervo.repository",
+            "httpx",
+        }
+    finally:
+        module.unlink()
+
+
+def test_the_rules_below_are_not_vacuous():
+    """A layering rule against a package that does not exist passes and means nothing — which is
+    what `acervo.jobs` was before the batch work moved under it."""
+    assert modules_under("jobs"), "no jobs/ modules: the batch-work rule would be vacuous"
+    assert modules_under("consumers"), "no consumers/ modules"
+    assert any(
+        "acervo.client" in imports_of(path)
+        for path in modules_under("jobs") + modules_under("consumers")
+    ), "no batch module goes through acervo.client, so nothing exercises the write-path rule"
+
+
+@pytest.mark.parametrize("path", modules_under("api"), ids=identify)
 def test_the_request_path_does_not_import_batch_work(path):
     assert not any(name.startswith("acervo.jobs") for name in imports_of(path)), path
 
 
 @pytest.mark.parametrize(
-    "path", modules_under("api") + modules_under("services"), ids=lambda path: path.name
+    "path", modules_under("api") + modules_under("services"), ids=identify
 )
 def test_only_the_repository_reaches_the_database(path):
     offenders = {name for name in imports_of(path) if name.startswith("acervo.db")}
@@ -46,3 +104,79 @@ def test_only_the_repository_reaches_the_database(path):
 
 def test_the_admin_cli_writes_through_the_repository_too():
     assert not any(name.startswith("acervo.db") for name in imports_of(PACKAGE / "admin.py"))
+
+
+@pytest.mark.parametrize(
+    "path", modules_under("jobs") + modules_under("consumers"), ids=identify
+)
+def test_batch_work_writes_the_graph_the_way_a_phone_does(path):
+    """Not by reaching into the database, and not with a client of its own."""
+    offenders = {
+        name
+        for name in imports_of(path)
+        if name.startswith(("acervo.db", "acervo.repository", "acervo.api"))
+    }
+    assert not offenders, f"{path} imports {sorted(offenders)}; go through acervo.client"
+
+
+@pytest.mark.parametrize("path", modules_under(), ids=identify)
+def test_nothing_that_ships_imports_the_research_tooling(path):
+    """`research/` is outside `src/` and outside the distribution, so importing it would not even
+    resolve where the service runs."""
+    assert not any(name.split(".")[0] == "research" for name in imports_of(path)), path
+
+
+def test_the_client_does_not_drag_the_services_configuration_along():
+    """A client speaks to the service; it does not read the service's environment.
+
+    `SCHEMA_VERSION` used to live in `settings.py`, so importing the client pulled in
+    pydantic-settings — and the worker image, which has no reason to carry the service's
+    configuration layer, could not run a job at all.
+    """
+    offenders = {
+        name for name in imports_of(PACKAGE / "client.py") if name.startswith("acervo.settings")
+    }
+    assert not offenders, "acervo.client must not import the service's settings"
+
+
+@pytest.mark.parametrize(
+    "path", modules_under("jobs") + modules_under("consumers"), ids=identify
+)
+def test_batch_work_does_not_read_the_services_environment(path):
+    assert not any(name.startswith("acervo.settings") for name in imports_of(path)), path
+
+
+ALLOWED_HTTP = {
+    # Google's ADC token check, on the laptop that has the credentials.
+    "jobs/images/preflight.py",
+    # Third-party dictionary sources, downloaded to be compiled.
+    "dictionaries/build.py",
+    # Model providers and online dictionaries: outbound, not the Acervo API.
+    "services/llm.py",
+    "services/dictionaries/online.py",
+    # The service itself, which does not call itself over HTTP.
+    "api/app.py",
+    "api/static.py",
+    "api/routes/mac_release.py",
+    "client.py",
+}
+
+
+@pytest.mark.parametrize("path", modules_under(), ids=identify)
+def test_only_the_client_speaks_http_to_the_acervo_api(path):
+    """"Exactly one HTTP client against the Acervo API" as a test rather than a habit.
+
+    A module that both names the API root and opens a connection is a second client, whatever it is
+    called. The allow-list is for the callers that legitimately speak HTTP to somewhere that is not
+    Acervo, and for the service's own route table.
+    """
+    if identify(path) in ALLOWED_HTTP:
+        return
+    source = path.read_text(encoding="utf-8")
+    names = imports_of(path)
+    opens_a_connection = any(
+        name.startswith(("httpx", "urllib.request", "requests", "http.client")) for name in names
+    )
+    assert not (opens_a_connection and "/api/acervo" in source), (
+        f"{path} names the Acervo API and opens its own connection; go through acervo.client"
+    )

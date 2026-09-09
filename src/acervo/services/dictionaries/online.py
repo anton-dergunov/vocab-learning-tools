@@ -7,19 +7,18 @@ the offline compiler writes into an artifact.
 
 from __future__ import annotations
 
-import re
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
 from acervo.errors import ApiError
+from acervo.services.dictionaries.markup import plain_text
 
 USER_AGENT = "Acervo/1.0 (self-hosted vocabulary store; +https://acervo.example.com)"
 TIMEOUT_SECONDS = 20
 
-_TAGS = re.compile(r"<[^>]*>")
-_SPACES = re.compile(r"\s+")
+__all__ = ["SOURCES", "fetch_json", "free_dictionary", "plain_text", "wikimedia"]
 
 
 def fetch_json(url: str) -> Any:
@@ -47,16 +46,6 @@ def fetch_json(url: str) -> Any:
         raise ApiError(
             502, "dictionary_unusable", "The dictionary service returned an unreadable answer."
         ) from None
-
-
-def plain_text(markup: Any) -> str:
-    """Strip the markup a source wrapped a definition in.
-
-    One regex, carried across unchanged from the sandbox that had no alternative. It is replaced by a
-    real sanitiser when the external-entry rendering work lands; until then, changing it here would be
-    a change with no test behind it.
-    """
-    return _SPACES.sub(" ", _TAGS.sub("", "" if markup is None else str(markup))).strip()
 
 
 def _trimmed(value: Any) -> str:

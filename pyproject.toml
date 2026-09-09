@@ -11,6 +11,7 @@ requires-python = ">=3.12,<3.13"
 # Kept in step with requirements/core.txt, which is what the containers install.
 dependencies = [
     "google-genai>=2.19.0",
+    "httpx>=0.28",
     "pillow>=12.3.0",
     "pydantic>=2,<3",
     "python-slugify>=8.0.4",
@@ -26,7 +27,6 @@ server = [
     "alembic>=1.16",
     "argon2-cffi>=25.1",
     "fastapi>=0.121",
-    "httpx>=0.28",
     "pyjwt>=2.10",
     "pydantic-settings>=2.7",
     "sqlalchemy>=2",
