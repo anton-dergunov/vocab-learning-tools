@@ -1,6 +1,0 @@
-# Spike 0 (docs/acervo-external-dictionaries.md §10) — throwaway measurement dependencies.
-# Kept out of dev.txt: nothing in the application or the test suite imports these.
--r core.txt
-zstandard
-brotli
-pyglossary

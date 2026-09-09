@@ -424,11 +424,11 @@ New code, all in new files, so nothing the running ingestion imports is touched:
 ```
 config/image-styles.yaml           the style table
 prompts/acervo_image_brief.txt     the brief-writing template
-src/vocabgen/images/styles.py      load the table, weighted sample seeded from senseId
-src/vocabgen/images/brief.py       build the LLM request, parse and validate the reply
-src/vocabgen/images/compose.py     brief + style + template -> the image prompt
-src/vocabgen/images/render.py      Vertex Gemini 3.1 Flash Lite Image -> WebP master
-src/vocabgen/images/run.py         plan, execute concurrently, checkpoint, manifest
+src/acervo/images/styles.py      load the table, weighted sample seeded from senseId
+src/acervo/images/brief.py       build the LLM request, parse and validate the reply
+src/acervo/images/compose.py     brief + style + template -> the image prompt
+src/acervo/images/render.py      Vertex Gemini 3.1 Flash Lite Image -> WebP master
+src/acervo/images/run.py         plan, execute concurrently, checkpoint, manifest
 scripts/generate_images.py         plan | run | sheet
 ```
 

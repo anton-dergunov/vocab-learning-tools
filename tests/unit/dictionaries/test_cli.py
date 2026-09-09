@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from vocabgen.dictionaries import cli
-from vocabgen.dictionaries.build import BuildResult
-from vocabgen.dictionaries.catalogue import find, load_catalogue
-from vocabgen.dictionaries.container import BuildReport
+from acervo.dictionaries import cli
+from acervo.dictionaries.build import BuildResult
+from acervo.dictionaries.catalogue import find, load_catalogue
+from acervo.dictionaries.container import BuildReport
 
 
 def selected(*argv: str) -> list[str]:

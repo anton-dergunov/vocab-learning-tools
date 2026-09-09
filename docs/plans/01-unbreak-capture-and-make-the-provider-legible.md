@@ -303,3 +303,7 @@ contradicted this session: model access is to live in Python, with the hook a th
 proxy. Plans 02 and 04 need re-aiming around that before either is started. The obstacle to name
 there is that `acervo-worker` is a one-shot container (`profiles: ["tools"]`, no ports), so a
 synchronous capture route needs a genuinely always-on Python service.
+
+**Resolved, 8 Sep 2026.** Not a thin proxy in the end: the always-on Python service became *the
+server*, and PocketBase is deleted rather than fronted. See
+[08 · The Python server](08-the-python-server.md). Plan 02 is superseded; 03 and 04 are re-aimed.

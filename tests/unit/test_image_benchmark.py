@@ -11,23 +11,23 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from vocabgen.image_benchmark.config import (
+from acervo.image_benchmark.config import (
     BenchmarkConfigError,
     CandidateConfig,
     load_benchmark_config,
 )
-from vocabgen.image_benchmark.harness import (
+from acervo.image_benchmark.harness import (
     run_benchmark,
     validate_remote_authorization,
 )
-from vocabgen.image_benchmark.jobs import expand_jobs
-from vocabgen.image_benchmark.media import UnsafeSVGError, normalize_image, sanitize_svg_text
-from vocabgen.image_benchmark.ratings import (
+from acervo.image_benchmark.jobs import expand_jobs
+from acervo.image_benchmark.media import UnsafeSVGError, normalize_image, sanitize_svg_text
+from acervo.image_benchmark.ratings import (
     aggregate_ratings,
     load_rating_exports,
     write_ratings_report,
 )
-from vocabgen.image_benchmark.review import render_review
+from acervo.image_benchmark.review import render_review
 from scripts import image_benchmark_runner
 
 

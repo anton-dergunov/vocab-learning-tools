@@ -34,19 +34,17 @@ import sys
 import webbrowser
 from pathlib import Path
 
+from acervo.images import preflight
+from acervo.images.brief import BriefWriter
+from acervo.images.compose import prompt_version
+from acervo.images.graph import AcervoError, ReadOnlyClient, build_articles
+from acervo.images.render import Renderer
+from acervo.images.run import Runner, Store, plan
+from acervo.images.sheet import write_sheet
+from acervo.images.styles import load_styles
+from acervo.images.verify import verify
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-from vocabgen.images import preflight  # noqa: E402
-from vocabgen.images.brief import BriefWriter  # noqa: E402
-from vocabgen.images.compose import prompt_version  # noqa: E402
-from vocabgen.images.graph import AcervoError, ReadOnlyClient, build_articles  # noqa: E402
-from vocabgen.images.render import Renderer  # noqa: E402
-from vocabgen.images.run import Runner, Store, plan  # noqa: E402
-from vocabgen.images.sheet import write_sheet  # noqa: E402
-from vocabgen.images.styles import load_styles  # noqa: E402
-from vocabgen.images.verify import verify  # noqa: E402
-
 DEFAULT_OUTPUT = REPO_ROOT / "output" / "images"
 DEFAULT_STYLES = REPO_ROOT / "config" / "image-styles.yaml"
 DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "acervo_image_brief.txt"

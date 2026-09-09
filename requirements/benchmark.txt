@@ -3,4 +3,3 @@
 -r core.txt
 
 CairoSVG
-pillow

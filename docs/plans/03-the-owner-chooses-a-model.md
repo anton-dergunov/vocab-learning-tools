@@ -1,7 +1,14 @@
 # Plan 03: The owner chooses a model
 
-**Status:** Planned.
-**Depends on:** [02](02-one-wire-shape-and-one-catalogue.md) — there must be a catalogue to choose
+> **RE-AIMED by [08 · The Python server](08-the-python-server.md), 8 Sep 2026.**
+>
+> Unchanged in substance: a per-kind provider chain, owner-scoped, server-side, non-replicated, taking
+> effect on the next capture with no restart. What changes is where it is built — routes and storage on
+> the Python service rather than a hook and a PocketBase collection — and that it no longer costs a
+> database rebuild, because the schema is being rebuilt anyway. Depends on 04, not 02.
+
+**Status:** Planned (re-aimed).
+**Depends on:** [04](04-one-python-provider-package.md) — there must be a catalogue to choose
 from before there is a chooser.
 
 ## Outcome

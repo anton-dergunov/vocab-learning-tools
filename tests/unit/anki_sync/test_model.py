@@ -1,7 +1,7 @@
 from anki.collection import Collection
 import pytest
 
-from vocabgen.anki_sync.model import (
+from acervo.anki_sync.model import (
     FIELD_NAMES,
     MODEL_NAME,
     ModelMismatchError,

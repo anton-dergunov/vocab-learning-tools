@@ -1,13 +1,16 @@
 # Model providers — remaining-work roadmap
 
-Acervo generates text, images and audio. Today each of those reaches a model through a different,
-unrelated mechanism, and the layer that looks like the abstraction is dead code. These plans replace
-all of it with one catalogue of providers, one Python package that calls them, and one place in
-Settings where the owner chooses which one answers.
+Acervo generates text, images and audio. Each of those reached a model through a different,
+unrelated mechanism, and the layer that looked like the abstraction was dead code. These plans
+replace all of it with one catalogue of providers, one Python package that calls them, and one place
+in Settings where the owner chooses which one answers.
 
-The immediate reason this exists is that capture is broken: a Vertex provider was configured, the
-Vertex key was probably never successfully minted, and because `llm.env` outranks `secrets.env` the
-working Gemini key became dead weight. Plan 01 fixes that on its own, before any of the redesign.
+The roadmap started as provider work and grew a foundation underneath it. Plan 01 fixed a broken
+capture — a Vertex provider configured against a key that was probably never minted, with a working
+Gemini key made dead weight because `llm.env` outranks `secrets.env`. Writing plan 02 then surfaced
+the real obstacle: the model call lived in a goja hook, and every constraint the provider design was
+bending around came from that sandbox rather than from the problem. **[Plan 08](08-the-python-server.md)
+removes the sandbox**, and the provider work follows it rather than working around it.
 
 ## How to use these plans
 
@@ -41,22 +44,28 @@ conversation state, no tool use. Anything grander than that is not being paid fo
 |---|---|---|---|
 | [01 · Unbreak capture and make the provider legible](01-unbreak-capture-and-make-the-provider-legible.md) | Complete | — | Words can be added again, and a misconfigured model is visible before the button is pressed rather than after |
 
-### Stage 2 · One provider model
+### Stage 2 · The foundation
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
-| [02 · One wire shape and one catalogue](02-one-wire-shape-and-one-catalogue.md) | Planned | 01 | A text provider is a row in `models/catalogue.json`; the hook carries two request builders instead of a growing switch |
-| [03 · The owner chooses a model](03-the-owner-chooses-a-model.md) | Planned | 02 | Settings ▸ Models picks the provider chain per kind; it takes effect on the next capture with no restart |
-| [04 · One Python provider package](04-one-python-provider-package.md) | Planned | 02 | `src/vocabgen/models/` is the single Python way to call a model, over LiteLLM; the dead layer is deleted |
+| [08 · The Python server](08-the-python-server.md) | Phase 0 complete, 1–4 planned | — | PocketBase and `pb_hooks/` are deleted; one FastAPI service serves the same wire contract, so the client does not change |
 
-### Stage 3 · The other two kinds
+### Stage 3 · One provider model
+
+| Plan | Status | Depends on | Outcome |
+|---|---|---|---|
+| [02 · One wire shape and one catalogue](02-one-wire-shape-and-one-catalogue.md) | **Superseded** by 08 | — | Kept for its diagnosis and provider research. Its surviving content moved into 04 |
+| [04 · One Python provider package](04-one-python-provider-package.md) | Planned (re-aimed) | 08 phase 2 | `src/acervo/models/` is the single way to call a model, for the request path and batch alike, over LiteLLM |
+| [03 · The owner chooses a model](03-the-owner-chooses-a-model.md) | Planned (re-aimed) | 04 | Settings ▸ Models picks the provider chain per kind; it takes effect on the next capture with no restart |
+
+### Stage 4 · The other two kinds
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
 | [05 · Images through the catalogue](05-images-through-the-catalogue.md) | Planned | 04 | The sense-image pipeline stops hardcoding Vertex; Cloudflare FLUX.2 Klein becomes the steady-state row |
 | [06 · Audio through the catalogue](06-audio-through-the-catalogue.md) | Planned | 04 | Expressive and plain pronunciation are two distinct jobs with their own providers, and the graph has somewhere to put audio |
 
-### Stage 4 · Where local models could run
+### Stage 5 · Where local models could run
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
@@ -67,30 +76,31 @@ conversation state, no tool use. Anything grander than that is not being paid fo
 These are decided. A plan may not quietly change one; changing one is its own change, applied to
 every plan that names it.
 
-> **One of them is contested and must be settled before plan 02 starts.** "The hook carries two wire
-> shapes" assumes the hook keeps calling models. The decision taken on 2026-09-08 is the opposite:
-> model access belongs in Python, with the hook a thin authenticating proxy. Re-aim plans 02 and 04
-> around that first — the obstacle to name is that `acervo-worker` is a one-shot container
-> (`profiles: ["tools"]`, no ports), so a synchronous capture route needs an always-on Python
-> service. Plan 01 was implemented as written and deliberately did not touch this.
+> **The contested contract is settled.** "The hook carries two wire shapes, and only two" assumed the
+> hook keeps calling models. It does not: [plan 08](08-the-python-server.md) deletes `pb_hooks/`
+> entirely, so there is no hook to carry a wire shape and no goja constraint to accommodate. The
+> obstacle the earlier note named — that `acervo-worker` is a one-shot container and a synchronous
+> capture route needs an always-on Python service — is answered by making the always-on Python
+> service *the server*, rather than a second process behind a proxy. Plan 01 was implemented as
+> written and deliberately did not touch this; plan 02 is superseded and plans 03 and 04 are re-aimed.
 
 **A provider is a row, not a class.** `models/catalogue.json` is tracked, ships the *list* and never
 a secret, and is the only place a provider's endpoint and model id are written down. It is read by
-both `pb_hooks/acervo.js` and Python, so **the catalogue schema is described twice** — exactly as the
-dictionary artifact format is described in `container.py` and `dictionary.ts`, and with the same
-consequence: a change to either description is a change to both, and the paired tests exist to catch
-the day they disagree.
+Python and **described once**. This was the one place the dictionary artifact's described-twice
+arrangement was going to be copied without its justification: `container.py` and `dictionary.ts`
+describe the format twice because one of them runs in a browser and there is no way around it. The
+catalogue had no such reason once the reader is a single language.
 
-**The hook carries two wire shapes, and only two.** `openai` covers the Gemini Developer API,
-Cloudflare Workers AI, OpenAI, OpenRouter, Groq, Ollama and any local OpenAI-compatible server.
-`google` covers Vertex's native `generateContent`, which is kept because Vertex's OpenAI-compatible
-endpoint authenticates with a Bearer OAuth access token rather than an API key, and minting one in
-goja means RS256-signing a JWT. **Needing a third shape is the signal to move the model call out of
-the hook into Python behind a route, not to add a third branch.**
+**One wire shape, plus whatever a library already knows.** `openai` covers the Gemini Developer API,
+Cloudflare Workers AI, OpenAI, OpenRouter, Groq, Ollama and any local OpenAI-compatible server, and
+is the shape a new row is expected to use. Vertex no longer needs a hand-written second builder: its
+OpenAI-compatible endpoint authenticates with a Bearer OAuth token, and minting one is ordinary work
+in Python where it was impossible in goja. A provider that fits neither is a reason to lean on
+LiteLLM rather than to grow a switch.
 
-**Python is where breadth lives.** Anything asynchronous or batched — every image, every audio clip,
-every bulk ingest — is Python in `acervo-worker`. Only work that must answer inside a request is
-JavaScript in a hook.
+**Python is where everything lives.** There is no second server language. Anything asynchronous or
+batched — every image, every audio clip, every bulk ingest — runs in `acervo-worker`; anything that
+must answer inside a request runs in the service. Both import the same `src/acervo/models/`.
 
 **A chain falls through on 429 and 5xx, and never on anything else.** An authentication failure or a
 rejected configuration is a mistake to fix, not a condition to route around; falling through on it
@@ -113,11 +123,11 @@ Every provider and capability named in the request that started this work, and w
 
 | Asked for | Plan |
 |---|---|
-| Gemini free tier for text — the daily driver, 500 free calls | 01, 02 |
-| Vertex for text, when speed matters and credits last | 01 (diagnose), 02 (keep the native path) |
-| Cloudflare Workers AI for text | 02 |
-| OpenAI for text | 02 |
-| Self-hosted and local text models (Ollama, on-device) | 02 (the row), 07 (where it runs) |
+| Gemini free tier for text — the daily driver, 500 free calls | 01, 04 |
+| Vertex for text, when speed matters and credits last | 01 (diagnose), 04 (OAuth is ordinary in Python) |
+| Cloudflare Workers AI for text | 04 |
+| OpenAI for text | 04 |
+| Self-hosted and local text models (Ollama, on-device) | 04 (the row), 07 (where it runs) |
 | Vertex and Gemini for images — the ones that worked well | 05 |
 | Cloudflare for images, for when the Vertex credits run out | 05 |
 | Other image providers (OpenAI and the popular ones) | 05 |
@@ -128,6 +138,7 @@ Every provider and capability named in the request that started this work, and w
 | Swapping provider without restarting the server | 03 |
 | Using an existing provider-agnostic package rather than writing one | 04 (LiteLLM, with its coverage gaps stated) |
 | Fixing capture, which is broken right now | 01 |
+| A server that can carry the rest of the roadmap | 08 |
 | A queue that offloads GPU work from the NAS to the MacBook | 07 |
 
 Deliberately out of scope, and why:

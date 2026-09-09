@@ -8,8 +8,7 @@ threads rather than per job:
 - a cooldown that every worker respects, so one 429 pauses the whole pool instead of each worker
   backing off privately and arriving together again.
 
-Deliberately not `provider/rate_limiter.py`: that one is not thread-safe, and it is imported by the
-ingestion running beside this.
+Shared rather than image-only: the file ingestion runs beside this and needs the same gate.
 """
 
 from __future__ import annotations

@@ -4,17 +4,10 @@
 from __future__ import annotations
 
 import argparse
-import sys
 import tarfile
 from pathlib import Path
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-
-from vocabgen.anki_sync.manifest import SyncManifest  # noqa: E402
+from acervo.anki_sync.manifest import SyncManifest
 
 
 def portable_tar_info(info: tarfile.TarInfo) -> tarfile.TarInfo:

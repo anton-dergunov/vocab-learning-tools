@@ -8,17 +8,13 @@ import sys
 from pathlib import Path
 
 
-_THIS_FILE = Path(__file__).resolve()
-_REPO_ROOT = _THIS_FILE.parent.parent.resolve()
-_SRC = _REPO_ROOT / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
-from vocabgen.image_benchmark.config import BenchmarkConfigError, load_benchmark_config
-from vocabgen.image_benchmark.harness import prepare_candidates, run_benchmark
-from vocabgen.image_benchmark.jobs import expand_jobs
-from vocabgen.image_benchmark.ratings import RatingsError, write_ratings_report
-from vocabgen.image_benchmark.review import render_review
+from acervo.image_benchmark.config import BenchmarkConfigError, load_benchmark_config
+from acervo.image_benchmark.harness import prepare_candidates, run_benchmark
+from acervo.image_benchmark.jobs import expand_jobs
+from acervo.image_benchmark.ratings import RatingsError, write_ratings_report
+from acervo.image_benchmark.review import render_review
 
 
 DEFAULT_CONFIG = _REPO_ROOT / "config" / "image-benchmark.yaml"

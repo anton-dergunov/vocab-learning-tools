@@ -47,7 +47,9 @@ Downloaded corpora live in `data/dictionaries/` (gitignored, ~2.3 GB) and are ne
 ## Running it
 
 ```bash
-uv pip install -r requirements/dictionary-spike.txt
+# The spike's own throwaway dependencies. It had a requirements file; that was deleted once
+# Stage 1 shipped, because nothing in the application or the test suite imports these.
+uv pip install -r requirements/dictionaries.txt zstandard brotli
 
 # fetch the corpora (see docs §10 for the URLs); then:
 .venv/bin/python experiments/external-dictionaries/spike.py --source all --limit 5000 --fast \

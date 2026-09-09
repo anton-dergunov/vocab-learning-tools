@@ -30,10 +30,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-from vocabgen.provider.rate_limiter import RateLimiter  # noqa: E402
+from acervo.pacing import Pace
 
 API_PATH = "/api/acervo/v1"
 SCHEMA_VERSION = 6
@@ -237,7 +234,7 @@ def main() -> int:
     marker = checkpoint_path(args.checkpoint_dir, source)
     # In consume mode the file itself is the progress, so an offset would double-count.
     offset = 0 if (args.consume or args.restart) else read_offset(marker, source)
-    limiter = RateLimiter(args.rate_limit)
+    limiter = Pace(args.rate_limit)
     created = skipped = failed = 0
 
     while True:

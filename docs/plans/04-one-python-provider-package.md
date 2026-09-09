@@ -1,12 +1,26 @@
 # Plan 04: One Python provider package
 
-**Status:** Planned.
-**Depends on:** [02](02-one-wire-shape-and-one-catalogue.md) for the catalogue schema. Independent of
+> **RE-AIMED by [08 · The Python server](08-the-python-server.md), 8 Sep 2026.**
+>
+> This is now *the* provider plan, and it grew: with the server in Python, `src/acervo/models/` serves
+> the synchronous request path — capture, and article chat after it — as well as batch. It absorbs
+> what survived [02](02-one-wire-shape-and-one-catalogue.md): the catalogue as tracked rows, the row
+> schema and its capability declaration, and the deployment work. The catalogue is now described
+> **once**; the paired hook/Python tests 02 called for are unnecessary.
+>
+> One thing gets stricter. `text()` must map provider errors onto the existing `llm_*` codes, because
+> the file ingestion retries on exactly `llm_rate_limited`, `llm_unavailable` and `llm_unreachable`.
+> If LiteLLM's exception hierarchy replaces that mapping, the retry behaviour changes without the
+> retry code changing — so the mapping is part of this plan's acceptance boundary, not an afterthought.
+
+**Status:** Planned (re-aimed).
+**Depends on:** [08](08-the-python-server.md) phase 2 — the service must exist before the request
+path can call into this package. Carries 02's catalogue schema. Independent of
 [03](03-the-owner-chooses-a-model.md) — they can be built in either order.
 
 ## Outcome
 
-One way to call a model from Python: `src/vocabgen/models/`, reading the same
+One way to call a model from Python: `src/acervo/models/`, reading the same
 `models/catalogue.json` the hook reads, over LiteLLM, with a chain that falls through on 429 and 5xx.
 Text, images and audio go through it. The dead abstraction layer is deleted rather than kept beside
 it, and every call site that constructs a client itself stops doing so.
@@ -128,7 +142,7 @@ graph, PocketBase or config-file dependency: it takes a catalogue path and a cha
 
 ## Implementation work
 
-1. **Create `src/vocabgen/models/`** with a real `__init__.py` — the existing `provider/`, `llm/`,
+1. **Create `src/acervo/models/`** with a real `__init__.py` — the existing `provider/`, `llm/`,
    `tts/` and `vision/` are implicit namespace packages that only import because `src` is on
    `sys.path`, and that is not worth reproducing.
 
@@ -143,8 +157,8 @@ graph, PocketBase or config-file dependency: it takes a catalogue path and a cha
    - `pacing.py` — moved from `images/pacing.py`, unchanged
    - `redact.py` — lifted from `earworms_generator`'s `_redact_provider_text`
 
-2. **Map a catalogue row to a LiteLLM model string.** Rows carry `wire` and `baseUrl` for the hook;
-   Python additionally needs LiteLLM's `provider/model` form (`gemini/…`, `vertex_ai/…`,
+2. **Map a catalogue row to a LiteLLM model string.** Rows carry `wire` and `baseUrl`;
+   Python needs LiteLLM's `provider/model` form (`gemini/…`, `vertex_ai/…`,
    `cloudflare/…`, `openai/…`, `ollama/…`). Add a `litellm` field to the row rather than deriving it
    — derivation is a second source of truth that will drift — and assert in the paired tests that
    every row has one.
@@ -153,21 +167,16 @@ graph, PocketBase or config-file dependency: it takes a catalogue path and a cha
    `litellm.enable_json_schema_validation = True` plus prompt-side instruction where it says
    `prompt`. Keep `unfenced()`'s equivalent: models wrap JSON in fences regardless.
 
-4. **Delete the superseded layer**, and update every reference:
-   - `src/vocabgen/provider/factory.py`, `provider/rate_limiter.py`
-   - `src/vocabgen/llm/{base,gemini,openai,ollama}.py`
-   - `src/vocabgen/vision/{base,stable_diffusion}.py`
-   - `src/vocabgen/tts/base.py` — and `tts/kokoro.py` with `tts/helpers.py` **only if** plan 06
-     decides against a local voice; otherwise they become a `models/` local backend
-   - `provider/retry.py` — only if LiteLLM's `num_retries` replaces it, which it should
-   - the tests: `tests/unit/provider/`, `tests/unit/llm/`, the Kokoro and Stable Diffusion
-     integration tests, `tests/manual/test_llm_manual.py`, `tests/manual/test_media_gen_manual.py`
-   - the `llm`, `tts` and `image` sections of `config/defaults.yaml`, and `select_llm_provider` in
-     `src/vocabgen/config.py:53-69` — the catalogue replaces both
-   - `config/image-providers.example.yaml`, superseded and never loaded
-   - the empty `src/vocabgen/anki/` and `src/vocabgen/data/` directories, which hold nothing but
-     `__pycache__`
-   - `AGENTS.md` and `PROJECT_SUMMARY.md`, which plan 01 corrected and this plan makes accurate
+4. ~~**Delete the superseded layer**~~ — **done in [08](08-the-python-server.md) phase 0**, ahead of
+   this plan, because the port needed the tree honest before it started. `provider/`, `llm/`, `tts/`,
+   `vision/`, `config.py`, their 798 lines of tests, `config/defaults.yaml`,
+   `config/image-providers.example.yaml`, the empty `anki/` and `data/` directories and
+   `PROJECT_SUMMARY.md` are all gone; `AGENTS.md` is re-aimed. Two things to know:
+   - **`tts/kokoro.py` and `tts/helpers.py` went too.** This plan left them conditional on plan 06
+     choosing a local voice. If 06 chooses one, they are recovered from git or rewritten as a
+     `models/` backend — they were 51 lines over an inference library, not an asset.
+   - **`provider/rate_limiter.py` is gone and `pacing.py` replaced it**, moved up out of `images/`.
+     It is thread-safe, which the one it replaced was not, and it is now the single rate limiter.
 
 5. **Dependencies.** `litellm` into `requirements/core.txt` and `pyproject.toml`. Drop `openai` and
    `ollama` as direct dependencies — LiteLLM reaches both. Keep `google-genai` only if plan 05 still
@@ -182,7 +191,7 @@ graph, PocketBase or config-file dependency: it takes a catalogue path and a cha
 ## Public interfaces and data
 
 ```python
-# src/vocabgen/models/__init__.py
+# src/acervo/models/__init__.py
 
 @dataclass(frozen=True)
 class Answer:
@@ -268,20 +277,20 @@ Unit cases, all offline against a stubbed `litellm`:
 - a `native` row sends `response_format`; a `prompt` row does not, and its reply is validated after
   parsing
 - an error message containing a key value is redacted before it reaches the exception text
-- `catalogue.py` and `tests/hooks/catalogue.test.mjs` agree — this is the pair that guards the
-  twice-described schema, so it fails loudly when only one side is changed
-- every row has a `litellm` field and a `wire` that is one of the two permitted values
+- every row has a `litellm` field and a `wire` the loader recognises. There is no second description
+  of the catalogue to keep in step: 02 called for paired hook/Python tests, and with the hook gone
+  the schema is described once
 
 Deletion checks, which are the part most likely to be left half done:
 
 ```bash
-# nothing imports the deleted layer any more
-grep -rn "vocabgen.provider\|vocabgen\.llm\|vocabgen\.vision\|vocabgen\.tts\|create_provider\|select_llm_provider" \
+# nothing imports the deleted layer any more (already true after 08 phase 0)
+grep -rn "acervo\.\(provider\|llm\|vision\|tts\)\|create_provider\|select_llm_provider" \
   --include='*.py' . | grep -v '/models/'
 # expect: no output
 
 # and the directories are gone, not emptied
-ls src/vocabgen/ | grep -E '^(provider|llm|vision)$'
+ls src/acervo/ | grep -E '^(provider|llm|vision|tts)$'
 ```
 
 Live, one call per kind against two providers each — this needs real keys and is the only part that

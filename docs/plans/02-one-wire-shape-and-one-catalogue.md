@@ -1,6 +1,26 @@
 # Plan 02: One wire shape and one catalogue
 
-**Status:** Planned.
+> **SUPERSEDED by [08 · The Python server](08-the-python-server.md), 8 Sep 2026.**
+>
+> This plan's central contract — *"the hook carries two wire shapes, and only two"* — assumed the
+> hook keeps calling models. It does not: `pb_hooks/` is being deleted. The roadmap flagged the
+> contract as contested before any of this was built, and it is now settled the other way.
+>
+> **What dies with it:** the two request builders, the goja constraint that forced Vertex's native
+> `generateContent` to stay (RS256-signing a JWT is ordinary work in Python), and — the real prize —
+> the rule that *the catalogue schema is described twice*. In one language it is described once, and
+> the paired tests guarding the two descriptions are not needed.
+>
+> **What survives, and moves into [04](04-one-python-provider-package.md):** the catalogue as a row
+> of data rather than a class; the row schema and its `capabilities` declaration; the `keyEnv`
+> indirection and the rule that a `baseUrl` never embeds a key; the deployment work (generalising
+> `install.sh`'s `gemini|vertex` whitelist and `deploy.sh`'s default model ids, and packaging
+> `models/` into the release bundle); and the LLM status → error-code taxonomy, which is a contract
+> because the file ingestion retries on exactly three of its codes.
+>
+> Kept for its diagnosis of the current state and its provider research. Do not implement it.
+
+**Status:** Superseded.
 **Depends on:** [01](01-unbreak-capture-and-make-the-provider-legible.md) — capture must be working
 and health must be legible before the request builder is touched.
 

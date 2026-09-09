@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from vocabgen.dictionaries.container import SourceEntry, build_artifact
-from vocabgen.dictionaries.model import Entry, Example, Sense
+from acervo.dictionaries.container import SourceEntry, build_artifact
+from acervo.dictionaries.model import Entry, Example, Sense
 
 FIXTURE = (Path(__file__).resolve().parents[3] / "web" / "src" / "testFixtures"
            / "sampleDictionary.json")

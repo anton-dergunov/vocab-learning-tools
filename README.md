@@ -26,7 +26,8 @@ Every record uses a client-generated PocketBase-compatible ID, belongs to one ac
 replication-ready edit metadata. Markdown vocabulary files and extended-article JSON are not
 application storage formats.
 
-See [the design document](docs/acervo-design.md) for the product decisions and
+See [the design document](docs/acervo-design.md) for the product decisions,
+[the server design](docs/acervo-server.md) for what runs on the always-on machine, and
 [the application guide](docs/acervo-app.md) for deployment details.
 
 ## Development
@@ -35,7 +36,8 @@ Requirements are Python 3.12, Node.js 20+, Docker for server integration tests, 
 Xcode/XcodeGen for the native host.
 
 ```bash
-pip install -r requirements/dev.txt
+uv pip install -r requirements/dev.txt
+uv pip install -e .
 npm install --prefix web
 
 pytest
@@ -74,10 +76,12 @@ glosses, phrases, attestations, generated examples, prompts, study statistics, a
 - `web/src/domain.ts` — canonical TypeScript records and runtime validation.
 - `web/src/localDatabase.ts` — IndexedDB replica and atomic storage operations.
 - `web/src/repository.ts` — offline CRUD, tombstones, and pending markers.
-- `deploy/acervo/pocketbase/pb_migrations/` — canonical server schema.
-- `deploy/acervo/pocketbase/pb_hooks/` — validation, authentication, health, and releases.
-- `src/vocabgen/provider/` — reusable LLM, TTS, and vision provider factory.
-- `src/vocabgen/anki_sync/` — headless Anki consumer infrastructure.
+- `deploy/acervo/pocketbase/` — the server today: canonical schema in `pb_migrations/`, and
+  validation, authentication, health, the graph routes and capture in `pb_hooks/`. Being replaced by
+  a Python service; see [the server design](docs/acervo-server.md).
+- `src/acervo/dictionaries/` — the external-dictionary compiler.
+- `src/acervo/images/` — the sense-image generation pipeline.
+- `src/acervo/anki_sync/` — headless Anki consumer infrastructure.
 - `macos/` — native host for the shared web interface.
 
 Deployment is designed for shared hosts and uses dedicated configurable listeners. It never assumes

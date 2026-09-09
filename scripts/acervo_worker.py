@@ -14,12 +14,6 @@ job is a new subcommand and never a new container.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
-
-REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
-SOURCE = REPOSITORY_ROOT / "src"
-if str(SOURCE) not in sys.path:
-    sys.path.insert(0, str(SOURCE))
 
 USAGE = "usage: acervo_worker.py {anki|dictionary} ...\n"
 
@@ -31,11 +25,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if arguments else 2
     job, rest = arguments[0], arguments[1:]
     if job == "anki":
-        from vocabgen.anki_sync.cli import main as anki_main
+        from acervo.anki_sync.cli import main as anki_main
 
         return anki_main(rest)
     if job == "dictionary":
-        from vocabgen.dictionaries.cli import main as dictionary_main
+        from acervo.dictionaries.cli import main as dictionary_main
 
         return dictionary_main(rest)
     sys.stderr.write(f"unknown job {job!r}\n{USAGE}")

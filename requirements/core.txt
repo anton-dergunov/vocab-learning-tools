@@ -1,9 +1,6 @@
-# Maintained core application and all supported LLM clients.
+# What every Acervo entry point needs.
 PyYAML
 google-genai
-ollama
-openai
+pillow
 pydantic>=2,<3
-python-box
-python-dotenv
 python-slugify

@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-from ..fileops import slugify_filename
+from .naming import slugify_filename
 from .manifest import SyncManifest, SyncManifestNote
 from .model import MODEL_NAME, create_notetype, load_css, require_notetype
 

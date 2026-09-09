@@ -469,7 +469,7 @@ the decision in §7 is a hypothesis, not a commitment.
 ### Then, in order
 
 - **Stage 1 · the catalogue and the compiler. Built.** `dictionaries/catalogue.json` (58 rows across
-  a dozen languages) and `scripts/build_dictionary.py` over `src/vocabgen/dictionaries/`, reduced to
+  a dozen languages) and `scripts/build_dictionary.py` over `src/acervo/dictionaries/`, reduced to
   what the spike proved: one converter for the wiktextract shape, four small ones for the other
   field-structured formats, and PyGlossary for everything opaque. No per-source schemas.
   [acervo-dictionaries-stage1.md](acervo-dictionaries-stage1.md) records what was built.

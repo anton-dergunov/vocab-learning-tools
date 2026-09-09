@@ -1,7 +1,6 @@
-# Complete runtime plus automated-test dependencies.
--r media.txt
+# Everything the automated test suite touches.
+-r anki-sync.txt
 -r benchmark.txt
 -r dictionaries.txt
 
 pytest
-cairosvg

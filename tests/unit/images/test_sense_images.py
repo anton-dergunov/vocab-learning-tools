@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from vocabgen.images.brief import build_request, parse_reply
-from vocabgen.images.compose import FRAME, compose, prompt_version
-from vocabgen.images.graph import build_articles
-from vocabgen.images.ids import ID_LENGTH, image_prompt_id, seed_for
-from vocabgen.images.run import Store, plan
-from vocabgen.images.styles import load_styles
+from acervo.images.brief import build_request, parse_reply
+from acervo.images.compose import FRAME, compose, prompt_version
+from acervo.images.graph import build_articles
+from acervo.images.ids import ID_LENGTH, image_prompt_id, seed_for
+from acervo.images.run import Store, plan
+from acervo.images.styles import load_styles
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STYLES = REPO_ROOT / "config" / "image-styles.yaml"
@@ -256,14 +256,14 @@ def test_a_sense_the_graph_already_holds_an_image_for_is_skipped(tmp_path: Path)
 
 def test_each_model_has_its_own_bucket():
     """Measured: about one image per minute PER MODEL, so two models run at twice the rate."""
-    from vocabgen.images.pacing import ModelPool
+    from acervo.pacing import ModelPool
     pool = ModelPool([("lite", 1), ("flash", 1)])
     assert sorted([pool.acquire(), pool.acquire()]) == ["flash", "lite"]
     assert pool.gates["lite"].delay() > 0 and pool.gates["flash"].delay() > 0
 
 
 def test_a_quota_pause_is_per_model_not_pool_wide():
-    from vocabgen.images.pacing import ModelPool
+    from acervo.pacing import ModelPool
     pool = ModelPool([("lite", 60), ("flash", 60)])
     pool.penalise("lite")
     assert pool.gates["lite"].delay() > 0
@@ -309,7 +309,7 @@ def test_a_provider_block_is_not_planned_again(tmp_path: Path):
 
 def test_the_brief_writer_waits_out_a_quota_refusal():
     """A text 429 used to lose every sense of that lexeme outright."""
-    from vocabgen.images.brief import BriefWriter
+    from acervo.images.brief import BriefWriter
 
     class Flaky(BriefWriter):
         def __init__(self):                    # no client, no template read
@@ -329,7 +329,7 @@ def test_the_brief_writer_waits_out_a_quota_refusal():
 
 
 def test_a_brief_failure_that_is_not_quota_is_raised_at_once():
-    from vocabgen.images.brief import BriefWriter
+    from acervo.images.brief import BriefWriter
 
     class Broken(BriefWriter):
         def __init__(self):
@@ -355,7 +355,7 @@ def _stored(store: Store, sense_id: str, **overrides) -> str:
 
 
 def test_a_consistent_run_directory_verifies(tmp_path: Path):
-    from vocabgen.images.verify import verify
+    from acervo.images.verify import verify
     store = Store(tmp_path)
     identifier = _stored(store, "s00000000000001")
     store.image_path(identifier).write_bytes(b"webp")
@@ -364,7 +364,7 @@ def test_a_consistent_run_directory_verifies(tmp_path: Path):
 
 
 def test_verify_catches_what_would_break_the_import(tmp_path: Path):
-    from vocabgen.images.verify import verify
+    from acervo.images.verify import verify
     store = Store(tmp_path)
 
     _stored(store, "s00000000000001")                      # claims an image that is not there
@@ -386,7 +386,7 @@ def test_verify_catches_what_would_break_the_import(tmp_path: Path):
 
 def test_a_blocked_record_is_not_a_problem(tmp_path: Path):
     """`snort` was blocked by the provider. A sense with no image is complete, not a fault."""
-    from vocabgen.images.verify import verify
+    from acervo.images.verify import verify
     store = Store(tmp_path)
     _stored(store, "s00000000000001", imageRef=None, blocked=True, failureReason="IMAGE_SAFETY")
     report = verify(store)

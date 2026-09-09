@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 from anki.collection import Collection
 
-from vocabgen.anki_sync.manifest import SyncManifest
-from vocabgen.anki_sync.model import create_notetype
-from vocabgen.anki_sync.robot import (
+from acervo.anki_sync.manifest import SyncManifest
+from acervo.anki_sync.model import create_notetype
+from acervo.anki_sync.robot import (
     AnkiRobot,
     DuplicateIdentityError,
     RobotSettings,

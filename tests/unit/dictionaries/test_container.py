@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from vocabgen.dictionaries.container import (
+from acervo.dictionaries.container import (
     FRAME_SIZE,
     MAGIC,
     BuildReport,

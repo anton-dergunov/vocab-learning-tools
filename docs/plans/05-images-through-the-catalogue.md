@@ -82,7 +82,7 @@ chain is for.
 ### Hosted providers go through the package; local ones stay in the benchmark
 
 The eleven benchmark backends are not equally worth unifying. The three hosted ones — `gemini`,
-`cloudflare`, `bfl` — become catalogue rows and route through `src/vocabgen/models/`, so there is one
+`cloudflare`, `bfl` — become catalogue rows and route through `src/acervo/models/`, so there is one
 place a hosted image call is made and one place its cost is recorded. The local ones — `mflux`,
 `diffusers`, `drawthings`, `openverse`, `icon-scene`, `starvector` — stay exactly where they are, as
 benchmark-only backends.

@@ -182,7 +182,7 @@ are rows on converters those already exercise, so a broken row is a catalogue fi
 `build_dictionary.py verify --id <id>` compiles a sample into a throwaway directory and reports what
 came out, which is how a row is promoted from listed to trusted.
 
-### The compiler — `scripts/build_dictionary.py` over `src/vocabgen/dictionaries/`
+### The compiler — `scripts/build_dictionary.py` over `src/acervo/dictionaries/`
 
 `container.py` owns the on-disk format and nothing else; `converters.py` owns the source formats and
 nothing else; `build.py` joins them, fetches (cached), and takes a progress callback rather than

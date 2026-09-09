@@ -1,20 +1,29 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "vocab-learning-tools"
+name = "acervo"
 version = "0.1.0"
-description = "Tools for building vocabulary study material and Anki decks"
+description = "Acervo — a personal vocabulary store and the pipelines that feed it"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
+# Kept in step with requirements/core.txt, which is what the containers install.
 dependencies = [
-    "cairosvg>=2.9.0",
     "google-genai>=2.19.0",
-    "jinja2>=3.1.6",
-    "ollama>=0.6.2",
-    "openai>=3.3.1",
     "pillow>=12.3.0",
     "pydantic>=2,<3",
-    "python-box>=7.4.1",
-    "python-dotenv>=1.2.3",
     "python-slugify>=8.0.4",
     "pyyaml>=6.0.3",
-    "tqdm>=4.70.0",
 ]
+
+[project.optional-dependencies]
+anki = ["anki==26.8.1"]
+dictionaries = ["pyglossary==5.4.2", "lxml"]
+benchmark = ["cairosvg>=2.9.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+acervo = ["py.typed"]

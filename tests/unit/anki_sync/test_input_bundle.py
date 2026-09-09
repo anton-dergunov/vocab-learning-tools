@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
@@ -40,6 +41,9 @@ def test_input_bundle_contains_only_manifest_and_referenced_media(tmp_path: Path
 
     subprocess.run(
         [
+            # The project interpreter, not the shebang's: the scripts import the installed
+            # `acervo` package and a bare `python3` is not the environment it is installed in.
+            sys.executable,
             str(REPO_ROOT / "scripts/package_anki_sync_input.py"),
             str(manifest),
             str(output),

@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from vocabgen.dictionaries.catalogue import CatalogueEntry, load_catalogue
-from vocabgen.dictionaries.container import BuildReport
-from vocabgen.dictionaries.converters import CONVERTERS, restyle, source_entries
-from vocabgen.dictionaries.model import resolve_pos
+from acervo.dictionaries.catalogue import CatalogueEntry, load_catalogue
+from acervo.dictionaries.container import BuildReport
+from acervo.dictionaries.converters import CONVERTERS, restyle, source_entries
+from acervo.dictionaries.model import resolve_pos
 
 
 def row(**overrides) -> CatalogueEntry:
