@@ -40,7 +40,7 @@ function panel() {
 
 const rowOf = (element: HTMLElement): HTMLElement => element.closest(".model-row") as HTMLElement;
 
-describe("the Models pane", () => {
+describe("the Providers pane", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("lists every model a provider offers, because the choice is a pair and not a provider", async () => {
@@ -67,23 +67,65 @@ describe("the Models pane", () => {
     expect(within(row).getByText(/CLOUDFLARE_API_TOKEN is not set/)).toBeInTheDocument();
   });
 
+  it("shows the server's own order as switched on, because it is what will actually be asked", async () => {
+    /* The bug this replaces: under the deployment default every box rendered unticked, so unticking
+       the last model looked like switching capture off while the server carried on building entries
+       with the model at the head of its own order. */
+    vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue());
+    panel();
+    expect(within(rowOf(await screen.findByText(GEMINI))).getByRole("checkbox")).toBeChecked();
+    expect(screen.getByText(/own order is in force/i)).toBeInTheDocument();
+  });
+
   it("lets an unavailable pair be switched on, because a rotated key must not lock the owner out", async () => {
     vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue());
     const save = vi.spyOn(backendSession, "saveModelSelection").mockResolvedValue(catalogue());
     panel();
     const row = rowOf(await screen.findByText(CLOUDFLARE));
     fireEvent.click(within(row).getByRole("checkbox"));
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ text: [pair("cloudflare", CLOUDFLARE)] }));
+    // Adding to the inherited order, which is what was on screen — not replacing it.
+    await waitFor(() => expect(save).toHaveBeenCalledWith({
+      text: [pair("gemini-free", GEMINI), pair("cloudflare", CLOUDFLARE)]
+    }));
   });
 
-  it("switching one on is one write naming only that kind", async () => {
+  it("changing anything makes the inherited order yours, in one write naming one kind", async () => {
     vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue());
     const save = vi.spyOn(backendSession, "saveModelSelection").mockResolvedValue(catalogue());
     panel();
     const row = rowOf(await screen.findByText(GEMINI_SECOND));
     fireEvent.click(within(row).getByRole("checkbox"));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    expect(save).toHaveBeenCalledWith({ text: [pair("gemini-free", GEMINI_SECOND)] });
+    expect(save).toHaveBeenCalledWith({
+      text: [pair("gemini-free", GEMINI), pair("gemini-free", GEMINI_SECOND)]
+    });
+  });
+
+  it("marks an unavailable row with a badge and not only with dimmed text", async () => {
+    vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue());
+    panel();
+    const row = rowOf(await screen.findByText(CLOUDFLARE));
+    expect(within(row).getByText(/unavailable/i)).toBeInTheDocument();
+  });
+
+  it("says so when unticking the last one hands the order back to the server", async () => {
+    /* There is no "use nothing" state — the route refuses an empty chain — so the server's models
+       reappear ticked, and without a word that reads as the tick having been ignored. */
+    const chosen = catalogue({
+      chains: {
+        text: { source: "owner", reason: null, pairs: [pair("gemini-free", GEMINI)] },
+        image: { source: "deployment", reason: null, pairs: [] },
+        audio: { source: "deployment", reason: null, pairs: [] }
+      }
+    });
+    vi.spyOn(backendSession, "fetchModels").mockResolvedValue(chosen);
+    vi.spyOn(backendSession, "saveModelSelection").mockResolvedValue(catalogue());
+    const notified = vi.fn();
+    render(<ModelPanel onNotify={notified} />);
+    const row = rowOf(await screen.findByText(GEMINI));
+    fireEvent.click(within(row).getByRole("checkbox"));
+    await waitFor(() => expect(notified).toHaveBeenCalledWith(
+      expect.stringMatching(/own order is back in force/i)));
   });
 
   it("reorders a chosen pair with the arrows", async () => {
@@ -110,12 +152,13 @@ describe("the Models pane", () => {
   it("cannot move a pair that is switched off", async () => {
     vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue());
     panel();
-    const row = rowOf(await screen.findByText(GEMINI_SECOND));
+    // Cloudflare is not in the server's order, so it has no place to move within.
+    const row = rowOf(await screen.findByText(CLOUDFLARE));
     expect(within(row).getByRole("button", { name: /up$/i })).toBeDisabled();
     expect(within(row).getByRole("button", { name: /down$/i })).toBeDisabled();
   });
 
-  it("switching the last one off returns to the server's order rather than sending an empty chain", async () => {
+  it("switching the last one off hands back rather than sending an empty chain", async () => {
     /* An empty chain is refused by the route, so without this the first choice would be a one-way
        door out of following the deployment default. */
     const chosen = catalogue({

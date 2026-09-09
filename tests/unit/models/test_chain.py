@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from acervo.models import call, chain
+from acervo.models.cooldown import rests
 from acervo.models.catalogue import load_catalogue
 from acervo.models.errors import ChainExhausted, ProviderRefused, ProviderUnavailable
 from acervo.models.results import Answer, TextResult
@@ -27,6 +28,15 @@ DEFAULT_WALK = [
     ("cloudflare", "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
     ("openai", "openai/gpt-5.1"),
 ]
+
+
+@pytest.fixture(autouse=True)
+def no_remembered_refusals():
+    """Each test starts as a fresh process would. Rests are in-process and deliberately not stored,
+    so leaking one between tests would be leaking state the server never carries either."""
+    rests.forget_all()
+    yield
+    rests.forget_all()
 
 
 @pytest.fixture(autouse=True)

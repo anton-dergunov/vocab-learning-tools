@@ -44,11 +44,22 @@ class ModelStub:
     calls: list[dict[str, Any]] = field(default_factory=list)
     error: BaseException | None = None
     errors: list[BaseException | None] = field(default_factory=list)
+    # Models that always refuse, by model id. A positional script cannot express a capture any more:
+    # a rate-limited pair rests, so the second of the two model calls skips what the first exhausted
+    # and the failures no longer land on fixed positions.
+    limited: set[str] = field(default_factory=set)
     text: str | None = None
     reasoning: str | None = None
 
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
+        if kwargs["model"] in self.limited:
+            import litellm
+
+            raise litellm.RateLimitError(
+                message="provider details that must stay private",
+                llm_provider="stub", model=kwargs["model"],
+            )
         failure = self.errors.pop(0) if self.errors else self.error
         if failure is not None:
             raise failure
@@ -121,6 +132,17 @@ class Server:
             **overrides,
         }
         return self.post("/capture", body)
+
+
+@pytest.fixture(autouse=True)
+def no_remembered_refusals():
+    """A refused provider rests for a while, in process memory. Each test gets a fresh process's
+    worth of that, or one test's 429 would reorder the next test's chain."""
+    from acervo.models.cooldown import rests
+
+    rests.forget_all()
+    yield
+    rests.forget_all()
 
 
 @pytest.fixture

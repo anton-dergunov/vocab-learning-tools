@@ -105,7 +105,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
     { id: "general", label: "General" },
     { id: "vocabularies", label: "Vocabularies" },
     { id: "topics", label: "Topics" },
-    { id: "models", label: "Models" },
+    { id: "models", label: "Providers" },
     { id: "dictionaries", label: "Dictionaries" },
     { id: "editor", label: "Editor" },
     { id: "sync", label: "Sync" },
@@ -147,7 +147,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
           {offerMacApplication && releaseError && <div className="update-status"><strong>macOS application</strong><span>The native release could not be checked right now.</span></div>}
           {captureHealth && !captureHealth.available && <div className="update-status">
             <strong>This server cannot build entries</strong>
-            <span>{captureHealth.reason}. Settings {"\u25B8"} Models says what it can use.</span>
+            <span>{captureHealth.reason}. Settings {"\u25B8"} Providers says what it can use.</span>
           </div>}
           {native && <div className="update-status">
             <strong>Updates and server address</strong>

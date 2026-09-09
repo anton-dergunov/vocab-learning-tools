@@ -10,6 +10,11 @@ requests a day each are a thousand requests a day and the second is reached by t
 The default walk is therefore provider by provider and, inside each, model by model — the order the
 catalogue lists them in.
 
+A refusal is also remembered, in `cooldown.py`: a pair that has just been rate limited goes to
+the back of the queue for a while, so an exhausted free tier is not re-probed on every entry. It is
+only ever an ordering hint — when every pair is resting the hints are ignored and the chain is
+walked as written, which is what makes recovery automatic without knowing anyone's reset hour.
+
 The other contract here is provenance. `Answer.provider_id` and `Answer.model` name the pair that
 *answered*, and `attempts` names every pair tried, oldest first. A fall-through that left `modelId`
 naming the first choice would be a bug, so the answer is rewritten as it comes back out rather than
@@ -22,6 +27,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Sequence, TypeVar
 
 from acervo.models.catalogue import Catalogue, Row, available, reason
+from acervo.models.cooldown import rests, retry_after_of
 from acervo.models.errors import ChainExhausted, ProviderRefused, ProviderUnavailable
 
 Result = TypeVar("Result")
@@ -148,14 +154,23 @@ def walk(
     if not candidates:
         raise unconfigured(kind, chosen, catalogue)
 
+    # Rested pairs go last rather than away: `ready` hands back everything when everything is
+    # resting, so a remembered refusal can never empty a chain that has members.
+    awake = rests.ready([candidate.named for candidate in candidates])
+    order = sorted(candidates, key=lambda candidate: candidate.named not in awake)
+
     attempts: list[tuple[str, str]] = []
     last: ProviderUnavailable | None = None
-    for candidate in candidates:
+    for candidate in order:
         attempts.append(candidate.named)
         try:
-            return stamp(ask(candidate), tuple(attempts))
+            answer = stamp(ask(candidate), tuple(attempts))
         except ProviderUnavailable as error:
+            rests.note(candidate.named, error.reason, retry_after=retry_after_of(error))
             last = error
+        else:
+            rests.succeeded(candidate.named)
+            return answer
     assert last is not None
     raise ChainExhausted(tuple(attempts), last)
 

@@ -903,7 +903,7 @@ describe("Acervo application", () => {
     expect(screen.getByRole("button", { name: "Process" })).toBeEnabled();
   });
 
-  it("names the provider and model that build entries, in Settings \u25B8 Models", async () => {
+  it("names the provider and model that build entries, in Settings \u25B8 Providers", async () => {
     /* Moved out of General, not duplicated: General read the *deployment's* provider from health,
        and Models reads the owner's own chain. Two readouts of "what builds an entry" would drift
        the moment a chain was chosen. */
@@ -925,7 +925,7 @@ describe("Acervo application", () => {
     const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
 
     expect(settings.queryByText(/Entries are built by/)).not.toBeInTheDocument();
-    fireEvent.click(settings.getByRole("tab", { name: "Models" }));
+    fireEvent.click(settings.getByRole("tab", { name: "Providers" }));
     expect(await settings.findByText("Gemini (free tier)")).toBeInTheDocument();
     expect(settings.getByText("gemini/gemini-3.1-flash-lite")).toBeInTheDocument();
   });

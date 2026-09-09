@@ -367,8 +367,7 @@ def test_the_chain_setting_decides_which_row_is_asked_first(seeded, monkeypatch)
 def test_a_rate_limited_model_falls_through_to_the_next_model_of_the_same_provider(seeded):
     """The reason a row lists several models: they are separate free-tier buckets, so the second is
     reached by the first one's 429 rather than being a spare."""
-    limited = lambda: litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m")
-    seeded.model.errors = [limited(), None, limited(), None]  # one per call, resolve then compose
+    seeded.model.limited = {"gemini/gemini-3.1-flash-lite"}
 
     draft = seeded.capture().json()["data"]["draft"]
     asked = [call["model"] for call in seeded.model.calls]
@@ -377,13 +376,25 @@ def test_a_rate_limited_model_falls_through_to_the_next_model_of_the_same_provid
     assert invented["modelId"] == "gemini/gemini-3.5-flash-lite"
 
 
+def test_the_second_model_call_does_not_re_probe_what_the_first_exhausted(seeded):
+    """A capture is two model calls. Asking a model that just returned 429 a second time, seconds
+    later, buys nothing and costs the owner the wait — so the refusal is remembered."""
+    seeded.model.limited = {"gemini/gemini-3.1-flash-lite"}
+    seeded.capture()
+
+    asked = [call["model"] for call in seeded.model.calls]
+    assert asked == [
+        "gemini/gemini-3.1-flash-lite",   # resolve: tried, refused, and rested
+        "gemini/gemini-3.5-flash-lite",   # resolve: answered
+        "gemini/gemini-3.5-flash-lite",   # compose: went straight here
+    ]
+
+
 def test_an_exhausted_provider_falls_through_and_the_entry_records_who_answered(seeded, monkeypatch):
     """The locked provenance contract, end to end. `modelId` naming the first choice is a bug."""
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
-    limited = lambda: litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m")
-    # Both of gemini-free's models, on both calls, before Cloudflare is asked at all.
-    seeded.model.errors = [limited(), limited(), None, limited(), limited(), None]
+    seeded.model.limited = {"gemini/gemini-3.1-flash-lite", "gemini/gemini-3.5-flash-lite"}
 
     draft = seeded.capture().json()["data"]["draft"]
     asked = [call["model"] for call in seeded.model.calls]
@@ -603,8 +614,7 @@ def test_a_chosen_chain_falls_through_and_the_entry_records_who_answered(seeded,
         {"provider": "gemini-free", "model": GEMINI_SECOND},
         {"provider": "cloudflare", "model": CLOUDFLARE_TEXT},
     ]})
-    limited = lambda: litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m")
-    seeded.model.errors = [limited(), None, limited(), None]
+    seeded.model.limited = {GEMINI_SECOND}
 
     draft = seeded.capture().json()["data"]["draft"]
     assert [call["model"] for call in seeded.model.calls][:2] == [GEMINI_SECOND, CLOUDFLARE_TEXT]

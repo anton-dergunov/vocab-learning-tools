@@ -27,9 +27,12 @@ import {
 const KINDS: { id: string; label: string; help: string }[] = [
   {
     id: "text",
-    label: "Entries",
-    help: "What writes a definition, a gloss and an example when you capture a word. The first "
-      + "pair that answers wins; a rate-limited one hands on to the next."
+    /* Not "Entries": the same models write the briefs the picture generator works from, and will
+       write whatever else needs words. What they have in common is that they produce text. */
+    label: "Text",
+    help: "Writes definitions, glosses, examples and usage notes when you capture a word — and the "
+      + "briefs the picture models draw from. The first that answers wins; a rate-limited one hands "
+      + "on to the next."
   },
   {
     id: "image",
@@ -40,8 +43,8 @@ const KINDS: { id: string; label: string; help: string }[] = [
   {
     id: "audio",
     label: "Pronunciation",
-    help: "For spoken words. Nothing reads this order yet either, and the free allowance is a "
-      + "handful of clips a day rather than a batch."
+    help: "For hearing a word said. Nothing reads this order yet either, and the free allowance is "
+      + "a handful of clips a day rather than a batch."
   }
 ];
 
@@ -71,10 +74,16 @@ function ModelRow({ pair, provider, on, first, last, onToggle, onMove }: {
     <label className="model-switch">
       <input type="checkbox" checked={on} onChange={(event) => onToggle(event.target.checked)} />
       <span className="config-main">
-        <strong>{label}</strong>
+        <strong>
+          {label}
+          {/* Dimmed text alone was too quiet to notice while scrolling a long list. */}
+          {missing && <span className="model-badge" title="Not available on this server">
+            <span aria-hidden="true">{"⚠"}</span> unavailable
+          </span>}
+        </strong>
         <span className="model-id">{pair.model}</span>
         {missing && <span className="model-warning">
-          Not available on this server — {provider?.reason}. It keeps its place and is skipped.
+          {provider?.reason}. It keeps its place in the order and is passed over.
         </span>}
       </span>
     </label>
@@ -99,9 +108,15 @@ function KindSection({ kind, label, help, catalogue, onChange }: {
   const chain: ModelChain | undefined = catalogue.chains[kind];
   if (!chain) return null;
   const providers = new Map(catalogue.providers.map((provider) => [provider.id, provider]));
-  /* Only an owner chain is a set of switched-on pairs. Under the deployment's own order nothing is
-     switched on here, because the owner has not chosen anything — turning one on is the choice. */
-  const live = chain.source === "owner" ? chain.pairs : [];
+  /* What is switched on is what will actually be asked — under an owner's chain *and* under the
+     server's own order, which the server resolves and sends here as `pairs`.
+
+     Showing every box unchecked under the deployment default was a lie with consequences: unticking
+     the last model looked like turning capture off, and the server carried on building entries with
+     the model at the head of its own order. The pane must show what will happen, so an inherited
+     order arrives ticked and says whose it is. Changing anything makes the order yours. */
+  const live = chain.pairs;
+  const inherited = chain.source === "deployment";
   const pairs = orderedPairs(catalogue.providers, live, kind);
 
   /* Nothing left means "follow the server's order" rather than an empty chain, which the route
@@ -111,9 +126,12 @@ function KindSection({ kind, label, help, catalogue, onChange }: {
   return <div className="model-kind">
     <h4>{label}</h4>
     <p className="config-help">{help}</p>
-    {chain.source === "deployment" && <p className="config-help">
-      Nothing chosen, so this server{"’"}s own order is in force
-      {chain.reason ? ` — and right now it cannot build: ${chain.reason}.` : "."}
+    {inherited && <p className="config-help">
+      {live.length
+        ? "You have not chosen, so this server’s own order is in force — shown ticked below. "
+          + "Change anything and the order becomes yours."
+        : "You have not chosen, and this server has nothing it can use."}
+      {chain.reason ? ` Right now it cannot build: ${chain.reason}.` : ""}
     </p>}
     {chain.source === "owner" && chain.reason && <p className="config-help model-warning">
       Nothing you have chosen can be asked right now — {chain.reason}.
@@ -162,25 +180,30 @@ export default function ModelPanel({ onNotify }: { onNotify(message: string): vo
     setWorking(true);
     try {
       setCatalogue(await backendSession.saveModelSelection({ [kind]: pairs }));
+      /* Unticking the last one is not "use nothing" — there is no such state, and the server
+         refuses an empty chain rather than letting one stray click switch capture off. It means
+         "go back to the server's order", whose models then reappear ticked. Say so, or that
+         reappearance reads as the tick having been ignored. */
+      if (pairs === null) onNotify("Nothing chosen, so this server’s own order is back in force.");
     } catch (error) {
       onNotify(error instanceof Error ? error.message : "That choice could not be saved.");
     } finally { setWorking(false); }
   }
 
   if (failed) return <section className="config-section">
-    <h3>Models</h3>
+    <h3>Providers</h3>
     <p className="config-help">
       Your server could not be reached, so what it builds entries with is unknown right now.
     </p>
   </section>;
 
   if (!catalogue) return <section className="config-section">
-    <h3>Models</h3>
+    <h3>Providers</h3>
     <p className="config-help">Asking your server which models it can use…</p>
   </section>;
 
   return <section className="config-section">
-    <h3>Models</h3>
+    <h3>Providers</h3>
     <p className="config-help">
       Which model builds what, and in what order. Switch one on to use it, and use the arrows to say
       which is asked first; when one is rate limited or down the next answers, and the entry records

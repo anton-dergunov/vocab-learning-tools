@@ -85,6 +85,16 @@ export default function AddView({
   /** The server has told us it cannot build entries. Writing YAML by hand still can. */
   const cannotBuild = captureHealth && !captureHealth.available ? captureHealth : null;
 
+  /**
+   * No vocabulary means no entry can land anywhere, whatever the model says.
+   *
+   * Checked here rather than left to the server because the server checks it *after* the first
+   * model call — deliberately, so that a resolved language can be named in the refusal — which from
+   * the outside is a long wait ending in "this looks like en, which you have no vocabulary for".
+   * A word cannot be filed before there is somewhere to file it, and saying so costs nothing.
+   */
+  const noVocabularies = graph !== null && graph.vocabularies.every((entry) => entry.deleted);
+
   /** Nothing has been proposed or written yet, so there is nothing to render. */
   const untouched = draft === YAML_TEMPLATE;
 
@@ -144,7 +154,7 @@ export default function AddView({
   const started = useRef(false);
   useEffect(() => {
     // A seed that processes itself would fail on arrival on a server that cannot build entries.
-    if (!seed || started.current || cannotBuild) return;
+    if (!seed || started.current || cannotBuild || noVocabularies) return;
     started.current = true;
     void process();
     // Deliberately once, on arrival. `seed` is fixed for the life of this view: App remounts it.
@@ -179,7 +189,12 @@ export default function AddView({
           </ul>
           <span>Nothing was created. Open the entry to see what it already says.</span>
         </div>}
-        {cannotBuild && <div className="validation bad" role="alert">
+        {noVocabularies && <div className="validation bad" role="alert">
+          <strong>There is no vocabulary to add a word to yet.</strong>
+          <span>Add the language you are learning in Settings {"\u25B8"} Vocabularies, then capture
+            this again.</span>
+        </div>}
+        {!noVocabularies && cannotBuild && <div className="validation bad" role="alert">
           <strong>This server cannot build entries right now.</strong>
           <span>{cannotBuild.reason}. You can still write the entry yourself.</span>
         </div>}
@@ -189,7 +204,8 @@ export default function AddView({
           <button className="tb-btn" onClick={() => onTab("yaml")}>Write YAML instead</button>
           <button
             className="tb-btn primary"
-            disabled={(!capture.trim() && !headword.trim()) || working || Boolean(cannotBuild)}
+            disabled={(!capture.trim() && !headword.trim()) || working
+              || Boolean(cannotBuild) || noVocabularies}
             onClick={() => void process()}
           >
             {working ? "Building…" : "Process"}
