@@ -123,7 +123,7 @@ smaller, but "far smaller" is not a measurement. Measure it in step 1 and let th
 2. **Design the audio record** and add it to the bootstrap migration. Owner-scoped, `deleted`,
    `createdAt`, `editedAt`, `editedBy`, `revision`, like every other domain record. It names what it
    is a reading of and which of the two kinds it is. Same schema-bump cost as plan 03 —
-   `./deploy.sh --reset-pocketbase`, export first — so **do this in the same reset as plan 03 if
+   `./deploy.sh --reset-database`, export first — so **do this in the same reset as plan 03 if
    both are pending.**
 
 3. **Add audio rows** to `models/catalogue.json`: `gemini-free` and `vertex` gain TTS models for the
@@ -218,7 +218,7 @@ Chains, extending plan 03's route:
 
 ```bash
 .venv/bin/python -m pytest
-npm run test:hooks
+.venv/bin/python -m pytest tests/unit/server
 npm --prefix web run test
 ```
 

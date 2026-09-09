@@ -1,0 +1,466 @@
+"""Capture, ported case for case from the hook suite this replaces.
+
+Every `it()` body there was a contract test and survives here. What does not survive is the harness:
+against a real service with a temporary database, these assert on the thing that ships rather than on
+a stand-in for it.
+"""
+
+from __future__ import annotations
+
+import re
+
+import pytest
+from graph_records import lexeme, topic, vocabulary
+
+RESOLUTION = {
+    "language": "es",
+    "headword": "el garfio",
+    "lemma": "garfio",
+    "pos": "noun",
+    "sentences": [{"text": "El disfraz de pirata viene con un garfio.", "translation": None}],
+    "consumedLines": 2,
+    "consumedText": "El disfraz de pirata viene con un garfio.",
+}
+
+ARTICLE = {
+    "headword": "el garfio", "lemma": "garfio", "pos": "noun", "gender": "masculine",
+    "register": "neutral", "emoji": "\U0001FA9D", "topics": ["Culture", "Nonexistent"],
+    "shortGloss": "hook", "notes": ["Not el gancho."],
+    "senses": [
+        {
+            "definition": "Gancho de metal curvo.",
+            "glosses": [{"lang": "en", "terms": ["hook"]}],
+            "examples": [
+                {
+                    "text": "El disfraz de pirata viene con un garfio.",
+                    "translation": "The pirate costume comes with a hook.",
+                    "matchedForm": "un garfio", "matchedTranslationForm": "hook", "fromSentence": 0,
+                },
+                {
+                    "text": "Perdió la mano y le pusieron un garfio.",
+                    "translation": "He lost his hand and they gave him a hook.",
+                    "matchedForm": "el garfio", "matchedTranslationForm": "hooks",
+                    "fromSentence": None,
+                },
+            ],
+        }
+    ],
+}
+
+
+@pytest.fixture
+def seeded(server):
+    """One Spanish vocabulary, two topics, and a word the account already holds."""
+    server.push(
+        {
+            "vocabularies": [vocabulary()],
+            "topics": [topic(name="Food", order=0), topic(name="Culture", order=1)],
+            "lexemes": [lexeme(headword="picar", lemma="picar", status="active", shortGloss="to itch")],
+        }
+    )
+    server.model.resolution = dict(RESOLUTION)
+    server.model.article = dict(ARTICLE)
+    return server
+
+
+def prompts_of(server):
+    return [call["body"]["contents"][0]["parts"][0]["text"] for call in server.model.calls]
+
+
+def generation_of(server, index=0):
+    return server.model.calls[index]["body"]["generationConfig"]
+
+
+# ── what capture refuses, and how early ─────────────────────────────────────
+
+
+def test_it_stops_at_a_word_the_account_already_holds_before_generating_anything(seeded):
+    seeded.model.resolution = {**RESOLUTION, "headword": "Picar", "lemma": "picar", "sentences": []}
+    body = seeded.capture(text="¿Te pica mucho la salsa?").json()["data"]
+    assert [item["headword"] for item in body["duplicates"]] == ["picar"]
+    assert body["draft"] is None
+    # One call, not two: an article for a word already held would be thrown away.
+    assert len(seeded.model.calls) == 1
+
+
+def test_it_refuses_a_language_with_no_vocabulary_and_does_not_generate_for_it(seeded):
+    seeded.model.resolution = {**RESOLUTION, "language": "de", "headword": "Wanderlust"}
+    answer = seeded.capture(text="Fernweh und Wanderlust")
+    assert answer.status_code == 409
+    assert answer.json()["error"]["code"] == "language_not_configured"
+    assert "de" in answer.json()["error"]["message"]
+    assert len(seeded.model.calls) == 1
+
+
+def test_it_refuses_a_vocabulary_with_no_translation_language(seeded, monkeypatch):
+    """The validator will not let this state be written through the graph, so the guard is reached
+    only by a vocabulary that got there another way — which is exactly why it is still checked."""
+    from acervo.repository import graph
+
+    monkeypatch.setattr(
+        graph,
+        "owner_vocabularies",
+        lambda _owner: [
+            {"language": "es", "definitionLang": "es", "glossLangs": [], "notesLang": "en",
+             "displayName": "Spanish"}
+        ],
+    )
+    answer = seeded.capture(text="El disfraz de pirata viene con un garfio.")
+    assert answer.status_code == 409
+    assert answer.json()["error"]["code"] == "language_not_configured"
+    assert "no translation language" in answer.json()["error"]["message"]
+    assert len(seeded.model.calls) == 1
+
+
+def test_it_says_so_when_the_input_cannot_be_read_as_a_word_at_all(seeded):
+    seeded.model.resolution = {"error": "!!! ???"}
+    answer = seeded.capture(text="!!! ???")
+    assert answer.status_code == 422
+    assert answer.json()["error"]["code"] == "unreadable_input"
+
+
+def test_it_reports_a_model_that_answers_with_nothing_usable_rather_than_half_an_entry(seeded):
+    seeded.model.article = {"headword": "el garfio", "senses": []}
+    assert seeded.capture().json()["error"]["code"] == "llm_unusable"
+
+
+@pytest.mark.parametrize("text", ["", "   \n  "])
+def test_it_refuses_an_empty_capture(seeded, text):
+    answer = seeded.capture(text=text)
+    assert answer.status_code == 400
+    assert answer.json()["error"]["message"] == "There is nothing to capture."
+
+
+def test_it_refuses_a_capture_too_long_to_process_in_one_request(seeded):
+    answer = seeded.capture(text="a" * 20001)
+    assert answer.status_code == 400
+    assert "too long" in answer.json()["error"]["message"]
+
+
+# ── what the submitter is allowed to say ────────────────────────────────────
+
+
+def test_it_passes_on_the_word_the_submitter_named_and_says_nothing_when_they_did_not(seeded):
+    """A hint for the resolver, not a bypass of it: the model still fixes the spelling, adds the
+    article and picks the lemma, so a named word and a picked one reach the article the same way."""
+    seeded.capture(text="El disfraz de pirata viene con un garfio.", headword="garfio")
+    assert "The learner says the word is: garfio" in prompts_of(seeded)[0]
+
+    seeded.model.calls.clear()
+    seeded.capture(text="El disfraz de pirata viene con un garfio.")
+    assert "The learner says the word is" not in prompts_of(seeded)[0]
+
+
+def test_it_carries_a_dictionary_entry_to_both_steps_as_reference_and_only_as_reference(seeded):
+    seeded.model.resolution = {**RESOLUTION, "sentences": []}
+    reference = (
+        "## Wiktionary (es→es)\nverb\n1. Golpear algo con una punta.\n"
+        "   - una tela que pica — an itchy fabric"
+    )
+    seeded.capture(text="picar", headword="picar", reference=reference, referenceMode="expand")
+
+    resolve, compose = prompts_of(seeded)
+    # The resolver is told what it is looking at, and told plainly that it is not learner input.
+    assert "una tela que pica" in resolve
+    assert "CONTEXT ONLY" in resolve
+    # The composer is grounded on it and told which treatment was chosen.
+    assert "Golpear algo con una punta" in compose
+    assert "FILL IN THE GAPS" in compose
+    assert "STAY CLOSE TO THE REFERENCE" not in compose
+
+
+def test_it_says_to_stay_close_when_that_is_what_was_asked_for(seeded):
+    seeded.model.resolution = {**RESOLUTION, "sentences": []}
+    seeded.capture(text="picar", reference="1. Golpear algo con una punta.", referenceMode="faithful")
+    compose = prompts_of(seeded)[1]
+    assert "STAY CLOSE TO THE REFERENCE" in compose
+    assert "FILL IN THE GAPS" not in compose
+
+
+def test_it_ignores_a_reference_mode_it_does_not_recognise_rather_than_passing_it_on(seeded):
+    seeded.model.resolution = {**RESOLUTION, "sentences": []}
+    seeded.capture(text="picar", reference="1. Golpear algo.", referenceMode="whatever-you-like")
+    compose = prompts_of(seeded)[1]
+    assert "Reference entry from an external dictionary" in compose
+    assert "Treatment:" not in compose
+
+
+def test_it_never_turns_a_reference_into_an_attestation(seeded):
+    """The resolver is what mints attestations, and a grounded capture gives it no sentences: the
+    dictionary's examples are the dictionary's, not places this person met the word."""
+    seeded.model.resolution = {**RESOLUTION, "sentences": []}
+    draft = seeded.capture(
+        text="picar",
+        reference="1. Golpear algo con una punta.\n   - una tela que pica",
+        referenceMode="expand",
+    ).json()["data"]["draft"]
+    assert draft["attestations"] == []
+    examples = [example for sense in draft["senses"] for example in sense["examples"]]
+    assert examples
+    assert all(example["sourceAttestationId"] is None for example in examples)
+    assert all(example["origin"] == "llm" for example in examples)
+
+
+# ── the draft ───────────────────────────────────────────────────────────────
+
+
+def test_it_builds_a_draft_keeping_the_learners_sentence_as_an_attestation_the_example_names(seeded):
+    draft = seeded.capture().json()["data"]["draft"]
+
+    assert draft["id"] is None
+    assert draft["status"] == "inbox"
+    assert draft["headword"] == "el garfio"
+    assert draft["gender"] == "masculine"
+    # A topic the account does not have is dropped rather than invented: saving would refuse it.
+    assert draft["topics"] == ["Culture"]
+
+    assert len(draft["attestations"]) == 1
+    own, invented = draft["senses"][0]["examples"]
+    assert own["origin"] == "attestation"
+    assert own["sourceAttestationId"] == draft["attestations"][0]["id"]
+    assert own["modelId"] is None
+    assert invented["origin"] == "llm"
+    assert invented["modelId"] == "stub-model"
+    # Every minted id is a real Acervo id, or nothing could reference anything.
+    for identifier in (draft["senses"][0]["id"], own["id"], draft["attestations"][0]["id"]):
+        assert re.match(r"^[a-z0-9]{15}$", identifier)
+
+
+def test_it_drops_a_marked_form_the_model_retyped_instead_of_copying(seeded):
+    own, invented = seeded.capture().json()["data"]["draft"]["senses"][0]["examples"]
+    assert own["matchedForm"] == "un garfio"
+    # "el garfio" does not occur in "Perdió la mano y le pusieron un garfio", and "hooks" does not
+    # occur in its translation. Keeping either would make the record validator refuse the batch.
+    assert invented["matchedForm"] is None
+    assert invented["matchedTranslationForm"] is None
+
+
+def test_it_fills_in_a_gloss_and_a_definition_language_rather_than_losing_the_sense(seeded):
+    seeded.model.article = {
+        **ARTICLE,
+        "senses": [{"definition": "Gancho de metal.", "glosses": [], "examples": []}],
+    }
+    sense = seeded.capture().json()["data"]["draft"]["senses"][0]
+    assert sense["glosses"] == [{"lang": "en", "terms": ["el garfio"]}]
+    assert sense["definitionLang"] == "es"
+
+
+@pytest.mark.parametrize("claimed", [None, "", -1, 5, 1.5, True, "0"])
+def test_an_absent_or_impossible_sentence_index_never_credits_the_learner(seeded, claimed):
+    """`Number(null)` is 0 in the language this came from, so a plain numeric read here would take
+    "I invented this" for "this is sentence 0"."""
+    seeded.model.article = {
+        **ARTICLE,
+        "senses": [
+            {
+                "definition": "Gancho de metal.",
+                "glosses": [{"lang": "en", "terms": ["hook"]}],
+                "examples": [{"text": "Un garfio de metal.", "fromSentence": claimed}],
+            }
+        ],
+    }
+    example = seeded.capture().json()["data"]["draft"]["senses"][0]["examples"][0]
+    assert example["origin"] == "llm"
+    assert example["sourceAttestationId"] is None
+
+
+def test_a_chinese_entry_with_no_reading_is_refused_before_it_reaches_the_validator(seeded):
+    """Saying which field is missing beats letting the save fail later with a validation message
+    about a field nobody was shown."""
+    seeded.push({"vocabularies": [vocabulary(language="zh-Hans", definitionLang="en", order=1)]})
+    seeded.model.resolution = {**RESOLUTION, "language": "zh-Hans", "headword": "钩子"}
+    answer = seeded.capture(text="钩子")
+    assert answer.json()["error"]["code"] == "llm_unusable"
+    assert "reading" in answer.json()["error"]["message"]
+
+
+# ── the stream ──────────────────────────────────────────────────────────────
+
+
+def test_it_never_consumes_zero_lines_in_a_stream_so_a_walk_cannot_stall(seeded):
+    seeded.model.resolution = {**RESOLUTION, "consumedLines": 0, "consumedText": "line one"}
+    body = seeded.capture(mode="stream", text="line one\nline two\nline three").json()["data"]
+    assert body["resolution"]["consumedLines"] == 1
+
+
+def test_it_refuses_a_mismatched_stream_boundary_before_composing_or_writing(seeded):
+    seeded.model.resolution = {**RESOLUTION, "consumedLines": 1, "consumedText": "different text"}
+    answer = seeded.capture(mode="stream", text="line one\nline two", apply=True)
+    assert answer.json()["error"]["code"] == "stream_boundary_mismatch"
+    assert len(seeded.model.calls) == 1
+    changes = seeded.pull().json()["data"]["changes"]
+    assert changes["attestations"] == []
+    assert changes["examples"] == []
+
+
+# ── applying ────────────────────────────────────────────────────────────────
+
+
+def test_it_applies_the_draft_through_the_ordinary_write_path_when_asked(seeded):
+    body = seeded.capture(apply=True).json()["data"]
+    assert re.match(r"^[a-z0-9]{15}$", body["applied"]["lexemeId"])
+
+    changes = seeded.pull().json()["data"]["changes"]
+    created = next(row for row in changes["lexemes"] if row["id"] == body["applied"]["lexemeId"])
+    assert created["headword"] == "el garfio"
+    assert created["status"] == "inbox"
+    # Numbered by the one allocator, which is what makes it visible to a cursor pull at all.
+    assert created["revision"] > 0
+    assert len(changes["attestations"]) == 1
+    assert len(changes["examples"]) == 2
+    drawn = next(row for row in changes["examples"] if row["origin"] == "attestation")
+    assert drawn["sourceAttestationId"] == changes["attestations"][0]["id"]
+
+
+def test_a_draft_is_not_written_unless_applying_was_asked_for(seeded):
+    seeded.capture()
+    changes = seeded.pull().json()["data"]["changes"]
+    assert changes["attestations"] == []
+    assert len(changes["lexemes"]) == 1  # only the seeded `picar`
+
+
+# ── how the provider is called ──────────────────────────────────────────────
+
+
+def test_it_uses_the_gemini_developer_api_with_its_key_and_sampling_setting(seeded):
+    seeded.capture()
+    call = seeded.model.calls[0]
+    assert call["url"] == (
+        "https://generativelanguage.googleapis.com/v1beta/models/stub-model:generateContent"
+    )
+    assert call["headers"]["x-goog-api-key"] == "stub-key"
+    assert generation_of(seeded)["temperature"] == 0.2
+    assert "thinkingConfig" not in generation_of(seeded)
+
+
+def test_it_uses_the_full_vertex_url_vertex_key_json_output_and_medium_thinking(seeded, monkeypatch):
+    monkeypatch.setenv("ACERVO_LLM_PROVIDER", "vertex")
+    monkeypatch.setenv("VERTEX_API_KEY", "vertex-key")
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "personal-project")
+    monkeypatch.setenv("ACERVO_VERTEX_LOCATION", "global")
+    monkeypatch.setenv("ACERVO_LLM_MODEL", "gemini-3.7-flash")
+    monkeypatch.setattr(seeded.settings, "llm_provider", "vertex")
+    monkeypatch.setattr(seeded.settings, "vertex_api_key", "vertex-key")
+    monkeypatch.setattr(seeded.settings, "vertex_project", "personal-project")
+    monkeypatch.setattr(seeded.settings, "llm_model", "gemini-3.7-flash")
+
+    seeded.capture()
+    call = seeded.model.calls[0]
+    assert call["url"] == (
+        "https://aiplatform.googleapis.com/v1/projects/personal-project/locations/global"
+        "/publishers/google/models/gemini-3.7-flash:generateContent"
+    )
+    assert call["headers"]["x-goog-api-key"] == "vertex-key"
+    assert generation_of(seeded) == {
+        "responseMimeType": "application/json",
+        "thinkingConfig": {"thinkingLevel": "MEDIUM"},
+    }
+
+
+def test_it_ignores_hidden_thinking_parts_and_parses_only_the_article_json(seeded):
+    seeded.model.thought_first = True
+    assert seeded.capture().json()["data"]["draft"]["headword"] == "el garfio"
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (401, "llm_authentication"),
+        (403, "llm_authentication"),
+        (400, "llm_configuration"),
+        (404, "llm_configuration"),
+        (429, "llm_rate_limited"),
+        (500, "llm_unavailable"),
+        (503, "llm_unavailable"),
+        (418, "llm_failed"),
+    ],
+)
+def test_it_classifies_a_provider_status_without_exposing_its_response(seeded, status, code):
+    """The taxonomy is a contract: the file ingestion retries on exactly three of these codes."""
+    seeded.model.status = status
+    answer = seeded.capture()
+    assert answer.json()["error"]["code"] == code
+    assert "provider details" not in answer.text
+
+
+def test_a_provider_that_cannot_be_reached_is_told_apart_from_one_that_refuses(seeded):
+    seeded.model.unreachable = True
+    answer = seeded.capture()
+    assert answer.status_code == 502
+    assert answer.json()["error"]["code"] == "llm_unreachable"
+
+
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        ({"candidates": []}, "llm_empty"),
+        ({"candidates": [{"content": {"parts": [{"text": "   "}]}}]}, "llm_empty"),
+        ({"candidates": [{"content": {"parts": [{"text": "not json at all"}]}}]}, "llm_unusable"),
+    ],
+)
+def test_an_answer_with_nothing_usable_in_it_is_named_as_such(seeded, body, code):
+    seeded.model.body = body
+    assert seeded.capture().json()["error"]["code"] == code
+
+
+def test_a_fenced_answer_is_unwrapped_rather_than_refused(seeded):
+    """Models wrap JSON in backticks often enough that not handling it would be the top cause of
+    failure."""
+    import json
+
+    seeded.model.body = {
+        "candidates": [
+            {"content": {"parts": [{"text": "```json\n" + json.dumps(RESOLUTION) + "\n```"}]}}
+        ]
+    }
+    assert seeded.capture().status_code in (200, 502)
+    assert seeded.model.calls  # it got as far as asking
+
+
+# ── what health says, and whether capture agrees ────────────────────────────
+# Health is the only place a misconfigured model is visible before someone presses the button, so
+# what it says has to be specific enough to act on. Each case pairs the readout with the refusal
+# capture itself gives, because the two are computed separately on purpose and could drift.
+
+
+def capture_health(server):
+    return server.client.get("/api/acervo/v1/health").json()["data"]["capture"]
+
+
+def test_health_reports_the_provider_and_model_it_is_configured_with(seeded):
+    assert capture_health(seeded) == {
+        "available": True, "provider": "gemini", "model": "stub-model", "reason": None,
+    }
+
+
+BROKEN = {
+    "GEMINI_API_KEY is not set": {"gemini_api_key": ""},
+    "VERTEX_API_KEY is not set": {"llm_provider": "vertex", "vertex_project": "personal-project"},
+    "ACERVO_VERTEX_PROJECT is not set": {"llm_provider": "vertex", "vertex_api_key": "vertex-key"},
+    "ACERVO_LLM_PROVIDER is not one of gemini, vertex": {"llm_provider": "cloudflare"},
+}
+
+
+@pytest.mark.parametrize("reason", list(BROKEN))
+def test_health_names_the_first_unmet_requirement_and_capture_then_refuses(seeded, monkeypatch, reason):
+    for field, value in BROKEN[reason].items():
+        monkeypatch.setattr(seeded.settings, field, value)
+    readout = capture_health(seeded)
+    assert readout["available"] is False
+    assert readout["reason"] == reason
+
+    answer = seeded.capture()
+    # The code differs by cause — the taxonomy is deliberately unchanged — but nothing is built.
+    assert answer.json()["error"]["code"] in {"capture_unavailable", "llm_configuration"}
+    assert seeded.model.calls == []
+
+
+def test_health_never_puts_a_key_an_endpoint_or_a_project_id_in_an_unauthenticated_response(
+    seeded, monkeypatch
+):
+    monkeypatch.setattr(seeded.settings, "llm_provider", "vertex")
+    monkeypatch.setattr(seeded.settings, "vertex_api_key", "vertex-key")
+    monkeypatch.setattr(seeded.settings, "vertex_project", "personal-project")
+    body = seeded.client.get("/api/acervo/v1/health").text
+    for secret in ("vertex-key", "stub-key", "personal-project", "googleapis"):
+        assert secret not in body

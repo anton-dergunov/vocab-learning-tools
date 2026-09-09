@@ -7,7 +7,7 @@ PATH="$PATH:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/pa
 export PATH
 
 usage() {
-  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--llm-credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data] [--reset-pocketbase]" >&2
+  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--llm-credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data] [--reset-database]" >&2
   exit 2
 }
 
@@ -36,7 +36,7 @@ credentials_stdin=false
 credentials_file=
 llm_credentials_file=
 reset_data=false
-reset_pocketbase=false
+reset_database=false
 requested_bind_address=
 requested_anki_port=
 requested_app_bind_address=
@@ -53,7 +53,7 @@ while [ "$#" -gt 0 ]; do
     --app-bind-address) [ "$#" -ge 2 ] || usage; requested_app_bind_address=$2; shift 2 ;;
     --app-port) [ "$#" -ge 2 ] || usage; requested_app_port=$2; shift 2 ;;
     --reset-data) reset_data=true; shift ;;
-    --reset-pocketbase) reset_pocketbase=true; shift ;;
+    --reset-database) reset_database=true; shift ;;
     *) usage ;;
   esac
 done
@@ -71,7 +71,7 @@ fi
 effective_anki_port=${requested_anki_port:-${ACERVO_ANKI_PORT:-27701}}
 effective_app_port=${requested_app_port:-${ACERVO_APP_PORT:-27702}}
 [ "$effective_anki_port" != "$effective_app_port" ] || {
-  echo "The Acervo app/PocketBase port must differ from the Anki sync port" >&2
+  echo "The Acervo app port must differ from the Anki sync port" >&2
   exit 2
 }
 
@@ -103,7 +103,7 @@ umask 077
 mkdir -p \
   "$acervo_root/data/anki-server" \
   "$acervo_root/data/acervo-worker" \
-  "$acervo_root/data/pocketbase" \
+  "$acervo_root/data/server" \
   "$acervo_root/data/dictionaries" \
   "$acervo_root/downloads" \
   "$acervo_root/input" \
@@ -121,21 +121,15 @@ if [ "$credentials_stdin" = true ] || [ -n "$credentials_file" ]; then
   fi
   IFS= read -r username <&3 || { echo "Missing sync username" >&2; exit 2; }
   IFS= read -r password <&3 || { echo "Missing sync password" >&2; exit 2; }
-  IFS= read -r pb_email <&3 || { echo "Missing PocketBase superuser email" >&2; exit 2; }
-  IFS= read -r pb_password <&3 || { echo "Missing PocketBase superuser password" >&2; exit 2; }
   exec 3<&-
   case "$username$password" in
     *:*) echo "Anki sync credentials may not contain a colon" >&2; exit 2 ;;
   esac
   username_env=$(printf '%s' "$username" | sed "s/'/\\\\'/g")
   password_env=$(printf '%s' "$password" | sed "s/'/\\\\'/g")
-  pb_email_env=$(printf '%s' "$pb_email" | sed "s/'/\\\\'/g")
-  pb_password_env=$(printf '%s' "$pb_password" | sed "s/'/\\\\'/g")
   {
     printf "ACERVO_ANKI_SYNC_USERNAME='%s'\n" "$username_env"
     printf "ACERVO_ANKI_SYNC_PASSWORD='%s'\n" "$password_env"
-    printf "ACERVO_PB_SUPERUSER_EMAIL='%s'\n" "$pb_email_env"
-    printf "ACERVO_PB_SUPERUSER_PASSWORD='%s'\n" "$pb_password_env"
   } >"$credentials_tmp"
   chmod 600 "$credentials_tmp"
   mv "$credentials_tmp" "$acervo_root/secrets.env"
@@ -148,8 +142,27 @@ if [ ! -f "$acervo_root/secrets.env" ]; then
 fi
 chmod 600 "$acervo_root/secrets.env"
 . "$acervo_root/secrets.env"
-: "${ACERVO_PB_SUPERUSER_EMAIL:?Set ACERVO_PB_SUPERUSER_EMAIL in $acervo_root/secrets.env}"
-: "${ACERVO_PB_SUPERUSER_PASSWORD:?Set ACERVO_PB_SUPERUSER_PASSWORD in $acervo_root/secrets.env}"
+
+# There is no superuser any more: the server has one kind of account, and `admin.py accounts create`
+# is the only thing that makes one. An already-deployed secrets.env still carries the pair, so move
+# it out once rather than leaving two dead variables behind. This erases itself.
+if grep -q '^ACERVO_PB_SUPERUSER_' "$acervo_root/secrets.env"; then
+  secrets_tmp="$acervo_root/secrets.env.tmp.$$"
+  trap 'rm -f "$secrets_tmp"' EXIT HUP INT TERM
+  # `|| true` because grep reports "no lines matched" as a failure, and set -e would take it.
+  grep -v '^ACERVO_PB_SUPERUSER_' "$acervo_root/secrets.env" >"$secrets_tmp" || true
+  chmod 600 "$secrets_tmp"
+  mv "$secrets_tmp" "$acervo_root/secrets.env"
+  trap - EXIT HUP INT TERM
+fi
+
+# The token signing secret. Minted once and kept, because regenerating it signs out every device.
+if ! grep -q '^ACERVO_JWT_SECRET=' "$acervo_root/secrets.env"; then
+  printf "ACERVO_JWT_SECRET='%s'\n" "$(head -c 48 /dev/urandom | base64 | tr -d '=+/\n')" \
+    >>"$acervo_root/secrets.env"
+fi
+chmod 600 "$acervo_root/secrets.env"
+. "$acervo_root/secrets.env"
 
 # Provider credentials are deliberately independent of the server and Anki credentials. Switching
 # between paid Vertex ingestion and a Gemini Developer key rewrites only this file, and retains the
@@ -278,7 +291,7 @@ ACERVO_APP_BUILD=$app_build
 ACERVO_ANKI_SERVER_DATA=$acervo_root/data/anki-server
 ACERVO_WORKER_DATA=$acervo_root/data/acervo-worker
 ACERVO_DICTIONARIES=$acervo_root/data/dictionaries
-ACERVO_PB_DATA=$acervo_root/data/pocketbase
+ACERVO_SERVER_DATA=$acervo_root/data/server
 ACERVO_DOWNLOADS=$acervo_root/downloads
 ACERVO_INPUT_PATH=$acervo_root/input
 EOF
@@ -304,26 +317,26 @@ fi
 
 compose_file="$release_dir/deploy/acervo/compose.yaml"
 
-# A schema change is deployed by rewriting the bootstrap migration, and PocketBase records applied
-# migrations by filename — so an existing database never picks the rewrite up. Rebuilding the
-# database is therefore the supported upgrade path (AGENTS.md), and this is it. Anki review history
-# lives under --reset-data instead: it is irreplaceable, and a schema rebuild must not take it out.
-if [ "$reset_pocketbase" = true ]; then
-  echo "Stopping PocketBase to replace its database..."
+# There is one schema and no upgrade path: a schema change is deployed by rebuilding the database,
+# which is the doctrine AGENTS.md already records, and this is it. Accounts go with it and are
+# recreated afterwards with `--create-account`. Anki review history lives under --reset-data
+# instead: it is irreplaceable, and a schema rebuild must not take it out.
+if [ "$reset_database" = true ]; then
+  echo "Stopping the server to replace its database..."
   compose -p "$compose_project" \
     --env-file "$acervo_root/deployment.env" \
     --env-file "$acervo_root/secrets.env" \
     --env-file "$acervo_root/llm.env" \
-    -f "$compose_file" stop pocketbase >/dev/null 2>&1 || true
+    -f "$compose_file" stop server >/dev/null 2>&1 || true
   # Copied only once the container is stopped: copying a live WAL database is the classic route to
   # a backup that looks fine until the day you need it.
-  if [ -d "$acervo_root/data/pocketbase" ]; then
-    mkdir -p "$backup_dir/pocketbase"
-    cp -R "$acervo_root/data/pocketbase/." "$backup_dir/pocketbase/" 2>/dev/null || true
+  if [ -d "$acervo_root/data/server" ]; then
+    mkdir -p "$backup_dir/server"
+    cp -R "$acervo_root/data/server/." "$backup_dir/server/" 2>/dev/null || true
   fi
-  rm -rf -- "$acervo_root/data/pocketbase"
-  mkdir -p "$acervo_root/data/pocketbase"
-  echo "PocketBase database replaced; the previous one is in $backup_dir/pocketbase"
+  rm -rf -- "$acervo_root/data/server"
+  mkdir -p "$acervo_root/data/server"
+  echo "Vocabulary database replaced; the previous one is in $backup_dir/server"
 fi
 
 echo "Building and starting containers..."
@@ -331,7 +344,7 @@ run_quietly "Building and starting containers" compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
   --env-file "$acervo_root/secrets.env" \
   --env-file "$acervo_root/llm.env" \
-  -f "$compose_file" up -d --build anki-sync-server pocketbase
+  -f "$compose_file" up -d --build anki-sync-server server
 
 echo "Waiting for anki-sync-server to become healthy..."
 attempt=0
@@ -344,22 +357,16 @@ until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env
   sleep 2
 done
 
-echo "Waiting for pocketbase to become healthy..."
+echo "Waiting for the server to become healthy..."
 attempt=0
-until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" ps --format json pocketbase 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
+until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" ps --format json server 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
-    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" logs pocketbase >&2
+    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" logs server >&2
     exit 1
   fi
   sleep 2
 done
-
-# Quiet on purpose: PocketBase confirms the upsert by echoing the account's address, and the
-# summary below already says the server is up.
-run_quietly "Configuring the PocketBase superuser" \
-  compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" \
-  exec -T pocketbase /pb/pocketbase superuser upsert "$ACERVO_PB_SUPERUSER_EMAIL" "$ACERVO_PB_SUPERUSER_PASSWORD"
 
 printf '%s\n' "$release_dir" >"$acervo_root/current-release"
 echo "Acervo Anki sync server is healthy at $bind_address:$anki_port"

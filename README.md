@@ -1,8 +1,8 @@
 # Acervo
 
-Acervo is a self-hosted, offline-first store for vocabulary chosen by one learner. PocketBase holds
-the durable owner-scoped copy; the PWA and native macOS host keep a complete IndexedDB replica so
-vocabulary remains readable and editable without a network connection.
+Acervo is a self-hosted, offline-first store for vocabulary chosen by one learner. One Python
+service holds the durable owner-scoped copy; the PWA and native macOS host keep a complete IndexedDB
+replica so vocabulary remains readable and editable without a network connection.
 
 Words are added by pasting a word, or the sentence it was met in: the entry is written for you,
 shown for review, and kept in an inbox until you approve it. A word already in the store is
@@ -22,7 +22,7 @@ The canonical graph separates eight records with different lifetimes:
 - `imagePrompt` — a regenerable prompt associated with a lexeme or sense;
 - `studyState` — statistics reported by an external learning system.
 
-Every record uses a client-generated PocketBase-compatible ID, belongs to one account, and carries
+Every record uses a client-generated 15-character ID, belongs to one account, and carries
 replication-ready edit metadata. Markdown vocabulary files and extended-article JSON are not
 application storage formats.
 
@@ -53,32 +53,38 @@ Run the application stack locally with:
 ./deploy.sh --local --configure-credentials
 ```
 
-PocketBase creates accounts only through its administration interface. Self-registration is
-disabled. The application API exposes password login and token refresh; vocabulary collections are
-not exposed through generic public CRUD routes.
+Self-registration is disabled and there is no superuser. Accounts are made one at a time, with the
+password read from the terminal:
+
+```bash
+./deploy.sh --local --create-account
+```
+
+The API exposes password login and token refresh; there is no generic CRUD surface over the
+vocabulary at all — the graph routes are the only way in or out.
 
 ## Disposable demonstration data
 
-After creating an Acervo user in PocketBase, insert five owner-scoped demonstration entries with:
+Once an account exists, insert owner-scoped demonstration entries with:
 
 ```bash
-python scripts/seed_acervo_demo.py \
-  --server-url https://acervo.example.com \
-  --owner-email learner@account.example.com
+docker exec -i acervo-server-1 \
+  python -m acervo.admin seed --owner-email learner@account.example.com
 ```
 
-The command prompts for PocketBase superuser credentials, stores none of them, and is idempotent.
-The sample graph includes thirteen editable starter topics plus five lexemes covering multilingual
-glosses, phrases, attestations, generated examples, prompts, study statistics, and a Chinese reading.
+It writes through the service layer rather than over HTTP, so it needs no password, and it is
+idempotent: a second run skips what the account already holds. The sample graph includes thirteen
+editable starter topics plus fifteen lexemes covering multilingual glosses, phrases, attestations,
+generated examples, prompts, study statistics, and a Chinese reading.
 
 ## Components
 
 - `web/src/domain.ts` — canonical TypeScript records and runtime validation.
 - `web/src/localDatabase.ts` — IndexedDB replica and atomic storage operations.
 - `web/src/repository.ts` — offline CRUD, tombstones, and pending markers.
-- `deploy/acervo/pocketbase/` — the server today: canonical schema in `pb_migrations/`, and
-  validation, authentication, health, the graph routes and capture in `pb_hooks/`. Being replaced by
-  a Python service; see [the server design](docs/acervo-server.md).
+- `src/acervo/` — the server: the canonical schema, the graph routes, capture, the dictionary
+  routes, auth and the static surfaces. See [the server design](docs/acervo-server.md).
+- `deploy/acervo/server/` — the image it ships in.
 - `src/acervo/dictionaries/` — the external-dictionary compiler.
 - `src/acervo/images/` — the sense-image generation pipeline.
 - `src/acervo/anki_sync/` — headless Anki consumer infrastructure.

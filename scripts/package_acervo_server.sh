@@ -8,7 +8,7 @@ temporary=$(mktemp -d "${TMPDIR:-/tmp}/acervo-server-package.XXXXXX")
 bundle="$temporary/release"
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 
-if [ ! -f "$repo_root/deploy/acervo/pocketbase/pb_public/manifest.webmanifest" ]; then
+if [ ! -f "$repo_root/deploy/acervo/server/web/manifest.webmanifest" ]; then
   echo "Staged Acervo PWA is missing. Run npm run stage:pwa first." >&2
   exit 1
 fi
@@ -20,7 +20,8 @@ for directory in deploy dictionaries docs prompts requirements scripts src templ
   rsync -a --exclude .DS_Store --exclude __pycache__ --exclude '*.pyc' --exclude 'llm.env' \
     "$repo_root/$directory/" "$bundle/$directory/"
 done
-cp "$repo_root/package.json" "$bundle/package.json"
+# The server image installs the package from the bundle, so its build files travel too.
+cp "$repo_root/package.json" "$repo_root/pyproject.toml" "$repo_root/README.md" "$bundle/"
 
 cat >"$bundle/version.json" <<EOF
 { "version": "$ACERVO_APP_VERSION", "build": "$ACERVO_APP_BUILD" }
@@ -62,7 +63,7 @@ if [ "${ACERVO_INCLUDE_DICTIONARIES:-true}" = true ] && [ -d "$dictionary_artifa
   echo "Bundling $bundled compiled dictionaries ($size). Set ACERVO_INCLUDE_DICTIONARIES=false to skip." >&2
 fi
 
-archive_entries="deploy dictionaries docs prompts requirements scripts src templates package.json version.json"
+archive_entries="deploy dictionaries docs prompts requirements scripts src templates package.json pyproject.toml README.md version.json"
 [ ! -d "$bundle/downloads" ] || archive_entries="$archive_entries downloads"
 [ ! -d "$bundle/dictionary-artifacts" ] || archive_entries="$archive_entries dictionary-artifacts"
 

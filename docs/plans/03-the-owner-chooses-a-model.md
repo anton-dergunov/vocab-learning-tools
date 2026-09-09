@@ -71,7 +71,7 @@ something a headless transport can assert. An iOS Shortcut should not be able to
 
 Adding a collection means changing the canonical bootstrap migration, and PocketBase records applied
 migrations by filename, so an existing database ignores a rewritten one. `./deploy.sh
---reset-pocketbase` is the supported path and this plan's first implementation step is to export.
+--reset-database` is the supported path and this plan's first implementation step is to export.
 
 That is a real cost and it is worth naming why it is accepted rather than adding a second migration
 file: the bootstrap migration is defined as canonical, and a schema assembled from a chain of
@@ -214,7 +214,7 @@ tombstone to keep.
 ## Acceptance tests and verification
 
 ```bash
-npm run test:hooks
+.venv/bin/python -m pytest tests/unit/server
 npm --prefix web run test
 npm --prefix web run build
 npm run test:mac
@@ -244,7 +244,7 @@ Web cases in `ModelPanel.test.tsx`, following `DictionaryPanel.test.tsx`:
 Live, and this is the test that matters:
 
 ```bash
-# after ./deploy.sh --reset-pocketbase and re-creating the account:
+# after ./deploy.sh --reset-database and re-creating the account:
 #  · Settings ▸ Models lists every catalogue row, with the uncredentialed ones marked
 #  · put cloudflare first, save
 #  · Add ▸ capture a word — WITHOUT redeploying or restarting anything

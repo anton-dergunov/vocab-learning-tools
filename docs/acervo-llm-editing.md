@@ -805,7 +805,7 @@ npm --prefix web run test         # articleEdit.test.ts is the new one that matt
                                   #  · a proposal touching over half the records refused
                                   #  · parseArticle(yamlForDraft(applyOps(…))) round-trips
                                   #  · diffDrafts marks added / changed / removed by id
-npm run test:hooks                # the chat hook against stubbed PocketBase globals:
+.venv/bin/python -m pytest tests/unit/server  # the chat route against a temporary database:
                                   #  · no key → capture_unavailable, nothing else attempted
                                   #  · transcript truncated to 8; document and reference capped
                                   #  · a reference subject never returns ops

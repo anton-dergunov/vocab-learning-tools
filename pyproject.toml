@@ -21,6 +21,17 @@ dependencies = [
 anki = ["anki==26.8.1"]
 dictionaries = ["pyglossary==5.4.2", "lxml"]
 benchmark = ["cairosvg>=2.9.0"]
+# Kept in step with requirements/server.txt, which is what the server image installs.
+server = [
+    "alembic>=1.16",
+    "argon2-cffi>=25.1",
+    "fastapi>=0.121",
+    "httpx>=0.28",
+    "pyjwt>=2.10",
+    "pydantic-settings>=2.7",
+    "sqlalchemy>=2",
+    "uvicorn[standard]>=0.34",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

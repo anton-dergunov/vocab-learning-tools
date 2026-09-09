@@ -225,7 +225,7 @@ release directories and survive upgrades.
 
 `--reset-data` is destructive and requires typing `RESET ACERVO DATA`. It is not
 needed for upgrades. It covers the Anki collections only; the separate
-`--reset-pocketbase` rebuilds the vocabulary database and leaves review history
+`--reset-database` rebuilds the vocabulary database and leaves review history
 alone.
 
 ## Manifest contract

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import tarfile
 from pathlib import Path
@@ -93,8 +94,7 @@ def deployment_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
     secrets = root / "secrets.env"
     secrets.write_text(
         "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n"
-        "ACERVO_PB_SUPERUSER_EMAIL=admin@account.example.com\n"
-        "ACERVO_PB_SUPERUSER_PASSWORD=pb-password\n",
+        "ACERVO_JWT_SECRET='a-durable-signing-secret'\n",
         encoding="utf-8",
     )
     secrets.chmod(0o600)
@@ -133,10 +133,10 @@ def test_local_deployment_preserves_data_backs_up_and_rotates(tmp_path: Path) ->
     (server / "media.db").write_bytes(b"media-index-v1")
     sentinel = server / "media-sentinel"
     sentinel.write_text("keep", encoding="utf-8")
-    pocketbase = root / "data" / "pocketbase"
-    pocketbase.mkdir(parents=True)
-    pocketbase_sentinel = pocketbase / "data.db"
-    pocketbase_sentinel.write_bytes(b"pocketbase-v1")
+    vocabulary = root / "data" / "server"
+    vocabulary.mkdir(parents=True)
+    vocabulary_sentinel = vocabulary / "acervo.db"
+    vocabulary_sentinel.write_bytes(b"vocabulary-v1")
     backups = root / "backups"
     backups.mkdir()
     for index in range(11):
@@ -146,7 +146,7 @@ def test_local_deployment_preserves_data_backs_up_and_rotates(tmp_path: Path) ->
 
     assert result.returncode == 0, result.stderr
     assert sentinel.read_text(encoding="utf-8") == "keep"
-    assert pocketbase_sentinel.read_bytes() == b"pocketbase-v1"
+    assert vocabulary_sentinel.read_bytes() == b"vocabulary-v1"
     assert len([path for path in backups.iterdir() if path.is_dir()]) == 10
     assert any(
         path.name == "collection.anki2" and path.read_bytes() == b"collection-v1"
@@ -236,9 +236,11 @@ def test_release_archive_excludes_deployment_secrets(tmp_path: Path) -> None:
     assert "deploy/acervo/llm.env" not in members
     assert "deploy/acervo/secrets.env.example" in members
     assert "deploy/acervo/llm.env.example" in members
-    assert "deploy/acervo/pocketbase/pb_public/manifest.webmanifest" in members
-    assert "deploy/acervo/pocketbase/pb_hooks/acervo.js" in members
-    assert "deploy/acervo/pocketbase/pb_migrations/1787868000_acervo_core.js" in members
+    assert "deploy/acervo/server/web/manifest.webmanifest" in members
+    assert "deploy/acervo/server/Dockerfile" in members
+    # The image installs the package out of the bundle, so its build files travel with it.
+    assert "src/acervo/api/app.py" in members
+    assert "pyproject.toml" in members
     assert "version.json" in members
 
 
@@ -286,7 +288,7 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
         ],
         cwd=REPO_ROOT,
         env=env,
-        input="sync-user\ntest-password\nadmin@account.example.com\npb-password\n",
+        input="sync-user\ntest-password\n",
         text=True,
         capture_output=True,
         check=False,
@@ -296,7 +298,7 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
     with tarfile.open(release_upload) as package:
         assert "deploy/acervo/compose.yaml" in package.getnames()
     assert credential_upload.read_text(encoding="utf-8") == (
-        "sync-user\ntest-password\nadmin@account.example.com\npb-password\n"
+        "sync-user\ntest-password\n"
     )
     commands = ssh_log.read_text(encoding="utf-8")
     assert "cat > /tmp/acervo-credentials-" in commands
@@ -363,7 +365,7 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
     root = tmp_path / "acervo"
     credential_file = tmp_path / "credentials"
     credential_file.write_text(
-        "sync-user\ntest-password\nadmin@account.example.com\npb-password\n",
+        "sync-user\ntest-password\n",
         encoding="utf-8",
     )
     credential_file.chmod(0o600)
@@ -394,12 +396,12 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
     )
 
     assert result.returncode == 0, result.stderr
-    assert (root / "secrets.env").read_text(encoding="utf-8") == (
-        "ACERVO_ANKI_SYNC_USERNAME='sync-user'\n"
-        "ACERVO_ANKI_SYNC_PASSWORD='test-password'\n"
-        "ACERVO_PB_SUPERUSER_EMAIL='admin@account.example.com'\n"
-        "ACERVO_PB_SUPERUSER_PASSWORD='pb-password'\n"
+    written = (root / "secrets.env").read_text(encoding="utf-8")
+    assert written.startswith(
+        "ACERVO_ANKI_SYNC_USERNAME='sync-user'\nACERVO_ANKI_SYNC_PASSWORD='test-password'\n"
     )
+    # Minted here and kept, because regenerating it signs out every device.
+    assert re.search(r"^ACERVO_JWT_SECRET='[A-Za-z0-9]{16,}'$", written, flags=re.MULTILINE)
     # A model credential belongs in llm.env and nowhere else: compose passes llm.env last, so a key
     # defined in both files has a silent loser, which is what took capture down.
     assert "GEMINI_API_KEY" not in (root / "secrets.env").read_text(encoding="utf-8")
@@ -408,7 +410,7 @@ def test_installer_accepts_streamed_credential_file_and_network_options(
     assert "ACERVO_ANKI_PORT=27801\n" in deployment
     assert "ACERVO_APP_BIND_ADDRESS=127.0.0.1\n" in deployment
     assert "ACERVO_APP_PORT=27802\n" in deployment
-    assert f"ACERVO_PB_DATA={root}/data/pocketbase\n" in deployment
+    assert f"ACERVO_SERVER_DATA={root}/data/server\n" in deployment
     assert f"ACERVO_DOWNLOADS={root}/downloads\n" in deployment
 
 
@@ -436,6 +438,47 @@ def test_installer_moves_a_model_key_out_of_secrets_env(tmp_path: Path) -> None:
     assert "GEMINI_API_KEY=stranded-key\n" in (root / "llm.env").read_text(encoding="utf-8")
     # The move happens once and leaves nothing behind to move again.
     assert (root / "llm.env").read_text(encoding="utf-8").count("GEMINI_API_KEY") == 1
+
+
+def test_installer_strips_the_retired_superuser_pair_and_mints_a_signing_secret(
+    tmp_path: Path,
+) -> None:
+    """An already-deployed secrets.env carries a superuser that no longer exists, and the installer
+    used to hard-fail without one. The strip erases itself; the signing secret is minted once and
+    kept, because regenerating it signs out every device."""
+    env, root = deployment_env(tmp_path)
+    secrets = root / "secrets.env"
+    secrets.write_text(
+        "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n"
+        "ACERVO_PB_SUPERUSER_EMAIL=admin@account.example.com\n"
+        "ACERVO_PB_SUPERUSER_PASSWORD=pb-password\n",
+        encoding="utf-8",
+    )
+
+    def deploy() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                str(REPO_ROOT / "deploy/acervo/install.sh"),
+                "--root", str(root),
+                "--bind-address", "127.0.0.1", "--port", "27701",
+                "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+            ],
+            cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+        )
+
+    result = deploy()
+    assert result.returncode == 0, result.stderr
+    written = secrets.read_text(encoding="utf-8")
+    assert "ACERVO_PB_SUPERUSER" not in written
+    assert "ACERVO_ANKI_SYNC_PASSWORD=password" in written
+    minted = re.search(r"^ACERVO_JWT_SECRET='([A-Za-z0-9]{16,})'$", written, flags=re.MULTILINE)
+    assert minted, written
+
+    # A second deployment neither re-strips nor re-mints: a new secret would sign out every device.
+    assert deploy().returncode == 0
+    again = secrets.read_text(encoding="utf-8")
+    assert again.count("ACERVO_JWT_SECRET") == 1
+    assert minted.group(1) in again
 
 
 def run_configure_llm(tmp_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -601,8 +644,7 @@ def test_remote_helper_runs_the_packaged_installer_from_standard_input(tmp_path:
     secrets = root / "secrets.env"
     secrets.write_text(
         "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n"
-        "ACERVO_PB_SUPERUSER_EMAIL=admin@account.example.com\n"
-        "ACERVO_PB_SUPERUSER_PASSWORD=pb-password\n",
+        "ACERVO_JWT_SECRET='a-durable-signing-secret'\n",
         encoding="utf-8",
     )
     secrets.chmod(0o600)
@@ -1004,7 +1046,7 @@ def test_acervo_wide_defaults_are_not_anki_named() -> None:
 def test_app_and_anki_ports_are_distinct_and_collisions_are_rejected(tmp_path: Path) -> None:
     compose = (REPO_ROOT / "deploy/acervo/compose.yaml").read_text(encoding="utf-8")
     assert "${ACERVO_ANKI_PORT:-27701}:8080" in compose
-    assert "${ACERVO_APP_PORT:-27702}:8090" in compose
+    assert "${ACERVO_APP_PORT:-27702}:8000" in compose
 
     env, _ = deployment_env(tmp_path)
     result = subprocess.run(

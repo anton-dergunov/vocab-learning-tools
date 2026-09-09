@@ -22,8 +22,8 @@ old_prototypes/
 /web/node_modules/
 /web/dist/
 # Generated PWA staging area populated by `npm run stage:pwa` before deployment.
-/deploy/acervo/pocketbase/pb_public/*
-!/deploy/acervo/pocketbase/pb_public/.gitkeep
+/deploy/acervo/server/web/*
+!/deploy/acervo/server/web/.gitkeep
 /DerivedData/
 /macos/Acervo.xcodeproj/
 /macos/Resources/Assets.xcassets/

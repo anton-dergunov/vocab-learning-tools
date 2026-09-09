@@ -147,7 +147,7 @@ forever. Two fields close it, and they are the only schema change this design ne
 | `attempts` | int | Drawing attempts made. The sweep skips a row past a threshold. |
 | `failureReason` | string? | Last refusal or error, in the provider's words. Null on success. |
 
-> **This change requires `--reset-pocketbase`, which destroys the database.** It must not happen
+> **This change requires `--reset-database`, which destroys the database.** It must not happen
 > until the current ingestion has finished and a transfer bundle of the real vocabulary exists.
 > See §10.
 
@@ -390,7 +390,7 @@ already sitting at their final paths.
 | **D** | Article view: render, regenerate, delete; the two style settings | | C |
 | **E** | Anki cards, one per example, with the sense image | | D and the Anki generator, which does not exist |
 
-The ordering constraint that matters: **C requires `--reset-pocketbase`, which destroys the
+The ordering constraint that matters: **C requires `--reset-database`, which destroys the
 database.** The sequence is finish ingesting → export a bundle → verify the bundle imports into a
 throwaway database → only then change the schema. Nothing about the image work justifies risking
 1,500 hand-collected entries.

@@ -48,14 +48,14 @@ conversation state, no tool use. Anything grander than that is not being paid fo
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
-| [08 · The Python server](08-the-python-server.md) | Phase 0 complete, 1–4 planned | — | PocketBase and `pb_hooks/` are deleted; one FastAPI service serves the same wire contract, so the client does not change |
+| [08 · The Python server](08-the-python-server.md) | Phases 0–2 complete; 3 mostly, 4 planned | — | PocketBase and `pb_hooks/` are deleted; one FastAPI service serves the same wire contract, and the client did not change |
 
 ### Stage 3 · One provider model
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
 | [02 · One wire shape and one catalogue](02-one-wire-shape-and-one-catalogue.md) | **Superseded** by 08 | — | Kept for its diagnosis and provider research. Its surviving content moved into 04 |
-| [04 · One Python provider package](04-one-python-provider-package.md) | Planned (re-aimed) | 08 phase 2 | `src/acervo/models/` is the single way to call a model, for the request path and batch alike, over LiteLLM |
+| [04 · One Python provider package](04-one-python-provider-package.md) | Planned (re-aimed), **unblocked** | 08 phase 2 | `src/acervo/models/` is the single way to call a model, for the request path and batch alike, over LiteLLM |
 | [03 · The owner chooses a model](03-the-owner-chooses-a-model.md) | Planned (re-aimed) | 04 | Settings ▸ Models picks the provider chain per kind; it takes effect on the next capture with no restart |
 
 ### Stage 4 · The other two kinds

@@ -1,0 +1,190 @@
+"""Turning the model's answer into an ArticleDraft.
+
+The exact shape `web/src/yaml.ts` reads, so the review surface renders a generated entry through the
+same serialiser as a stored one. Ids are minted here rather than left absent, because an example has
+to name the attestation it was drawn from and both are created by the same save.
+
+This is the highest-risk block in the whole capture path. Every guard below is deliberate.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from acervo.domain.ids import new_record_id, now_instant
+from acervo.domain.validation import (
+    GENDER_VALUES,
+    POS_VALUES,
+    REGISTER_VALUES,
+    SOURCE_KIND_VALUES,
+)
+from acervo.errors import ApiError
+from acervo.services.capture.coerce import (
+    language_or_none,
+    pick_choice,
+    pick_optional_choice,
+    text_list,
+    trimmed,
+)
+
+
+def _from_sentence(claimed: Any, attestations: list[dict[str, Any]]) -> dict[str, Any] | None:
+    # `Number(null)` is 0, so a plain numeric read here would take "I invented this" for "this is
+    # sentence 0" and quietly credit the learner with every example the model wrote.
+    if claimed is None or claimed == "":
+        return None
+    if isinstance(claimed, bool) or not isinstance(claimed, (int, float)):
+        return None
+    if claimed != int(claimed):
+        return None
+    index = int(claimed)
+    if index < 0 or index >= len(attestations):
+        return None
+    return attestations[index]
+
+
+def draft_from(
+    answer: dict[str, Any],
+    resolution: dict[str, Any],
+    request: dict[str, Any],
+    vocabulary: dict[str, Any],
+    topics: list[dict[str, Any]],
+    model_id: str,
+) -> dict[str, Any]:
+    captured_at = now_instant()
+    topic_names = {topic["name"].lower(): topic["name"] for topic in topics}
+
+    source_url = trimmed(request.get("sourceUrl")) or None
+    attestations = [
+        {
+            "id": new_record_id(),
+            "text": sentence["text"],
+            "translation": sentence["translation"],
+            "sourceUrl": source_url,
+            "sourceTitle": trimmed(request.get("sourceTitle")) or None,
+            "sourceKind": pick_choice(
+                request.get("sourceKind"), SOURCE_KIND_VALUES, "web" if source_url else "unknown"
+            ),
+            "capturedAt": captured_at,
+        }
+        for sentence in resolution["sentences"]
+    ]
+
+    gloss_langs = vocabulary["glossLangs"]
+    senses: list[dict[str, Any]] = []
+    for index, raw in enumerate(answer.get("senses") or []):
+        if not isinstance(raw, dict):
+            continue
+        definition = trimmed(raw.get("definition"))
+        if not definition:
+            continue
+
+        glosses: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for gloss in raw.get("glosses") or []:
+            if not isinstance(gloss, dict):
+                continue
+            lang = language_or_none(gloss.get("lang"))
+            terms = text_list(gloss.get("terms"))
+            if not lang or not terms or lang in seen:
+                continue
+            seen.add(lang)
+            glosses.append({"lang": lang, "terms": terms})
+        # A sense without a gloss is refused by the record validator, so rather than lose the sense,
+        # fall back to the headword in the language the learner asked to be glossed into.
+        if not glosses:
+            glosses.append({"lang": gloss_langs[0] if gloss_langs else "en", "terms": [resolution["headword"]]})
+
+        examples: list[dict[str, Any]] = []
+        for example in raw.get("examples") or []:
+            if not isinstance(example, dict):
+                continue
+            text = trimmed(example.get("text"))
+            if not text:
+                continue
+            translation = trimmed(example.get("translation")) or None
+            attestation = _from_sentence(example.get("fromSentence"), attestations)
+            matched_form = trimmed(example.get("matchedForm")) or None
+            matched_translation = trimmed(example.get("matchedTranslationForm")) or None
+            examples.append(
+                {
+                    "id": new_record_id(),
+                    "text": text,
+                    "textLang": resolution["language"],
+                    "translation": translation,
+                    "translationLang": (gloss_langs[0] if gloss_langs else "en") if translation else None,
+                    # What makes an example the learner's own rather than the model's, and what the
+                    # Obsidian export reads to mark it as such. A generated one carries the model
+                    # that wrote it instead.
+                    "origin": "attestation" if attestation else "llm",
+                    "sourceAttestationId": attestation["id"] if attestation else None,
+                    "modelId": None if attestation else model_id,
+                    "videoRef": None,
+                    "videoTitle": None,
+                    "videoStart": None,
+                    "imageRef": None,
+                    "audioRef": None,
+                    "note": trimmed(example.get("note")) or None,
+                    # The validator requires these to occur verbatim in the text they mark. A model
+                    # that retypes an inflected form instead of copying it would otherwise refuse the
+                    # whole batch.
+                    "matchedForm": matched_form if matched_form and matched_form in text else None,
+                    "matchedTranslationForm": matched_translation
+                    if matched_translation and translation and matched_translation in translation
+                    else None,
+                    "approved": False,
+                }
+            )
+
+        senses.append(
+            {
+                "id": new_record_id(),
+                "order": len(senses),
+                "definition": definition,
+                "definitionLang": language_or_none(raw.get("definitionLang")) or vocabulary["definitionLang"],
+                "glosses": glosses,
+                "domain": trimmed(raw.get("domain")) or None,
+                "examples": examples,
+                "images": [],
+            }
+        )
+
+    if not senses:
+        raise ApiError(
+            502, "llm_unusable", "The language model returned an entry with no meanings, so nothing was created."
+        )
+
+    reading = trimmed(answer.get("reading")) or None
+    # Chinese records are refused without a reading. Saying which field is missing beats letting the
+    # save fail later with a validation message about a field nobody was shown.
+    if resolution["language"].lower().startswith("zh") and not reading:
+        raise ApiError(
+            502,
+            "llm_unusable",
+            "The language model returned a Chinese entry with no reading, so nothing was created.",
+        )
+
+    return {
+        "id": None,
+        "language": resolution["language"],
+        "headword": trimmed(answer.get("headword")) or resolution["headword"],
+        "lemma": trimmed(answer.get("lemma")) or resolution["lemma"],
+        "reading": reading,
+        "ipa": trimmed(answer.get("ipa")) or None,
+        "pos": pick_choice(answer.get("pos"), POS_VALUES, resolution["pos"]),
+        "gender": pick_optional_choice(answer.get("gender"), GENDER_VALUES),
+        "register": pick_optional_choice(answer.get("register"), REGISTER_VALUES),
+        "dialect": language_or_none(answer.get("dialect")),
+        "emoji": trimmed(answer.get("emoji"))[:32] or None,
+        # Only topics this owner actually holds. `saveArticle` refuses an unknown name, and inventing
+        # one here would turn a good entry into an error the learner has to decode.
+        "topics": [
+            topic_names[name.lower()] for name in text_list(answer.get("topics")) if name.lower() in topic_names
+        ],
+        "status": "inbox",
+        "shortGloss": trimmed(answer.get("shortGloss")) or None,
+        "notes": text_list(answer.get("notes")),
+        "senses": senses,
+        "attestations": attestations,
+        "images": [],
+    }

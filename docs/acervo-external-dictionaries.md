@@ -527,9 +527,9 @@ pyglossary --read-format=Stardict --write-format=Html eng-rus.ifo eng-rus.html
   --words picar,desmayarse,balsa --compare-mapper wiktextract-es
 
 # Stage 2 onward — the invariant that matters
-npm --prefix web run test && npm run test:hooks
+npm --prefix web run test && .venv/bin/python -m pytest tests/unit/server
 npm --prefix web run build && npm run test:pwa
-#  · install a dictionary, then stop PocketBase → lookup and search must still work
+#  · install a dictionary, then stop the server → lookup and search must still work
 #  · no dictionary installed and the server down → the section reports unavailable,
 #    the local list is unaffected, nothing is written
 #  · DevTools → Application → Storage: confirm persisted=true and usage after install

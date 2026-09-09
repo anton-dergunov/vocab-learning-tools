@@ -1,0 +1,351 @@
+"""The owner-scoped graph: the cursor, revision allocation, the merge, and the tombstone sweep.
+
+One strictly increasing sequence per owner, shared by all eight tables and never one per table. A
+record left at revision zero is invisible to every `revision > cursor` pull, permanently and
+silently — the failure has no symptom until someone notices a word missing on another device weeks
+later. The hook this replaces allocated in a save hook because the write route was not the only
+writer; with the database in this process it collapses into one function every writer calls.
+
+The sequence row's *id* is the dataset identity. Rebuilding the database mints a new one, which is
+the only thing that stops a client asking for revisions the new database has not reached yet.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from sqlalchemy import Connection, func, or_, select
+
+from acervo.db import tables
+from acervo.db.tables import TABLES
+from acervo.domain import validation
+from acervo.domain.ids import DEVICE_ID, is_instant, is_record_id, new_record_id, now_instant
+from acervo.domain.projection import COLLECTIONS, WORD_COLLECTIONS, Collection, projected
+from acervo.errors import ApiError, RecordRefused
+from acervo.repository.session import reading, transaction
+from acervo.settings import SCHEMA_VERSION
+
+
+# ── the cursor ──────────────────────────────────────────────────────────────
+
+
+def _read_sequence(connection: Connection, owner: str) -> Mapping[str, Any] | None:
+    return connection.execute(
+        select(tables.sync_state).where(tables.sync_state.c.owner == owner)
+    ).mappings().first()
+
+
+def ensure_sequence(connection: Connection, owner: str) -> Mapping[str, Any]:
+    """The owner's cursor row, created if this account somehow has none.
+
+    `accounts.create` makes it, which is what lets a pull be a pure read. This exists for the account
+    that predates that — it costs a write only in a case that should not happen, rather than on the
+    most frequent request in the system.
+    """
+    row = _read_sequence(connection, owner)
+    if row is not None:
+        return row
+    connection.execute(
+        tables.sync_state.insert().values(id=new_record_id(), owner=owner, sequence=0)
+    )
+    return _read_sequence(connection, owner)  # type: ignore[return-value]
+
+
+def allocate_revision(connection: Connection, owner: str) -> int:
+    """Take this owner's next revision, in the transaction that writes the record it numbers."""
+    row = ensure_sequence(connection, owner)
+    following = int(row["sequence"]) + 1
+    connection.execute(
+        tables.sync_state.update()
+        .where(tables.sync_state.c.id == row["id"])
+        .values(sequence=following)
+    )
+    return following
+
+
+# ── reading ─────────────────────────────────────────────────────────────────
+
+
+def _owner_records(
+    connection: Connection, collection: Collection, owner: str, since: int
+) -> list[dict[str, Any]]:
+    table = collection.table
+    rows = connection.execute(
+        select(table)
+        .where(table.c.owner == owner, table.c.revision > since)
+        .order_by(table.c.revision)
+    ).mappings()
+    return [projected(collection, row) for row in rows]
+
+
+def _envelope(connection: Connection, owner: str, sequence: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "datasetId": sequence["id"],
+        "cursor": int(sequence["sequence"]),
+        "serverTime": now_instant(),
+    }
+
+
+def pull(owner: str, since: int) -> dict[str, Any]:
+    """Everything this owner holds past `since`, in revision order. Tombstones included."""
+    with reading() as connection:
+        sequence = _read_sequence(connection, owner)
+    if sequence is None:
+        with transaction() as connection:
+            sequence = ensure_sequence(connection, owner)
+    with reading() as connection:
+        return {
+            **_envelope(connection, owner, sequence),
+            "changes": {
+                collection.key: _owner_records(connection, collection, owner, since)
+                for collection in COLLECTIONS
+            },
+        }
+
+
+# ── writing ─────────────────────────────────────────────────────────────────
+
+
+def require_device(value: Any) -> str:
+    device = "" if value is None else str(value).strip()
+    if not DEVICE_ID.match(device):
+        raise ApiError(400, "invalid_input", "A valid device identifier is required.")
+    return device
+
+
+def require_schema_version(value: Any) -> None:
+    try:
+        given = int(value)
+    except (TypeError, ValueError):
+        given = -1
+    if given != SCHEMA_VERSION:
+        raise ApiError(
+            409,
+            "schema_version_mismatch",
+            "This copy of Acervo is out of date and cannot synchronise. Update the app to continue.",
+        )
+
+
+def _require_instant(value: Any, label: str) -> str:
+    instant = "" if value is None else str(value).strip()
+    if not is_instant(instant):
+        raise ApiError(
+            400, "invalid_input", f"{label} must be an ISO-8601 UTC timestamp with milliseconds."
+        )
+    return instant
+
+
+def _owned_or_free(
+    connection: Connection, collection: Collection, owner: str, identifier: str
+) -> Mapping[str, Any] | None:
+    """The record this owner holds under `id`, or None. An id held by somebody else is a hard stop."""
+    table = collection.table
+    owned = connection.execute(
+        select(table).where(table.c.id == identifier, table.c.owner == owner)
+    ).mappings().first()
+    if owned is not None:
+        return owned
+    # The second lookup. Skipping it is a silent cross-owner write.
+    foreign = connection.execute(
+        select(table.c.id).where(table.c.id == identifier)
+    ).first()
+    if foreign is not None:
+        raise ApiError(400, "id_conflict", "That record identifier is already in use.")
+    return None
+
+
+def _lookup(connection: Connection):
+    def find(name: str, identifier: str) -> Mapping[str, Any] | None:
+        table = TABLES[name]
+        return connection.execute(
+            select(table).where(table.c.id == identifier)
+        ).mappings().first()
+
+    return find
+
+
+def merge_record(
+    connection: Connection,
+    collection: Collection,
+    owner: str,
+    device: str,
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Apply one client record.
+
+    The whole batch is refused if anything here raises: a save is one article, and half an article is
+    worse than none.
+    """
+    identifier = str(value.get("id") or "").strip()
+    if not is_record_id(identifier):
+        raise ApiError(400, "invalid_input", "Record ids must be 15 lowercase letters or digits.")
+    stored = _owned_or_free(connection, collection, owner, identifier)
+    try:
+        claimed = int(value.get("revision") or 0)
+    except (TypeError, ValueError):
+        claimed = 0
+    if stored is not None:
+        if claimed != int(stored["revision"]):
+            raise ApiError(
+                409,
+                "stale_record",
+                "This entry was changed somewhere else. Refresh to see the current version, then "
+                "try again.",
+            )
+    elif claimed != 0:
+        # The client believes it is editing a record this database has never held. Nothing is ever
+        # hard-deleted, so this means its cursor belongs to a different database.
+        raise ApiError(
+            409, "stale_record", "This entry no longer exists on the server. Refresh and try again."
+        )
+
+    row: dict[str, Any] = {
+        "id": identifier,
+        "owner": owner,
+        # Set once, at insert, and never touched again.
+        "created_at": stored["created_at"] if stored is not None
+        else _require_instant(value.get("createdAt"), "Creation timestamp"),
+        **collection.assign(value),
+        "deleted": value.get("deleted") is True,
+        "edited_at": _require_instant(value.get("editedAt"), "Change timestamp"),
+        "edited_by": device,
+    }
+
+    try:
+        validation.validate(collection.name, row, _lookup(connection))
+    except RecordRefused as refusal:
+        # The caller's mistake, not the server's, and it must abort the whole batch.
+        raise ApiError(
+            400, "invalid_record", f"{collection.key} {identifier}: {refusal}"
+        ) from refusal
+
+    row["revision"] = allocate_revision(connection, owner)
+    table = collection.table
+    if stored is None:
+        connection.execute(table.insert().values(**row))
+    else:
+        connection.execute(table.update().where(table.c.id == identifier).values(**row))
+    return projected(collection, row)
+
+
+def merge_graph(owner: str, device: str, changes: Mapping[str, Any]) -> dict[str, Any]:
+    """Apply a change set in graph order, so a record's relations always resolve before it lands."""
+    with transaction() as connection:
+        written = {
+            collection.key: [
+                merge_record(connection, collection, owner, device, value)
+                for value in (changes.get(collection.key) or [])
+                if isinstance(value, Mapping)
+            ]
+            for collection in COLLECTIONS
+        }
+        sequence = ensure_sequence(connection, owner)
+        return {**_envelope(connection, owner, sequence), "records": written}
+
+
+def tombstone_all_words(owner: str, device: str) -> dict[str, Any]:
+    """Tombstone every word and its descendants, retaining language and topic configuration."""
+    at = now_instant()
+    with transaction() as connection:
+        count = 0
+        for collection in WORD_COLLECTIONS:
+            table = collection.table
+            rows = connection.execute(
+                select(table.c.id).where(table.c.owner == owner, table.c.deleted.is_(False))
+            ).scalars().all()
+            for identifier in rows:
+                connection.execute(
+                    table.update()
+                    .where(table.c.id == identifier)
+                    .values(
+                        deleted=True,
+                        edited_at=at,
+                        edited_by=device,
+                        # Each tombstone is a change like any other, so the cursor advances by one
+                        # per record and every device learns about all of them.
+                        revision=allocate_revision(connection, owner),
+                    )
+                )
+                count += 1
+        sequence = ensure_sequence(connection, owner)
+        return {**_envelope(connection, owner, sequence), "deleted": count}
+
+
+# ── what capture needs to know about the owner ──────────────────────────────
+
+
+def owner_vocabularies(owner: str) -> list[dict[str, Any]]:
+    table = tables.vocabularies
+    with reading() as connection:
+        rows = connection.execute(
+            select(table)
+            .where(table.c.owner == owner, table.c.deleted.is_(False))
+            .order_by(table.c.vocab_order)
+        ).mappings()
+        return [
+            {
+                "language": row["language"],
+                "definitionLang": row["definition_lang"],
+                "glossLangs": list(row["gloss_langs"] or []),
+                "notesLang": row["notes_lang"],
+                "displayName": (row["display_name"] or "").strip() or None,
+            }
+            for row in rows
+        ]
+
+
+def owner_topics(owner: str) -> list[dict[str, Any]]:
+    table = tables.topics
+    with reading() as connection:
+        rows = connection.execute(
+            select(table.c.id, table.c.name)
+            .where(table.c.owner == owner, table.c.deleted.is_(False))
+            .order_by(table.c.topic_order)
+        ).mappings()
+        return [{"id": row["id"], "name": row["name"]} for row in rows]
+
+
+def duplicate_lexemes(owner: str, language: str, headword: str, lemma: str) -> list[dict[str, Any]]:
+    """Words this owner already holds under either form.
+
+    Case-insensitive, because the learner types `picar` and the store holds `Picar` just as often.
+    """
+    forms = [form.strip().lower() for form in (headword, lemma) if form and form.strip()]
+    if not forms:
+        return []
+    table = tables.lexemes
+    with reading() as connection:
+        rows = connection.execute(
+            select(table.c.id, table.c.headword, table.c.short_gloss)
+            .where(
+                table.c.owner == owner,
+                table.c.language == language,
+                table.c.deleted.is_(False),
+                or_(
+                    func.lower(table.c.headword).in_(forms),
+                    func.lower(table.c.lemma).in_(forms),
+                ),
+            )
+        ).mappings()
+        return [
+            {
+                "id": row["id"],
+                "headword": row["headword"],
+                "shortGloss": (row["short_gloss"] or "").strip() or None,
+            }
+            for row in rows
+        ]
+
+
+def held_ids(owner: str) -> set[str]:
+    """Every record id this owner already holds, across all eight tables."""
+    found: set[str] = set()
+    with reading() as connection:
+        for collection in COLLECTIONS:
+            table = collection.table
+            found.update(
+                connection.execute(select(table.c.id).where(table.c.owner == owner)).scalars()
+            )
+    return found

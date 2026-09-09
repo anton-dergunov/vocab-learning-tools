@@ -5,13 +5,12 @@
   "scripts": {
     "dev": "npm --prefix web run dev",
     "build:web": "npm --prefix web run build",
-    "stage:pwa": "npm run build:web && ./scripts/stage-pocketbase.sh",
+    "stage:pwa": "npm run build:web && ./scripts/stage-web.sh",
     "package:server": "./scripts/package_release.sh",
-    "server:build": "npm run stage:pwa && docker compose -f deploy/acervo/compose.yaml build pocketbase",
-    "server:up": "npm run stage:pwa && docker compose -f deploy/acervo/compose.yaml up -d --build anki-sync-server pocketbase",
+    "server:build": "npm run stage:pwa && docker compose -f deploy/acervo/compose.yaml build server",
+    "server:up": "npm run stage:pwa && docker compose -f deploy/acervo/compose.yaml up -d --build anki-sync-server server",
     "server:down": "docker compose -f deploy/acervo/compose.yaml down",
     "test:web": "npm --prefix web run test",
-    "test:hooks": "node --test tests/hooks/*.test.mjs",
     "test:pwa": "python3 -B scripts/verify_pwa.py",
     "generate:icons": "python3 -B scripts/generate_acervo_icons.py && python3 -B scripts/generate_app_icons.py",
     "generate:mac": "xcodegen generate --spec macos/project.yml",
@@ -19,6 +18,6 @@
     "package:mac": "./scripts/package_macos_release.sh",
     "run:mac": "./scripts/run_macos.sh",
     "test:mac": "./scripts/test_macos.sh",
-    "test:app": "npm run test:web && npm run test:hooks && npm run build:web && npm run test:pwa && npm run test:mac"
+    "test:app": "npm run test:web && npm run build:web && npm run test:pwa && npm run test:mac"
   }
 }

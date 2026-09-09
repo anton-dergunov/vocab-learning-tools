@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=4
+helper_protocol=5
 
 mode=
 target=
@@ -17,7 +17,7 @@ llm_project=
 llm_location=
 llm_api_key_stdin=false
 reset_data=false
-reset_pocketbase=false
+reset_database=false
 remember=false
 bind_address=
 anki_port=
@@ -32,17 +32,18 @@ usage() {
 usage:
   ./deploy.sh --local [--root PATH] [--bind-address ADDRESS] [--port PORT]
               [--app-bind-address ADDRESS] [--app-port PORT]
-              [--configure-credentials] [--reset-data] [--reset-pocketbase]
+              [--configure-credentials] [--reset-data] [--reset-database]
               [--configure-llm --llm-provider gemini|vertex --llm-model MODEL
                [--llm-project PROJECT] [--llm-location LOCATION] --llm-api-key-stdin]
   ./deploy.sh [--target USER@HOST] [--root PATH] [--configure-credentials]
               [--bind-address ADDRESS] [--port PORT] [--remember-target]
               [--app-bind-address ADDRESS] [--app-port PORT]
-              [--https-port PORT] [--service NAME] [--reset-data] [--reset-pocketbase]
+              [--https-port PORT] [--service NAME] [--reset-data] [--reset-database]
               [--configure-llm --llm-provider gemini|vertex --llm-model MODEL
                [--llm-project PROJECT] [--llm-location LOCATION] --llm-api-key-stdin]
   ./deploy.sh [--target USER@HOST] [--remember-target] --install-helper
   ./deploy.sh [--target USER@HOST] [--https-port PORT | --service NAME] --configure-https
+  ./deploy.sh [--local | --target USER@HOST] --create-account
   ./deploy.sh [--local | --target USER@HOST] --status
 
   --service NAME      publish through the Tailscale service svc:NAME on its own
@@ -50,8 +51,10 @@ usage:
                       for Android to install this app alongside another PWA on
                       the same machine; takes precedence over --https-port
   --reset-data        replace the Anki sync server and robot collections
-  --reset-pocketbase  replace the vocabulary database, so a rewritten bootstrap
-                      migration is applied from scratch; Anki data is untouched
+  --reset-database    replace the vocabulary database from scratch; accounts go with
+                      it and are recreated with --create-account. Anki data is untouched
+  --create-account    create one account on the running server, reading the address
+                      and password from the terminal
   --configure-llm     update only the server's durable llm.env; existing server,
                       Anki and inactive-provider credentials are retained
 EOF
@@ -104,8 +107,9 @@ while [ "$#" -gt 0 ]; do
     --install-helper) choose_action install-helper; shift ;;
     --configure-https) choose_action configure-https; shift ;;
     --status) choose_action status; shift ;;
+    --create-account) choose_action create-account; shift ;;
     --reset-data) reset_data=true; shift ;;
-    --reset-pocketbase) reset_pocketbase=true; shift ;;
+    --reset-database) reset_database=true; shift ;;
     *) usage ;;
   esac
 done
@@ -211,7 +215,7 @@ if [ -n "$service" ]; then
   esac
 fi
 [ "$effective_anki_port" != "$effective_app_port" ] || {
-  echo "The Acervo app/PocketBase port must differ from the Anki sync port" >&2
+  echo "The Acervo app port must differ from the Anki sync port" >&2
   exit 2
 }
 
@@ -221,7 +225,7 @@ fi
 if [ "$configure" = true ] && [ "$action" != deploy ]; then usage; fi
 if [ "$configure_llm" = true ] && [ "$action" != deploy ]; then usage; fi
 if [ "$reset_data" = true ] && [ "$action" != deploy ]; then usage; fi
-if [ "$reset_pocketbase" = true ] && [ "$action" != deploy ]; then usage; fi
+if [ "$reset_database" = true ] && [ "$action" != deploy ]; then usage; fi
 
 if [ "$configure_llm" = false ]; then
   [ -z "$llm_provider$llm_model$llm_project$llm_location" ] && [ "$llm_api_key_stdin" = false ] || usage
@@ -285,13 +289,13 @@ if [ "$reset_data" = true ]; then
   }
 fi
 
-if [ "$reset_pocketbase" = true ]; then
+if [ "$reset_database" = true ]; then
   echo 'This replaces the vocabulary database. Every account, word and revision on the server is'
   echo 'discarded; accounts must be recreated afterwards. Device replicas are not touched, and a'
   echo 'copy of the old database is kept under the deployment backups directory.'
   printf '%s' 'Type RESET ACERVO VOCABULARY to continue: '
-  IFS= read -r reset_pocketbase_confirmation
-  [ "$reset_pocketbase_confirmation" = 'RESET ACERVO VOCABULARY' ] || {
+  IFS= read -r reset_database_confirmation
+  [ "$reset_database_confirmation" = 'RESET ACERVO VOCABULARY' ] || {
     echo "Reset cancelled" >&2
     exit 2
   }
@@ -318,21 +322,27 @@ prompt_credentials() {
   case "$sync_username$sync_password" in
     *:*) echo "Anki sync credentials may not contain a colon" >&2; exit 2 ;;
   esac
-  printf '%s' 'Initial PocketBase superuser email: ' >&2
-  IFS= read -r pb_superuser_email
-  printf '%s' 'Initial PocketBase superuser password: ' >&2
+}
+
+# One account on the running server. `admin.py accounts create` is the only thing that makes one —
+# there is no superuser to have — and it reads the password from stdin, so this streams it straight
+# into the container rather than putting it on a command line.
+prompt_account() {
+  printf '%s' 'Account email address: ' >&2
+  IFS= read -r account_email
+  printf '%s' 'Password (at least 8 characters): ' >&2
   if [ -t 0 ]; then
     stty -echo
     trap 'stty echo' EXIT HUP INT TERM
-    IFS= read -r pb_superuser_password
+    IFS= read -r account_password
     stty echo
     trap - EXIT HUP INT TERM
   else
-    IFS= read -r pb_superuser_password
+    IFS= read -r account_password
   fi
   printf '\n' >&2
-  [ -n "$pb_superuser_email" ] && [ -n "$pb_superuser_password" ] || {
-    echo "PocketBase superuser email and password are required" >&2
+  [ -n "$account_email" ] && [ -n "$account_password" ] || {
+    echo "An email address and a password are required" >&2
     exit 2
   }
 }
@@ -354,12 +364,22 @@ build_release_archive() {
   "$repo_root/scripts/package_acervo_server.sh"
 }
 
+# `admin.py accounts create` reads the password from stdin, so nothing sensitive reaches a command
+# line or a process list. This talks to the container directly rather than through the passwordless
+# helper: widening a NOPASSWD root surface to include account creation is not worth the convenience.
+create_account_command='docker exec -i acervo-server-1 python -m acervo.admin accounts create --email'
+
 if [ "$mode" = local ]; then
+  if [ "$action" = create-account ]; then
+    prompt_account
+    printf '%s\n' "$account_password" | $create_account_command "$account_email"
+    exit $?
+  fi
   if [ "$action" = status ]; then
     docker inspect --format='state={{.State.Status}}, health={{.State.Health.Status}}' acervo-anki-sync-server-1
     docker port acervo-anki-sync-server-1 8080
-    docker inspect --format='state={{.State.Status}}, health={{.State.Health.Status}}' acervo-pocketbase-1
-    docker port acervo-pocketbase-1 8090
+    docker inspect --format='state={{.State.Status}}, health={{.State.Health.Status}}' acervo-server-1
+    docker port acervo-server-1 8000
     exit 0
   fi
   [ -n "$acervo_root" ] || acervo_root=${ACERVO_LOCAL_ROOT:-"$HOME/.acervo"}
@@ -387,9 +407,9 @@ if [ "$mode" = local ]; then
   [ -z "$credential_args" ] || set -- "$@" "$credential_args"
   [ -z "$llm_credentials" ] || set -- "$@" --llm-credentials-file "$llm_credentials"
   [ "$reset_data" = false ] || set -- "$@" --reset-data
-  [ "$reset_pocketbase" = false ] || set -- "$@" --reset-pocketbase
+  [ "$reset_database" = false ] || set -- "$@" --reset-database
   if [ -n "$credential_args" ]; then
-    printf '%s\n%s\n%s\n%s\n' "$sync_username" "$sync_password" "$pb_superuser_email" "$pb_superuser_password" | "$repo_root/deploy/acervo/install.sh" "$@"
+    printf '%s\n%s\n' "$sync_username" "$sync_password" | "$repo_root/deploy/acervo/install.sh" "$@"
   else
     "$repo_root/deploy/acervo/install.sh" "$@"
   fi
@@ -438,12 +458,25 @@ if [ "$action" = status ]; then
       [ -n "$docker_path" ] || docker_path=/var/packages/ContainerManager/target/usr/bin/docker; \
       "$docker_path" inspect --format=state={{.State.Status}},health={{.State.Health.Status}} acervo-anki-sync-server-1 && \
       "$docker_path" port acervo-anki-sync-server-1 8080 && \
-      "$docker_path" inspect --format=state={{.State.Status}},health={{.State.Health.Status}} acervo-pocketbase-1 && \
-      "$docker_path" port acervo-pocketbase-1 8090'
+      "$docker_path" inspect --format=state={{.State.Status}},health={{.State.Health.Status}} acervo-server-1 && \
+      "$docker_path" port acervo-server-1 8000'
   else
     ssh -T "$target" "sudo -n $helper_path status"
   fi
   exit 0
+fi
+
+if [ "$action" = create-account ]; then
+  if [ "$remote_mode" != root ]; then
+    echo "Creating an account needs docker access, which the passwordless launcher deliberately" >&2
+    echo "does not grant. Run this on $target as a user who can reach docker:" >&2
+    echo "  $create_account_command learner@account.example.com" >&2
+    exit 2
+  fi
+  prompt_account
+  printf '%s\n' "$account_password" | ssh -T "$target" \
+    "docker exec -i acervo-server-1 python -m acervo.admin accounts create --email '$account_email'"
+  exit $?
 fi
 
 if [ "$action" = configure-https ]; then
@@ -482,7 +515,7 @@ remote_failed() {
 credential_args=
 if [ "$configure" = true ]; then
   prompt_credentials
-  printf '%s\n%s\n%s\n%s\n' "$sync_username" "$sync_password" "$pb_superuser_email" "$pb_superuser_password" | \
+  printf '%s\n%s\n' "$sync_username" "$sync_password" | \
     ssh -T "$target" "umask 077 && cat > $remote_credentials" || remote_failed
   credential_args="--credentials-file $remote_credentials"
 fi
@@ -502,7 +535,7 @@ installer_arguments=
 installer_arguments="$installer_arguments --bind-address $effective_bind_address --port $effective_anki_port"
 installer_arguments="$installer_arguments --app-bind-address $effective_app_bind_address --app-port $effective_app_port"
 [ "$reset_data" = false ] || installer_arguments="$installer_arguments --reset-data"
-[ "$reset_pocketbase" = false ] || installer_arguments="$installer_arguments --reset-pocketbase"
+[ "$reset_database" = false ] || installer_arguments="$installer_arguments --reset-database"
 
 if [ "$remote_mode" = helper ]; then
   echo "Streaming and installing with the passwordless Acervo launcher..."

@@ -1,0 +1,14 @@
+# The always-on HTTP service: FastAPI over SQLite, serving the whole Acervo wire contract.
+#
+# `httpx` is here twice over: it is how the service calls a language model and an online dictionary,
+# and it is what FastAPI's TestClient runs on, so the contract tests need nothing extra.
+-r core.txt
+
+alembic
+argon2-cffi
+fastapi
+httpx
+pyjwt
+pydantic-settings
+sqlalchemy>=2
+uvicorn[standard]

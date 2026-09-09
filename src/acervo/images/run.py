@@ -4,7 +4,7 @@ The output directory is the state. A sense whose `.webp` exists is done; delete 
 next run draws it again — with a fresh brief and a fresh seed, because deleting a picture is how
 you say you disliked it, and handing back the same one would be useless.
 
-Nothing here writes to PocketBase. The graph is read once at the start of a run.
+Nothing here writes to the graph. It is read once at the start of a run.
 """
 
 from __future__ import annotations

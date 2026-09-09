@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PROTOCOL=4
+PROTOCOL=5
 HELPER_PATH=/usr/local/sbin/deploy-acervo
 SUDOERS_PATH=/etc/sudoers.d/deploy-acervo
 PATH="$PATH:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
@@ -53,8 +53,8 @@ show_status() {
   docker=$(docker_path)
   "$docker" inspect --format='state={{.State.Status}},health={{.State.Health.Status}}' acervo-anki-sync-server-1
   "$docker" port acervo-anki-sync-server-1 8080
-  "$docker" inspect --format='state={{.State.Status}},health={{.State.Health.Status}}' acervo-pocketbase-1
-  "$docker" port acervo-pocketbase-1 8090
+  "$docker" inspect --format='state={{.State.Status}},health={{.State.Health.Status}}' acervo-server-1
+  "$docker" port acervo-server-1 8000
 }
 
 validate_service() {
@@ -207,7 +207,7 @@ deploy_release() {
   credentials_file=
   llm_credentials_file=
   reset_data=false
-  reset_pocketbase=false
+  reset_database=false
   bind_address=
   anki_port=
   app_bind_address=
@@ -222,7 +222,7 @@ deploy_release() {
       --app-bind-address) [ "$#" -ge 2 ] || exit 2; app_bind_address=$2; shift 2 ;;
       --app-port) [ "$#" -ge 2 ] || exit 2; app_port=$2; shift 2 ;;
       --reset-data) reset_data=true; shift ;;
-      --reset-pocketbase) reset_pocketbase=true; shift ;;
+      --reset-database) reset_database=true; shift ;;
       *) echo "Unsupported deploy argument: $1" >&2; exit 2 ;;
     esac
   done
@@ -231,7 +231,7 @@ deploy_release() {
   validate_port "Anki port" "$anki_port"
   validate_port "App port" "$app_port"
   [ "$anki_port" != "$app_port" ] || {
-    echo "The Acervo app/PocketBase port must differ from the Anki sync port" >&2
+    echo "The Acervo app port must differ from the Anki sync port" >&2
     exit 2
   }
   if [ -n "$credentials_file" ]; then
@@ -278,7 +278,7 @@ deploy_release() {
     set -- "$@" --llm-credentials-file "$llm_credentials_copy"
   fi
   [ "$reset_data" = false ] || set -- "$@" --reset-data
-  [ "$reset_pocketbase" = false ] || set -- "$@" --reset-pocketbase
+  [ "$reset_database" = false ] || set -- "$@" --reset-database
   sh "$installer" "$@"
 }
 

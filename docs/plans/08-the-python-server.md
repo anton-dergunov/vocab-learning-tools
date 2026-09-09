@@ -1,6 +1,7 @@
 # Plan 08: The Python server
 
-**Status:** Phase 0 complete; phases 1–4 planned.
+**Status:** Phases 0–2 complete, and the parts of phase 3 the cutover could not leave behind.
+Phase 3's `models/` package and HTML sanitiser, and phase 4, remain.
 **Depends on:** nothing. It unblocks everything else.
 
 The design this executes is [`docs/acervo-server.md`](../acervo-server.md). Read that first — it
@@ -45,7 +46,7 @@ its shebang, so it ran under whichever `python3` was first on `PATH`. It now use
 
 ---
 
-## Phase 1 · The service skeleton
+## Phase 1 · The service skeleton — **complete**
 
 Stands up beside PocketBase on a second port. Nothing cuts over, and the application keeps working
 throughout.
@@ -82,7 +83,7 @@ throughout.
 
 ---
 
-## Phase 2 · The replication core, and cutover
+## Phase 2 · The replication core, and cutover — **complete**
 
 The largest phase, and the one that deletes PocketBase.
 
@@ -142,7 +143,7 @@ tracked), the PocketBase `Dockerfile`, `scripts/stage-pocketbase.sh` and
 
 ---
 
-## Phase 3 · Capture and dictionaries move into Python
+## Phase 3 · Capture and dictionaries move into Python — **mostly complete**
 
 **Build**
 
@@ -204,3 +205,95 @@ tracked), the PocketBase `Dockerfile`, `scripts/stage-pocketbase.sh` and
 - **No corpus work.** `corpus/` gets a package boundary and a stated separation from the core
   database, and nothing else.
 - **No admin UI.** PocketBase's went unused. If a database ever needs inspecting, it is one file.
+
+---
+
+## Implementation and verification record
+
+*9 September 2026.*
+
+### What was built, and what changed about the plan
+
+Phases 1 and 2 landed together with **capture and the dictionary routes**, which this plan had put in
+phase 3. That was not a choice so much as a correction: phase 2 deletes `pb_hooks/`, and the hook was
+the only implementation of `POST /capture`, `GET /dictionaries` and `GET /dictionaries/online/{source}`.
+Cutting over without them would have left the deployed server unable to add a word. What remains of
+phase 3 is `models/` — plan 04's provider catalogue, which replaces `services/llm.py` wholesale — and
+a real HTML sanitiser in place of the one regex carried over from the sandbox.
+
+`src/acervo/` now holds `settings.py`, `domain/` (ids, the eight-entry projection table, the
+validation rules), `db/` (tables, engine, one Alembic head), `repository/` (session, accounts,
+graph), `api/` (app, errors, auth, static, six route modules), `services/` (llm, prompts, capture,
+dictionaries), `admin.py` and `seed_data.py`.
+
+Four decisions worth recording:
+
+- **The Alembic bootstrap creates tables from `db/tables.py` rather than restating them.** There is
+  no upgrade path to write a diff against, so a second description of the schema would be a copy with
+  no reader and one more thing to keep in step.
+- **`reading()` uses `AUTOCOMMIT`.** `engine.begin()` fires the `BEGIN IMMEDIATE` listener, which
+  would take SQLite's single write slot to answer a cursor poll — the most frequent request in the
+  system. The pure read the design asks for needs that opt-out to actually be pure.
+- **Every request-path endpoint that blocks runs in the threadpool.** Reading a JSON body forces an
+  `async def`, and two 120-second model calls on the event loop would stall every other request for
+  four minutes — the same failure the "a repository function owns its own session" rule prevents at
+  the database.
+- **The JWT signing key is `sha256(secret + token_key)` rather than the two concatenated.** The
+  per-user mix is preserved and the key is a full 32 bytes however short the configured secret is.
+
+### Two things the plan got wrong
+
+- **`pb_public/` was not tracked.** The plan called it "25 committed build artefacts that should
+  never have been tracked". `.gitignore` had covered it since it was created; only `.gitkeep` was in
+  the index. Nothing was recovered because nothing had been lost.
+- **The packaging script needed more than a path change.** The new image installs the package out of
+  the bundle, so `pyproject.toml` and `README.md` had to travel with it —
+  `test_server_bundle_contents.py` caught that on the first run, which is exactly the failure it was
+  written for. That test now compares the images against the archive entries rather than against the
+  staged directory list, because the archive is what actually ships.
+
+### Verification, and what it printed
+
+```
+.venv/bin/python -m pytest -m "not integration"     366 passed
+npm --prefix web run test                           266 passed, 20 files, 0 changes under web/src/
+npm --prefix web run build && npm run test:pwa      Acervo PWA verification passed
+RUN_DOCKER_INTEGRATION_TESTS=true pytest tests/integration/   5 passed
+```
+
+`web/src/` was not touched, which was the acceptance test for the whole port.
+
+172 of those 366 are the new `tests/unit/server/` suite. The 32 `it()` bodies of `tests/hooks/` all
+survive in it, against a real service over a temporary SQLite file rather than against a `FakeApp`;
+`tests/hooks/` and `npm run test:hooks` are gone. Two of the ported cases could not be reached
+through the graph route at all — a clip title with no video reference, and a vocabulary with no
+gloss language — because the validator refuses to write either. Both are now asserted directly
+against the projection and the service, which is the honest shape: the guard exists for a writer that
+did not come through the route.
+
+A full local deployment was built, started and driven end to end, then torn down:
+
+```
+./deploy.sh --local --configure-credentials    both healthchecks pass; no superuser step
+./deploy.sh --local --status                   state=running, health=healthy on 27701 and 27702
+./deploy.sh --local --create-account           Created learner@account.example.com (ya3vjq7453rzc7s)
+admin.py seed                                  Seeded 100 records; a second run seeded 0
+GET  /                                         200 text/html, <title>Acervo</title>
+GET  /words/picar                              200 — an unknown path is a client-side route
+GET  /api/acervo/v1/nope                       404 {"error":{"code":"not_found",…}}
+GET  /api/acervo/v1/graph?since=0              cursor 100, eight keys, serverTime 24 characters
+POST /api/acervo/v1/graph                      picar 18 -> 101; a stale replica got 409 stale_record
+GET  /api/acervo/v1/graph?since=100            the second device saw exactly the edited record
+GET  /api/acervo/downloads/… Range: bytes=0-1  206, two bytes, no credentials
+GET  /api/acervo/v1/dictionaries               401 anonymous, 200 signed in
+GET  /api/acervo/v1/mac-release                {"data": null}
+```
+
+### Not verified here
+
+- **Signing in from the real PWA and the macOS host**, and **re-importing the export bundle**. Both
+  need a browser; the bundle importer is `TransferPanel.tsx` and there is no headless path to it.
+  The export at `acervo-all-2026-09-08.zip` was checked for completeness before any of this began:
+  3 vocabularies, 13 topics, 1,481 lexemes reconciling against es 914 / en 566 / zh-Hans 1.
+- **The remote deployment.** `PROTOCOL` went 4 → 5, so the server needs
+  `./deploy.sh --install-helper` once before `--reset-database` will run there.

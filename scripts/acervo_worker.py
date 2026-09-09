@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Acervo's own server-side work, in one place.
 
-PocketBase is a database and the Anki sync server is Anki's; this is the part that is Acervo's.
+The Anki sync server is Anki's and the Acervo server answers requests; this is the batch part.
 Today that is the Anki robot and the dictionary compiler, and it grows from here — generation,
 media, and whatever else runs behind the scenes. Keeping it one entry point rather than a service
 per job is deliberate: these are one-shot commands run through `docker compose run --rm`, so a new

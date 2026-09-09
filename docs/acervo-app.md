@@ -1,40 +1,44 @@
 # Acervo application shell
 
-Acervo includes one shared web interface, an installable PWA, a native macOS host, and a dedicated
-PocketBase instance. PocketBase stores the owner-scoped vocabulary graph; each client keeps a
-complete IndexedDB replica. The current interface remains a shell while the vocabulary UI is built.
+Acervo includes one shared web interface, an installable PWA, a native macOS host, and one Python
+service. That service stores the owner-scoped vocabulary graph; each client keeps a complete
+IndexedDB replica.
 
-PocketBase serves both the website and the future Acervo API from one listener. Acervo always
-coexists with other applications on a shared host; it never assumes ownership of the host's
-default HTTP/HTTPS endpoints or unrelated proxy configuration. The default backend port is
-`27702`, deliberately separate from the Anki sync listener on `27701` and from other PocketBase
-deployments. Override it when either port is already assigned:
+It serves both the website and the Acervo API from one listener. Acervo always coexists with other
+applications on a shared host; it never assumes ownership of the host's default HTTP/HTTPS endpoints
+or unrelated proxy configuration. The default backend port is `27702`, deliberately separate from the
+Anki sync listener on `27701`. Override it when either port is already assigned:
 
 ```bash
 ./deploy.sh --local --app-port 27802
 ./deploy.sh --target user@server.example.com --app-port 27802
 ```
 
-The installer rejects using the same port for Acervo web/PocketBase and Anki. Before choosing an
+The installer rejects using the same port for the Acervo server and Anki. Before choosing an
 override, check the server's existing container port assignments. The app listener binds to
 `127.0.0.1` by default so it can sit behind an HTTPS reverse proxy; use `--app-bind-address` only
 when the network design requires a different interface.
 
-`web/dist/` and `deploy/acervo/pocketbase/pb_public/` are generated, ignored staging directories.
+`web/dist/` and `deploy/acervo/server/web/` are generated, ignored staging directories.
 The supported build and deployment commands repopulate them before packaging; their contents are
 disposable and should not be committed.
 
 ## Browser and PWA
 
 Point an HTTPS reverse proxy at the configured Acervo app port, then open the public address, for
-example `https://acervo.example.com`. PocketBase serves:
+example `https://acervo.example.com`. The server answers:
 
 - `/` — the responsive Acervo interface and PWA;
 - `/api/acervo/v1/health` — the deployed application and schema version;
 - `/api/acervo/v1/session` — password authentication for administrator-created Acervo accounts;
 - `/api/acervo/v1/session/refresh` — authenticated token renewal;
 - `/api/acervo/v1/mac-release` — the current macOS release, when one is published;
-- `/_/` — PocketBase administration.
+- `/api/acervo/v1/graph` — the cursor pull, the write and the reset;
+- `/api/acervo/v1/capture` — text in, an entry to review out;
+- `/api/acervo/v1/dictionaries` — what this server holds, and what it can look up.
+
+There is no administration interface and no generic CRUD surface over the vocabulary: the graph
+routes are the only way in or out.
 
 HTTPS is required for service workers and PWA installation outside local development. Install the
 site through the browser's normal **Add to Home Screen** or **Install App** command. The cached shell
@@ -230,7 +234,7 @@ origin.
    - Destination hostname: `127.0.0.1`
    - Destination port: `27702`
 4. In the rule's **Custom Header** tab, select **Create > WebSocket**. The current shell does not
-   require a WebSocket, but this prepares the same origin for PocketBase realtime features later.
+   require a WebSocket, but this prepares the same origin for a live channel later.
 5. Open `https://acervo.example.com/` and check both `/api/acervo/v1/health` and
    `/api/acervo/v1/mac-release`. Enable HSTS only after the certificate and proxy rule work.
 
@@ -260,7 +264,7 @@ The menu-bar icon remains available after the main window closes. Left-click ope
 right-click shows only **Quit Acervo**. A small dot indicates a native update. Native Settings can
 check, download, verify, and install that update; automatic installation is off by default.
 
-Running `deploy.sh` on macOS packages the PWA, PocketBase service, and matching native release with
+Running `deploy.sh` on macOS packages the PWA, the server image, and the matching native release with
 one version/build identity. Deployments from a non-macOS host update the server and PWA but keep the
 previously published native archive.
 
@@ -269,31 +273,38 @@ previously published native archive.
 The application additions live beside the existing Anki data:
 
 ```text
-data/pocketbase
+data/server
 downloads
 llm.env
 ```
 
 Deployment preserves both directories, along with `data/anki-server`, `data/acervo-worker`, inputs,
-and backups. `downloads` is deliberately outside PocketBase's public web directory so a phone's
-service worker never precaches the macOS archive.
+and backups. `downloads` is deliberately outside the directory the interface is served from, so a
+phone's service worker never precaches the macOS archive.
+
+### Accounts
+
+Registration is closed and there is no superuser. One account is made at a time, with the password
+read from the terminal and never placed on a command line:
+
+```bash
+./deploy.sh --create-account
+```
 
 ### Rebuilding the vocabulary database
 
-PocketBase records applied migrations by filename, and a schema change here is a rewrite of the one
-bootstrap migration — so an existing `data/pocketbase` never picks the rewrite up, and every graph
-route fails against a database that predates it. `./deploy.sh --reset-pocketbase` replaces that
-directory as part of the deployment, keeping a copy under `backups/`. It requires typing
-`RESET ACERVO VOCABULARY`, discards every account and word on the server, and leaves Anki data
-alone — `--reset-data` is the separate flag for that, and review history is not something a schema
-rebuild should take with it. Accounts must be recreated and the seeder re-run afterwards; device
-replicas are untouched, and each will notice the new dataset identity and stop rather than
-overwrite itself.
+There is one schema head and no upgrade path, so rebuilding is how a schema change is deployed.
+`./deploy.sh --reset-database` replaces `data/server` as part of the deployment, keeping a copy under
+`backups/`. It requires typing `RESET ACERVO VOCABULARY`, discards every account and word on the
+server, and leaves Anki data alone — `--reset-data` is the separate flag for that, and review history
+is not something a schema rebuild should take with it. Accounts must be recreated with
+`--create-account` afterwards; device replicas are untouched, and each will notice the new dataset
+identity and stop rather than overwrite itself.
 
 ## Language-model provider
 
 Capture can use either the Gemini Developer API or Vertex AI. Provider settings and both API keys
-live in the server's mode-600 `llm.env`, separately from PocketBase and Anki credentials. Re-running
+live in the server's mode-600 `llm.env`, separately from the server and Anki credentials. Re-running
 the configuration retains the inactive provider's key, so switching routes does not require
 recreating credentials.
 

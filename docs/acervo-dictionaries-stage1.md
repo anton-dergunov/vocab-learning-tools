@@ -111,7 +111,7 @@ FreeDict GPL), this repository is public, and Spanish alone is 27.8 MiB against 
 **Carried by the deployment.** §9 is about publishing to the world; moving the owner's own compiled
 copy from their laptop to their own server is not publishing anything. So the release bundle carries
 whatever is in `data/dictionaries/out/`, exactly the way it already carries the macOS application,
-and `install.sh` publishes it into the directory PocketBase serves. The workflow is: build locally,
+and `install.sh` publishes it into the directory the server serves. The workflow is: build locally,
 check it locally, `./deploy.sh`, and the dictionaries are there.
 
 They are **merged, not replaced**: building only the Spanish ones and deploying must not withdraw
@@ -283,7 +283,7 @@ uv pip install -r requirements/dev.txt
 
 .venv/bin/python -m pytest tests/unit/dictionaries/
 npm --prefix web run test
-npm run test:hooks
+.venv/bin/python -m pytest tests/unit/server
 npm --prefix web run build && npm run test:pwa
 
 # end to end: build locally, deploy, and the dictionaries go with the release
@@ -291,7 +291,7 @@ npm --prefix web run build && npm run test:pwa
 #  · the packager reports how many dictionaries it bundled and how large they are
 #  · Settings ▸ Dictionaries lists them as being on the server
 #  · store on this device → progress → stored here, with its entry count
-#  · stop PocketBase → the stored dictionary still answers a lookup
+#  · stop the server → the stored dictionary still answers a lookup
 #  · not stored, server down → the row says so, and nothing is written
 #  · DevTools ▸ Application ▸ Storage: persisted=true, usage ≈ the artifact size
 

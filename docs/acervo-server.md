@@ -1,6 +1,6 @@
 # The Acervo server
 
-**Design document · 8 Sep 2026 · Rev. A · language settled, port in progress**
+**Design document · 9 Sep 2026 · Rev. B · the port has landed; PocketBase is deleted**
 
 What runs on the always-on machine, in what language, and how it is arranged so that the features
 in `acervo-design.md` §05–§12 can be added to it rather than squeezed into it.
@@ -9,9 +9,9 @@ This is a companion to the product design, not a restatement of it. `acervo-desi
 Acervo is and what the sync protocol guarantees; this says where the code that keeps those promises
 lives.
 
-> **Status.** The decision is taken and Phase 0 has landed. PocketBase is still serving today.
-> Section §7 tracks what is built and what is not, and is the only part of this document that
-> describes the present rather than the target.
+> **Status.** Phases 0 through 3 have landed and PocketBase is gone from the tree. Section §7 tracks
+> what is built and what is not, and is the only part of this document that describes the present
+> rather than the target.
 
 ---
 
@@ -19,7 +19,7 @@ lives.
 
 The server was one JavaScript file — `deploy/acervo/pocketbase/pb_hooks/acervo.js`, 1,564 lines —
 running in goja, the ES5-ish engine embedded in the PocketBase binary. No npm, no Node APIs, no
-crypto, no async, no standard library to speak of.
+crypto, no async, no standard library to speak of. It is deleted; this section is why.
 
 That file was two files stuck together, and only one of them had to be there.
 
@@ -298,9 +298,9 @@ subtly wrong.
 | Phase | | |
 |---|---|---|
 | **0** | Cleanup and ground truth | **done** |
-| 1 | The service skeleton: settings, db, auth, health, the static surfaces | not started |
-| 2 | The replication core, and cutover — PocketBase deleted here | not started |
-| 3 | Capture and dictionaries move into Python; `pb_hooks/` is gone by the end of 2 | not started |
+| **1** | The service skeleton: settings, db, auth, health, the static surfaces | **done** |
+| **2** | The replication core, and cutover — PocketBase deleted here | **done** |
+| **3** | Capture and dictionaries in Python; `pb_hooks/` gone | **done**, except `models/` and the sanitiser |
 | 4 | The existing Python folds in: one client, jobs write the graph | not started |
 
 Phase 0 deleted the superseded provider abstraction (`provider/`, `llm/`, `tts/`, `vision/`,
@@ -308,5 +308,11 @@ Phase 0 deleted the superseded provider abstraction (`provider/`, `llm/`, `tts/`
 markdown-era remnants, and `PROJECT_SUMMARY.md`; renamed `src/vocabgen/` to `src/acervo/` and made it
 an installed package rather than a `sys.path` insertion; and wrote this document.
 
-Until Phase 2 lands, `pb_hooks/acervo.js` is still the server and is still authoritative about
-behaviour. Where this document and that file disagree about *what happens today*, the file is right.
+Phases 1 and 2 landed together with the parts of phase 3 the cutover could not honestly leave
+behind. Deleting `pb_hooks/` deletes the only implementation of `/capture`, `/dictionaries` and
+`/dictionaries/online/{source}`, so those came forward: a server that cannot add a word is not a
+server. What stays for phase 3 proper is `models/` — plan 04's provider catalogue, which replaces
+`services/llm.py` wholesale — and a real HTML sanitiser in place of the one regex carried over from
+the sandbox.
+
+`web/src/` did not change, which was the acceptance test for the whole port.
