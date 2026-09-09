@@ -13,10 +13,6 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_LLM_MODEL = "gemini-3.1-flash-lite"
-DEFAULT_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com"
-
-
 class Settings(BaseSettings):
     """Everything the service reads from its environment, and nothing it reads from anywhere else."""
 
@@ -38,15 +34,15 @@ class Settings(BaseSettings):
     media_path: Path = Field(default=Path("/var/lib/acervo/media"), alias="ACERVO_MEDIA_PATH")
     prompts_path: Path = Field(default=Path("/app/prompts"), alias="ACERVO_PROMPTS_PATH")
 
-    llm_provider: str = Field(default="gemini", alias="ACERVO_LLM_PROVIDER")
-    llm_model: str = Field(default=DEFAULT_LLM_MODEL, alias="ACERVO_LLM_MODEL")
-    # A test seam for the disposable integration server. It redirects the Gemini path only: Vertex
-    # always uses Google's full project/location endpoint and cannot be pointed elsewhere.
-    llm_endpoint: str = Field(default=DEFAULT_GEMINI_ENDPOINT, alias="ACERVO_LLM_ENDPOINT")
-    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    vertex_api_key: str = Field(default="", alias="VERTEX_API_KEY")
-    vertex_project: str = Field(default="", alias="ACERVO_VERTEX_PROJECT")
-    vertex_location: str = Field(default="global", alias="ACERVO_VERTEX_LOCATION")
+    # Which providers answer, in order, as ids from `models/catalogue.json`. Empty means every row
+    # this deployment is credentialed for, in catalogue order — so a server with one provider
+    # configured needs nothing set here at all.
+    #
+    # The credentials themselves are deliberately absent from this class. A provider's key variable
+    # is named by its catalogue row and read from the environment there, because the catalogue is
+    # the only place a provider's facts are written down; listing them here too would be a second
+    # source of truth that drifts the first time a row is added.
+    text_chain: str = Field(default="", alias="ACERVO_TEXT_CHAIN")
 
     # PocketBase allowed every origin by default and FastAPI sends nothing. The macOS host loads its
     # interface from `acervo://app` and calls the server cross-origin with headers that trigger a

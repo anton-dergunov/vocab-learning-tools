@@ -8,7 +8,9 @@ threads rather than per job:
 - a cooldown that every worker respects, so one 429 pauses the whole pool instead of each worker
   backing off privately and arriving together again.
 
-Shared rather than image-only: the file ingestion runs beside this and needs the same gate.
+Shared rather than image-only: the file ingestion runs beside this and needs the same gate, and
+it lives in `models/` because a rate limit is a fact about a provider rather than about images.
+It is deliberately importable without LiteLLM — the worker image carries this and not that.
 """
 
 from __future__ import annotations

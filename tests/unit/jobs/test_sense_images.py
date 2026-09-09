@@ -256,14 +256,14 @@ def test_a_sense_the_graph_already_holds_an_image_for_is_skipped(tmp_path: Path)
 
 def test_each_model_has_its_own_bucket():
     """Measured: about one image per minute PER MODEL, so two models run at twice the rate."""
-    from acervo.pacing import ModelPool
+    from acervo.models.pacing import ModelPool
     pool = ModelPool([("lite", 1), ("flash", 1)])
     assert sorted([pool.acquire(), pool.acquire()]) == ["flash", "lite"]
     assert pool.gates["lite"].delay() > 0 and pool.gates["flash"].delay() > 0
 
 
 def test_a_quota_pause_is_per_model_not_pool_wide():
-    from acervo.pacing import ModelPool
+    from acervo.models.pacing import ModelPool
     pool = ModelPool([("lite", 60), ("flash", 60)])
     pool.penalise("lite")
     assert pool.gates["lite"].delay() > 0

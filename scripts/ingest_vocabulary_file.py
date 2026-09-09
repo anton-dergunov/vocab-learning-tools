@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 
 from acervo.client import AcervoClient, AcervoError
-from acervo.pacing import Pace
+from acervo.models.pacing import Pace
 
 DEVICE_ID = "ingestscript01"
 RETRY_DELAYS = (15, 30, 60)

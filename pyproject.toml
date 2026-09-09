@@ -12,6 +12,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "google-genai>=2.19.0",
     "httpx>=0.28",
+    "litellm>=1.100",
     "pillow>=12.3.0",
     "pydantic>=2,<3",
     "python-slugify>=8.0.4",

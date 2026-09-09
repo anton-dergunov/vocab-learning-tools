@@ -1,6 +1,6 @@
 # The Acervo server
 
-**Design document · 9 Sep 2026 · Rev. C · the port has landed and the existing Python has folded in**
+**Design document · 9 Sep 2026 · Rev. D · the port has landed, and `models/` with it**
 
 What runs on the always-on machine, in what language, and how it is arranged so that the features
 in `acervo-design.md` §05–§12 can be added to it rather than squeezed into it.
@@ -9,10 +9,9 @@ This is a companion to the product design, not a restatement of it. `acervo-desi
 Acervo is and what the sync protocol guarantees; this says where the code that keeps those promises
 lives.
 
-> **Status.** The port is complete. PocketBase is gone, the tree matches §3, and the only piece of
-> this document not yet built is `models/` — plan 04's provider catalogue, which replaces
-> `services/llm.py`. Section §7 tracks it, and is the only part of this document that describes the
-> present rather than the target.
+> **Status.** The port is complete and §3's tree is now true in full: `models/` landed with
+> [plan 04](plans/04-one-python-provider-package.md) and `services/llm.py` is deleted. `corpus/` is
+> still a rule rather than a directory. Section §7 tracks what was built.
 
 ---
 
@@ -107,7 +106,7 @@ src/acervo/
 research/            benchmark tooling; never imported by the service
 ```
 
-### The five rules
+### The six rules
 
 **1 · `repository/` is the only code that touches the database.** Routes, services and jobs all go
 through it. This is the server-side twin of the rule the client already lives by: *interface code
@@ -141,6 +140,16 @@ retires the four hand-rolled PocketBase clients that grew independently.
 The exception that proves it: the corpus is not the graph. It has no revisions, no replication and
 millions of rows, so corpus jobs write `corpus/`'s own store directly (§02: *the core and the corpus
 do not share a database, a container, or a backup policy*).
+
+**6 · `models/` stands alone; `services/models.py` is where it meets Acervo.** The package decides
+*what kind of thing* went wrong — a closed seven-value `Reason` — and the binding layer decides what
+Acervo's wire calls that. The `llm_*` codes carry Acervo's HTTP statuses and prose written for the
+owner, so they do not belong in a package meant to be usable without Acervo; and "429 means try the
+next row" is provider knowledge, so it does not belong in every caller that has to know it.
+
+This is the rule this server can break most quietly. One `from acervo.errors import ApiError` in
+`call.py` collapses the split and everything still works — the tests pass, capture works, and the
+package is simply no longer the thing it was built to be. So `test_layering.py` asserts it.
 
 ### Synchronous and asynchronous
 
@@ -301,14 +310,19 @@ subtly wrong.
 | **0** | Cleanup and ground truth | **done** |
 | **1** | The service skeleton: settings, db, auth, health, the static surfaces | **done** |
 | **2** | The replication core, and cutover — PocketBase deleted here | **done** |
-| **3** | Capture and dictionaries in Python; `pb_hooks/` gone | **done**, except `models/` |
+| **3** | Capture and dictionaries in Python; `pb_hooks/` gone | **done** |
 | **4** | The existing Python folds in: one client, jobs write the graph | **done** |
 
-What is left of §3 is `models/`, which is [plan 04](plans/04-one-python-provider-package.md)'s whole
-acceptance boundary rather than a footnote of the port: LiteLLM, a tracked catalogue, three functions
-and chains that fall through on 429 and 5xx. `services/llm.py` serves capture until it lands. And
-`corpus/` has no code to put a boundary around yet — the separation is stated here and in AGENTS.md,
-which is where a reader looks; an empty package nothing imports would be a directory, not a rule.
+`models/` has landed, which closes §3. It is a tracked catalogue of provider rows, `text()`,
+`image()` and `speech()` over LiteLLM, one hand-written adapter for the two kinds LiteLLM does not
+cover on Cloudflare, and a chain that falls through on 429, 5xx, a timeout and a dropped connection
+and never on anything else. Capture goes through it and `services/llm.py` is gone.
+
+It brought §3's sixth rule with it, which is the one this server can break most quietly.
+
+`corpus/` still has no code to put a boundary around — the separation is stated here and in
+AGENTS.md, which is where a reader looks; an empty package nothing imports would be a directory,
+not a rule.
 
 Phase 0 deleted the superseded provider abstraction (`provider/`, `llm/`, `tts/`, `vision/`,
 `config.py` — 392 source lines with no non-test importer, and 798 lines of tests for them), the
@@ -318,9 +332,9 @@ an installed package rather than a `sys.path` insertion; and wrote this document
 Phases 1 and 2 landed together with the parts of phase 3 the cutover could not honestly leave
 behind. Deleting `pb_hooks/` deletes the only implementation of `/capture`, `/dictionaries` and
 `/dictionaries/online/{source}`, so those came forward: a server that cannot add a word is not a
-server. What stays for phase 3 proper is `models/` — plan 04's provider catalogue, which replaces
-`services/llm.py` wholesale — and a real HTML sanitiser in place of the one regex carried over from
-the sandbox.
+server. What stayed for phase 3 proper was `models/` — plan 04's provider catalogue, which replaced
+`services/llm.py` wholesale and has since landed — and a real HTML sanitiser in place of the one
+regex carried over from the sandbox, which has not.
 
 `web/src/` did not change, which was the acceptance test for the whole port.
 

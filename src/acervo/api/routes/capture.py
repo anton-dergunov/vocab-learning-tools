@@ -26,7 +26,6 @@ from acervo.services.capture.apply import apply_draft
 from acervo.services.capture.compose import compose
 from acervo.services.capture.draft import draft_from
 from acervo.services.capture.resolve import resolve
-from acervo.services.llm import llm_settings
 from acervo.settings import Settings
 
 router = APIRouter()
@@ -67,8 +66,9 @@ def run_capture(settings: Settings, account: str, device: str, body: dict[str, A
         return {"resolution": resolution, "duplicates": duplicates, "draft": None, "applied": None}
 
     topics = graph.owner_topics(account)
-    model_id = llm_settings(settings).model
-    answer = compose(settings, resolution, body, vocabulary, topics)
+    # The model that answered, not the one that was asked first: with a chain, those differ the
+    # moment a provider is rate limited, and the entry must record the one that did the work.
+    answer, model_id = compose(settings, resolution, body, vocabulary, topics)
     draft = draft_from(answer, resolution, body, vocabulary, topics, model_id)
 
     applied = None

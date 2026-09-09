@@ -16,12 +16,22 @@ services:
       ACERVO_DICTIONARIES_PATH: /var/lib/acervo/dictionaries
       ACERVO_MEDIA_PATH: /var/lib/acervo/media
       ACERVO_PROMPTS_PATH: /app/prompts
-      ACERVO_LLM_PROVIDER: "${ACERVO_LLM_PROVIDER:-gemini}"
-      ACERVO_LLM_MODEL: "${ACERVO_LLM_MODEL:-gemini-3.1-flash-lite}"
+      # Which providers answer, in order, as ids from models/catalogue.json. Unset means every one
+      # this deployment has credentials for, in catalogue order — so a server with one key needs
+      # nothing here. The keys themselves are named by their catalogue rows, and every value comes
+      # from llm.env, which the installer writes mode 600 and compose passes last.
+      ACERVO_TEXT_CHAIN: "${ACERVO_TEXT_CHAIN:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
-      VERTEX_API_KEY: "${VERTEX_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN:-}"
+      CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"
+      ACERVO_OLLAMA_URL: "${ACERVO_OLLAMA_URL:-}"
+      # Vertex authenticates by application default credentials, not by a key: LiteLLM has no
+      # express-key path. Without GOOGLE_APPLICATION_CREDENTIALS pointing at a service-account file
+      # mounted into the container, the vertex row is simply unavailable and health says so.
       ACERVO_VERTEX_PROJECT: "${ACERVO_VERTEX_PROJECT:-}"
-      ACERVO_VERTEX_LOCATION: "${ACERVO_VERTEX_LOCATION:-global}"
+      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-}"
     ports:
       - "${ACERVO_APP_BIND_ADDRESS:-127.0.0.1}:${ACERVO_APP_PORT:-27702}:8000"
     volumes:
@@ -99,12 +109,22 @@ services:
       ACERVO_SERVER_URL: "${ACERVO_SERVER_URL:-http://server:8000}"
       ACERVO_OWNER_EMAIL: "${ACERVO_OWNER_EMAIL:-}"
       ACERVO_OWNER_PASSWORD: "${ACERVO_OWNER_PASSWORD:-}"
-      ACERVO_LLM_PROVIDER: "${ACERVO_LLM_PROVIDER:-gemini}"
-      ACERVO_LLM_MODEL: "${ACERVO_LLM_MODEL:-gemini-3.1-flash-lite}"
+      # Which providers answer, in order, as ids from models/catalogue.json. Unset means every one
+      # this deployment has credentials for, in catalogue order — so a server with one key needs
+      # nothing here. The keys themselves are named by their catalogue rows, and every value comes
+      # from llm.env, which the installer writes mode 600 and compose passes last.
+      ACERVO_TEXT_CHAIN: "${ACERVO_TEXT_CHAIN:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
-      VERTEX_API_KEY: "${VERTEX_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN:-}"
+      CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"
+      ACERVO_OLLAMA_URL: "${ACERVO_OLLAMA_URL:-}"
+      # Vertex authenticates by application default credentials, not by a key: LiteLLM has no
+      # express-key path. Without GOOGLE_APPLICATION_CREDENTIALS pointing at a service-account file
+      # mounted into the container, the vertex row is simply unavailable and health says so.
       ACERVO_VERTEX_PROJECT: "${ACERVO_VERTEX_PROJECT:-}"
-      ACERVO_VERTEX_LOCATION: "${ACERVO_VERTEX_LOCATION:-global}"
+      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-}"
     volumes:
       - "${ACERVO_WORKER_DATA:?Set ACERVO_WORKER_DATA}:/var/lib/acervo/worker"
       - "${ACERVO_DICTIONARIES:-acervo-dictionaries}:/var/lib/acervo/dictionaries"

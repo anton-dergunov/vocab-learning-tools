@@ -147,8 +147,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
               </div>
             : <div className="update-status">
                 <strong>This server cannot build entries</strong>
-                <span>It is set to {captureHealth.provider} with the model {captureHealth.model},
-                  and {captureHealth.reason}.</span>
+                <span>{captureHealth.reason}.</span>
               </div>)}
           {native && <div className="update-status">
             <strong>Updates and server address</strong>

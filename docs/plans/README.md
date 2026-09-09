@@ -48,22 +48,22 @@ conversation state, no tool use. Anything grander than that is not being paid fo
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
-| [08 · The Python server](08-the-python-server.md) | **Complete** (except `models/`, which is 04) | — | PocketBase and `pb_hooks/` are deleted; one FastAPI service serves the same wire contract, the client did not change, and every job writes the graph through one client |
+| [08 · The Python server](08-the-python-server.md) | **Complete** | — | PocketBase and `pb_hooks/` are deleted; one FastAPI service serves the same wire contract, the client did not change, and every job writes the graph through one client |
 
 ### Stage 3 · One provider model
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
 | [02 · One wire shape and one catalogue](02-one-wire-shape-and-one-catalogue.md) | **Superseded** by 08 | — | Kept for its diagnosis and provider research. Its surviving content moved into 04 |
-| [04 · One Python provider package](04-one-python-provider-package.md) | Planned (re-aimed), **unblocked** | 08 phase 2 | `src/acervo/models/` is the single way to call a model, for the request path and batch alike, over LiteLLM |
-| [03 · The owner chooses a model](03-the-owner-chooses-a-model.md) | Planned (re-aimed) | 04 | Settings ▸ Models picks the provider chain per kind; it takes effect on the next capture with no restart |
+| [04 · One Python provider package](04-one-python-provider-package.md) | **Complete** | 08 phase 2 | `src/acervo/models/` is the single way to call a model, for the request path and batch alike, over LiteLLM |
+| [03 · The owner chooses a model](03-the-owner-chooses-a-model.md) | Planned (re-aimed), **unblocked** | 04 | Settings ▸ Models picks the provider chain per kind; it takes effect on the next capture with no restart |
 
 ### Stage 4 · The other two kinds
 
 | Plan | Status | Depends on | Outcome |
 |---|---|---|---|
-| [05 · Images through the catalogue](05-images-through-the-catalogue.md) | Planned | 04 | The sense-image pipeline stops hardcoding Vertex; Cloudflare FLUX.2 Klein becomes the steady-state row |
-| [06 · Audio through the catalogue](06-audio-through-the-catalogue.md) | Planned | 04 | Expressive and plain pronunciation are two distinct jobs with their own providers, and the graph has somewhere to put audio |
+| [05 · Images through the catalogue](05-images-through-the-catalogue.md) | Planned, **unblocked** | 04 | The sense-image pipeline stops hardcoding Vertex; Cloudflare FLUX.2 Klein becomes the steady-state row |
+| [06 · Audio through the catalogue](06-audio-through-the-catalogue.md) | Planned, **unblocked** | 04 | Expressive and plain pronunciation are two distinct jobs with their own providers, and the graph has somewhere to put audio |
 
 ### Stage 5 · Where local models could run
 

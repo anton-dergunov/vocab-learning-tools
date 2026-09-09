@@ -9,6 +9,7 @@ Four rules, each of which stops being true silently:
 - `jobs/` and `consumers/` reach the graph through `client.py`, against the service's own route:
   same validation and same revision allocation as a phone. One writer, one pipeline.
 - Nothing that ships imports `research/`.
+- `models/` stands alone: it is a provider package, not an Acervo one.
 """
 
 from __future__ import annotations
@@ -87,6 +88,7 @@ def test_the_rules_below_are_not_vacuous():
         "acervo.client" in imports_of(path)
         for path in modules_under("jobs") + modules_under("consumers")
     ), "no batch module goes through acervo.client, so nothing exercises the write-path rule"
+    assert modules_under("models"), "no models/ modules: the stands-alone rule would be vacuous"
 
 
 @pytest.mark.parametrize("path", modules_under("api"), ids=identify)
@@ -117,6 +119,33 @@ def test_batch_work_writes_the_graph_the_way_a_phone_does(path):
         if name.startswith(("acervo.db", "acervo.repository", "acervo.api"))
     }
     assert not offenders, f"{path} imports {sorted(offenders)}; go through acervo.client"
+
+
+STANDS_ALONE = (
+    "acervo.settings",
+    "acervo.errors",
+    "acervo.repository",
+    "acervo.client",
+    "acervo.api",
+    "acervo.db",
+    "acervo.domain",
+    "acervo.services",
+    "acervo.jobs",
+    "acervo.consumers",
+)
+
+
+@pytest.mark.parametrize("path", modules_under("models"), ids=identify)
+def test_the_provider_package_stands_alone(path):
+    """`models/` takes a catalogue and a chain, and nothing else.
+
+    It is the one package here meant to be usable outside Acervo, and the split it rests on is that
+    it decides *what kind of thing* went wrong while `services/models.py` decides what Acervo's wire
+    calls that. One `from acervo.errors import ApiError` in `call.py` would collapse that split, and
+    would do it invisibly — the code would work.
+    """
+    offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
+    assert not offenders, f"{path} imports {sorted(offenders)}; the provider package stands alone"
 
 
 @pytest.mark.parametrize("path", modules_under(), ids=identify)
@@ -152,7 +181,7 @@ ALLOWED_HTTP = {
     # Third-party dictionary sources, downloaded to be compiled.
     "dictionaries/build.py",
     # Model providers and online dictionaries: outbound, not the Acervo API.
-    "services/llm.py",
+    "models/cloudflare.py",
     "services/dictionaries/online.py",
     # The service itself, which does not call itself over HTTP.
     "api/app.py",

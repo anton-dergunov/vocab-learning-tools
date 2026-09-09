@@ -16,6 +16,9 @@ RUN pip install --no-cache-dir -r requirements/server.txt
 COPY pyproject.toml /app/pyproject.toml
 COPY README.md /app/README.md
 COPY src /app/src
+# The provider catalogue, beside `src` the way `dictionaries/` is: the package resolves it
+# relative to itself, so it needs no environment variable and no staging step.
+COPY models /app/models
 RUN pip install --no-cache-dir --no-deps -e /app
 
 # The capture prompts are content, not code: tracked once at the repository root and read at request

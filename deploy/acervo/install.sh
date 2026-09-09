@@ -195,51 +195,6 @@ if grep -q '^GEMINI_API_KEY=' "$acervo_root/secrets.env"; then
   mv "$secrets_tmp" "$acervo_root/secrets.env"
   trap - EXIT HUP INT TERM
 fi
-if [ -n "$llm_credentials_file" ]; then
-  [ -f "$llm_credentials_file" ] || { echo "Missing LLM credentials file" >&2; exit 2; }
-  exec 3<"$llm_credentials_file"
-  IFS= read -r llm_provider <&3 || { echo "Missing LLM provider" >&2; exit 2; }
-  IFS= read -r llm_model <&3 || { echo "Missing LLM model" >&2; exit 2; }
-  IFS= read -r vertex_project <&3 || { echo "Missing Vertex project line" >&2; exit 2; }
-  IFS= read -r vertex_location <&3 || { echo "Missing Vertex location line" >&2; exit 2; }
-  IFS= read -r llm_api_key <&3 || { echo "Missing LLM API key" >&2; exit 2; }
-  exec 3<&-
-  case "$llm_provider" in gemini|vertex) ;; *) echo "LLM provider must be gemini or vertex" >&2; exit 2 ;; esac
-  case "$llm_model$vertex_project$vertex_location$llm_api_key" in
-    *[!A-Za-z0-9._-]*) echo "Unsafe LLM configuration value" >&2; exit 2 ;;
-  esac
-  [ -n "$llm_model" ] && [ -n "$llm_api_key" ] || {
-    echo "An LLM model and API key are required" >&2
-    exit 2
-  }
-  if [ "$llm_provider" = vertex ]; then
-    [ -n "$vertex_project" ] && [ -n "$vertex_location" ] || {
-      echo "Vertex requires a project and location" >&2
-      exit 2
-    }
-    configured_key=VERTEX_API_KEY
-  else
-    configured_key=GEMINI_API_KEY
-  fi
-  llm_tmp="$acervo_root/llm.env.tmp.$$"
-  trap 'rm -f "$llm_tmp"' EXIT HUP INT TERM
-  awk -F= -v configured_key="$configured_key" '
-    $1 != "ACERVO_LLM_PROVIDER" && $1 != "ACERVO_LLM_MODEL" &&
-    $1 != "ACERVO_VERTEX_PROJECT" && $1 != "ACERVO_VERTEX_LOCATION" &&
-    $1 != configured_key { print }
-  ' "$acervo_root/llm.env" >"$llm_tmp"
-  {
-    printf 'ACERVO_LLM_PROVIDER=%s\n' "$llm_provider"
-    printf 'ACERVO_LLM_MODEL=%s\n' "$llm_model"
-    printf 'ACERVO_VERTEX_PROJECT=%s\n' "$vertex_project"
-    printf 'ACERVO_VERTEX_LOCATION=%s\n' "$vertex_location"
-    printf '%s=%s\n' "$configured_key" "$llm_api_key"
-  } >>"$llm_tmp"
-  chmod 600 "$llm_tmp"
-  mv "$llm_tmp" "$acervo_root/llm.env"
-  trap - EXIT HUP INT TERM
-fi
-
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup_dir="$acervo_root/backups/$timestamp"
 mkdir -p "$backup_dir/anki-server" "$backup_dir/acervo-worker"
@@ -273,6 +228,51 @@ if [ -n "$archive" ]; then
 else
   release_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 fi
+
+if [ -n "$llm_credentials_file" ]; then
+  [ -f "$llm_credentials_file" ] || { echo "Missing LLM credentials file" >&2; exit 2; }
+  catalogue="$release_dir/models/catalogue.json"
+  [ -f "$catalogue" ] || { echo "Missing provider catalogue at $catalogue" >&2; exit 2; }
+
+  # A provider is a row of data, so what may be written here is "a variable some row reads", not a
+  # list this script keeps in step by hand. `ACERVO_TEXT_CHAIN` is the one name that belongs to no
+  # row. This replaces the old gemini|vertex whitelist: adding a provider is a catalogue edit.
+  llm_tmp="$acervo_root/llm.env.tmp.$$"
+  names_tmp="$acervo_root/llm.names.$$"
+  trap 'rm -f "$llm_tmp" "$names_tmp"' EXIT HUP INT TERM
+  : >"$names_tmp"
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      *=*) ;;
+      *) echo "LLM configuration lines must be NAME=VALUE" >&2; exit 2 ;;
+    esac
+    name=${line%%=*}
+    value=${line#*=}
+    case "$name" in
+      ''|*[!A-Z0-9_]*) echo "Unsafe LLM variable name: $name" >&2; exit 2 ;;
+    esac
+    case "$value" in
+      *[!A-Za-z0-9._:/,-]*) echo "Unsafe LLM configuration value" >&2; exit 2 ;;
+    esac
+    if [ "$name" != ACERVO_TEXT_CHAIN ] && ! grep -q "\"$name\"" "$catalogue"; then
+      echo "$name is not a variable any provider in the catalogue reads" >&2
+      exit 2
+    fi
+    printf '%s\n' "$name" >>"$names_tmp"
+  done <"$llm_credentials_file"
+
+  # Only the named lines are rewritten, so a provider that is not being configured keeps its key and
+  # can be switched back to without minting a new one.
+  awk -F= 'NR == FNR { drop[$0] = 1; next } !($1 in drop)' \
+    "$names_tmp" "$acervo_root/llm.env" >"$llm_tmp"
+  cat "$llm_credentials_file" >>"$llm_tmp"
+  chmod 600 "$llm_tmp"
+  mv "$llm_tmp" "$acervo_root/llm.env"
+  rm -f "$names_tmp"
+  trap - EXIT HUP INT TERM
+fi
+
 
 uid=$(id -u)
 gid=$(id -g)

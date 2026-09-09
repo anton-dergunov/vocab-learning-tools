@@ -1,4 +1,11 @@
-"""Model call two: build the article."""
+"""Model call two: build the article.
+
+It returns the model that answered alongside the article, because under a provider chain that is
+not knowable before the call: a 429 at the first row is answered by the second, and the locked
+contract is that the entry records the model that *answered*. Reading it from the configuration
+instead — which is what this route did while there was only ever one provider — would leave
+`modelId` naming a model that produced nothing.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +13,7 @@ from typing import Any
 
 from acervo.errors import ApiError
 from acervo.services.capture.coerce import reference_of, text_list, trimmed
-from acervo.services.llm import llm_json
+from acervo.services.models import llm_json
 from acervo.services.prompts import prompt_text
 from acervo.settings import Settings
 
@@ -17,7 +24,7 @@ def compose(
     request: dict[str, Any],
     vocabulary: dict[str, Any],
     topics: list[dict[str, Any]],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], str]:
     reference = reference_of(request)
     names = {topic["name"].lower(): topic["name"] for topic in topics}
     preferred = [names[name.lower()] for name in text_list(request.get("topics")) if name.lower() in names]
@@ -72,9 +79,9 @@ def compose(
         if line != ""
     )
 
-    answer = llm_json(settings, prompt_text(settings.prompts_path, "acervo_compose"), user)
+    answer, model = llm_json(settings, prompt_text(settings.prompts_path, "acervo_compose"), user)
     if not isinstance(answer, dict):
         raise ApiError(
             502, "llm_unusable", "The language model did not return an entry, so nothing was created."
         )
-    return answer
+    return answer, model

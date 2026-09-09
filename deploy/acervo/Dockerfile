@@ -19,6 +19,10 @@ RUN python -m pip install --no-cache-dir \
 WORKDIR /app
 COPY src /app/src
 COPY dictionaries /app/dictionaries
+# The provider catalogue. LiteLLM itself is deliberately not installed here: no worker job
+# calls a model yet, and `acervo.models` imports it lazily so `acervo.models.pacing` — which
+# the file ingestion uses — works without it.
+COPY models /app/models
 COPY scripts/acervo_worker.py /app/scripts/acervo_worker.py
 COPY scripts/integration/anki_sync_client.py /app/scripts/integration/anki_sync_client.py
 COPY templates /app/templates

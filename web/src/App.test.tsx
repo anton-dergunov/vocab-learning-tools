@@ -876,15 +876,14 @@ describe("Acervo application", () => {
      live, and the only way to learn otherwise was to press it and read a 503. */
   it("turns Capture off with a reason when the server cannot build entries", async () => {
     signedIn();
-    serverHealth({ available: false, provider: "vertex", model: "gemini-3.7-flash", reason: "VERTEX_API_KEY is not set" });
+    serverHealth({ available: false, provider: null, model: null, reason: "GEMINI_API_KEY is not set" });
     const capture = vi.spyOn(backendSession, "captureText");
     await openList();
 
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     const refusal = await screen.findByRole("alert");
     expect(refusal).toHaveTextContent("This server cannot build entries right now.");
-    expect(refusal).toHaveTextContent("VERTEX_API_KEY is not set");
-    expect(refusal).toHaveTextContent("gemini-3.7-flash");
+    expect(refusal).toHaveTextContent("GEMINI_API_KEY is not set");
 
     fireEvent.change(screen.getByLabelText(/Paste a word/), { target: { value: "el garfio" } });
     expect(screen.getByRole("button", { name: "Process" })).toBeDisabled();

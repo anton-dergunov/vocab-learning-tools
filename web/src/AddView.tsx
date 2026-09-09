@@ -181,8 +181,7 @@ export default function AddView({
         </div>}
         {cannotBuild && <div className="validation bad" role="alert">
           <strong>This server cannot build entries right now.</strong>
-          <span>It is set to {cannotBuild.provider} with the model {cannotBuild.model},
-            and {cannotBuild.reason}. You can still write the entry yourself.</span>
+          <span>{cannotBuild.reason}. You can still write the entry yourself.</span>
         </div>}
         {failure && <div className="validation bad" role="alert"><strong>{failure}</strong></div>}
         <div className="composer-buttons">

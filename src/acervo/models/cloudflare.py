@@ -1,0 +1,172 @@
+"""The one hand-written adapter: Cloudflare images and Cloudflare audio.
+
+LiteLLM covers Cloudflare *text* and neither of the other two, and this is the whole of the gap. The
+logic is lifted from `research/image_benchmark_runner.py`'s `run_cloudflare`, which already works
+against the live service — including the awkward part: FLUX.2 Klein requires `multipart/form-data`
+even for a text-only prompt, and a JSON body comes back as a 400 naming a required property
+`multipart` (`docs/cloudflare-workers-ai.md`). The `(None, value)` field tuples are what make an
+HTTP client send a multipart boundary without claiming the scalars are uploaded files.
+
+It is copied rather than imported: `research/` is outside the distribution, and
+`test_layering.py` enforces that nothing shipping reaches into it. It is on httpx rather than
+`requests` because httpx emits the identical multipart body and is the one HTTP library this
+service already carries.
+
+Failures go through `call.classify()`, the same table LiteLLM's exceptions go through, so a
+Cloudflare 429 and a Gemini 429 are the same kind of thing to the chain above.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+from typing import Any
+
+import httpx
+
+from acervo.models.catalogue import Row, key
+from acervo.models.errors import RETRYABLE, ProviderRefused, ProviderUnavailable
+from acervo.models.redact import redactor
+
+RUN_URL = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}"
+ACCOUNT_ENV = "CLOUDFLARE_ACCOUNT_ID"
+DETAIL_LIMIT = 2000
+
+
+def image(
+    row: Row,
+    model: str,
+    prompt: str,
+    *,
+    seed: int | None = None,
+    size: tuple[int, int] | None = None,
+    timeout: float = 120.0,
+) -> tuple[bytes, str]:
+    width, height = size or (512, 512)
+    fields: dict[str, Any] = {
+        "prompt": (None, prompt),
+        "width": (None, str(int(width))),
+        "height": (None, str(int(height))),
+        "guidance": (None, str(float(row.params_for("image").get("guidance", 1.0)))),
+    }
+    if seed is not None:
+        fields["seed"] = (None, str(int(seed)))
+    payload = _run(row, model, fields=fields, timeout=timeout)
+    return _image_bytes(row, model, payload)
+
+
+def speech(
+    row: Row,
+    model: str,
+    words: str,
+    *,
+    voice: str | None = None,
+    timeout: float = 120.0,
+) -> tuple[bytes, str]:
+    audio = row.capabilities.get("audio") or {}
+    # Cloudflare's two text-to-speech families disagree about what the field is called: melotts
+    # takes `prompt` (plus a `lang`), Deepgram's Aura takes `text` and refuses `prompt`. The row
+    # says which, because that is a fact about the model rather than about Cloudflare.
+    body: dict[str, Any] = {str(audio.get("inputField") or "prompt"): words}
+    chosen = voice or audio.get("defaultVoice")
+    if chosen:
+        body["speaker"] = chosen
+    payload = _run(row, model, json_body=body, timeout=timeout)
+    return _audio_bytes(row, model, payload)
+
+
+def _run(
+    row: Row,
+    model: str,
+    *,
+    fields: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
+    timeout: float,
+) -> httpx.Response:
+    account = (os.environ.get(ACCOUNT_ENV) or "").strip()
+    token = key(row)
+    if not account or not token:
+        # Reaching here means the chain called a row it had already been told was unavailable.
+        raise ProviderRefused(
+            "unconfigured",
+            f"{ACCOUNT_ENV if not account else row.keyEnv} is not set",
+            provider_id=row.id,
+            model=model,
+        )
+
+    try:
+        response = httpx.post(
+            RUN_URL.format(account=account, model=model),
+            headers={"Authorization": f"Bearer {token}"},
+            files=fields,
+            json=json_body,
+            timeout=timeout,
+        )
+    except httpx.HTTPError as error:
+        _fail(row, model, "unreachable", str(error), None)
+
+    if not response.is_success:
+        _fail(row, model, None, _detail(response), response.status_code)
+    return response
+
+
+def _image_bytes(row: Row, model: str, response: httpx.Response) -> tuple[bytes, str]:
+    """Cloudflare answers with the image itself, or with a base64 field inside its envelope."""
+    content_type = response.headers.get("content-type", "")
+    if content_type.startswith("image/"):
+        return response.content, content_type.split(";")[0].strip()
+    result = _result(row, model, response)
+    encoded = result.get("image") if isinstance(result, dict) else result
+    if isinstance(encoded, list):
+        encoded = encoded[0] if encoded else None
+    if not isinstance(encoded, str):
+        _fail(row, model, "refused", "the response contained no image data", response.status_code)
+    return base64.b64decode(encoded.split(",", 1)[-1]), "image/png"
+
+
+def _audio_bytes(row: Row, model: str, response: httpx.Response) -> tuple[bytes, str]:
+    content_type = response.headers.get("content-type", "")
+    if content_type.startswith("audio/"):
+        return response.content, content_type.split(";")[0].strip()
+    result = _result(row, model, response)
+    encoded = result.get("audio") if isinstance(result, dict) else result
+    if not isinstance(encoded, str):
+        _fail(row, model, "refused", "the response contained no audio data", response.status_code)
+    return base64.b64decode(encoded.split(",", 1)[-1]), "audio/mpeg"
+
+
+def _result(row: Row, model: str, response: httpx.Response) -> Any:
+    try:
+        payload = response.json()
+    except ValueError:
+        _fail(row, model, "refused", "the response was not JSON", response.status_code)
+    if isinstance(payload, dict) and not payload.get("success", True):
+        _fail(row, model, "refused", json.dumps(payload.get("errors")), response.status_code)
+    return payload.get("result", payload) if isinstance(payload, dict) else payload
+
+
+def _detail(response: httpx.Response) -> str:
+    """Cloudflare's own error code, which is the only actionable part of a failure here."""
+    try:
+        return json.dumps(response.json(), ensure_ascii=False)[:DETAIL_LIMIT]
+    except ValueError:
+        return (response.text or "").strip()[:DETAIL_LIMIT] or "empty response body"
+
+
+def _fail(row: Row, model: str, reason: str | None, detail: str, status: int | None) -> None:
+    from acervo.models.call import classify
+
+    if reason is None:
+        reason, _ = classify(_Status(status))
+    redact = redactor(row.secret_names)
+    failure = ProviderUnavailable if reason in RETRYABLE else ProviderRefused
+    raise failure(reason, redact(detail), provider_id=row.id, model=model, status=status)
+
+
+class _Status(Exception):
+    """A bare HTTP status, so it can go through the same classifier LiteLLM's exceptions do."""
+
+    def __init__(self, status: int | None) -> None:
+        super().__init__(str(status))
+        self.status_code = status

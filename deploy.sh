@@ -11,10 +11,9 @@ target=
 acervo_root=
 configure=false
 configure_llm=false
-llm_provider=
-llm_model=
-llm_project=
-llm_location=
+llm_chain=
+llm_settings=
+llm_key_name=
 llm_api_key_stdin=false
 reset_data=false
 reset_database=false
@@ -33,14 +32,14 @@ usage:
   ./deploy.sh --local [--root PATH] [--bind-address ADDRESS] [--port PORT]
               [--app-bind-address ADDRESS] [--app-port PORT]
               [--configure-credentials] [--reset-data] [--reset-database]
-              [--configure-llm --llm-provider gemini|vertex --llm-model MODEL
-               [--llm-project PROJECT] [--llm-location LOCATION] --llm-api-key-stdin]
+              [--configure-llm [--llm-chain IDS] [--llm-set NAME=VALUE]...
+               [--llm-key NAME --llm-api-key-stdin]]
   ./deploy.sh [--target USER@HOST] [--root PATH] [--configure-credentials]
               [--bind-address ADDRESS] [--port PORT] [--remember-target]
               [--app-bind-address ADDRESS] [--app-port PORT]
               [--https-port PORT] [--service NAME] [--reset-data] [--reset-database]
-              [--configure-llm --llm-provider gemini|vertex --llm-model MODEL
-               [--llm-project PROJECT] [--llm-location LOCATION] --llm-api-key-stdin]
+              [--configure-llm [--llm-chain IDS] [--llm-set NAME=VALUE]...
+               [--llm-key NAME --llm-api-key-stdin]]
   ./deploy.sh [--target USER@HOST] [--remember-target] --install-helper
   ./deploy.sh [--target USER@HOST] [--https-port PORT | --service NAME] --configure-https
   ./deploy.sh [--local | --target USER@HOST] --create-account
@@ -56,7 +55,13 @@ usage:
   --create-account    create one account on the running server, reading the address
                       and password from the terminal
   --configure-llm     update only the server's durable llm.env; existing server,
-                      Anki and inactive-provider credentials are retained
+                      Anki and other providers' credentials are retained
+  --llm-chain IDS     which providers answer, in order, as comma-separated ids
+                      from models/catalogue.json. Empty means every provider
+                      this server has credentials for, in catalogue order
+  --llm-set NAME=VAL  set one non-secret provider variable, e.g. an account id
+                      or a Vertex project. Repeatable
+  --llm-key NAME      which key variable the value on standard input is
 EOF
   exit 2
 }
@@ -92,10 +97,10 @@ while [ "$#" -gt 0 ]; do
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
     --configure-credentials) configure=true; shift ;;
     --configure-llm) configure_llm=true; shift ;;
-    --llm-provider) [ "$#" -ge 2 ] || usage; llm_provider=$2; shift 2 ;;
-    --llm-model) [ "$#" -ge 2 ] || usage; llm_model=$2; shift 2 ;;
-    --llm-project) [ "$#" -ge 2 ] || usage; llm_project=$2; shift 2 ;;
-    --llm-location) [ "$#" -ge 2 ] || usage; llm_location=$2; shift 2 ;;
+    --llm-chain) [ "$#" -ge 2 ] || usage; llm_chain=$2; shift 2 ;;
+    --llm-set) [ "$#" -ge 2 ] || usage; llm_settings="$llm_settings$2
+"; shift 2 ;;
+    --llm-key) [ "$#" -ge 2 ] || usage; llm_key_name=$2; shift 2 ;;
     --llm-api-key-stdin) llm_api_key_stdin=true; shift ;;
     --remember-target) remember=true; shift ;;
     --bind-address) [ "$#" -ge 2 ] || usage; bind_address=$2; shift 2 ;;
@@ -228,56 +233,67 @@ if [ "$reset_data" = true ] && [ "$action" != deploy ]; then usage; fi
 if [ "$reset_database" = true ] && [ "$action" != deploy ]; then usage; fi
 
 if [ "$configure_llm" = false ]; then
-  [ -z "$llm_provider$llm_model$llm_project$llm_location" ] && [ "$llm_api_key_stdin" = false ] || usage
+  [ -z "$llm_chain$llm_settings$llm_key_name" ] && [ "$llm_api_key_stdin" = false ] || usage
 else
   [ "$configure" = false ] || {
     echo "Configure server credentials and the LLM in separate commands" >&2
     exit 2
   }
-  case "$llm_provider" in gemini|vertex) ;; *) echo "--llm-provider must be gemini or vertex" >&2; exit 2 ;; esac
-  if [ -z "$llm_model" ]; then
-    if [ "$llm_provider" = vertex ]; then llm_model=gemini-3.7-flash; else llm_model=gemini-3.1-flash-lite; fi
-  fi
-  # A model id that cannot belong to the selected provider is a shell-level mistake, and it costs a
-  # deployment cycle to find: the Developer API answers an unknown model with a 404, which the hook
-  # reports as llm_configuration — indistinguishable from a missing Vertex project. This is a
-  # *known-wrong* list rather than an allowlist, so a model released tomorrow is never refused for
-  # being new.
-  if [ "$llm_provider" = gemini ]; then
-    case "$llm_model" in
-      gemini-3.7-*|gemini-3.8-*)
-        echo "$llm_model is a Vertex model id; the Gemini Developer API will not serve it" >&2
-        echo "Use --llm-provider vertex, or --llm-model gemini-3.1-flash-lite" >&2
+  [ -n "$llm_chain$llm_settings$llm_key_name" ] || {
+    echo "--configure-llm needs at least one of --llm-chain, --llm-set or --llm-key" >&2
+    exit 2
+  }
+  # A provider is a row in models/catalogue.json, so there is no list of provider names here and no
+  # known-wrong model ids to keep up to date. What a name has to be is a variable the catalogue
+  # actually reads; the installer checks that against the catalogue it was shipped, which is the one
+  # the server will run.
+  printf '%s' "$llm_settings" | while IFS= read -r setting; do
+    [ -n "$setting" ] || continue
+    case "$setting" in
+      *=*) ;;
+      *) echo "--llm-set takes NAME=VALUE, not $setting" >&2; exit 2 ;;
+    esac
+    case "${setting%%=*}" in
+      ''|*[!A-Z0-9_]*) echo "Unsafe LLM variable name: ${setting%%=*}" >&2; exit 2 ;;
+    esac
+    # Commas for a chain, colons and slashes for a base URL. Nothing here is ever evaluated — it is
+    # printf'd into a file — but a value that cannot be written on one line is a mistake either way.
+    case "${setting#*=}" in
+      *[!A-Za-z0-9._:/,-]*) echo "Unsafe LLM configuration value" >&2; exit 2 ;;
+    esac
+  done || exit 2
+  case "$llm_chain" in
+    *[!A-Za-z0-9._,-]*) echo "--llm-chain takes comma-separated provider ids" >&2; exit 2 ;;
+  esac
+  case "$llm_key_name" in
+    ''|*[!A-Z0-9_]*) [ -z "$llm_key_name" ] || { echo "Unsafe LLM key name: $llm_key_name" >&2; exit 2; } ;;
+  esac
+  [ -n "$llm_key_name" ] || [ "$llm_api_key_stdin" = false ] || {
+    echo "--llm-api-key-stdin needs --llm-key NAME to say which variable it is" >&2
+    exit 2
+  }
+  llm_api_key=
+  if [ -n "$llm_key_name" ]; then
+    if [ "$llm_api_key_stdin" = true ]; then
+      IFS= read -r llm_api_key || true
+    else
+      printf '%s' "$llm_key_name: " >&2
+      if [ -t 0 ]; then
+        stty -echo
+        trap 'stty echo' EXIT HUP INT TERM
+        IFS= read -r llm_api_key
+        stty echo
+        trap - EXIT HUP INT TERM
+        printf '\n' >&2
+      else
+        echo "--llm-api-key-stdin is required when standard input is not a terminal" >&2
         exit 2
-        ;;
+      fi
+    fi
+    case "$llm_api_key" in
+      ''|*[!A-Za-z0-9._-]*) echo "A valid LLM API key is required" >&2; exit 2 ;;
     esac
   fi
-  llm_location=${llm_location:-global}
-  if [ "$llm_provider" = vertex ] && [ -z "$llm_project" ]; then
-    echo "Vertex configuration requires --llm-project" >&2
-    exit 2
-  fi
-  case "$llm_model$llm_project$llm_location" in
-    *[!A-Za-z0-9._-]*) echo "Unsafe LLM configuration value" >&2; exit 2 ;;
-  esac
-  if [ "$llm_api_key_stdin" = true ]; then
-    llm_api_key=
-    IFS= read -r llm_api_key || true
-  else
-    printf '%s' 'LLM API key: ' >&2
-    if [ -t 0 ]; then
-      stty -echo
-      trap 'stty echo' EXIT HUP INT TERM
-      IFS= read -r llm_api_key
-      stty echo
-      trap - EXIT HUP INT TERM
-      printf '\n' >&2
-    else
-      echo "--llm-api-key-stdin is required when standard input is not a terminal" >&2
-      exit 2
-    fi
-  fi
-  case "$llm_api_key" in ''|*[!A-Za-z0-9._-]*) echo "A valid LLM API key is required" >&2; exit 2 ;; esac
 fi
 
 if [ "$reset_data" = true ]; then
@@ -405,8 +421,11 @@ if [ "$mode" = local ]; then
     llm_credentials=$(mktemp "${TMPDIR:-/tmp}/acervo-llm.XXXXXX")
     trap '[ -z "${llm_credentials:-}" ] || rm -f "$llm_credentials"' EXIT HUP INT TERM
     chmod 600 "$llm_credentials"
-    printf '%s\n%s\n%s\n%s\n%s\n' \
-      "$llm_provider" "$llm_model" "$llm_project" "$llm_location" "$llm_api_key" >"$llm_credentials"
+    {
+      [ -z "$llm_chain" ] || printf 'ACERVO_TEXT_CHAIN=%s\n' "$llm_chain"
+      printf '%s' "$llm_settings"
+      [ -z "$llm_key_name" ] || printf '%s=%s\n' "$llm_key_name" "$llm_api_key"
+    } >"$llm_credentials"
   fi
   set -- --root "$acervo_root" --archive "$local_archive" \
     --bind-address "$effective_bind_address" --port "$effective_anki_port" \
@@ -529,9 +548,11 @@ fi
 
 llm_credential_args=
 if [ "$configure_llm" = true ]; then
-  printf '%s\n%s\n%s\n%s\n%s\n' \
-    "$llm_provider" "$llm_model" "$llm_project" "$llm_location" "$llm_api_key" | \
-    ssh -T "$target" "umask 077 && cat > $remote_llm_credentials" || remote_failed
+  {
+    [ -z "$llm_chain" ] || printf 'ACERVO_TEXT_CHAIN=%s\n' "$llm_chain"
+    printf '%s' "$llm_settings"
+    [ -z "$llm_key_name" ] || printf '%s=%s\n' "$llm_key_name" "$llm_api_key"
+  } | ssh -T "$target" "umask 077 && cat > $remote_llm_credentials" || remote_failed
   llm_credential_args="--llm-credentials-file $remote_llm_credentials"
 fi
 

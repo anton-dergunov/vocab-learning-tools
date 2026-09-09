@@ -13,7 +13,7 @@
 > If LiteLLM's exception hierarchy replaces that mapping, the retry behaviour changes without the
 > retry code changing — so the mapping is part of this plan's acceptance boundary, not an afterthought.
 
-**Status:** Planned (re-aimed).
+**Status:** Complete, 9 Sep 2026.
 **Depends on:** [08](08-the-python-server.md) phase 2 — the service must exist before the request
 path can call into this package. Carries 02's catalogue schema. Independent of
 [03](03-the-owner-chooses-a-model.md) — they can be built in either order.
@@ -316,3 +316,95 @@ costs money:
 - **No call-site migration.** `images/`, the benchmark and `scripts/generate_images.py` keep working
   exactly as they do today; plans 05 and 06 move them.
 - **No speech-to-text.** Not a kind. Whisper is out of scope for this whole roadmap.
+
+---
+
+## Implementation and verification record
+
+Built as specified, with the corrections below. `src/acervo/models/` is the one way to call a model;
+`services/llm.py` is deleted and capture goes through the package.
+
+### What LiteLLM turned out to be, against what this plan assumed
+
+Verified against litellm 1.100.0 rather than from documentation, because two of these change
+behaviour rather than shape.
+
+- **`Timeout` carries status 408 and `APIConnectionError` carries 500.** A mapping written on
+  `status_code` alone sends a timeout to `llm_failed`, which the file ingestion does **not** retry —
+  the exact silent regression this plan's re-aim note warns about. `classify()` reads type before
+  number, and both cases are pinned in `tests/unit/models/test_call.py` and in `test_capture.py`.
+- **There is no Vertex express-key path** ([BerriAI/litellm#21036](https://github.com/BerriAI/litellm/issues/21036)),
+  so `VERTEX_API_KEY` no longer means anything and is gone. The row authenticates by ADC. Before
+  deleting it, `GET /health` on the live server was checked: it reported `provider: gemini`, so
+  nothing that was working was removed. On a server, Vertex now needs a service-account JSON and
+  `GOOGLE_APPLICATION_CREDENTIALS` — a deployment change, not a code change, and not made here.
+- **Both retry mechanisms have to be switched off**, not one: `num_retries` is LiteLLM's own loop
+  and `max_retries` is the provider SDK's, which LiteLLM sets to 2 unless told otherwise.
+- **`litellm` is +304 MB on the server image** (414 MB → 718 MB), measured. The plan expected
+  `boto3` to be most of it and it is not: `litellm` itself is 116 MB, `botocore` 30 MB. Dropping
+  boto3 with `--no-deps` would buy 32 MB in exchange for a dependency list to maintain by hand, so
+  it was not done. The worker image does **not** install LiteLLM — no job calls a model until plan
+  05 — and `call.py` imports it lazily so `acervo.models.pacing` still works there. A test asserts
+  that reading the catalogue does not pull LiteLLM in, because a stray module-level import would
+  break the worker and nothing else.
+
+### Corrections to the plan's own design
+
+- **`litellm` is a per-kind map, not a scalar.** A row declaring three `kinds` cannot name three
+  models with one string. The loader's invariant is that every declared kind has either a
+  `litellm[kind]` or an `adapter[kind]`, never both and never neither.
+- **The `llm_*` mapping lives in `services/models.py`, not in `text()`.** The plan asks both for
+  that mapping and for a package importable without Acervo, which only fit if the split is at the
+  vocabulary rather than at the raise: `models/` produces a closed seven-value `Reason`, the binding
+  layer turns it into an `ApiError`. `test_layering.py` gained a rule enforcing the package's
+  independence, because one `from acervo.errors import ApiError` would collapse it invisibly.
+- **`compose()` returns the model that answered.** `capture.py` read `modelId` from `Settings`
+  before the call, which under a chain names the row that was asked rather than the one that
+  answered — a live violation of the locked provenance contract, fixed here rather than deferred.
+- **Rows gained `passes` and two capability entries**, each because a live call failed without them.
+  A provider fact belongs in the row, not in a branch: Vertex needs its project as a call argument
+  and refuses `response_format`; Gemini rejects OpenAI's voice names; Cloudflare's Deepgram Aura
+  takes `text` where melotts took `prompt`.
+- **`ACERVO_TEXT_CHAIN` replaces `ACERVO_LLM_PROVIDER`/`ACERVO_LLM_MODEL`**, and `--configure-llm`
+  became `--llm-chain` / `--llm-set NAME=VALUE` / `--llm-key NAME`. The `gemini|vertex` whitelist and
+  the known-wrong-model check are gone: the installer now validates a variable name against the
+  catalogue it was shipped, so adding a provider is a catalogue edit and nothing else.
+- **The interface changed after all.** `CaptureHealth.provider` and `.model` are nullable: when no
+  row has its credentials there is no model to name, so the two "It is set to … with the model …"
+  sentences became the reason alone, which is the actionable part.
+
+### What the live run found, which is why it was worth running
+
+`RUN_LIVE_MODEL_TESTS=true` against real providers caught four things no stub could:
+the Cloudflare image model id was wrong (`flux-2-klein`, not `flux-2-klein-4b`); no Imagen model is
+reachable in this Vertex project, so the row uses the Gemini image model the sense-image pipeline
+already uses, at `global` rather than a named region; Gemini refuses `alloy`; and Cloudflare's
+melotts answers Spanish with AiError 8002 and a plain English word with a 500, so the audio model is
+Deepgram Aura instead.
+
+One thing is worth knowing for plan 06: `gemini-2.5-flash-preview-tts` out of free quota answers
+with *no candidates*, and LiteLLM's speech bridge raises `IndexError` on that rather than reporting
+the refusal — which would reach a chain as terminal rather than as rate limiting. The row uses the
+`pro` model, which reports a proper `RateLimitError`. The live speech test treats a typed rate limit
+as "reached, and out of quota", because a 429 proves both things that test exists to check.
+
+### Verification
+
+```
+.venv/bin/python -m pytest                    751 passed, 16 skipped
+npm --prefix web run test                     266 passed
+npm --prefix web run build                    clean
+RUN_DOCKER_INTEGRATION_TESTS=true …           6 passed
+RUN_LIVE_MODEL_TESTS=true …                   7 passed, 1 skipped (gemini speech, out of free quota)
+```
+
+Live, per kind: text on `gemini-free` and `cloudflare`; image on `vertex` (79 KB) and `cloudflare`
+(48 KB); speech on `cloudflare` (4 KB). A deliberately wrong key was refused rather than routed
+around, and the key did not appear in the error text.
+
+Deployed to the Synology and healthy. `GET /health` reports
+`{"available": true, "provider": "gemini-free", "model": "gemini/gemini-3.1-flash-lite"}` — a
+catalogue row id and a LiteLLM model string, so the new code is what is running. `llm.env` carries
+the chain and the Cloudflare credentials, and the installer accepted every variable name against the
+shipped catalogue, which is the check that replaced the provider whitelist. A capture through the
+interface needs an account password and was left to the owner.

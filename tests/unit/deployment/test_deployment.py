@@ -368,22 +368,25 @@ def test_remote_llm_configuration_streams_the_key_without_exposing_it(tmp_path: 
         [
             str(REPO_ROOT / "deploy.sh"), "--target", "deployer@server.example.test",
             "--root", "/volume1/docker/acervo", "--configure-llm",
-            "--llm-provider", "vertex", "--llm-project", "personal-project",
-            "--llm-location", "global", "--llm-model", "gemini-3.7-flash",
-            "--llm-api-key-stdin",
+            "--llm-chain", "cloudflare,gemini-free",
+            "--llm-set", "CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef",
+            "--llm-key", "CLOUDFLARE_API_TOKEN", "--llm-api-key-stdin",
         ],
-        cwd=REPO_ROOT, env=env, input="vertex-key\n", text=True,
+        cwd=REPO_ROOT, env=env, input="cloudflare-token\n", text=True,
         capture_output=True, check=False,
     )
 
     assert result.returncode == 0, result.stderr
     assert llm_upload.read_text(encoding="utf-8") == (
-        "vertex\ngemini-3.7-flash\npersonal-project\nglobal\nvertex-key\n"
+        "ACERVO_TEXT_CHAIN=cloudflare,gemini-free\n"
+        "CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef\n"
+        "CLOUDFLARE_API_TOKEN=cloudflare-token\n"
     )
     commands = ssh_log.read_text(encoding="utf-8")
     assert "cat > /tmp/acervo-llm-credentials-" in commands
     assert "--llm-credentials-file /tmp/acervo-llm-credentials-" in commands
-    assert "vertex-key" not in commands + result.stdout + result.stderr
+    # The key travels over stdin into a mode-600 file. A command line is visible in `ps`.
+    assert "cloudflare-token" not in commands + result.stdout + result.stderr
 
 
 def test_installer_accepts_streamed_credential_file_and_network_options(
@@ -787,30 +790,30 @@ def run_configure_llm(tmp_path: Path, *arguments: str) -> subprocess.CompletedPr
     )
 
 
-def test_a_vertex_model_id_is_refused_for_the_gemini_developer_api(tmp_path: Path) -> None:
-    """A 404 from the wrong model looks exactly like a missing project from the outside."""
-    result = run_configure_llm(
-        tmp_path, "--llm-provider", "gemini", "--llm-model", "gemini-3.7-flash",
-        "--llm-api-key-stdin",
-    )
+def test_a_variable_name_that_looks_nothing_like_one_is_refused(tmp_path: Path) -> None:
+    """Which names are allowed is the catalogue's business — the installer checks against the row
+    list it was shipped. What this script can say on its own is that a name is shaped like one."""
+    result = run_configure_llm(tmp_path, "--llm-set", "not a variable=x")
     assert result.returncode == 2
-    assert "gemini-3.7-flash" in result.stderr
-    assert "Vertex" in result.stderr
-    assert "gemini-3.1-flash-lite" in result.stderr
+    assert "Unsafe LLM variable name" in result.stderr
 
 
-def test_a_model_id_that_is_merely_new_is_not_refused(tmp_path: Path) -> None:
-    """A known-wrong list, not an allowlist: tomorrow's model must not need a script change."""
-    result = run_configure_llm(
-        tmp_path, "--llm-provider", "gemini", "--llm-model", "gemini-9-flash",
-        "--llm-api-key-stdin",
-    )
-    assert "is a Vertex model id" not in result.stderr
+def test_a_provider_id_that_is_merely_new_is_not_refused(tmp_path: Path) -> None:
+    """No list of provider names lives in this script any more, so a row added to the catalogue
+    tomorrow needs no change here. That is what replaced the old `gemini|vertex` whitelist."""
+    result = run_configure_llm(tmp_path, "--llm-chain", "some-provider-invented-later")
+    assert "some-provider-invented-later" not in result.stderr
+
+
+def test_a_key_on_standard_input_needs_to_say_which_variable_it_is(tmp_path: Path) -> None:
+    result = run_configure_llm(tmp_path, "--llm-api-key-stdin")
+    assert result.returncode == 2
+    assert "--llm-key" in result.stderr
 
 
 def test_credentials_and_llm_are_configured_in_separate_commands(tmp_path: Path) -> None:
     result = run_configure_llm(
-        tmp_path, "--configure-credentials", "--llm-provider", "gemini", "--llm-api-key-stdin",
+        tmp_path, "--configure-credentials", "--llm-chain", "gemini-free",
     )
     assert result.returncode == 2
     assert "separate commands" in result.stderr
@@ -835,18 +838,50 @@ def test_installer_updates_only_llm_env_and_preserves_both_provider_keys(tmp_pat
             cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
         )
 
-    result = configure("vertex\ngemini-3.7-flash\npersonal-project\nglobal\nvertex-key\n")
+    result = configure(
+        "ACERVO_TEXT_CHAIN=cloudflare\n"
+        "CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef\n"
+        "CLOUDFLARE_API_TOKEN=cloudflare-token\n"
+    )
     assert result.returncode == 0, result.stderr
-    result = configure("gemini\ngemini-3.1-flash-lite\n\nglobal\ngemini-key\n")
+    result = configure("ACERVO_TEXT_CHAIN=gemini-free\nGEMINI_API_KEY=gemini-key\n")
     assert result.returncode == 0, result.stderr
 
     assert (root / "secrets.env").read_bytes() == original_secrets
     llm = (root / "llm.env").read_text(encoding="utf-8")
-    assert "ACERVO_LLM_PROVIDER=gemini\n" in llm
-    assert "ACERVO_LLM_MODEL=gemini-3.1-flash-lite\n" in llm
-    assert "VERTEX_API_KEY=vertex-key\n" in llm
+    assert "ACERVO_TEXT_CHAIN=gemini-free\n" in llm
     assert "GEMINI_API_KEY=gemini-key\n" in llm
+    # The point of the whole file: switching provider keeps the other one's credentials, so
+    # switching back does not mean minting a new key.
+    assert "CLOUDFLARE_API_TOKEN=cloudflare-token\n" in llm
+    assert "CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef\n" in llm
+    assert llm.count("ACERVO_TEXT_CHAIN") == 1
     assert (root / "llm.env").stat().st_mode & 0o777 == 0o600
+
+
+def test_the_installer_refuses_a_variable_no_provider_reads(tmp_path: Path) -> None:
+    """The replacement for the old `gemini|vertex` whitelist: a name has to belong to a row.
+
+    A key written under a name nothing reads is the worst kind of misconfiguration — it deploys
+    cleanly and the server is simply unable to build entries, with health blaming the variable that
+    *is* missing.
+    """
+    env, root = deployment_env(tmp_path)
+    settings = tmp_path / "llm-credentials"
+    settings.write_text("NOT_A_PROVIDER_VARIABLE=x\n", encoding="utf-8")
+    settings.chmod(0o600)
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy/acervo/install.sh"),
+            "--root", str(root),
+            "--llm-credentials-file", str(settings),
+            "--bind-address", "127.0.0.1", "--port", "27701",
+            "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+        ],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+    assert result.returncode == 2
+    assert "not a variable any provider in the catalogue reads" in result.stderr
 
 
 def test_remote_status_does_not_build_or_upload(tmp_path: Path) -> None:

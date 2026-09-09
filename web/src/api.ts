@@ -23,8 +23,11 @@ interface SyncEnvelope {
  */
 export interface CaptureHealth {
   available: boolean;
-  provider: string;
-  model: string;
+  /* The provider that would be asked first, and its model. Null when nothing can be asked: with a
+     chain of providers, "unavailable" means no row has its credentials, so there is no model to
+     name. `reason` names the first missing environment variable and is the actionable part. */
+  provider: string | null;
+  model: string | null;
   reason: string | null;
 }
 

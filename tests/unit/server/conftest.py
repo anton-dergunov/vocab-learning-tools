@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
+from litellm import ModelResponse
 from fastapi.testclient import TestClient
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -26,35 +26,46 @@ DEVICE = "device000000001"
 
 @dataclass
 class ModelStub:
-    """Stands in for the provider, and records what it was asked.
+    """Stands in for LiteLLM, and records what it was asked.
 
     It tells the two capture calls apart the way the real prompts do — by the opening line of
     `prompts/acervo_resolve.txt` — so a test that changes one call's answer cannot silently change
-    the other's.
+    the other's. That line now arrives as the system message rather than inside Google's
+    `systemInstruction`, which is the only thing about this that moved.
+
+    Failures are raised as **real LiteLLM exceptions**. Raising Acervo's own `ProviderRefused`
+    instead would skip `acervo.models.call.classify` entirely — and that function is what decides
+    whether the file ingestion retries, so a test suite that stubbed past it would be asserting
+    nothing about the contract it exists to protect.
     """
 
     resolution: dict[str, Any] = field(default_factory=dict)
     article: dict[str, Any] = field(default_factory=dict)
     calls: list[dict[str, Any]] = field(default_factory=list)
-    status: int = 200
-    unreachable: bool = False
-    body: Any = None
-    thought_first: bool = False
+    error: BaseException | None = None
+    errors: list[BaseException | None] = field(default_factory=list)
+    text: str | None = None
+    reasoning: str | None = None
 
-    def __call__(self, url, *, headers=None, json=None, timeout=None, **_kwargs):  # noqa: A002
-        self.calls.append({"url": url, "headers": dict(headers or {}), "body": json})
-        if self.unreachable:
-            raise httpx.ConnectError("no route to the model")
-        if self.status != 200:
-            return httpx.Response(self.status, text="provider details that must stay private")
-        if self.body is not None:
-            return httpx.Response(200, json=self.body)
-        system = json["systemInstruction"]["parts"][0]["text"]
-        answer = self.resolution if "You decide what a learner" in system else self.article
-        parts = [{"text": _dumped(answer)}]
-        if self.thought_first:
-            parts.insert(0, {"thought": True, "text": "deliberation nobody asked for"})
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": parts}}]})
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        failure = self.errors.pop(0) if self.errors else self.error
+        if failure is not None:
+            raise failure
+        if self.text is not None:
+            body = self.text
+        else:
+            system = next(m["content"] for m in kwargs["messages"] if m["role"] == "system")
+            body = _dumped(self.resolution if "You decide what a learner" in system else self.article)
+        answered = ModelResponse(
+            model=kwargs["model"],
+            choices=[
+                {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": body}}
+            ],
+        )
+        if self.reasoning is not None:
+            answered.choices[0].message.reasoning_content = self.reasoning
+        return answered
 
 
 def _dumped(answer: Any) -> str:
@@ -129,22 +140,31 @@ def server(tmp_path, monkeypatch) -> Server:
     monkeypatch.setenv("ACERVO_PROMPTS_PATH", str(PROMPTS))
     monkeypatch.setenv("ACERVO_APP_VERSION", "1.4.2")
     monkeypatch.setenv("ACERVO_APP_BUILD", "218")
-    monkeypatch.setenv("ACERVO_LLM_PROVIDER", "gemini")
-    monkeypatch.setenv("ACERVO_LLM_MODEL", "stub-model")
-    monkeypatch.setenv("GEMINI_API_KEY", "stub-key")
-    monkeypatch.setenv("VERTEX_API_KEY", "")
-    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "")
-    monkeypatch.setenv("ACERVO_VERTEX_LOCATION", "global")
-    monkeypatch.setenv("ACERVO_LLM_ENDPOINT", "https://generativelanguage.googleapis.com")
     monkeypatch.setenv("ACERVO_JWT_SECRET", "test-secret")
 
+    # One credentialed row, so the default chain is exactly `gemini-free` and a test about how a
+    # refusal is classified is not also a test about falling through to somebody else. The tests
+    # that are about the chain set these themselves.
+    monkeypatch.setenv("GEMINI_API_KEY", "stub-key")
+    monkeypatch.delenv("ACERVO_TEXT_CHAIN", raising=False)
+    for name in (
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "ACERVO_OLLAMA_URL",
+        "ACERVO_VERTEX_PROJECT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
     from acervo.api.app import create_app
+    from acervo.models import call as model_call
     from acervo.repository import accounts
-    from acervo.services import llm, prompts
+    from acervo.services import prompts
 
     prompts.forget_prompts()
     model = ModelStub()
-    monkeypatch.setattr(llm.httpx, "post", model)
+    monkeypatch.setattr(model_call, "completion", model)
 
     app = create_app()
     client = TestClient(app, raise_server_exceptions=False)

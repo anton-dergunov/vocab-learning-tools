@@ -15,7 +15,7 @@ fi
 
 eval "$("$repo_root/scripts/version.sh")"
 mkdir -p "$output_dir" "$bundle"
-for directory in deploy dictionaries docs prompts requirements scripts src templates; do
+for directory in deploy dictionaries docs models prompts requirements scripts src templates; do
   mkdir -p "$bundle/$directory"
   rsync -a --exclude .DS_Store --exclude __pycache__ --exclude '*.pyc' --exclude 'llm.env' \
     "$repo_root/$directory/" "$bundle/$directory/"
@@ -63,7 +63,7 @@ if [ "${ACERVO_INCLUDE_DICTIONARIES:-true}" = true ] && [ -d "$dictionary_artifa
   echo "Bundling $bundled compiled dictionaries ($size). Set ACERVO_INCLUDE_DICTIONARIES=false to skip." >&2
 fi
 
-archive_entries="deploy dictionaries docs prompts requirements scripts src templates package.json pyproject.toml README.md version.json"
+archive_entries="deploy dictionaries docs models prompts requirements scripts src templates package.json pyproject.toml README.md version.json"
 [ ! -d "$bundle/downloads" ] || archive_entries="$archive_entries downloads"
 [ ! -d "$bundle/dictionary-artifacts" ] || archive_entries="$archive_entries dictionary-artifacts"
 

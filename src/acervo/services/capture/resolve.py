@@ -12,7 +12,7 @@ from acervo.services.capture.coerce import (
     reference_of,
     trimmed,
 )
-from acervo.services.llm import llm_json
+from acervo.services.models import llm_json
 from acervo.services.prompts import prompt_text
 from acervo.settings import Settings
 
@@ -54,7 +54,7 @@ def resolve(settings: Settings, request: dict[str, Any], vocabularies: list[dict
         if line != ""
     )
 
-    answer = llm_json(settings, prompt_text(settings.prompts_path, "acervo_resolve"), user)
+    answer, _model = llm_json(settings, prompt_text(settings.prompts_path, "acervo_resolve"), user)
     if isinstance(answer, dict) and trimmed(answer.get("error")):
         raise UNREADABLE
     if not isinstance(answer, dict):

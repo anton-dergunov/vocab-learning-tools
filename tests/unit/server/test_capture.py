@@ -9,8 +9,14 @@ from __future__ import annotations
 
 import re
 
+import httpx
+import litellm
 import pytest
 from graph_records import lexeme, topic, vocabulary
+
+# What a provider says when it refuses. Every classification test asserts this never reaches
+# the owner: a provider's own error text routinely echoes the request back, key included.
+PRIVATE = "provider details that must stay private"
 
 RESOLUTION = {
     "language": "es",
@@ -64,11 +70,10 @@ def seeded(server):
 
 
 def prompts_of(server):
-    return [call["body"]["contents"][0]["parts"][0]["text"] for call in server.model.calls]
-
-
-def generation_of(server, index=0):
-    return server.model.calls[index]["body"]["generationConfig"]
+    return [
+        next(message["content"] for message in call["messages"] if message["role"] == "user")
+        for call in server.model.calls
+    ]
 
 
 # ── what capture refuses, and how early ─────────────────────────────────────
@@ -220,7 +225,7 @@ def test_it_builds_a_draft_keeping_the_learners_sentence_as_an_attestation_the_e
     assert own["sourceAttestationId"] == draft["attestations"][0]["id"]
     assert own["modelId"] is None
     assert invented["origin"] == "llm"
-    assert invented["modelId"] == "stub-model"
+    assert invented["modelId"] == "gemini/gemini-3.1-flash-lite"
     # Every minted id is a real Acervo id, or nothing could reference anything.
     for identifier in (draft["senses"][0]["id"], own["id"], draft["attestations"][0]["id"]):
         assert re.match(r"^[a-z0-9]{15}$", identifier)
@@ -320,86 +325,145 @@ def test_a_draft_is_not_written_unless_applying_was_asked_for(seeded):
 
 
 # ── how the provider is called ──────────────────────────────────────────────
+# A provider is a row in `models/catalogue.json` reached through LiteLLM, so what is worth asserting
+# here is what the row put into the request — not a URL this code no longer builds.
 
 
-def test_it_uses_the_gemini_developer_api_with_its_key_and_sampling_setting(seeded):
+def test_it_asks_the_first_credentialed_row_in_the_catalogue(seeded):
     seeded.capture()
     call = seeded.model.calls[0]
-    assert call["url"] == (
-        "https://generativelanguage.googleapis.com/v1beta/models/stub-model:generateContent"
-    )
-    assert call["headers"]["x-goog-api-key"] == "stub-key"
-    assert generation_of(seeded)["temperature"] == 0.2
-    assert "thinkingConfig" not in generation_of(seeded)
+    assert call["model"] == "gemini/gemini-3.1-flash-lite"
+    assert call["api_key"] == "stub-key"
+    assert call["timeout"] == 120
+    # Gemini's row declares `jsonSchema: native`, so the format is sent rather than asked for in
+    # prose. The two capture prompts return free-form documents, so it is `json_object` and not a
+    # schema.
+    assert call["response_format"] == {"type": "json_object"}
 
 
-def test_it_uses_the_full_vertex_url_vertex_key_json_output_and_medium_thinking(seeded, monkeypatch):
-    monkeypatch.setenv("ACERVO_LLM_PROVIDER", "vertex")
-    monkeypatch.setenv("VERTEX_API_KEY", "vertex-key")
-    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "personal-project")
-    monkeypatch.setenv("ACERVO_VERTEX_LOCATION", "global")
-    monkeypatch.setenv("ACERVO_LLM_MODEL", "gemini-3.7-flash")
-    monkeypatch.setattr(seeded.settings, "llm_provider", "vertex")
-    monkeypatch.setattr(seeded.settings, "vertex_api_key", "vertex-key")
-    monkeypatch.setattr(seeded.settings, "vertex_project", "personal-project")
-    monkeypatch.setattr(seeded.settings, "llm_model", "gemini-3.7-flash")
+def test_litellms_own_retries_are_switched_off(seeded):
+    """Both of them: `num_retries` is LiteLLM's loop and `max_retries` is the provider SDK's, which
+    LiteLLM otherwise sets to 2. The chain is the only fall-through, and the file ingestion is the
+    only retry."""
+    seeded.capture()
+    assert seeded.model.calls[0]["num_retries"] == 0
+    assert seeded.model.calls[0]["max_retries"] == 0
+
+
+def test_the_chain_setting_decides_which_row_is_asked_first(seeded, monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(seeded.settings, "text_chain", "cloudflare,gemini-free")
 
     seeded.capture()
     call = seeded.model.calls[0]
-    assert call["url"] == (
-        "https://aiplatform.googleapis.com/v1/projects/personal-project/locations/global"
-        "/publishers/google/models/gemini-3.7-flash:generateContent"
-    )
-    assert call["headers"]["x-goog-api-key"] == "vertex-key"
-    assert generation_of(seeded) == {
-        "responseMimeType": "application/json",
-        "thinkingConfig": {"thinkingLevel": "MEDIUM"},
-    }
+    assert call["model"].startswith("cloudflare/")
+    assert call["api_key"] == "cloudflare-token"
+    # Cloudflare's row declares `jsonSchema: prompt`: the instruction is the prompt's job there, and
+    # the reply is parsed afterwards.
+    assert "response_format" not in call
 
 
-def test_it_ignores_hidden_thinking_parts_and_parses_only_the_article_json(seeded):
-    seeded.model.thought_first = True
-    assert seeded.capture().json()["data"]["draft"]["headword"] == "el garfio"
+def test_a_rate_limited_row_falls_through_and_the_entry_records_who_answered(seeded, monkeypatch):
+    """The locked provenance contract, end to end. `modelId` naming the first choice is a bug."""
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
+    seeded.model.errors = [
+        litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m"),  # resolve
+        None,
+        litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m"),  # compose
+        None,
+    ]
+
+    draft = seeded.capture().json()["data"]["draft"]
+    asked = [call["model"] for call in seeded.model.calls]
+    assert asked[0].startswith("gemini/") and asked[1].startswith("cloudflare/")
+    _own, invented = draft["senses"][0]["examples"]
+    assert invented["modelId"].startswith("cloudflare/")
+
+
+def test_an_authentication_failure_stops_the_chain_rather_than_spending_the_next_provider(
+    seeded, monkeypatch
+):
+    """A mistake to fix, not a condition to route around. The call count is the assertion."""
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
+    seeded.model.error = litellm.AuthenticationError(message=PRIVATE, llm_provider="p", model="m")
+
+    assert seeded.capture().json()["error"]["code"] == "llm_authentication"
+    assert len(seeded.model.calls) == 1
 
 
 @pytest.mark.parametrize(
-    ("status", "code"),
+    ("failure", "code"),
     [
-        (401, "llm_authentication"),
-        (403, "llm_authentication"),
-        (400, "llm_configuration"),
-        (404, "llm_configuration"),
-        (429, "llm_rate_limited"),
-        (500, "llm_unavailable"),
-        (503, "llm_unavailable"),
-        (418, "llm_failed"),
+        (lambda: litellm.AuthenticationError(message=PRIVATE, llm_provider="p", model="m"),
+         "llm_authentication"),
+        (lambda: litellm.PermissionDeniedError(
+            message=PRIVATE, llm_provider="p", model="m",
+            response=httpx.Response(403, request=httpx.Request("POST", "https://p.example.com"))),
+         "llm_authentication"),
+        (lambda: litellm.BadRequestError(message=PRIVATE, model="m", llm_provider="p"),
+         "llm_configuration"),
+        (lambda: litellm.NotFoundError(message=PRIVATE, model="m", llm_provider="p"),
+         "llm_configuration"),
+        (lambda: litellm.RateLimitError(message=PRIVATE, llm_provider="p", model="m"),
+         "llm_rate_limited"),
+        (lambda: litellm.InternalServerError(message=PRIVATE, llm_provider="p", model="m"),
+         "llm_unavailable"),
+        (lambda: litellm.ServiceUnavailableError(message=PRIVATE, llm_provider="p", model="m"),
+         "llm_unavailable"),
+        (lambda: litellm.APIError(status_code=418, message=PRIVATE, llm_provider="p", model="m"),
+         "llm_failed"),
+        (lambda: litellm.Timeout(message=PRIVATE, model="m", llm_provider="p"),
+         "llm_unreachable"),
+        (lambda: litellm.APIConnectionError(message=PRIVATE, llm_provider="p", model="m"),
+         "llm_unreachable"),
     ],
+    ids=lambda value: value if isinstance(value, str) else "",
 )
-def test_it_classifies_a_provider_status_without_exposing_its_response(seeded, status, code):
-    """The taxonomy is a contract: the file ingestion retries on exactly three of these codes."""
-    seeded.model.status = status
+def test_it_classifies_a_provider_failure_without_exposing_its_response(seeded, failure, code):
+    """The taxonomy is a contract: the file ingestion retries on exactly three of these codes.
+
+    The last two are the ones a status-only reading gets wrong — `Timeout` carries 408 and
+    `APIConnectionError` carries 500 — and getting them wrong would stop a timeout being retried
+    without touching the retry code.
+    """
+    seeded.model.error = failure()
     answer = seeded.capture()
     assert answer.json()["error"]["code"] == code
     assert "provider details" not in answer.text
 
 
 def test_a_provider_that_cannot_be_reached_is_told_apart_from_one_that_refuses(seeded):
-    seeded.model.unreachable = True
+    seeded.model.error = litellm.APIConnectionError(message=PRIVATE, llm_provider="p", model="m")
     answer = seeded.capture()
     assert answer.status_code == 502
     assert answer.json()["error"]["code"] == "llm_unreachable"
 
 
+def test_every_row_being_rate_limited_still_reads_as_rate_limited(seeded, monkeypatch):
+    """What keeps the retry contract when a chain runs out: the last error is the reported one."""
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
+    seeded.model.error = litellm.RateLimitError(message=PRIVATE, llm_provider="p", model="m")
+
+    assert seeded.capture().json()["error"]["code"] == "llm_rate_limited"
+    assert len(seeded.model.calls) == 2  # both rows were tried before giving up
+
+
+def test_hidden_reasoning_never_reaches_the_article(seeded):
+    """`llm.py` skipped Google's `thought` parts by hand; LiteLLM separates them from the content."""
+    seeded.model.reasoning = "deliberation nobody asked for"
+    assert seeded.capture().json()["data"]["draft"]["headword"] == "el garfio"
+
+
 @pytest.mark.parametrize(
-    ("body", "code"),
-    [
-        ({"candidates": []}, "llm_empty"),
-        ({"candidates": [{"content": {"parts": [{"text": "   "}]}}]}, "llm_empty"),
-        ({"candidates": [{"content": {"parts": [{"text": "not json at all"}]}}]}, "llm_unusable"),
-    ],
+    ("text", "code"),
+    [("", "llm_empty"), ("   ", "llm_empty"), ("not json at all", "llm_unusable")],
 )
-def test_an_answer_with_nothing_usable_in_it_is_named_as_such(seeded, body, code):
-    seeded.model.body = body
+def test_an_answer_with_nothing_usable_in_it_is_named_as_such(seeded, text, code):
+    seeded.model.text = text
     assert seeded.capture().json()["error"]["code"] == code
 
 
@@ -408,11 +472,7 @@ def test_a_fenced_answer_is_unwrapped_rather_than_refused(seeded):
     failure."""
     import json
 
-    seeded.model.body = {
-        "candidates": [
-            {"content": {"parts": [{"text": "```json\n" + json.dumps(RESOLUTION) + "\n```"}]}}
-        ]
-    }
+    seeded.model.text = "```json\n" + json.dumps(RESOLUTION) + "\n```"
     assert seeded.capture().status_code in (200, 502)
     assert seeded.model.calls  # it got as far as asking
 
@@ -427,24 +487,33 @@ def capture_health(server):
     return server.client.get("/api/acervo/v1/health").json()["data"]["capture"]
 
 
-def test_health_reports_the_provider_and_model_it_is_configured_with(seeded):
+def test_health_reports_the_row_that_would_be_asked_first(seeded):
     assert capture_health(seeded) == {
-        "available": True, "provider": "gemini", "model": "stub-model", "reason": None,
+        "available": True,
+        "provider": "gemini-free",
+        "model": "gemini/gemini-3.1-flash-lite",
+        "reason": None,
     }
 
 
 BROKEN = {
-    "GEMINI_API_KEY is not set": {"gemini_api_key": ""},
-    "VERTEX_API_KEY is not set": {"llm_provider": "vertex", "vertex_project": "personal-project"},
-    "ACERVO_VERTEX_PROJECT is not set": {"llm_provider": "vertex", "vertex_api_key": "vertex-key"},
-    "ACERVO_LLM_PROVIDER is not one of gemini, vertex": {"llm_provider": "cloudflare"},
+    "GEMINI_API_KEY is not set": {"env": {"GEMINI_API_KEY": None}},
+    "CLOUDFLARE_ACCOUNT_ID is not set": {
+        "env": {"GEMINI_API_KEY": None, "CLOUDFLARE_API_TOKEN": "cloudflare-token"},
+        "chain": "cloudflare",
+    },
+    "no provider 'nonesuch' is in the catalogue": {"chain": "nonesuch"},
 }
 
 
 @pytest.mark.parametrize("reason", list(BROKEN))
 def test_health_names_the_first_unmet_requirement_and_capture_then_refuses(seeded, monkeypatch, reason):
-    for field, value in BROKEN[reason].items():
-        monkeypatch.setattr(seeded.settings, field, value)
+    case = BROKEN[reason]
+    for name, value in (case.get("env") or {}).items():
+        monkeypatch.delenv(name, raising=False) if value is None else monkeypatch.setenv(name, value)
+    if case.get("chain"):
+        monkeypatch.setattr(seeded.settings, "text_chain", case["chain"])
+
     readout = capture_health(seeded)
     assert readout["available"] is False
     assert readout["reason"] == reason
@@ -455,12 +524,12 @@ def test_health_names_the_first_unmet_requirement_and_capture_then_refuses(seede
     assert seeded.model.calls == []
 
 
-def test_health_never_puts_a_key_an_endpoint_or_a_project_id_in_an_unauthenticated_response(
+def test_health_never_puts_a_key_an_endpoint_or_an_account_id_in_an_unauthenticated_response(
     seeded, monkeypatch
 ):
-    monkeypatch.setattr(seeded.settings, "llm_provider", "vertex")
-    monkeypatch.setattr(seeded.settings, "vertex_api_key", "vertex-key")
-    monkeypatch.setattr(seeded.settings, "vertex_project", "personal-project")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(seeded.settings, "text_chain", "cloudflare,gemini-free")
     body = seeded.client.get("/api/acervo/v1/health").text
-    for secret in ("vertex-key", "stub-key", "personal-project", "googleapis"):
+    for secret in ("cloudflare-token", "stub-key", "0123456789abcdef0123456789abcdef"):
         assert secret not in body
