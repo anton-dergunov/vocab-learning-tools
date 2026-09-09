@@ -31,6 +31,45 @@ export interface CaptureHealth {
   reason: string | null;
 }
 
+/* ── which model builds an entry ──────────────────────────────────────────
+   Server state read through a route, not vocabulary: it is owner-scoped, never replicated, and it
+   decides what the words are *made of*. It deliberately does not go through `AcervoRepository`,
+   which owns the replica and nothing else — the external-dictionary list arrives the same way. */
+
+/** One provider the server knows about, and whether this deployment can actually use it. */
+export interface ModelProvider {
+  id: string;
+  label: string;
+  kinds: string[];
+  /** The models it offers, per kind. A chain entry is one of these, not a whole provider. */
+  models: Record<string, string[]>;
+  available: boolean;
+  /** Names an environment variable and never a value, so it is safe to show. */
+  reason: string | null;
+  /** Where the owner reads their own usage. No provider serves that figure over an API. */
+  usageUrl: string | null;
+  notes: string | null;
+}
+
+export interface ModelPair {
+  provider: string;
+  model: string;
+}
+
+export interface ModelChain {
+  /** `deployment` means nothing has been chosen and the server's own order is in force. */
+  source: "owner" | "deployment";
+  /** Why nothing in this chain can be asked, or null. Same producer as the health readout. */
+  reason: string | null;
+  /** What is *stored*, not what will be walked: an unavailable pair keeps its place. */
+  pairs: ModelPair[];
+}
+
+export interface ModelCatalogue {
+  providers: ModelProvider[];
+  chains: Record<string, ModelChain>;
+}
+
 export interface ServerHealth {
   name: string;
   version: string;
@@ -282,6 +321,23 @@ export const backendSession = {
      Two calls and two addresses. The list and an online lookup are ordinary JSON; the artifact
      itself is a static file read with byte ranges, so the reader can treat a dictionary the server
      holds exactly like one this device stored. */
+
+  /** The catalogue as this owner sees it, and their chains. Owner-scoped, so it needs a session. */
+  fetchModels(): Promise<ModelCatalogue> {
+    return client.call<ModelCatalogue>("/models");
+  },
+  /**
+   * Changes the chains named and returns the whole readout.
+   *
+   * `null` for a kind forgets the choice and returns it to the server's own order — without it, one
+   * saved chain would be a one-way door, since unchecking everything is refused as an empty chain.
+   * The answer is the server's, not this client's optimism, and it carries fresh availability.
+   */
+  saveModelSelection(chains: Record<string, ModelPair[] | null>): Promise<ModelCatalogue> {
+    return client.call<ModelCatalogue>("/models/selection", {
+      method: "PUT", body: JSON.stringify({ chains })
+    });
+  },
 
   listDictionaries(): Promise<{ dictionaries: RemoteDictionary[] }> {
     return client.call<{ dictionaries: RemoteDictionary[] }>("/dictionaries");

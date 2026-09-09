@@ -215,3 +215,100 @@ def test_the_walk_calls_the_real_text_function_with_the_model_it_chose(monkeypat
     assert seen == [pair[1] for pair in DEFAULT_WALK[:2]]
     assert result.answer.model == "gemini/gemini-3.5-flash-lite"
     assert result.answer.attempts == tuple(DEFAULT_WALK[:2])
+
+
+# ── choosing one model of a row ─────────────────────────────────────────────
+# A chain entry is a bare row id or an explicit (provider, model) pair. The id is what
+# `ACERVO_TEXT_CHAIN` writes — a deploy-time flag pins a provider and leaves the models to the
+# catalogue. The pair is what the owner's record stores, because a free tier is metered per model.
+
+
+GEMINI_MODELS = ("gemini/gemini-3.1-flash-lite", "gemini/gemini-3.5-flash-lite")
+
+
+def test_a_pair_resolves_to_that_model_alone_even_though_the_row_offers_two():
+    chosen = [("gemini-free", "gemini/gemini-3.5-flash-lite")]
+    assert [c.named for c in chain.resolve("text", chosen, SHIPPED)] == [
+        ("gemini-free", "gemini/gemini-3.5-flash-lite")
+    ]
+
+
+def test_a_bare_id_still_means_every_model_that_row_offers():
+    assert [c.model for c in chain.resolve("text", ["gemini-free"], SHIPPED)] == list(GEMINI_MODELS)
+
+
+def test_ids_and_pairs_mix_in_the_order_they_are_stated():
+    """The env var writes ids and the owner's record writes pairs; both reach one resolver."""
+    chosen = [("cloudflare", "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"), "gemini-free"]
+    assert [c.named for c in chain.resolve("text", chosen, SHIPPED)] == [
+        ("cloudflare", "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+        ("gemini-free", GEMINI_MODELS[0]),
+        ("gemini-free", GEMINI_MODELS[1]),
+    ]
+
+
+def test_a_model_the_row_does_not_offer_is_refused_rather_than_skipped():
+    """Not holding a key is a legitimate state; naming a model the catalogue does not offer is not.
+
+    Skipping it would be silently wrong twice: retire both of a row's models and `unconfigured`
+    reports a key as missing when it is plainly set, and retire one and capture quietly walks half
+    the chain the owner configured, forever, with no symptom.
+    """
+    with pytest.raises(ProviderRefused, match="does not offer") as caught:
+        chain.resolve("text", [("gemini-free", "gemini/retired-last-year")], SHIPPED)
+    assert caught.value.reason == "configuration"
+    assert "gemini-free" in caught.value.detail and "retired-last-year" in caught.value.detail
+
+
+def test_a_model_the_row_offers_for_another_kind_is_still_refused_for_this_one():
+    audio = SHIPPED.find("gemini-free").models_for("audio")[0]
+    with pytest.raises(ProviderRefused, match="does not offer"):
+        chain.resolve("text", [("gemini-free", audio)], SHIPPED)
+
+
+def test_an_unknown_model_is_refused_even_when_that_rows_key_is_also_missing(monkeypatch):
+    """The model check comes before the credential check, deliberately.
+
+    Otherwise the identical stored record is a refusal on a server holding the key and a silent skip
+    on one that does not — the error would depend on the environment rather than on the record, and
+    a test asserting it would be flaky by configuration.
+    """
+    monkeypatch.delenv("GEMINI_API_KEY")
+    with pytest.raises(ProviderRefused, match="does not offer"):
+        chain.resolve("text", [("gemini-free", "gemini/retired-last-year")], SHIPPED)
+
+
+def test_a_pair_on_an_uncredentialed_row_is_skipped_like_a_bare_id(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY")
+    chosen = [("gemini-free", GEMINI_MODELS[0]), ("openai", "openai/gpt-5.1")]
+    assert [c.row.id for c in chain.resolve("text", chosen, SHIPPED)] == ["openai"]
+
+
+def test_the_same_pair_twice_is_asked_once_and_keeps_its_first_place():
+    """Asked twice it would fail twice, double the latency of an exhausted chain, and appear twice
+    in `attempts`."""
+    chosen = [("gemini-free", GEMINI_MODELS[1]), "openai", ("gemini-free", GEMINI_MODELS[1])]
+    assert [c.named for c in chain.resolve("text", chosen, SHIPPED)] == [
+        ("gemini-free", GEMINI_MODELS[1]),
+        ("openai", "openai/gpt-5.1"),
+    ]
+
+
+def test_walking_a_pinned_chain_asks_only_what_was_pinned():
+    ask, tried = refusing()
+    result = chain.walk("text", [("gemini-free", GEMINI_MODELS[1])], SHIPPED, ask, chain.stamped)
+    assert tried == [("gemini-free", GEMINI_MODELS[1])]
+    assert result.answer.attempts == (("gemini-free", GEMINI_MODELS[1]),)
+
+
+def test_unconfigured_reads_the_stated_chain_when_it_is_written_as_pairs(monkeypatch):
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN")
+    with pytest.raises(ProviderRefused) as caught:
+        chain.walk(
+            "text",
+            [("cloudflare", "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast")],
+            SHIPPED,
+            lambda c: pytest.fail("called"),
+            chain.stamped,
+        )
+    assert caught.value.detail == "CLOUDFLARE_API_TOKEN is not set"

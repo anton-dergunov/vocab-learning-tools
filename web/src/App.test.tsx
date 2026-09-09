@@ -903,12 +903,30 @@ describe("Acervo application", () => {
     expect(screen.getByRole("button", { name: "Process" })).toBeEnabled();
   });
 
-  it("names the provider and model that build entries, in settings", async () => {
+  it("names the provider and model that build entries, in Settings \u25B8 Models", async () => {
+    /* Moved out of General, not duplicated: General read the *deployment's* provider from health,
+       and Models reads the owner's own chain. Two readouts of "what builds an entry" would drift
+       the moment a chain was chosen. */
     signedIn();
+    vi.spyOn(backendSession, "fetchModels").mockResolvedValue({
+      providers: [{
+        id: "gemini-free", label: "Gemini (free tier)", kinds: ["text"],
+        models: { text: ["gemini/gemini-3.1-flash-lite"] },
+        available: true, reason: null, usageUrl: null, notes: null
+      }],
+      chains: {
+        text: { source: "deployment", reason: null, pairs: [] },
+        image: { source: "deployment", reason: null, pairs: [] },
+        audio: { source: "deployment", reason: null, pairs: [] }
+      }
+    });
     await openList();
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
     const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
-    expect(settings.getByText("Entries are built by gemini")).toBeInTheDocument();
-    expect(settings.getByText(/gemini-3.1-flash-lite/)).toBeInTheDocument();
+
+    expect(settings.queryByText(/Entries are built by/)).not.toBeInTheDocument();
+    fireEvent.click(settings.getByRole("tab", { name: "Models" }));
+    expect(await settings.findByText("Gemini (free tier)")).toBeInTheDocument();
+    expect(settings.getByText("gemini/gemini-3.1-flash-lite")).toBeInTheDocument();
   });
 });

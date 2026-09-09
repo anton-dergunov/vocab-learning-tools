@@ -21,7 +21,9 @@ UNREADABLE = ApiError(
 )
 
 
-def resolve(settings: Settings, request: dict[str, Any], vocabularies: list[dict]) -> dict[str, Any]:
+def resolve(
+    settings: Settings, owner: str, request: dict[str, Any], vocabularies: list[dict]
+) -> dict[str, Any]:
     stream = trimmed(request.get("mode")) == "stream"
     reference = reference_of(request)
     known = [
@@ -54,7 +56,9 @@ def resolve(settings: Settings, request: dict[str, Any], vocabularies: list[dict
         if line != ""
     )
 
-    answer, _model = llm_json(settings, prompt_text(settings.prompts_path, "acervo_resolve"), user)
+    answer, _model = llm_json(
+        settings, owner, prompt_text(settings.prompts_path, "acervo_resolve"), user
+    )
     if isinstance(answer, dict) and trimmed(answer.get("error")):
         raise UNREADABLE
     if not isinstance(answer, dict):

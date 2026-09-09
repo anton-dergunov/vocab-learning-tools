@@ -544,3 +544,105 @@ def test_health_never_puts_a_key_an_endpoint_or_an_account_id_in_an_unauthentica
     body = seeded.client.get("/api/acervo/v1/health").text
     for secret in ("cloudflare-token", "stub-key", "0123456789abcdef0123456789abcdef"):
         assert secret not in body
+
+
+# ── whose chain decides ─────────────────────────────────────────────────────
+# The point of Settings ▸ Models: the owner's order takes effect on the next capture, with nothing
+# restarted and nothing redeployed. These run against the same process, which is the whole claim.
+
+
+GEMINI_SECOND = "gemini/gemini-3.5-flash-lite"
+CLOUDFLARE_TEXT = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+
+
+def select(server, chains):
+    return server.client.put(
+        "/api/acervo/v1/models/selection", headers=server.auth, json={"chains": chains}
+    )
+
+
+@pytest.fixture
+def cloudflare_too(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
+
+
+def test_the_owners_chain_takes_effect_on_the_next_capture_with_no_restart(seeded, cloudflare_too):
+    seeded.capture()
+    assert seeded.model.calls[0]["model"].startswith("gemini/")
+
+    select(seeded, {"text": [{"provider": "cloudflare", "model": CLOUDFLARE_TEXT}]})
+    seeded.model.calls.clear()
+    seeded.capture()
+    assert seeded.model.calls[0]["model"] == CLOUDFLARE_TEXT
+
+
+def test_the_owners_chain_outranks_the_deployments(seeded, monkeypatch, cloudflare_too):
+    monkeypatch.setattr(seeded.settings, "text_chain", "gemini-free")
+    select(seeded, {"text": [{"provider": "cloudflare", "model": CLOUDFLARE_TEXT}]})
+    seeded.capture()
+    assert seeded.model.calls[0]["model"] == CLOUDFLARE_TEXT
+
+
+def test_the_deployment_still_decides_when_the_owner_has_not_chosen(seeded, monkeypatch, cloudflare_too):
+    """The other rung of the ladder: owner, then deployment, then catalogue order."""
+    monkeypatch.setattr(seeded.settings, "text_chain", "cloudflare")
+    seeded.capture()
+    assert seeded.model.calls[0]["model"] == CLOUDFLARE_TEXT
+
+
+def test_the_owner_can_pin_the_second_model_of_a_row_and_it_is_the_only_one_called(seeded):
+    """Two free-tier buckets of 500 a day; the owner picks which one this account spends."""
+    select(seeded, {"text": [{"provider": "gemini-free", "model": GEMINI_SECOND}]})
+    seeded.capture()
+    assert [call["model"] for call in seeded.model.calls] == [GEMINI_SECOND, GEMINI_SECOND]
+
+
+def test_a_chosen_chain_falls_through_and_the_entry_records_who_answered(seeded, cloudflare_too):
+    select(seeded, {"text": [
+        {"provider": "gemini-free", "model": GEMINI_SECOND},
+        {"provider": "cloudflare", "model": CLOUDFLARE_TEXT},
+    ]})
+    limited = lambda: litellm.RateLimitError(message=PRIVATE, llm_provider="gemini", model="m")
+    seeded.model.errors = [limited(), None, limited(), None]
+
+    draft = seeded.capture().json()["data"]["draft"]
+    assert [call["model"] for call in seeded.model.calls][:2] == [GEMINI_SECOND, CLOUDFLARE_TEXT]
+    _own, invented = draft["senses"][0]["examples"]
+    assert invented["modelId"] == CLOUDFLARE_TEXT
+
+
+def test_a_chosen_pair_whose_key_is_gone_is_skipped_rather_than_refused(seeded, monkeypatch, cloudflare_too):
+    """A rotated credential must not turn the owner's saved order into a refusal."""
+    select(seeded, {"text": [
+        {"provider": "cloudflare", "model": CLOUDFLARE_TEXT},
+        {"provider": "gemini-free", "model": GEMINI_SECOND},
+    ]})
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN")
+    seeded.capture()
+    assert [call["model"] for call in seeded.model.calls] == [GEMINI_SECOND, GEMINI_SECOND]
+
+
+def test_a_chosen_model_the_catalogue_no_longer_offers_refuses_before_spending_anything(seeded):
+    """Refuse, never skip. A retired model is a state nothing is supposed to produce, and skipping
+    it would walk half the chain the owner configured, silently, forever."""
+    from acervo.repository import model_selection
+
+    model_selection.save(seeded.owner, {"text": [("gemini-free", "gemini/retired-last-year")]})
+    answer = seeded.capture()
+    assert answer.json()["error"]["code"] == "llm_configuration"
+    assert seeded.model.calls == []
+
+
+def test_health_reports_the_deployment_while_the_owner_reports_their_own(seeded, cloudflare_too):
+    """`/health` is unauthenticated — the liveness probe and the pre-sign-in readout — so it must
+    not vary by caller. What the owner's chain will do is `GET /models`."""
+    select(seeded, {"text": [{"provider": "cloudflare", "model": CLOUDFLARE_TEXT}]})
+
+    assert capture_health(seeded) == {
+        "available": True, "provider": "gemini-free",
+        "model": "gemini/gemini-3.1-flash-lite", "reason": None,
+    }
+    chosen = seeded.get("/models").json()["data"]["chains"]["text"]
+    assert chosen["source"] == "owner"
+    assert chosen["pairs"] == [{"provider": "cloudflare", "model": CLOUDFLARE_TEXT}]

@@ -26,6 +26,20 @@ from acervo.models.errors import ChainExhausted, ProviderRefused, ProviderUnavai
 
 Result = TypeVar("Result")
 
+Choice = str | tuple[str, str]
+"""One entry in a chain: a whole row, or one of its models.
+
+A bare id is shorthand for "this row, every model it offers for this kind, in the order it lists
+them" — the shape `ACERVO_TEXT_CHAIN` writes, because a deploy-time flag should pin a provider and
+leave the models to the catalogue. A pair is "this row, exactly this model" — the shape the owner's
+record stores, because a free tier is metered per model and the owner is choosing buckets rather
+than vendors.
+
+A widening rather than an overload: an id names a *group* of pairs, not a second kind of thing.
+`Candidate.named` and `Answer.attempts` are already this tuple, so a stored choice and a recorded
+attempt are the same shape and can be compared without a mapping layer.
+"""
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -39,49 +53,80 @@ class Candidate:
         return (self.row.id, self.model)
 
 
-def resolve(kind: str, ids: Sequence[str] | None, catalogue: Catalogue) -> tuple[Candidate, ...]:
+def _named(choice: Choice) -> tuple[str, str | None]:
+    """A choice as (row id, model or None). None means "every model this row offers"."""
+    return (choice, None) if isinstance(choice, str) else (choice[0], choice[1])
+
+
+def resolve(
+    kind: str, chosen: Sequence[Choice] | None, catalogue: Catalogue
+) -> tuple[Candidate, ...]:
     """The pairs that will be tried, in order.
 
-    With no ids, every credentialed row that serves this kind in catalogue order, each row's models
-    in the order it lists them — so a deployment that has configured one provider needs no chain
-    setting at all, and one that has configured three gets them in the order the file lists.
+    With nothing chosen, every credentialed row that serves this kind in catalogue order, each row's
+    models in the order it lists them — so a deployment that has configured one provider needs no
+    chain setting at all, and one that has configured three gets them in the order the file lists.
 
-    With ids, exactly those rows in that order, skipping the ones this deployment has no credentials
-    for. An id that is not in the catalogue is a mistake in the configuration, not a row to skip
-    past; choosing *which* of a row's models to use is plan 03's, and this list is what it chooses
-    from.
+    With choices, exactly those, in that order.
+
+    **A retired model is refused; an uncredentialed row is skipped.** The line is whether the state
+    is legitimate. Not holding a key is expected — ordering three providers on a deployment that
+    holds one key is the entire point of a chain. A pair naming a model the catalogue does not offer
+    is a state nothing is supposed to produce, and skipping it is silently wrong twice over: retire
+    both of a row's models and `unconfigured()` would report a key as missing when it is plainly
+    set, and retire one and capture would quietly walk half the chain the owner configured, forever,
+    with no symptom.
     """
-    if not ids:
-        rows = [row for row in catalogue.serving(kind) if available(row)]
-    else:
-        rows = []
-        for identifier in ids:
-            try:
-                row = catalogue.find(identifier)
-            except KeyError:
-                raise ProviderRefused(
-                    "configuration", f"no provider {identifier!r} is in the catalogue"
-                ) from None
-            if not row.serves(kind):
-                raise ProviderRefused(
-                    "configuration", f"provider {identifier!r} does not serve {kind}"
-                )
-            if available(row):
-                rows.append(row)
-    return tuple(
-        Candidate(row, model) for row in rows for model in row.models_for(kind)
-    )
+    if not chosen:
+        return tuple(
+            Candidate(row, model)
+            for row in catalogue.serving(kind)
+            if available(row)
+            for model in row.models_for(kind)
+        )
+
+    found: list[Candidate] = []
+    for choice in chosen:
+        identifier, model = _named(choice)
+        try:
+            row = catalogue.find(identifier)
+        except KeyError:
+            raise ProviderRefused(
+                "configuration", f"no provider {identifier!r} is in the catalogue"
+            ) from None
+        if not row.serves(kind):
+            raise ProviderRefused("configuration", f"provider {identifier!r} does not serve {kind}")
+        offered = row.models_for(kind)
+        # Before the credential check, deliberately: otherwise the same stored record is a refusal
+        # on a server holding the key and a silent skip on one that does not, so the error would
+        # depend on the environment rather than on the record.
+        if model is not None and model not in offered:
+            raise ProviderRefused(
+                "configuration", f"provider {identifier!r} does not offer {model!r} for {kind}"
+            )
+        if not available(row):
+            continue
+        found.extend(Candidate(row, one) for one in ((model,) if model else offered))
+    # A pair named twice would fail twice, double the latency of an exhausted chain and appear twice
+    # in `attempts`. First occurrence wins, so the owner's order is untouched.
+    return tuple({candidate.named: candidate for candidate in found}.values())
 
 
-def unconfigured(kind: str, ids: Sequence[str] | None, catalogue: Catalogue) -> ProviderRefused:
+def unconfigured(
+    kind: str, chosen: Sequence[Choice] | None, catalogue: Catalogue
+) -> ProviderRefused:
     """Why nothing can serve this kind, named as an environment variable rather than a value.
 
     It reports the *first* row that would have served, so the message is about the provider the
     deployment is closest to having, rather than about the last one in the file.
     """
-    candidates = [catalogue.find(i) for i in ids] if ids else list(catalogue.serving(kind))
+    rows = (
+        [catalogue.find(_named(choice)[0]) for choice in chosen]
+        if chosen
+        else list(catalogue.serving(kind))
+    )
     detail = next(
-        (reason(row) for row in candidates if reason(row) is not None),
+        (reason(row) for row in rows if reason(row) is not None),
         f"no provider in the catalogue serves {kind}",
     )
     return ProviderRefused("unconfigured", detail or "")
@@ -89,7 +134,7 @@ def unconfigured(kind: str, ids: Sequence[str] | None, catalogue: Catalogue) -> 
 
 def walk(
     kind: str,
-    ids: Sequence[str] | None,
+    chosen: Sequence[Choice] | None,
     catalogue: Catalogue,
     ask: Callable[[Candidate], Result],
     stamp: Callable[[Result, tuple[tuple[str, str], ...]], Result],
@@ -99,9 +144,9 @@ def walk(
     `stamp` writes the attempt list into whatever `ask` returned, because only this function knows
     how many pairs were tried and only the caller knows the shape of its own result.
     """
-    candidates = resolve(kind, ids, catalogue)
+    candidates = resolve(kind, chosen, catalogue)
     if not candidates:
-        raise unconfigured(kind, ids, catalogue)
+        raise unconfigured(kind, chosen, catalogue)
 
     attempts: list[tuple[str, str]] = []
     last: ProviderUnavailable | None = None

@@ -6,7 +6,15 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from acervo.api import auth, errors, static
-from acervo.api.routes import capture, dictionaries, graph, health, mac_release, session
+from acervo.api.routes import (
+    capture,
+    dictionaries,
+    graph,
+    health,
+    mac_release,
+    models,
+    session,
+)
 from acervo.repository.session import open_database
 from acervo.settings import Settings
 from acervo.settings import settings as read_settings
@@ -38,7 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     errors.install(app)
 
     api = APIRouter(prefix=API_ROOT)
-    for module in (health, session, graph, capture, dictionaries, mac_release):
+    for module in (health, session, graph, capture, dictionaries, mac_release, models):
         api.include_router(module.router)
     app.include_router(api)
 

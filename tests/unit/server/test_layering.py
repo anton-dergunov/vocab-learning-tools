@@ -10,6 +10,7 @@ Four rules, each of which stops being true silently:
   same validation and same revision allocation as a phone. One writer, one pipeline.
 - Nothing that ships imports `research/`.
 - `models/` stands alone: it is a provider package, not an Acervo one.
+- `repository/` stores; it does not know the catalogue.
 """
 
 from __future__ import annotations
@@ -89,6 +90,7 @@ def test_the_rules_below_are_not_vacuous():
         for path in modules_under("jobs") + modules_under("consumers")
     ), "no batch module goes through acervo.client, so nothing exercises the write-path rule"
     assert modules_under("models"), "no models/ modules: the stands-alone rule would be vacuous"
+    assert modules_under("repository"), "no repository/ modules"
 
 
 @pytest.mark.parametrize("path", modules_under("api"), ids=identify)
@@ -146,6 +148,18 @@ def test_the_provider_package_stands_alone(path):
     """
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the provider package stands alone"
+
+
+@pytest.mark.parametrize("path", modules_under("repository"), ids=identify)
+def test_the_storage_layer_does_not_know_the_catalogue(path):
+    """`repository/` stores what it is given; which providers exist is `models/`'s question.
+
+    Both halves would otherwise validate a chain, and two validators are one drift. It also keeps
+    the storage layer usable for a catalogue it has never heard of, which is what a settings record
+    that outlives a deployment fact has to be.
+    """
+    offenders = {name for name in imports_of(path) if name.startswith("acervo.models")}
+    assert not offenders, f"{path} imports {sorted(offenders)}; validate in acervo.services.models"
 
 
 @pytest.mark.parametrize("path", modules_under(), ids=identify)

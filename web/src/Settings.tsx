@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CaptureHealth } from "./api";
 import { TopicEditor, VocabularyEditor } from "./Configuration";
 import DictionaryPanel from "./DictionaryPanel";
+import ModelPanel from "./ModelPanel";
 import { fetchMacRelease, type MacRelease } from "./macRelease";
 import { installUpdate, isNativeHost, shouldOfferMacApplication, type UpdateStage } from "./pwa";
 import type { ReplicaSnapshot } from "./repository";
@@ -14,14 +15,17 @@ import { editorPreferences, setEditorPreference, type EditorPreferences } from "
 /** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
 const CONFIRMATION = "DELETE";
 
-export type Page = "general" | "vocabularies" | "topics" | "dictionaries" | "editor" | "sync" | "data";
+export type Page = "general" | "vocabularies" | "topics" | "models" | "dictionaries" | "editor" | "sync" | "data";
 
 export default function Settings({ update, email, status, snapshot, language, captureHealth, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
   update?: UpdateStage;
   email: string;
   /**
-   * What this server builds entries with, or `undefined` while that is unknown. Reported here, not
-   * chosen: choosing needs a catalogue of providers, which does not exist yet.
+   * What this server builds entries with, or `undefined` while that is unknown.
+   *
+   * Still read here because the Capture control is gated on it before anything is chosen, but no
+   * longer *shown* here: Settings ▸ Models is where a provider is named now, and it reads the
+   * owner's own chain rather than the deployment's. Two readouts would have drifted.
    */
   captureHealth?: CaptureHealth;
   status: SyncStatus;
@@ -101,6 +105,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
     { id: "general", label: "General" },
     { id: "vocabularies", label: "Vocabularies" },
     { id: "topics", label: "Topics" },
+    { id: "models", label: "Models" },
     { id: "dictionaries", label: "Dictionaries" },
     { id: "editor", label: "Editor" },
     { id: "sync", label: "Sync" },
@@ -140,15 +145,10 @@ export default function Settings({ update, email, status, snapshot, language, ca
           {offerMacApplication && macRelease === null && <div className="update-status"><strong>macOS application</strong><span>No native release has been published by this server yet.</span></div>}
           {offerMacApplication && macRelease === undefined && !releaseError && <div className="update-status"><strong>macOS application</strong><span>Checking for a native release…</span></div>}
           {offerMacApplication && releaseError && <div className="update-status"><strong>macOS application</strong><span>The native release could not be checked right now.</span></div>}
-          {captureHealth && (captureHealth.available
-            ? <div className="update-status">
-                <strong>Entries are built by {captureHealth.provider}</strong>
-                <span>Using the model {captureHealth.model}.</span>
-              </div>
-            : <div className="update-status">
-                <strong>This server cannot build entries</strong>
-                <span>{captureHealth.reason}.</span>
-              </div>)}
+          {captureHealth && !captureHealth.available && <div className="update-status">
+            <strong>This server cannot build entries</strong>
+            <span>{captureHealth.reason}. Settings {"\u25B8"} Models says what it can use.</span>
+          </div>}
           {native && <div className="update-status">
             <strong>Updates and server address</strong>
             <span>Acervo ▸ Settings, in the menu bar.</span>
@@ -184,6 +184,8 @@ export default function Settings({ update, email, status, snapshot, language, ca
             </span>
           </label>
         </section>}
+
+        {page === "models" && <ModelPanel onNotify={onNotify} />}
 
         {page === "dictionaries" && <DictionaryPanel onNotify={onNotify} />}
 

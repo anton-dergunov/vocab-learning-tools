@@ -4,7 +4,7 @@ The one head. It creates the tables straight from `acervo.db.tables`, rather tha
 hundred lines of columns and indexes a second time: there is no upgrade path to write a diff
 against, so a second description would be a copy with no reader and one more thing to keep in step.
 
-Revision ID: 0001_bootstrap
+Revision ID: 0002_bootstrap
 Revises:
 """
 
@@ -14,7 +14,7 @@ from alembic import op
 
 from acervo.db.tables import metadata
 
-revision = "0001_bootstrap"
+revision = "0002_bootstrap"
 down_revision = None
 branch_labels = None
 depends_on = None

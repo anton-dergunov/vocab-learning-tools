@@ -20,6 +20,7 @@ from acervo.settings import Settings
 
 def compose(
     settings: Settings,
+    owner: str,
     resolution: dict[str, Any],
     request: dict[str, Any],
     vocabulary: dict[str, Any],
@@ -79,7 +80,9 @@ def compose(
         if line != ""
     )
 
-    answer, model = llm_json(settings, prompt_text(settings.prompts_path, "acervo_compose"), user)
+    answer, model = llm_json(
+        settings, owner, prompt_text(settings.prompts_path, "acervo_compose"), user
+    )
     if not isinstance(answer, dict):
         raise ApiError(
             502, "llm_unusable", "The language model did not return an entry, so nothing was created."

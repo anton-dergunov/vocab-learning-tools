@@ -320,6 +320,15 @@ and never on anything else. Capture goes through it and `services/llm.py` is gon
 
 It brought §3's sixth rule with it, which is the one this server can break most quietly.
 
+[Plan 03](plans/03-the-owner-chooses-a-model.md) then made the chain the *owner's*, in a
+`model_selection` table shaped like `sync_state` — owner-scoped, never replicated, and absent
+until something is chosen, because "no row" means "follow the deployment default" rather than
+naming a gap. `services/models.py` resolves owner, then environment, then catalogue order, and
+re-reads it per request: that is what makes Settings ▸ Models take effect on the next capture
+with nothing restarted. `/health` stays owner-independent — it is the liveness probe and the
+pre-sign-in readout, so an unauthenticated body that varied by caller would be wrong behind a
+cache — and `GET /models` is where an owner sees their own.
+
 `corpus/` still has no code to put a boundary around — the separation is stated here and in
 AGENTS.md, which is where a reader looks; an empty package nothing imports would be a directory,
 not a rule.

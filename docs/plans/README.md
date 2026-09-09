@@ -56,7 +56,7 @@ conversation state, no tool use. Anything grander than that is not being paid fo
 |---|---|---|---|
 | [02 · One wire shape and one catalogue](02-one-wire-shape-and-one-catalogue.md) | **Superseded** by 08 | — | Kept for its diagnosis and provider research. Its surviving content moved into 04 |
 | [04 · One Python provider package](04-one-python-provider-package.md) | **Complete** | 08 phase 2 | `src/acervo/models/` is the single way to call a model, for the request path and batch alike, over LiteLLM |
-| [03 · The owner chooses a model](03-the-owner-chooses-a-model.md) | Planned (re-aimed), **unblocked** | 04 | Settings ▸ Models picks the provider chain per kind; it takes effect on the next capture with no restart |
+| [03 · The owner chooses a model](03-the-owner-chooses-a-model.md) | **Complete** | 04 | Settings ▸ Models picks the provider chain per kind; it takes effect on the next capture with no restart |
 
 ### Stage 4 · The other two kinds
 
@@ -101,6 +101,15 @@ LiteLLM rather than to grow a switch.
 **Python is where everything lives.** There is no second server language. Anything asynchronous or
 batched — every image, every audio clip, every bulk ingest — runs in `acervo-worker`; anything that
 must answer inside a request runs in the service. Both import the same `src/acervo/models/`.
+
+**A provider the server holds no credential for may still be ordered.** *(Amended by
+[03](03-the-owner-chooses-a-model.md), 9 Sep 2026 — it previously said such a provider could not be
+ordered into a chain.)* A chain is an owner preference; a credential is a deployment fact, and one
+must not silently destroy the other. Refusing the write meant a rotated key locked the owner out of
+reordering that kind at all, and threw away an ordering they had chosen. The pair is stored, keeps
+its place, is skipped when the chain is walked, and is honoured again when the key returns; `GET
+/models` marks it and Settings ▸ Models shows why. A pair naming a model the *catalogue* does not
+offer is still refused, at the write and at the walk.
 
 **A chain falls through on 429 and 5xx, and never on anything else.** An authentication failure or a
 rejected configuration is a mistake to fix, not a condition to route around; falling through on it

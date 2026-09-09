@@ -35,7 +35,7 @@ TEXT_LIMIT = 20000
 
 def run_capture(settings: Settings, account: str, device: str, body: dict[str, Any]) -> dict[str, Any]:
     vocabularies = graph.owner_vocabularies(account)
-    resolution = resolve(settings, body, vocabularies)
+    resolution = resolve(settings, account, body, vocabularies)
 
     vocabulary = next(
         (entry for entry in vocabularies if entry["language"] == resolution["language"]), None
@@ -68,7 +68,7 @@ def run_capture(settings: Settings, account: str, device: str, body: dict[str, A
     topics = graph.owner_topics(account)
     # The model that answered, not the one that was asked first: with a chain, those differ the
     # moment a provider is rate limited, and the entry must record the one that did the work.
-    answer, model_id = compose(settings, resolution, body, vocabulary, topics)
+    answer, model_id = compose(settings, account, resolution, body, vocabulary, topics)
     draft = draft_from(answer, resolution, body, vocabulary, topics, model_id)
 
     applied = None

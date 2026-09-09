@@ -21,7 +21,7 @@
 > Models should render beside each provider. No provider serves a usage figure over its API, so a
 > link is the honest answer rather than a number.
 
-**Status:** Planned (re-aimed).
+**Status:** Complete, 9 Sep 2026.
 **Depends on:** [04](04-one-python-provider-package.md) — there must be a catalogue to choose
 from before there is a chooser.
 
@@ -126,150 +126,94 @@ commit as `styles.css` if either does.
 
 ## Implementation work
 
-1. **Export first.** `Settings ▸ Data ▸ Export` before anything else in this plan. The reset is
-   destructive and this is the only warning that matters.
+Rewritten on implementation: the version this replaces was written for PocketBase and named
+`pb_migrations/`, `acervo.js` and `main.pb.js`, none of which survived [plan 08](08-the-python-server.md).
 
-2. **Add the collection** to `pb_migrations/1787868000_acervo_core.js`, beside `sync_state` at
-   `:41-51` and shaped like it: owner relation with `cascadeDelete`, all five API rules `null` so the
-   hook is the only writer, and — being non-replicated — no `syncFields` and no `revision`. One
-   record per owner.
-
-3. **Do not replicate it.** Confirm it is absent from `REPLICATED` in `main.pb.js:1`, absent from
-   `COLLECTIONS` in `acervo.js:127-148`, and therefore absent from `ownerGraph`. A test should assert
-   its absence, because the failure mode is silent: it would simply start appearing in every client's
-   replica.
-
-4. **Two routes** in `dispatch()` at `acervo.js:1266-1383`, beside the existing `/health`:
-   - `GET /models` — owner-scoped, returns the shape below
-   - `PUT /models/selection` — owner-only, validates every id against the catalogue and every kind
-     against `kinds`, refuses an empty chain, writes the record
-
-5. **Resolve a chain, not a setting.** Replace the single-row resolution from plan 02 with an ordered
-   walk: for each row in the chain for `text`, build the request; on 429 or 5xx continue to the next;
-   on anything else stop and throw as today. Exhausting the chain reports the *last* error, because
-   that is the one the owner can act on. Stamp the answering row's model into `modelId` at
-   `acervo.js:1096` / `draftFrom` `:929`.
-
-   The chain is re-read from the collection per request, which is what makes a change take effect
-   with no restart. It is one indexed read against a local SQLite file; do not cache it.
-
-6. **`web/src/api.ts`** gains the two calls; **`web/src/repository.ts`** gains the write, because
-   interface code reads and writes only through `AcervoRepository`.
-
-7. **Settings ▸ Models** — a new `ModelPanel.tsx` beside `DictionaryPanel.tsx`, and one entry in the
-   `pages` array at `Settings.tsx:94-102` plus one line in the body. Each row shows the provider, the
-   model it will use, its cost or free-tier note from the catalogue, and — when unavailable — the
-   reason. Reordering is the interaction; a row the server has no key for cannot be ordered into a
-   chain.
-
-8. **Fold plan 01's General readout into this page.** The provider-and-model line added to Settings ▸
-   General in plan 01 was placed there so that it could become this. Move it, do not duplicate it.
+1. **`models/chain.py` gains `Choice`** — `str | tuple[str, str]`. A bare id is "this row, every
+   model it offers for this kind"; a pair is "this row, exactly this model". The owner's record
+   stores pairs and `ACERVO_TEXT_CHAIN` stores ids, and both must reach one resolver, because
+   `walk()` and `unconfigured()` funnel through it.
+2. **A `model_selection` table**, shaped like `sync_state`: owner FK, a unique index on `owner`, and
+   no `revision`/`deleted`/`edited_by`, which is what makes it structurally unreplicable rather than
+   merely unreplicated. `chains` is a JSON column holding exactly the document the route takes and
+   returns. Adding it means renaming the Alembic head to `0002_bootstrap`, so an existing database
+   refuses to serve rather than silently lacking the table — `--reset-database` is the deploy.
+3. **`repository/model_selection.py`** with `chains(owner)` and `save(owner, changes)`. Nothing is
+   created eagerly: no row means "follow the deployment default", which is a legitimate answer
+   rather than a gap, so there is no `ensure_` function and no write on any read path. A new
+   layering rule keeps the catalogue out of `repository/`, so validation has one home.
+4. **`services/models.py`** — `chain_readout` is split out of `capture_health` so `/health` and
+   `GET /models` cannot drift on "can this build entries"; `chain_for(settings, owner, kind)` is the
+   precedence ladder, re-read per request.
+5. **`owner` threads through capture** — `run_capture` already holds it. Required, with no default,
+   so an omission is a `TypeError` rather than a silent fall to the deployment default.
+6. **Two routes** in `api/routes/models.py`, registered in `app.py` before `static.install`.
+7. **`web/src/ModelPanel.tsx`**, one section per kind, reusing `TopicEditor`'s arrows and
+   `DictionaryPanel`'s switch. `api.ts` gains the two calls — **not** `repository.ts`, which owns the
+   replica and nothing else; the external-dictionary list is the precedent.
+8. **The General readout moves here**, as this plan always said. It is moved rather than duplicated:
+   General read the *deployment's* provider from `/health`, and this pane reads the owner's chain.
 
 ## Public interfaces and data
 
-`GET /api/acervo/v1/models`:
+`GET /api/acervo/v1/models` returns `providers` — each with `label`, `kinds`, `models` per kind,
+`available`, `reason`, `usageUrl`, `notes` — and `chains`, one per kind:
 
 ```jsonc
-{
-  "schemaVersion": 7,
-  "providers": [
-    {
-      "id": "gemini-free",
-      "label": "Gemini (free tier)",
-      "kinds": ["text", "image", "audio"],
-      "model": { "text": "gemini-3.1-flash-lite" },
-      "available": true,
-      "reason": null,
-      "note": "500 requests a day at no cost; 429 when exhausted"
-    },
-    {
-      "id": "cloudflare",
-      "label": "Cloudflare Workers AI",
-      "kinds": ["text", "image", "audio"],
-      "model": { "text": "@cf/meta/llama-4-scout-17b" },
-      "available": false,
-      "reason": "ACERVO_KEY_CLOUDFLARE is not set"
-    }
-  ],
-  "chains": {
-    "text":  ["gemini-free", "cloudflare"],
-    "image": ["vertex", "cloudflare"],
-    "audio": ["gemini-free"]
-  }
-}
+{ "source": "owner",  "reason": null,
+  "pairs": [{ "provider": "cloudflare", "model": "cloudflare/@cf/..." }] }
 ```
 
-No key, no base URL, no project id. `reason` names an environment variable and never a value.
+`source` lets the interface tell a saved order from the server's own. `pairs` is what is *stored*,
+not what will be walked, so an uncredentialed pair keeps its place. `chains[kind].reason` comes from
+the same producer `/health` uses, so a mistyped `ACERVO_TEXT_CHAIN` renders a reason instead of
+failing the pane.
 
-`PUT /api/acervo/v1/models/selection`:
+No key, no base URL, no project id. `usageUrl` *does* carry a `requires` value — Cloudflare's
+account id is what makes the link point at the right dashboard — and that is why this route is
+authenticated where `/health` is not.
 
-```jsonc
-{ "chains": { "text": ["cloudflare", "gemini-free"] } }
-```
+`PUT /api/acervo/v1/models/selection` takes `{"chains": {"text": [...], "image": null}}`. Only the
+kinds present change; `null` forgets one and returns it to the deployment default, without which a
+single choice would be a one-way door. It answers with the same body `GET` returns. Refusals, all
+400: `invalid_input`, `unsupported_kind`, `unknown_provider`, `unknown_model`, `duplicate_pair`,
+`empty_chain`.
 
-Only the kinds present are changed. Refusals: `unknown_provider` naming the id, `unsupported_kind`
-when a row does not declare that kind, `provider_unavailable` when the server holds no credential for
-it, `empty_chain`. All 400s — this is a bad request, not a model failure.
-
-The collection, one record per owner:
-
-```jsonc
-{
-  "id": "…15 lowercase alphanumerics…",
-  "owner": "…users id…",
-  "chains": { "text": [...], "image": [...], "audio": [...] },
-  "edited_at": "2026-09-08T10:04:00Z"
-}
-```
-
-No `revision`, no `deleted`: it is never replicated, so there is nothing to order against and no
-tombstone to keep.
+**No `provider_unavailable`** — see the amended contract in [README.md](README.md). **No
+`schemaVersion`**: that number guards the replicated graph wire and its client twin decides whether
+a replica is wiped; this route adds no field to any replicated record.
 
 ## Acceptance tests and verification
 
 ```bash
-.venv/bin/python -m pytest tests/unit/server
-npm --prefix web run test
-npm --prefix web run build
-npm run test:mac
-RUN_DOCKER_INTEGRATION_TESTS=true .venv/bin/python -m pytest tests/integration/test_acervo_app_docker.py
+.venv/bin/python -m pytest
+npm --prefix web run test && npm --prefix web run build
 ```
 
-Hook cases:
+Server, in `tests/unit/server/test_models.py` and `test_capture.py`:
 
-- `GET /models` for an owner with no record returns the deployment default as the chain
-- `GET /models` never returns a string matching a configured key value — assert on the whole response
-  body, not on named fields, because the failure this guards against is a field added later
-- `PUT` with an unknown id, an unsupported kind, an uncredentialed provider, and an empty chain each
-  refuse with the right code
-- an owner's chain is invisible to another owner
-- **the collection is not in `REPLICATED` and not in `COLLECTIONS`** — assert absence explicitly
-- first row 429s → the second answers, and `modelId` names the *second* row's model
-- first row 500s → same
-- first row 401s → **no fall-through**, `llm_authentication` is thrown, nothing is created
-- the chain is exhausted → the last error is reported, not the first
+- no record → every kind `source: "deployment"`; an owner chain outranks `ACERVO_TEXT_CHAIN`; the
+  env var still decides when there is no record
+- the owner pins one model of a two-model row and it is the only one called
+- a chain saved through the route decides the next capture **in the same process**
+- 429 → the next pair answers and `modelId` names it; 401 → no fall-through, one call; exhausted →
+  the last error
+- a pair whose key is gone is skipped, and that kind can still be reordered
+- a pair naming a model the catalogue no longer offers → `llm_configuration`, zero model calls
+- one owner's chain is invisible to another
+- not replicated: absent from `COLLECTIONS`, no `revision`/`deleted` column, and after a save the
+  body of `GET /graph?since=0` contains neither the provider id nor the model string.
+  `tables.REPLICATED` is declared and never read, so a test against it would prove nothing
+- `/health` reports the deployment default while `GET /models` reports the owner's
 
-Web cases in `ModelPanel.test.tsx`, following `DictionaryPanel.test.tsx`:
+Web, in `ModelPanel.test.tsx`: every model of a provider is selectable; an unavailable row renders
+its reason and can still be switched on and reordered; one toggle is one write naming one kind;
+switching the last one off sends `null` rather than an empty chain; the server's answer replaces
+what was clicked; a refusal notifies and leaves the shown order alone.
 
-- an unavailable row renders its reason and cannot be ordered into a chain
-- reordering issues one repository write
-- the server being unreachable fails loudly and leaves the displayed order unchanged
-
-Live, and this is the test that matters:
-
-```bash
-# after ./deploy.sh --reset-database and re-creating the account:
-#  · Settings ▸ Models lists every catalogue row, with the uncredentialed ones marked
-#  · put cloudflare first, save
-#  · Add ▸ capture a word — WITHOUT redeploying or restarting anything
-#  · the entry's examples carry a cloudflare modelId
-#  · put gemini-free first, capture again, and modelId changes with no restart
-
-# and the fall-through, on the real free tier:
-#  · exhaust the day's Gemini quota, or point the row at a bad model to force a 4xx
-#  · a 429 produces an entry from the second provider
-#  · a bad key produces a refusal naming authentication, and no entry
-```
+Live, after `--reset-database`, `--create-account` and re-importing the bundle: reorder in
+Settings ▸ Models, capture a word **without redeploying**, and confirm the entry's `modelId` names
+the pair now at the head.
 
 ## Non-goals
 

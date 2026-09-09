@@ -1,4 +1,4 @@
-"""The nine owner-scoped tables, plus `users`.
+"""The ten owner-scoped tables, plus `users`.
 
 Ported column for column and index for index from the PocketBase bootstrap migration this replaces.
 Two of those indexes carry reasoning that must survive the move, and both comments are below.
@@ -86,6 +86,30 @@ sync_state = Table(
     _owner(),
     Column("sequence", Integer, nullable=False, default=0),
     Index("idx_sync_state_owner", "owner", unique=True),
+)
+
+# Which (provider, model) pairs answer, per kind, for this owner. Its own table and never
+# replicated: it is server state read through a route rather than vocabulary, and a client that
+# cannot reach the server cannot capture anyway. No `revision`, `deleted` or `edited_by` — nothing
+# merges this, so none of the three would have a reader, and their absence is what makes the table
+# structurally unreplicable rather than merely unreplicated. The unique index is safe for exactly
+# `sync_state`'s reason: this row never syncs, so it cannot be the constraint two offline devices
+# independently satisfy.
+#
+# **No row means "use the deployment default"**, which is a legitimate answer rather than a gap, so
+# nothing creates one eagerly — see `repository/model_selection.py`.
+model_selection = Table(
+    "model_selection",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    # {kind: [{"provider": id, "model": model}, ...]} — exactly the document the route takes and
+    # returns, so the column and the wire are one shape and neither can drift from the other.
+    # Ordering *is* the content here, which in rows would be a `position` integer renumbered on
+    # every save; `vocabularies.gloss_langs` is the same call already made in this schema.
+    Column("chains", JSON, nullable=False, default=dict),
+    Column("edited_at", String(24), nullable=False),
+    Index("idx_model_selection_owner", "owner", unique=True),
 )
 
 # The languages this owner studies, and how they want each presented. Replicated like any other
