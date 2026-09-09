@@ -57,7 +57,7 @@ Self-registration is disabled and there is no superuser. Accounts are made one a
 password read from the terminal:
 
 ```bash
-./deploy.sh --local --create-account
+./deploy.sh --create-account
 ```
 
 The API exposes password login and token refresh; there is no generic CRUD surface over the

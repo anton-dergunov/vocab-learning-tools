@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PROTOCOL=5
+PROTOCOL=6
 HELPER_PATH=/usr/local/sbin/deploy-acervo
 SUDOERS_PATH=/etc/sudoers.d/deploy-acervo
 PATH="$PATH:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
@@ -55,6 +55,26 @@ show_status() {
   "$docker" port acervo-anki-sync-server-1 8080
   "$docker" inspect --format='state={{.State.Status}},health={{.State.Health.Status}}' acervo-server-1
   "$docker" port acervo-server-1 8000
+}
+
+# One account on the running server. `admin.py accounts create` is the only thing that makes one —
+# there is no superuser to have — and it reads the password from stdin, so nothing sensitive reaches a
+# command line or this host's process list.
+#
+# This is a narrower privilege than the launcher already grants: `deploy` extracts an installer out of
+# a streamed archive and runs it as root. Running one fixed command in one named container is less
+# than that, not more.
+create_account() {
+  IFS= read -r account_email || { echo "Missing account email address" >&2; exit 2; }
+  IFS= read -r account_password || { echo "Missing account password" >&2; exit 2; }
+  case "$account_email" in
+    *[!A-Za-z0-9@._+-]*|'') echo "Account email address has an implausible shape" >&2; exit 2 ;;
+    *@*) ;;
+    *) echo "Account email address has an implausible shape" >&2; exit 2 ;;
+  esac
+  docker=$(docker_path)
+  printf '%s\n' "$account_password" | "$docker" exec -i acervo-server-1 \
+    python -m acervo.admin accounts create --email "$account_email"
 }
 
 validate_service() {
@@ -288,6 +308,7 @@ case "$command_name" in
   check) [ "$#" -eq 1 ] || exit 2; echo "acervo-deploy-protocol: $PROTOCOL" ;;
   status) [ "$#" -eq 1 ] || exit 2; show_status ;;
   configure-https) shift; configure_https "$@" ;;
+  create-account) [ "$#" -eq 1 ] || exit 2; create_account ;;
   deploy) shift; deploy_release "$@" ;;
-  *) echo "deploy-acervo accepts only check, deploy, status, or configure-https" >&2; exit 2 ;;
+  *) echo "deploy-acervo accepts only check, create-account, deploy, status, or configure-https" >&2; exit 2 ;;
 esac

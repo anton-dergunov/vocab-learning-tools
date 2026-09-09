@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=5
+helper_protocol=6
 
 mode=
 target=
@@ -345,6 +345,13 @@ prompt_account() {
     echo "An email address and a password are required" >&2
     exit 2
   }
+  # Checked here because the address is the one part of this that reaches a remote shell as text.
+  # The password never does: it goes over stdin and is never an argument.
+  case "$account_email" in
+    *[!A-Za-z0-9@._+-]*) echo "An email address may only contain letters, digits and @._+-" >&2; exit 2 ;;
+    *@*) ;;
+    *) echo "That does not look like an email address" >&2; exit 2 ;;
+  esac
 }
 
 build_release_archive() {
@@ -365,8 +372,8 @@ build_release_archive() {
 }
 
 # `admin.py accounts create` reads the password from stdin, so nothing sensitive reaches a command
-# line or a process list. This talks to the container directly rather than through the passwordless
-# helper: widening a NOPASSWD root surface to include account creation is not worth the convenience.
+# line or a process list. Used directly where the invoking account can reach docker; where the
+# passwordless launcher is what has that access, it runs the same command on the far side.
 create_account_command='docker exec -i acervo-server-1 python -m acervo.admin accounts create --email'
 
 if [ "$mode" = local ]; then
@@ -467,15 +474,15 @@ if [ "$action" = status ]; then
 fi
 
 if [ "$action" = create-account ]; then
-  if [ "$remote_mode" != root ]; then
-    echo "Creating an account needs docker access, which the passwordless launcher deliberately" >&2
-    echo "does not grant. Run this on $target as a user who can reach docker:" >&2
-    echo "  $create_account_command learner@account.example.com" >&2
-    exit 2
-  fi
   prompt_account
-  printf '%s\n' "$account_password" | ssh -T "$target" \
-    "docker exec -i acervo-server-1 python -m acervo.admin accounts create --email '$account_email'"
+  if [ "$remote_mode" = root ]; then
+    printf '%s\n' "$account_password" | ssh -T "$target" \
+      "$create_account_command '$account_email'"
+  else
+    # Two lines, positional, the way every other credential stream in this deployment works.
+    printf '%s\n%s\n' "$account_email" "$account_password" | \
+      ssh -T "$target" "sudo -n $helper_path create-account"
+  fi
   exit $?
 fi
 

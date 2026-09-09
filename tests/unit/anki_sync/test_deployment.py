@@ -6,6 +6,8 @@ import subprocess
 import tarfile
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -565,6 +567,99 @@ def test_installer_refuses_to_call_an_unpublished_server_healthy(tmp_path: Path)
     assert "docker rm -f acervo-server-1" in result.stderr
     # The claim it used to make regardless.
     assert "internal HTTP backend is healthy" not in result.stdout
+
+
+def test_creating_an_account_goes_through_the_launcher_and_keeps_the_password_off_the_wire(
+    tmp_path: Path,
+) -> None:
+    """The launcher already runs a streamed installer as root, so running one fixed command in one
+    named container is a narrower privilege than it grants today, not a wider one. Refusing it only
+    left the flag printing advice."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    ssh_log = tmp_path / "ssh.log"
+    stdin_log = tmp_path / "stdin.log"
+    ssh = bin_dir / "ssh"
+    ssh.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_SSH_LOG\"\n"
+        "case \"$*\" in\n"
+        "  *'deploy-acervo check'*) printf 'helper\\n' ;;\n"
+        "  *'deploy-acervo create-account'*) cat >>\"$ACERVO_TEST_STDIN_LOG\" ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    ssh.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["ACERVO_TEST_SSH_LOG"] = str(ssh_log)
+    env["ACERVO_TEST_STDIN_LOG"] = str(stdin_log)
+
+    result = subprocess.run(
+        [str(REPO_ROOT / "deploy.sh"), "--target", "deployer@server.example.test", "--create-account"],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+        input="learner@account.example.com\nan-account-password\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    commands = ssh_log.read_text(encoding="utf-8")
+    assert "sudo -n /usr/local/sbin/deploy-acervo create-account" in commands
+    # Positional on stdin, so neither the address nor the password is ever an argument.
+    assert stdin_log.read_text(encoding="utf-8") == (
+        "learner@account.example.com\nan-account-password\n"
+    )
+    assert "an-account-password" not in commands + result.stdout + result.stderr
+
+
+def test_the_launcher_runs_the_account_command_in_the_container_without_naming_the_password(
+    tmp_path: Path,
+) -> None:
+    helper = runnable_remote_helper(tmp_path)
+    docker_log = tmp_path / "docker.log"
+    stdin_log = tmp_path / "docker-stdin.log"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker = bin_dir / "docker"
+    docker.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_DOCKER_LOG\"\n"
+        "cat >>\"$ACERVO_TEST_STDIN_LOG\"\n",
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["ACERVO_TEST_DOCKER_LOG"] = str(docker_log)
+    env["ACERVO_TEST_STDIN_LOG"] = str(stdin_log)
+
+    result = subprocess.run(
+        [str(helper), "create-account"], env=env, text=True, capture_output=True, check=False,
+        input="learner@account.example.com\nan-account-password\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    asked = docker_log.read_text(encoding="utf-8")
+    assert "exec -i acervo-server-1 python -m acervo.admin accounts create" in asked
+    assert "--email learner@account.example.com" in asked
+    # The password reaches the command on stdin and never as an argument, so it stays out of the
+    # host's process list.
+    assert "an-account-password" not in asked
+    assert stdin_log.read_text(encoding="utf-8") == "an-account-password\n"
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["learner@account.example.com; rm -rf /", "learner@account.example.com'", "no-at-sign", ""],
+)
+def test_the_launcher_refuses_an_address_that_is_not_one(tmp_path: Path, address: str) -> None:
+    """It is the one part of this that reaches a remote shell as text."""
+    helper = runnable_remote_helper(tmp_path)
+    result = subprocess.run(
+        [str(helper), "create-account"], text=True, capture_output=True, check=False,
+        input=f"{address}\nan-account-password\n",
+    )
+    assert result.returncode == 2
+    assert "implausible shape" in result.stderr or "Missing account" in result.stderr
 
 
 def run_configure_llm(tmp_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:

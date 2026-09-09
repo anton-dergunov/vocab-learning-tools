@@ -23,10 +23,22 @@ SEED_DEVICE = "acervoseed"
 
 
 def _read_password(prompt: str) -> str:
-    """From stdin when it is piped, and from the terminal when a person is sitting there."""
+    """The password, from a terminal or from a pipe, but always after saying it wants one.
+
+    `docker exec -i` without `-t` gives a pipe, not a terminal — so echo cannot be suppressed and
+    `getpass` is not an option. Printing the prompt anyway is what separates "waiting for you" from
+    "hung": without it the command sits silent with the cursor on a blank line, which is exactly what
+    it looks like when something has locked up.
+    """
+    print(prompt, end="", file=sys.stderr, flush=True)
     if sys.stdin.isatty():
-        return getpass.getpass(prompt)
-    return sys.stdin.readline().rstrip("\n")
+        # A terminal, so the typing can be hidden. `getpass` writes its own prompt; ours has already
+        # gone to stderr, so it is given an empty one.
+        password = getpass.getpass("")
+    else:
+        password = sys.stdin.readline().rstrip("\n")
+    print(file=sys.stderr)
+    return password
 
 
 def create_account(settings: Settings, email: str) -> int:
