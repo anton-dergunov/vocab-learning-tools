@@ -208,6 +208,20 @@ written down and already tested. Development databases and incompatible replicas
 Offering `alembic upgrade head` as a second, untested path against real data would be a promise
 nobody has decided to keep.
 
+**The head revision id is derived from the schema**, and this is the part that had to be learned the
+hard way. It used to be the literal `"0002_bootstrap"`, so a schema change depended on somebody
+remembering to bump it — and the sense-image change did not. `bootstrap` then compared a stamped
+database against an unchanged head, found them equal, and served it: every route naming a new column
+returned an anonymous 500 while `/health` and the rest stayed green, so the installer reported a
+healthy deployment and the interface reported being offline. That is precisely the confusion the
+stamp exists to end, so the id is now a digest of the tables, columns, indexes and foreign keys.
+Change the schema and the head changes with it; a database written under the old one is refused **by
+name, before the server serves a single request**, and `--reset-database` is named in the refusal.
+
+A deployment that needs a rebuild therefore *fails* rather than half-working, which is the right way
+round: `tests/unit/server/test_bootstrap.py` asserts the refusal rather than asserting that some
+later route breaks.
+
 ---
 
 ## §5 · Auth
