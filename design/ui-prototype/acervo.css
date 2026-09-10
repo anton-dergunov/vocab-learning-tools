@@ -430,6 +430,19 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .sense-image-frame.is-failed .sense-image-empty { color: var(--warn); }
 .sense-image-frame.is-suppressed { border-style: dashed; opacity: .7; }
 .sense-image-frame.is-busy .sense-image-empty { color: var(--core); }
+/* A redraw covers the picture it is replacing rather than removing it: the old one is what is being
+   reconsidered, and Draw closes the dialog, so this mark is the only thing that says the work was
+   taken. `position: relative` on the frame is what this is absolute against. */
+.sense-image-frame { position: relative; }
+.sense-image-working {
+  position: absolute; inset: 0;
+  display: grid; place-content: center; justify-items: center; gap: 7px;
+  background: color-mix(in srgb, var(--paper) 72%, transparent);
+  color: var(--core); font-size: 12px; font-weight: 600; letter-spacing: .02em;
+}
+.sense-image-working svg { width: 20px; height: 20px; animation: sense-image-spin 1.1s linear infinite; }
+@keyframes sense-image-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sense-image-working svg { animation: none; } }
 .sense-image .cap { padding: 6px 2px 0; display: flex; gap: 8px; }
 
 .thumbs { display: flex; gap: 12px; flex-wrap: wrap; }

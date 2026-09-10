@@ -12,9 +12,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ImagePrompt } from "./domain";
+import { SyncIcon } from "./icons";
 import { acquire, release } from "./media";
 
 export type ImageState = "ready" | "pending" | "failed" | "suppressed";
+
+/** A picture with no rendering model is one the owner supplied — provenance modelled, not flagged. */
+export function yours(prompt: ImagePrompt): boolean {
+  return Boolean(prompt.imageRef) && prompt.imageModelId === null;
+}
 
 export function imageStateOf(prompt: ImagePrompt): ImageState {
   if (prompt.imageRef) return "ready";
@@ -31,7 +37,7 @@ export function imageStateOf(prompt: ImagePrompt): ImageState {
  * one leak forever). `taken` is what pairs them: cleanup releases now if the hold arrived, and the
  * arrival releases immediately if cleanup got there first.
  */
-function usePicture(reference: string | null): { url: string | null; error: string | null } {
+function usePicture(reference: string | null, version: number): { url: string | null; error: string | null } {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +60,12 @@ function usePicture(reference: string | null): { url: string | null; error: stri
       live = false;
       if (taken) release(reference);
     };
-  }, [reference]);
+    // `version` is the record's revision, and it is in this list for a reason that is easy to miss:
+    // a redrawn picture keeps the *same* `imageRef`, because the path is derived from the record.
+    // Keyed on the reference alone the effect would never re-run, and the article would go on
+    // showing the picture that was just replaced until the component happened to remount — which is
+    // what "close the word and open it again" was working around.
+  }, [reference, version]);
 
   return { url, error };
 }
@@ -67,7 +78,7 @@ export function SenseImage({ prompt, headword, busy, onOpen }: {
   onOpen(): void;
 }) {
   const state = imageStateOf(prompt);
-  const { url, error } = usePicture(prompt.imageRef);
+  const { url, error } = usePicture(prompt.imageRef, prompt.revision);
 
   return <figure className="sense-image">
     <button
@@ -83,10 +94,22 @@ export function SenseImage({ prompt, headword, busy, onOpen }: {
         : <span className="sense-image-empty">
             {busy ? "Drawing…" : error ?? placeholderFor(state, prompt)}
           </span>}
+      {/* Over the picture it is replacing, rather than instead of it. Pressing Draw closes the
+          dialog, so this mark is the only thing that says the work was taken — and the old picture
+          stays visible underneath because that is what is being reconsidered. */}
+      {busy && url && <span className="sense-image-working" role="status">
+        <SyncIcon />
+        <span>Redrawing…</span>
+      </span>}
     </button>
     <figcaption className="cap">
-      {prompt.styleId && <span className="label">{prompt.styleId}</span>}
-      {prompt.imageModelId === null && prompt.imageRef && <span className="label">yours</span>}
+      {/* Either the style or "yours", never both. The style says how the picture was *drawn*, so on
+          one the owner attached it is simply untrue — and the record keeps its `styleId` on purpose,
+          because the brief and style are what a later Draw would work from. A caption reading
+          "baroque-chiaroscuro yours" was the record leaking through as a description. */}
+      {yours(prompt)
+        ? <span className="label">your own picture</span>
+        : prompt.styleId && <span className="label">{prompt.styleId}</span>}
     </figcaption>
   </figure>;
 }

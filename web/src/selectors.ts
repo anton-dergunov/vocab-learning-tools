@@ -60,24 +60,59 @@ export interface Article {
  * to poll and deliberately none to build: an owner-scoped job record would replicate to every
  * device, which is the question `docs/plans/nas-to-mac-job-queue.md` declined to answer.
  */
+/** A picture with enough of its surroundings to be named in a list. */
+export interface ImageWorkEntry {
+  prompt: ImagePrompt;
+  headword: string;
+  /** 1-based, the way the article numbers senses, so the two can be read together. */
+  senseNumber: number;
+}
+
 export interface ImageWork {
   /** Senses with no live prompt at all, so nothing has even been briefed for them. */
   unbriefed: { lexemeId: string; senseId: string }[];
   /** Briefed but not yet drawn, and not out of attempts. */
-  undrawn: ImagePrompt[];
+  undrawn: ImageWorkEntry[];
   /** Attempted and still without a picture. `isRetryable` says which of these will be tried again. */
-  failed: ImagePrompt[];
+  failed: ImageWorkEntry[];
   /** Ruled out by the owner, or refused by the writer. Counted, never retried. */
-  suppressed: ImagePrompt[];
-  ready: number;
+  suppressed: ImageWorkEntry[];
+  /**
+   * Pictures that exist, most recently written first.
+   *
+   * A list rather than a count, and derived rather than remembered. The panel used to show a
+   * session-scoped log of what this device had drawn, which was wrong twice over: it emptied on
+   * every reload, so five pictures showed as two, and it could never mention the pictures the
+   * server's sweep drew while nobody was looking. `editedAt` is on the record, so this answers
+   * "what has been made lately" for both engines and survives a restart.
+   */
+  drawn: ImageWorkEntry[];
 }
 
 export function imageWork(graph: VocabularyGraph): ImageWork {
   const prompts = live(graph.imagePrompts);
   const bySense = new Map(prompts.filter((p) => p.senseId).map((p) => [p.senseId!, p]));
   const words = new Map(live(graph.lexemes).map((lexeme) => [lexeme.id, lexeme]));
+  // Sense id -> the number the article prints beside it. Derived from the sort rather than from
+  // `sense.order`, which is the writer's ordinal and need not start at zero or run consecutively.
+  const numbered = new Map<string, number>();
+  const counted = new Map<string, number>();
+  live(graph.senses)
+    .slice()
+    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
+    .forEach((sense) => {
+      const next = (counted.get(sense.lexemeId) ?? 0) + 1;
+      counted.set(sense.lexemeId, next);
+      numbered.set(sense.id, next);
+    });
 
-  const work: ImageWork = { unbriefed: [], undrawn: [], failed: [], suppressed: [], ready: 0 };
+  const work: ImageWork = { unbriefed: [], undrawn: [], failed: [], suppressed: [], drawn: [] };
+  const entry = (prompt: ImagePrompt, lexemeId: string, senseId: string): ImageWorkEntry => ({
+    prompt,
+    headword: words.get(lexemeId)?.headword ?? "",
+    senseNumber: numbered.get(senseId) ?? 1
+  });
+
   live(graph.senses).forEach((sense) => {
     if (!words.has(sense.lexemeId)) return;
     const prompt = bySense.get(sense.id);
@@ -85,13 +120,17 @@ export function imageWork(graph: VocabularyGraph): ImageWork {
       work.unbriefed.push({ lexemeId: sense.lexemeId, senseId: sense.id });
       return;
     }
-    if (prompt.imageRef) work.ready += 1;
-    else if (prompt.suppressed) work.suppressed.push(prompt);
+    const found = entry(prompt, sense.lexemeId, sense.id);
+    if (prompt.imageRef) work.drawn.push(found);
+    else if (prompt.suppressed) work.suppressed.push(found);
     // Attempted and still blank. Whether anything will try again is `isRetryable`'s question, not
     // a second list: the record says what happened and the threshold says what to do about it.
-    else if (prompt.attempts > 0) work.failed.push(prompt);
-    else work.undrawn.push(prompt);
+    else if (prompt.attempts > 0) work.failed.push(found);
+    else work.undrawn.push(found);
   });
+
+  work.drawn.sort((left, right) => right.prompt.editedAt.localeCompare(left.prompt.editedAt));
+  work.failed.sort((left, right) => right.prompt.editedAt.localeCompare(left.prompt.editedAt));
   return work;
 }
 

@@ -20,6 +20,7 @@
  */
 
 import { AcervoApiError, backendSession, type ImagePromptRow } from "./api";
+import { forget } from "./media";
 import { repository } from "./repository";
 import { syncEngine } from "./sync";
 
@@ -42,11 +43,20 @@ export interface EnrichmentJob {
   error?: string;
 }
 
+/** One thing waiting its turn — enough of it for a picture to show that it is coming. */
+export interface EnrichmentWait {
+  lexemeId: string;
+  /** Null for a whole word: every sense of it is waiting. */
+  senseId: string | null;
+  label: string;
+}
+
 export interface EnrichmentStatus {
   /** The unit being worked on right now, or nothing. Strictly one at a time. */
   active: EnrichmentJob | null;
-  /** Words queued behind it, in order. */
-  waiting: number;
+  /** What is queued behind it, in order. A picture reads this so that pressing Draw while
+   *  something else is drawing still shows on the picture rather than looking ignored. */
+  waiting: EnrichmentWait[];
   /** This session's outcomes, newest first, capped — a view of recent work, not a log. */
   recent: EnrichmentJob[];
   /** Set while the engine is waiting out a provider's rate limit rather than working. */
@@ -62,13 +72,34 @@ const LONGEST_REST = 10 * 60_000;
 const RETRY_CODES = new Set(["llm_rate_limited", "llm_unavailable", "llm_unreachable"]);
 
 const EMPTY: EnrichmentStatus = {
-  active: null, waiting: 0, recent: [], restingUntil: null, running: false
+  active: null, waiting: [], recent: [], restingUntil: null, running: false
 };
+
+/**
+ * A unit of work. A **word** is "give this everything it lacks" and covers a brief and any number
+ * of renders; a **picture** is one render the owner asked for by hand, carrying the brief and style
+ * they typed.
+ *
+ * Both go through the one queue rather than a redraw firing straight at the route, and that is the
+ * point: providers meter roughly one picture a minute, so two at once buys a 429 rather than a
+ * second picture — and a hand-asked redraw shows up in the activity panel exactly like the rest.
+ */
+type Unit =
+  | { kind: "word"; lexemeId: string; label: string }
+  | {
+      kind: "picture";
+      lexemeId: string;
+      senseId: string;
+      promptId: string;
+      label: string;
+      prompt?: string;
+      styleId?: string;
+    };
 
 class EnrichmentEngine {
   private status: EnrichmentStatus = EMPTY;
   private listeners = new Set<() => void>();
-  private queue: { lexemeId: string; label: string }[] = [];
+  private queue: Unit[] = [];
   private working: Promise<void> | null = null;
   private rest = FIRST_REST;
   private stopped = false;
@@ -90,17 +121,53 @@ class EnrichmentEngine {
   enqueue(lexemeId: string, label: string): void {
     if (this.stopped) return;
     if (this.status.active?.lexemeId === lexemeId) return;
-    if (this.queue.some((item) => item.lexemeId === lexemeId)) return;
-    this.queue.push({ lexemeId, label });
-    this.update({ waiting: this.queue.length });
+    if (this.queue.some((item) => item.kind === "word" && item.lexemeId === lexemeId)) return;
+    this.push({ kind: "word", lexemeId, label });
+  }
+
+  /**
+   * Draw one picture the owner asked for, with the brief and style they typed.
+   *
+   * Deliberately not awaited by the caller: the dialog closes and the picture itself says it is
+   * being redrawn, which is the difference between a button that reacts and one that hangs for
+   * forty seconds. It joins the same queue as everything else, so it cannot race the automatic
+   * work against a provider that allows one picture a minute.
+   */
+  redraw(unit: { lexemeId: string; senseId: string; promptId: string; label: string;
+                 prompt?: string; styleId?: string }): void {
+    if (this.stopped) return;
+    // Deduped only against an *identical* request already queued — same picture, same words. A
+    // second press with a changed brief is a second intention and is honoured, because the dialog
+    // closes on Draw: pressing again means reopening it and typing, which nobody does by accident.
+    // Dropping that silently would be a worse failure than drawing one picture twice.
+    const identical = (item: Unit) =>
+      item.kind === "picture"
+      && item.promptId === unit.promptId
+      && item.prompt === unit.prompt
+      && item.styleId === unit.styleId;
+    if (this.queue.some(identical)) return;
+    this.push({ kind: "picture", ...unit });
+  }
+
+  private push(unit: Unit): void {
+    this.queue.push(unit);
+    this.update({ waiting: this.waits() });
     void this.run();
+  }
+
+  private waits(): EnrichmentWait[] {
+    return this.queue.map((item) => ({
+      lexemeId: item.lexemeId,
+      senseId: item.kind === "picture" ? item.senseId : null,
+      label: item.label
+    }));
   }
 
   /** Stop after the unit in flight. Used when signing out — never mid-call, which would waste it. */
   stop(): void {
     this.stopped = true;
     this.queue = [];
-    this.update({ waiting: 0 });
+    this.update({ waiting: [] });
   }
 
   resume(): void {
@@ -124,7 +191,7 @@ class EnrichmentEngine {
     if (this.working) return this.working;
     this.working = this.drain().finally(() => {
       this.working = null;
-      this.update({ running: false, active: null, waiting: this.queue.length });
+      this.update({ running: false, active: null, waiting: this.waits() });
     });
     this.update({ running: true });
     return this.working;
@@ -134,8 +201,33 @@ class EnrichmentEngine {
     while (!this.stopped) {
       const next = this.queue.shift();
       if (!next) return;
-      this.update({ waiting: this.queue.length });
-      await this.word(next.lexemeId, next.label);
+      this.update({ waiting: this.waits() });
+      if (next.kind === "word") await this.word(next.lexemeId, next.label);
+      else await this.picture(next);
+    }
+  }
+
+  /** One picture the owner asked for, drawn with whatever they typed. */
+  private async picture(unit: Extract<Unit, { kind: "picture" }>): Promise<void> {
+    const device = repository.snapshot().deviceId;
+    const job = this.begin(unit.lexemeId, unit.label, "render", unit.senseId);
+    try {
+      const overrides = unit.prompt === undefined && unit.styleId === undefined
+        ? {}
+        : { prompt: unit.prompt, styleId: unit.styleId };
+      const replacing = reflectedRef(unit.promptId);
+      await backendSession.renderImage(unit.promptId, device, overrides);
+      // The reference does not change across a redraw — it is derived from the record — so the
+      // cached bytes have to go, or the article keeps showing the picture that was just replaced.
+      // After the write, never before: forgetting first would revoke a URL still on screen, and
+      // the picture is deliberately left visible under the "redrawing" mark while this runs.
+      if (replacing) await forget(replacing);
+      await syncEngine.syncNow();
+      this.rest = FIRST_REST;
+      this.finish(job);
+    } catch (error) {
+      this.finish(job, message(error));
+      await this.rested(error);
     }
   }
 
@@ -230,6 +322,12 @@ class EnrichmentEngine {
     this.update({ restingUntil: null });
     return !this.stopped;
   }
+}
+
+/** The picture path this row currently points at, read from the replica. Empty when it has none. */
+function reflectedRef(promptId: string): string {
+  const row = repository.snapshot().imagePrompts.find((record) => record.id === promptId);
+  return row?.imageRef ?? "";
 }
 
 function message(error: unknown): string {

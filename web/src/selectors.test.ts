@@ -162,7 +162,7 @@ describe("what still needs a picture", () => {
   it("counts a drawn picture as done and every other sense as unbriefed", () => {
     const { graph } = pictured();
     const work = imageWork(graph);
-    expect(work.ready).toBe(1);
+    expect(work.drawn.map((entry) => entry.prompt.id)).toEqual(["imagepicar00010"]);
     expect(work.undrawn).toEqual([]);
     // Every other sense in the fixture has no prompt row at all.
     expect(work.unbriefed.length).toBeGreaterThan(0);
@@ -172,19 +172,19 @@ describe("what still needs a picture", () => {
   it("separates briefed-not-drawn from attempted-and-still-blank", () => {
     const { graph, drawn } = pictured();
     Object.assign(drawn, { imageRef: null, imageModelId: null, attempts: 0 });
-    expect(imageWork(graph).undrawn.map((row) => row.id)).toEqual([drawn.id]);
+    expect(imageWork(graph).undrawn.map((entry) => entry.prompt.id)).toEqual([drawn.id]);
 
     drawn.attempts = 2;
     drawn.failureReason = "the provider declined to draw this";
     expect(imageWork(graph).undrawn).toEqual([]);
-    expect(imageWork(graph).failed.map((row) => row.id)).toEqual([drawn.id]);
+    expect(imageWork(graph).failed.map((entry) => entry.prompt.id)).toEqual([drawn.id]);
   });
 
   it("counts a sense the owner ruled on rather than offering it again", () => {
     const { graph, drawn } = pictured();
     Object.assign(drawn, { imageRef: null, imageModelId: null, suppressed: true });
     const work = imageWork(graph);
-    expect(work.suppressed.map((row) => row.id)).toEqual([drawn.id]);
+    expect(work.suppressed.map((entry) => entry.prompt.id)).toEqual([drawn.id]);
     expect(work.undrawn).toEqual([]);
     expect(work.failed).toEqual([]);
   });
@@ -199,6 +199,30 @@ describe("what still needs a picture", () => {
     drawn.attempts = 0;
     drawn.suppressed = true;
     expect(isRetryable(drawn, 4)).toBe(false);
+  });
+
+  it("names a picture the way the article does, so the two can be read together", () => {
+    const { graph } = pictured();
+    const [entry] = imageWork(graph).drawn;
+    expect(entry.headword).toBe("picar");
+    // 1-based, matching the "01" the article prints beside the sense.
+    expect(entry.senseNumber).toBe(1);
+  });
+
+  it("puts the most recently written picture first, whichever engine wrote it", () => {
+    // The panel used to show a session log, which emptied on reload and could never mention a
+    // picture the server's sweep drew overnight. `editedAt` is on the record, so this can.
+    const graph = testGraph();
+    const [first] = graph.imagePrompts;
+    graph.imagePrompts.push({
+      ...first, id: "imagepicar00020", senseId: "sensepicarchop0",
+      imageRef: "images/lexemepicar0001/imagepicar00020.webp",
+      editedAt: "2026-09-01T00:00:00.000Z"
+    });
+    first.editedAt = "2026-01-01T00:00:00.000Z";
+
+    expect(imageWork(graph).drawn.map((entry) => entry.prompt.id))
+      .toEqual(["imagepicar00020", "imagepicar00010"]);
   });
 
   it("leaves a sense whose word was deleted, rather than being told about it", () => {

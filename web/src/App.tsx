@@ -29,7 +29,7 @@ import Settings, { type Page as SettingsPage } from "./Settings";
 
 /** A stable empty result, so the memo does not hand a new object to every render before load. */
 const EMPTY_IMAGE_WORK: ImageWork = {
-  unbriefed: [], undrawn: [], failed: [], suppressed: [], ready: 0
+  unbriefed: [], undrawn: [], failed: [], suppressed: [], drawn: []
 };
 import SignIn from "./SignIn";
 import { setSearchScope, useSearchScope, type SearchScope } from "./searchScope";
@@ -37,7 +37,7 @@ import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
 import { enrichment } from "./enrichment";
 import { ImageDialog } from "./ImageDialog";
-import { clearPictures } from "./media";
+import { clearPictures, forget } from "./media";
 import { SyncChip } from "./SyncStatus";
 import { ActivityChip, ActivityPanel } from "./ActivityPanel";
 import { parseArticle, yamlFor, YamlProblems, type YamlProblem } from "./yaml";
@@ -287,12 +287,43 @@ export default function App() {
   }, [editingImage, imageStyles.length, notify]);
 
   const [activity, setActivity] = useState(false);
+  /* Senses whose picture is being replaced by a file or removed. Not the enrichment queue: neither
+     is a model call, so neither should wait behind one — your own file appearing in a second is the
+     whole point of choosing it. Local because it lasts exactly as long as the round trip. */
+  const [replacing, setReplacing] = useState<ReadonlySet<string>>(new Set());
   /* Derived, never stored: "what is left" is a query against the replica, which is also how work
      the server's sweep is doing shows up here with no job store to poll. */
   const imageBacklog = useMemo(
     () => (snapshot ? imageWork(snapshot) : EMPTY_IMAGE_WORK),
     [snapshot]
   );
+
+  /**
+   * A write that replaces a picture, with the sense marked while it runs.
+   *
+   * The forget comes *after* the write, never before: the reference is derived from the record and
+   * so does not change, and forgetting first would revoke an object URL that is still on screen.
+   * Afterwards the pull bumps the row's revision, which is what tells the picture to fetch again —
+   * without it the article went on showing the old picture until it happened to remount.
+   */
+  const replacePicture = useCallback(async (senseId: string, write: () => Promise<unknown>) => {
+    setReplacing((held) => new Set(held).add(senseId));
+    const before = repository.snapshot().imagePrompts.find((row) => row.senseId === senseId)?.imageRef;
+    try {
+      await write();
+      if (before) await forget(before);
+      await syncEngine.syncNow();
+      setSnapshot(repository.snapshot());
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "That did not work.");
+    } finally {
+      setReplacing((held) => {
+        const next = new Set(held);
+        next.delete(senseId);
+        return next;
+      });
+    }
+  }, [notify]);
 
   const pictures = useMemo<PictureSlot | null>(() => {
     if (!article || mode !== "read") return null;
@@ -302,13 +333,17 @@ export default function App() {
       // sense that is still blank, and turns into a picture on the next pull — there is no job
       // store to ask, and deliberately none to build.
       busy: (senseId) => {
+        if (replacing.has(senseId)) return true;
+        if (enrichmentStatus.waiting.some((item) =>
+          item.senseId === senseId || (item.senseId === null && item.lexemeId === article.lexeme.id)
+        )) return true;
         const active = enrichmentStatus.active;
         if (!active || active.lexemeId !== article.lexeme.id) return false;
         // A brief covers every sense at once, so all of them are working; a render names one.
         return active.senseId === null || active.senseId === senseId;
       }
     };
-  }, [article, mode, enrichmentStatus.active]);
+  }, [article, mode, enrichmentStatus.active, enrichmentStatus.waiting, replacing]);
 
   /* ── searching the dictionaries ───────────────────────────────────────
      Three speeds, and the difference between them is what each one costs. A dictionary stored on
@@ -769,6 +804,24 @@ export default function App() {
       onChanged={() => {
         // The row the server wrote is authoritative; pull it rather than patching the replica here.
         void syncEngine.syncNow().then(() => setSnapshot(repository.snapshot()));
+      }}
+      onAttach={(file) => { void replacePicture(editingImage.senseId, () =>
+        backendSession.attachImage(editingImage.senseId, snapshot?.deviceId ?? "", file)); }}
+      onRemove={() => {
+        const held = editingImage.prompt;
+        if (held) void replacePicture(editingImage.senseId, () =>
+          backendSession.removeImage(held.id, snapshot?.deviceId ?? ""));
+      }}
+      onDraw={(overrides) => {
+        if (!editingImage.prompt) return;
+        // Handed to the queue, not awaited: the dialog closes and the picture says it is redrawing.
+        enrichment.redraw({
+          lexemeId: article.lexeme.id,
+          senseId: editingImage.senseId,
+          promptId: editingImage.prompt.id,
+          label: article.lexeme.headword,
+          ...overrides
+        });
       }}
       onNotify={notify}
     />}

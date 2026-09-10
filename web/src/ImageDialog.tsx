@@ -23,13 +23,13 @@
 import { useEffect, useState } from "react";
 import { AcervoApiError, backendSession, type ImagePromptRow, type ImageStyle } from "./api";
 import type { ImagePrompt } from "./domain";
-import { forget } from "./media";
 import { useFilePicker } from "./SenseImage";
 
-type Busy = "" | "drawing" | "briefing" | "attaching" | "removing";
+type Busy = "" | "briefing";
 
 export function ImageDialog({
-  prompt, senseId, lexemeId, headword, styles, deviceId, onClose, onChanged, onNotify
+  prompt, senseId, lexemeId, headword, styles, deviceId, onClose, onChanged, onDraw, onAttach,
+  onRemove, onNotify
 }: {
   /** Null for a sense that has no prompt row yet: the only action is to write one. */
   prompt: ImagePrompt | null;
@@ -43,6 +43,19 @@ export function ImageDialog({
   onClose(): void;
   /** Called after any write, so the caller can pull and re-render. */
   onChanged(row: ImagePromptRow | null): void;
+  /**
+   * Hand a drawing to whatever owns the queue, and expect nothing back.
+   *
+   * Drawing is 30-60 seconds and providers meter roughly one a minute, so awaiting it here would
+   * be a button that hangs. The dialog closes instead and the picture itself says it is being
+   * redrawn — which also puts a hand-asked redraw in the activity panel beside the automatic work,
+   * rather than in a second place.
+   */
+  onDraw(overrides: { prompt: string; styleId: string }): void;
+  /** Put this file where the drawn picture would go. Also not awaited — see `onDraw`. */
+  onAttach(file: File): void;
+  /** Remove the picture and rule the sense out. */
+  onRemove(): void;
   onNotify(message: string): void;
 }) {
   const [brief, setBrief] = useState(prompt?.prompt ?? "");
@@ -74,12 +87,11 @@ export function ImageDialog({
     }
   };
 
-  const draw = () => prompt && run("drawing", async () => {
-    // The reference does not change across a regeneration — it is derived from the record — so the
-    // cached bytes have to go or the article keeps showing the picture that was just replaced.
-    if (prompt.imageRef) await forget(prompt.imageRef);
-    return backendSession.renderImage(prompt.id, deviceId, { prompt: brief, styleId });
-  });
+  const draw = () => {
+    if (!prompt) return;
+    onDraw({ prompt: brief, styleId });
+    onClose();
+  };
 
   const rewrite = () => run("briefing", async () => {
     const { imagePrompts } = await backendSession.briefLexeme(lexemeId, deviceId);
@@ -88,15 +100,19 @@ export function ImageDialog({
     return imagePrompts.find((row) => row.senseId === senseId) ?? null;
   });
 
-  const attach = (file: File) => run("attaching", async () => {
-    if (prompt?.imageRef) await forget(prompt.imageRef);
-    return backendSession.attachImage(senseId, deviceId, file);
-  });
+  /* Attaching and removing close the dialog the way Draw does, and for the same reason: you have
+     said what you want, and the article is where the answer belongs. The caller does the work and
+     marks the picture while it runs. */
+  const attach = (file: File) => {
+    onAttach(file);
+    onClose();
+  };
 
-  const remove = () => prompt && run("removing", async () => {
-    if (prompt.imageRef) await forget(prompt.imageRef);
-    return backendSession.removeImage(prompt.id, deviceId);
-  });
+  const remove = () => {
+    if (!prompt) return;
+    onRemove();
+    onClose();
+  };
 
   const picker = useFilePicker(attach);
 
@@ -146,16 +162,14 @@ export function ImageDialog({
 
         <div className="image-actions">
           <button className="primary" onClick={draw} disabled={working || !prompt || !brief.trim() || !styleId}>
-            {busy === "drawing" ? "Drawing…" : "Draw"}
+            Draw
           </button>
           <button onClick={rewrite} disabled={working}>
             {busy === "briefing" ? "Writing…" : "Write a new brief"}
           </button>
-          <button onClick={picker.choose} disabled={working}>
-            {busy === "attaching" ? "Adding…" : "Use my own picture…"}
-          </button>
+          <button onClick={picker.choose} disabled={working}>Use my own picture…</button>
           <button className="danger" onClick={remove} disabled={working || !prompt}>
-            {busy === "removing" ? "Removing…" : "No picture here"}
+            No picture here
           </button>
           {picker.element}
         </div>
