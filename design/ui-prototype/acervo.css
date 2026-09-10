@@ -683,6 +683,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .validation { margin-top: 14px; border-radius: 8px; padding: 13px 16px; font-size: 14.5px; }
 .validation.ok { background: var(--core-soft); color: var(--core); }
 .validation.bad { background: var(--warn-soft); color: var(--warn); }
+.validation.warn { background: var(--warn-soft); color: var(--warn); }
 .validation strong, .validation b { display: block; }
 .validation ul { margin: 7px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .validation code { font-family: var(--mono); font-size: 12px; }

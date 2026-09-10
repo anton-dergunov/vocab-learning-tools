@@ -45,13 +45,23 @@ def _pairs(stored: Any) -> Pairs:
 
 
 def _document(stored: Any) -> dict[str, Pairs]:
+    """Kept empty lists and all: `[]` means "every model switched off", which is a choice.
+
+    Dropping it would turn switching everything off into having chosen nothing, and the server would
+    quietly carry on building entries with its own order.
+    """
     if not isinstance(stored, Mapping):
         return {}
-    return {kind: pairs for kind, value in stored.items() if (pairs := _pairs(value))}
+    return {kind: _pairs(value) for kind, value in stored.items() if isinstance(value, list)}
 
 
 def chains(owner: str) -> dict[str, Pairs]:
-    """This owner's chains by kind. `{}`, and any kind absent from it, means the deployment default."""
+    """This owner's chains by kind.
+
+    A kind absent from the result means nothing has been chosen for it, and the deployment default
+    applies. A kind present but **empty** means every model was switched off on purpose. The two are
+    different answers and the caller must not collapse them.
+    """
     with reading() as connection:
         row = connection.execute(
             select(tables.model_selection).where(tables.model_selection.c.owner == owner)

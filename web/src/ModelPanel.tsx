@@ -119,9 +119,13 @@ function KindSection({ kind, label, help, catalogue, onChange }: {
   const inherited = chain.source === "deployment";
   const pairs = orderedPairs(catalogue.providers, live, kind);
 
-  /* Nothing left means "follow the server's order" rather than an empty chain, which the route
-     refuses. Without it the first choice would be a one-way door out of the default. */
-  const change = (next: ModelPair[]) => onChange(kind, next.length ? next : null);
+  /* Three states, and unticking the last box reaches the third rather than bouncing off it:
+     an order of your own, nothing at all, or "whatever the server does". Switching everything off
+     is a real answer — most of Acervo works without a model, and reading, editing and writing YAML
+     by hand all still do — so it is stored rather than refused. `null` is the way back, and it has
+     its own button, because no arrangement of tick boxes could mean "stop deciding". */
+  const change = (next: ModelPair[]) => onChange(kind, next);
+  const followServer = () => onChange(kind, null);
 
   return <div className="model-kind">
     <h4>{label}</h4>
@@ -133,8 +137,14 @@ function KindSection({ kind, label, help, catalogue, onChange }: {
         : "You have not chosen, and this server has nothing it can use."}
       {chain.reason ? ` Right now it cannot build: ${chain.reason}.` : ""}
     </p>}
-    {chain.source === "owner" && chain.reason && <p className="config-help model-warning">
+    {!inherited && live.length === 0 && <p className="config-help model-warning">
+      Switched off. Nothing here will be generated, and the rest of Acervo works as usual.
+    </p>}
+    {!inherited && live.length > 0 && chain.reason && <p className="config-help model-warning">
       Nothing you have chosen can be asked right now — {chain.reason}.
+    </p>}
+    {!inherited && <p className="config-help">
+      <button className="link-btn" onClick={followServer}>Use this server’s order instead</button>
     </p>}
     <div className="config-list">
       {pairs.map((pair) => {
@@ -180,11 +190,7 @@ export default function ModelPanel({ onNotify }: { onNotify(message: string): vo
     setWorking(true);
     try {
       setCatalogue(await backendSession.saveModelSelection({ [kind]: pairs }));
-      /* Unticking the last one is not "use nothing" — there is no such state, and the server
-         refuses an empty chain rather than letting one stray click switch capture off. It means
-         "go back to the server's order", whose models then reappear ticked. Say so, or that
-         reappearance reads as the tick having been ignored. */
-      if (pairs === null) onNotify("Nothing chosen, so this server’s own order is back in force.");
+      if (pairs === null) onNotify("This server’s own order is back in force.");
     } catch (error) {
       onNotify(error instanceof Error ? error.message : "That choice could not be saved.");
     } finally { setWorking(false); }

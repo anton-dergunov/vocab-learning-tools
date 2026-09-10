@@ -230,3 +230,37 @@ the pair now at the head.
 - **No retry within a row.** A 429 moves to the next provider rather than sleeping;
   `scripts/ingest_vocabulary_file.py:42-43` already owns the slow retry for bulk work, and a
   synchronous capture must not block for 60 seconds.
+
+## Implementation record: what the first day of use corrected
+
+Four things, all found by using it rather than by testing it.
+
+**The pane lied about what would happen.** Under the deployment default every tick box rendered
+empty, so unticking the last model looked like switching capture off — and the server carried on
+building entries with the head of its own order. The server had been reporting that order correctly
+all along; the panel discarded it. An inherited order now arrives ticked and says whose it is.
+
+**An empty chain is a third state, not a refusal.** `empty_chain` is gone. Absent means "follow the
+deployment default", `[]` means "generate nothing of this kind", and a list is an order. Refusing
+`[]` left no way to say the middle one, and made unticking the last model bounce back to the default
+— which read as the tick being ignored. `chain.resolve` therefore takes `Sequence | None` and the
+distinction is load-bearing: "I have not chosen" and "I choose none" look identical in a list and
+mean opposite things. Getting back to the default is its own button, because no arrangement of tick
+boxes could mean "stop deciding".
+
+**A fall-through was invisible.** The entry records the model that answered, which is not the same
+as saying who was asked first: a provider at the head of the owner's order that is quietly failing
+looked exactly like one they never chose. `Answer.passed_over` carries who was passed over and why,
+the capture response reports it, and the Add view says so.
+
+**The rests were an order of magnitude too long.** They conflated a per-minute rate limit with a
+spent daily quota, which arrive identically as a 429 — Gemini says "Quota exceeded for metric …
+requests" for both. Measured against the live API: no `Retry-After` header, an unreadable body by
+the time LiteLLM is done, and the delay stated only in the message text. So the first rest is 30s,
+short enough for a per-minute allowance, and the doubling to a 1h cap is what reaches a daily quota
+without ever having to tell them apart. Being early costs one 429; being late leaves a working model
+unused for an hour.
+
+Also: Cloudflare's text row looked like a model that could not write JSON. It was Workers AI's
+default `max_tokens` of about 256, truncating a composed article mid-object — and only sometimes,
+because it depends how long the model felt like being. A row `param`, which is what `params` is for.

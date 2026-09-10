@@ -25,6 +25,10 @@ class Answer:
     # pair rather than a provider id because a row offers several models and the chain walks
     # them: two free tiers of 500 a day are reached one after the other, not one instead.
     attempts: tuple[tuple[str, str], ...] = ()
+    # Every pair asked before this one, and what it said: (provider, model, reason). A fall-through
+    # is otherwise invisible — the entry names who answered, but nothing says who was asked first or
+    # why they were passed over, so a provider that is quietly broken looks like one nobody chose.
+    passed_over: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)

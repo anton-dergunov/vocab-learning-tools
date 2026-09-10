@@ -136,6 +136,26 @@ def test_the_owner_may_pin_one_model_of_a_row(server):
     assert models(server)["chains"]["text"]["pairs"] == [pair("gemini-free", GEMINI_SECOND)]
 
 
+def test_switching_every_model_off_is_a_choice_and_not_an_absence(server):
+    """Three states, not two. Refusing this left no way to say "do not build entries at all", and
+    made unticking the last model bounce back to the server's order while entries kept being made."""
+    answer = choose(server, {"text": []})
+    assert answer.status_code == 200
+
+    readout = models(server)["chains"]["text"]
+    assert readout["source"] == "owner"
+    assert readout["pairs"] == []
+    assert readout["reason"] == "no model is switched on for text"
+
+
+def test_capture_refuses_while_every_model_is_switched_off(server):
+    choose(server, {"text": []})
+    answer = server.capture()
+    assert answer.status_code >= 400
+    assert answer.json()["error"]["message"] == "no model is switched on for text"
+    assert server.model.calls == []
+
+
 def test_forgetting_a_kind_returns_it_to_the_deployment(server):
     """Without this there is no way back: unchecking everything is refused as an empty chain, so a
     single choice would be a one-way door out of following the server's own order."""
@@ -172,7 +192,6 @@ def test_an_unavailable_pair_may_be_kept_and_is_simply_skipped_when_the_chain_is
         ({}, "invalid_input"),
         ({"text": "gemini-free"}, "invalid_input"),
         ({"text": [{"provider": "gemini-free"}]}, "invalid_input"),
-        ({"text": []}, "empty_chain"),
         ({"vibes": [pair("gemini-free", GEMINI)]}, "unsupported_kind"),
         ({"image": [pair("openrouter", "openrouter/meta-llama/llama-3.3-70b-instruct")]}, "unsupported_kind"),
         ({"text": [pair("nonesuch", GEMINI)]}, "unknown_provider"),

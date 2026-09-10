@@ -22,23 +22,29 @@ longer hold, and it would need a schema.
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from typing import Iterable, Sequence
 
 Pair = tuple[str, str]
 
-# How long a pair rests, by what went wrong. A rate limit is the long one: it means an allowance is
-# spent, and allowances refill on the provider's clock rather than in seconds. The others are short
-# because a 5xx or a dropped connection is usually over by the time you look again.
+# How long a pair rests when the provider does not say, by what went wrong.
 #
-# The rate-limit rest is deliberately far shorter than a day. It does not need to cover the wait —
-# "everything is resting" already handles that — it only needs to be long enough that a spent
-# allowance is not re-probed on every entry.
+# **A 429 does not say whether an allowance was per minute or per day**, and both arrive
+# identically: Gemini answers "Quota exceeded for metric … requests" whether fifteen-a-minute or
+# five-hundred-a-day ran out. So the first rest is short enough for the per-minute case — the free
+# tier allows 15 text requests a minute and 3 speech ones, so half a minute usually clears it — and
+# the *doubling* is what reaches a spent daily quota without ever having to tell the two apart. A
+# model that keeps refusing is asked about progressively less: 30s, 1m, 2m, 4m … up to the cap.
+#
+# Starting long would have been the worse mistake in both directions. It leaves a working model
+# unused for an hour after a momentary burst, and it costs nothing to be wrong the other way: an
+# early probe is one 429, which comes back in about a tenth of a second.
 REST: dict[str, float] = {
-    "rate_limited": 900.0,
-    "unavailable": 60.0,
-    "unreachable": 60.0,
+    "rate_limited": 30.0,
+    "unavailable": 20.0,
+    "unreachable": 20.0,
 }
 LONGEST = 3600.0
 
@@ -103,28 +109,46 @@ class Rests:
 rests = Rests()
 
 
-def retry_after_of(error: BaseException) -> float | None:
-    """The provider's own "come back in N seconds", when it sent one.
+# "Please retry in 54.106058949s." and `"retryDelay": "54s"` — the two shapes Google's own
+# RetryInfo reaches us in. Deliberately narrow: a duration, in seconds, and nothing else.
+_SPOKEN_DELAY = re.compile(r"retry(?:\s+in|Delay\"?\s*[:=]\s*\"?)\s*([0-9]+(?:\.[0-9]+)?)\s*s", re.I)
 
-    Read from the response headers only. Some providers also put a delay in the error body, in a
-    shape of their own devising, and parsing those here would be per-provider code in the one place
-    this package keeps free of it.
+
+def retry_after_of(error: BaseException) -> float | None:
+    """The provider's own "come back in N seconds", when it said one. None when it did not.
+
+    Two sources, because providers disagree about where to put it. OpenAI and friends send a
+    `Retry-After` header. Google sends neither a header nor a readable body by the time LiteLLM is
+    finished with it — measured, not assumed: the response arrives here with empty headers and an
+    unparseable body — and puts the delay in the message instead.
+
+    Reading a number out of a message is exactly the string-matching this package replaced with
+    typed errors, so it is worth being clear about why it is allowed *here* and not there. The old
+    `is_quota_error` matched text to decide whether a failure was retryable at all — a correctness
+    decision, where a missed match changed what happened. This decides only *when to probe again*,
+    the fallback is total, and being wrong costs one cheap 429. A hint, held to a hint's standard.
     """
-    response = getattr(error, "response", None)
-    headers = getattr(response, "headers", None)
-    if headers is None:
-        return None
+    for value in (_header_delay(error), _spoken_delay(error)):
+        if value is not None:
+            return min(max(value, 0.0), LONGEST)
+    return None
+
+
+def _header_delay(error: BaseException) -> float | None:
+    headers = getattr(getattr(error, "response", None), "headers", None)
     try:
-        value = headers.get("retry-after")
+        value = headers.get("retry-after") if headers is not None else None
     except Exception:  # noqa: BLE001 — a header bag of unknown provenance
         return None
-    if value is None:
-        return None
     try:
-        seconds = float(str(value).strip())
+        return float(str(value).strip()) if value is not None else None
     except ValueError:
         return None  # the HTTP-date form; rare here, and the table is a fine answer
-    return min(max(seconds, 0.0), LONGEST)
+
+
+def _spoken_delay(error: BaseException) -> float | None:
+    found = _SPOKEN_DELAY.search(str(error))
+    return float(found.group(1)) if found else None
 
 
 def note_all(pairs: Iterable[Pair], reason: str) -> None:

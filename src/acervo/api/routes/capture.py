@@ -21,6 +21,7 @@ from acervo.api.auth import owner_id
 from acervo.api.errors import data
 from acervo.api.payload import json_body
 from acervo.errors import ApiError
+from acervo.models import Answer
 from acervo.repository import graph
 from acervo.services.capture.apply import apply_draft
 from acervo.services.capture.compose import compose
@@ -33,9 +34,26 @@ router = APIRouter()
 TEXT_LIMIT = 20000
 
 
+def _passed_over(*calls: Answer) -> list[dict[str, str]]:
+    """Which providers were asked before the one that answered, and why they were not it.
+
+    A fall-through is otherwise completely silent. The entry names the model that wrote it, but a
+    provider at the head of the owner's order that is quietly broken looks exactly like one they
+    never chose — and they would go on believing it is the one building their words.
+
+    Deduplicated across the two model calls: a provider that refused both is one thing that is
+    wrong, not two.
+    """
+    seen: dict[tuple[str, str], dict[str, str]] = {}
+    for call in calls:
+        for provider, model, reason in call.passed_over:
+            seen.setdefault((provider, model), {"provider": provider, "model": model, "reason": reason})
+    return list(seen.values())
+
+
 def run_capture(settings: Settings, account: str, device: str, body: dict[str, Any]) -> dict[str, Any]:
     vocabularies = graph.owner_vocabularies(account)
-    resolution = resolve(settings, account, body, vocabularies)
+    resolution, resolving = resolve(settings, account, body, vocabularies)
 
     vocabulary = next(
         (entry for entry in vocabularies if entry["language"] == resolution["language"]), None
@@ -63,18 +81,24 @@ def run_capture(settings: Settings, account: str, device: str, body: dict[str, A
     if duplicates:
         # Merging a repeat capture into the entry it belongs to needs the article conversation to do
         # it well. Until then, say so plainly rather than making a near-duplicate.
-        return {"resolution": resolution, "duplicates": duplicates, "draft": None, "applied": None}
+        return {
+            "resolution": resolution, "duplicates": duplicates, "draft": None, "applied": None,
+            "passedOver": _passed_over(resolving),
+        }
 
     topics = graph.owner_topics(account)
     # The model that answered, not the one that was asked first: with a chain, those differ the
     # moment a provider is rate limited, and the entry must record the one that did the work.
-    answer, model_id = compose(settings, account, resolution, body, vocabulary, topics)
-    draft = draft_from(answer, resolution, body, vocabulary, topics, model_id)
+    answer, composing = compose(settings, account, resolution, body, vocabulary, topics)
+    draft = draft_from(answer, resolution, body, vocabulary, topics, composing.model)
 
     applied = None
     if body.get("apply") is True:
         applied = {"lexemeId": apply_draft(account, device, draft, topics)}
-    return {"resolution": resolution, "duplicates": [], "draft": draft, "applied": applied}
+    return {
+        "resolution": resolution, "duplicates": [], "draft": draft, "applied": applied,
+        "passedOver": _passed_over(resolving, composing),
+    }
 
 
 @router.post("/capture")

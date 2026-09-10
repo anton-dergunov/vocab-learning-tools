@@ -117,11 +117,25 @@ export interface CaptureDuplicate {
   shortGloss: string | null;
 }
 
+/** A provider that was asked before the one that answered, and why it was passed over. */
+export interface CapturePassedOver {
+  provider: string;
+  model: string;
+  /** One of the retryable reasons: `rate_limited`, `unavailable`, `unreachable`. */
+  reason: string;
+}
+
 export interface CaptureResult {
   resolution: CaptureResolution;
   duplicates: CaptureDuplicate[];
   draft: ArticleDraft | null;
   applied: { lexemeId: string } | null;
+  /**
+   * Empty on the ordinary path. Non-empty means the chain fell through, which is otherwise
+   * invisible: the entry names the model that wrote it, but a provider at the head of the order
+   * that is quietly broken looks exactly like one that was never chosen.
+   */
+  passedOver?: CapturePassedOver[];
 }
 
 export interface CaptureRequest {

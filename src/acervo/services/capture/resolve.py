@@ -6,6 +6,7 @@ from typing import Any
 
 from acervo.domain.validation import POS_VALUES
 from acervo.errors import ApiError
+from acervo.models import Answer
 from acervo.services.capture.coerce import (
     language_or_none,
     pick_choice,
@@ -23,7 +24,7 @@ UNREADABLE = ApiError(
 
 def resolve(
     settings: Settings, owner: str, request: dict[str, Any], vocabularies: list[dict]
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], Answer]:
     stream = trimmed(request.get("mode")) == "stream"
     reference = reference_of(request)
     known = [
@@ -56,7 +57,7 @@ def resolve(
         if line != ""
     )
 
-    answer, _model = llm_json(
+    answer, call = llm_json(
         settings, owner, prompt_text(settings.prompts_path, "acervo_resolve"), user
     )
     if isinstance(answer, dict) and trimmed(answer.get("error")):
@@ -99,4 +100,4 @@ def resolve(
         "note": trimmed(answer.get("note")) or None,
         "consumedLines": consumed_lines,
         "consumedText": consumed_text or None,
-    }
+    }, call

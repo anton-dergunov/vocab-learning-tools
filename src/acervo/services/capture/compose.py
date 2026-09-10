@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from acervo.errors import ApiError
+from acervo.models import Answer
 from acervo.services.capture.coerce import reference_of, text_list, trimmed
 from acervo.services.models import llm_json
 from acervo.services.prompts import prompt_text
@@ -25,7 +26,7 @@ def compose(
     request: dict[str, Any],
     vocabulary: dict[str, Any],
     topics: list[dict[str, Any]],
-) -> tuple[dict[str, Any], str]:
+) -> tuple[dict[str, Any], Answer]:
     reference = reference_of(request)
     names = {topic["name"].lower(): topic["name"] for topic in topics}
     preferred = [names[name.lower()] for name in text_list(request.get("topics")) if name.lower() in names]
@@ -80,11 +81,11 @@ def compose(
         if line != ""
     )
 
-    answer, model = llm_json(
+    answer, call = llm_json(
         settings, owner, prompt_text(settings.prompts_path, "acervo_compose"), user
     )
     if not isinstance(answer, dict):
         raise ApiError(
             502, "llm_unusable", "The language model did not return an entry, so nothing was created."
         )
-    return answer, model
+    return answer, call

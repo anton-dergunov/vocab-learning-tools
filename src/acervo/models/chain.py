@@ -69,11 +69,17 @@ def resolve(
 ) -> tuple[Candidate, ...]:
     """The pairs that will be tried, in order.
 
-    With nothing chosen, every credentialed row that serves this kind in catalogue order, each row's
-    models in the order it lists them — so a deployment that has configured one provider needs no
-    chain setting at all, and one that has configured three gets them in the order the file lists.
+    `None` means nothing has been chosen: every credentialed row that serves this kind in catalogue
+    order, each row's models in the order it lists them — so a deployment that has configured one
+    provider needs no chain setting at all.
 
-    With choices, exactly those, in that order.
+    An **empty** sequence is not the same thing. It means every model was switched off deliberately,
+    and it resolves to nothing at all. The distinction is the whole reason this takes a `Sequence |
+    None` rather than a list: "I have not chosen" and "I choose none" look identical in a list and
+    mean opposite things, and conflating them made unticking the last model silently fall back to
+    the server's order.
+
+    Otherwise, exactly the choices given, in that order.
 
     **A retired model is refused; an uncredentialed row is skipped.** The line is whether the state
     is legitimate. Not holding a key is expected — ordering three providers on a deployment that
@@ -83,7 +89,7 @@ def resolve(
     set, and retire one and capture would quietly walk half the chain the owner configured, forever,
     with no symptom.
     """
-    if not chosen:
+    if chosen is None:
         return tuple(
             Candidate(row, model)
             for row in catalogue.serving(kind)
@@ -126,6 +132,8 @@ def unconfigured(
     It reports the *first* row that would have served, so the message is about the provider the
     deployment is closest to having, rather than about the last one in the file.
     """
+    if chosen is not None and not chosen:
+        return ProviderRefused("unconfigured", f"no model is switched on for {kind}")
     rows = (
         [catalogue.find(_named(choice)[0]) for choice in chosen]
         if chosen
@@ -143,7 +151,7 @@ def walk(
     chosen: Sequence[Choice] | None,
     catalogue: Catalogue,
     ask: Callable[[Candidate], Result],
-    stamp: Callable[[Result, tuple[tuple[str, str], ...]], Result],
+    stamp: Callable[[Result, tuple[tuple[str, str], ...], tuple[tuple[str, str, str], ...]], Result],
 ) -> Result:
     """Ask each pair in turn until one answers.
 
@@ -160,13 +168,15 @@ def walk(
     order = sorted(candidates, key=lambda candidate: candidate.named not in awake)
 
     attempts: list[tuple[str, str]] = []
+    passed_over: list[tuple[str, str, str]] = []
     last: ProviderUnavailable | None = None
     for candidate in order:
         attempts.append(candidate.named)
         try:
-            answer = stamp(ask(candidate), tuple(attempts))
+            answer = stamp(ask(candidate), tuple(attempts), tuple(passed_over))
         except ProviderUnavailable as error:
             rests.note(candidate.named, error.reason, retry_after=retry_after_of(error))
+            passed_over.append((*candidate.named, error.reason))
             last = error
         else:
             rests.succeeded(candidate.named)
@@ -175,6 +185,17 @@ def walk(
     raise ChainExhausted(tuple(attempts), last)
 
 
-def stamped(result, attempts: tuple[tuple[str, str], ...]):
-    """Rewrite a result's answer with the pairs actually tried. The provenance contract, applied."""
-    return replace(result, answer=replace(result.answer, attempts=attempts))
+def stamped(
+    result,
+    attempts: tuple[tuple[str, str], ...],
+    passed_over: tuple[tuple[str, str, str], ...] = (),
+):
+    """Rewrite a result's answer with what was tried, and what was passed over on the way.
+
+    The provenance contract, applied — and the passed-over list is what lets a caller say a
+    fall-through happened at all. Without it, a provider that is quietly broken is indistinguishable
+    from one nobody chose.
+    """
+    return replace(
+        result, answer=replace(result.answer, attempts=attempts, passed_over=passed_over)
+    )

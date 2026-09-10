@@ -15,6 +15,13 @@ const EditorSurface = lazy(() => import("./YamlPane").then((module) => ({ defaul
 
 export type AddTab = "capture" | "article" | "yaml";
 
+/** Why a provider was passed over, in words rather than in the chain's own vocabulary. */
+const REASONS: Record<string, string> = {
+  rate_limited: "out of allowance for now",
+  unavailable: "the provider had a problem",
+  unreachable: "could not be reached"
+};
+
 /**
  * A composition that starts somewhere other than an empty box — today, a word taken from an
  * external dictionary.
@@ -80,6 +87,7 @@ export default function AddView({
   const [working, setWorking] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<CaptureResult["duplicates"]>([]);
+  const [passedOver, setPassedOver] = useState<CaptureResult["passedOver"]>([]);
   const { wrap, numbers } = useEditorPreferences();
 
   /** The server has told us it cannot build entries. Writing YAML by hand still can. */
@@ -116,6 +124,7 @@ export default function AddView({
     setWorking(true);
     setFailure(null);
     setDuplicates([]);
+    setPassedOver([]);
     try {
       const result = await onCapture({
         // The word alone is a complete capture. Sending it as the text too keeps that from needing
@@ -130,6 +139,7 @@ export default function AddView({
         reference: seed?.reference ?? null,
         referenceMode: seed?.referenceMode ?? null
       });
+      setPassedOver(result.passedOver ?? []);
       if (result.duplicates.length) {
         setDuplicates(result.duplicates);
         return;
@@ -189,6 +199,16 @@ export default function AddView({
           </ul>
           <span>Nothing was created. Open the entry to see what it already says.</span>
         </div>}
+        {/* A fall-through is silent otherwise. The entry names the model that wrote it, but a
+            provider at the head of the order that is quietly broken looks exactly like one that was
+            never chosen — and the owner goes on believing it built their words. */}
+        {passedOver?.length ? <div className="validation warn" role="status">
+          <strong>{passedOver.length === 1 ? "A provider was passed over." : "Some providers were passed over."}</strong>
+          <ul>{passedOver.map((one) => <li key={`${one.provider} ${one.model}`}>
+            <code>{one.model}</code> — {REASONS[one.reason] ?? one.reason}
+          </li>)}</ul>
+          <span>The next one in your order answered instead.</span>
+        </div> : null}
         {noVocabularies && <div className="validation bad" role="alert">
           <strong>There is no vocabulary to add a word to yet.</strong>
           <span>Add the language you are learning in Settings {"\u25B8"} Vocabularies, then capture

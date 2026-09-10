@@ -108,9 +108,10 @@ describe("the Providers pane", () => {
     expect(within(row).getByText(/unavailable/i)).toBeInTheDocument();
   });
 
-  it("says so when unticking the last one hands the order back to the server", async () => {
-    /* There is no "use nothing" state — the route refuses an empty chain — so the server's models
-       reappear ticked, and without a word that reads as the tick having been ignored. */
+  it("switching the last one off switches the kind off, rather than bouncing back", async () => {
+    /* Most of Acervo works without a model, so "generate nothing" is a real answer. Refusing it
+       made the server's own models reappear ticked, which read as the tick being ignored while
+       entries carried on being built by them. */
     const chosen = catalogue({
       chains: {
         text: { source: "owner", reason: null, pairs: [pair("gemini-free", GEMINI)] },
@@ -119,13 +120,38 @@ describe("the Providers pane", () => {
       }
     });
     vi.spyOn(backendSession, "fetchModels").mockResolvedValue(chosen);
-    vi.spyOn(backendSession, "saveModelSelection").mockResolvedValue(catalogue());
-    const notified = vi.fn();
-    render(<ModelPanel onNotify={notified} />);
+    const save = vi.spyOn(backendSession, "saveModelSelection").mockResolvedValue(chosen);
+    panel();
     const row = rowOf(await screen.findByText(GEMINI));
     fireEvent.click(within(row).getByRole("checkbox"));
-    await waitFor(() => expect(notified).toHaveBeenCalledWith(
-      expect.stringMatching(/own order is back in force/i)));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ text: [] }));
+  });
+
+  it("says a switched-off kind is off, and that the rest of Acervo is not", async () => {
+    vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue({
+      chains: {
+        text: { source: "owner", reason: "no model is switched on for text", pairs: [] },
+        image: { source: "deployment", reason: null, pairs: [] },
+        audio: { source: "deployment", reason: null, pairs: [] }
+      }
+    }));
+    panel();
+    expect(await screen.findByText(/Switched off/i)).toBeInTheDocument();
+    expect(screen.getByText(/rest of Acervo works as usual/i)).toBeInTheDocument();
+  });
+
+  it("offers a way back to the server's order, which no arrangement of tick boxes could mean", async () => {
+    vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue({
+      chains: {
+        text: { source: "owner", reason: null, pairs: [pair("gemini-free", GEMINI)] },
+        image: { source: "deployment", reason: null, pairs: [] },
+        audio: { source: "deployment", reason: null, pairs: [] }
+      }
+    }));
+    const save = vi.spyOn(backendSession, "saveModelSelection").mockResolvedValue(catalogue());
+    panel();
+    fireEvent.click((await screen.findAllByRole("button", { name: /Use this server/i }))[0]);
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ text: null }));
   });
 
   it("reorders a chosen pair with the arrows", async () => {
@@ -156,24 +182,6 @@ describe("the Providers pane", () => {
     const row = rowOf(await screen.findByText(CLOUDFLARE));
     expect(within(row).getByRole("button", { name: /up$/i })).toBeDisabled();
     expect(within(row).getByRole("button", { name: /down$/i })).toBeDisabled();
-  });
-
-  it("switching the last one off hands back rather than sending an empty chain", async () => {
-    /* An empty chain is refused by the route, so without this the first choice would be a one-way
-       door out of following the deployment default. */
-    const chosen = catalogue({
-      chains: {
-        text: { source: "owner", reason: null, pairs: [pair("gemini-free", GEMINI)] },
-        image: { source: "deployment", reason: null, pairs: [] },
-        audio: { source: "deployment", reason: null, pairs: [] }
-      }
-    });
-    vi.spyOn(backendSession, "fetchModels").mockResolvedValue(chosen);
-    const save = vi.spyOn(backendSession, "saveModelSelection").mockResolvedValue(catalogue());
-    panel();
-    const row = rowOf(await screen.findByText(GEMINI));
-    fireEvent.click(within(row).getByRole("checkbox"));
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ text: null }));
   });
 
   it("shows what the server answered rather than what was clicked", async () => {

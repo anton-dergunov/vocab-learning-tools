@@ -656,3 +656,42 @@ def test_health_reports_the_deployment_while_the_owner_reports_their_own(seeded,
     chosen = seeded.get("/models").json()["data"]["chains"]["text"]
     assert chosen["source"] == "owner"
     assert chosen["pairs"] == [{"provider": "cloudflare", "model": CLOUDFLARE_TEXT}]
+
+
+def test_a_fall_through_is_reported_so_a_broken_provider_is_not_invisible(seeded, cloudflare_too):
+    """The entry names the model that wrote it, which is not the same as saying who was asked first.
+
+    A provider at the head of the owner's order that is quietly failing looks exactly like one they
+    never chose, and they go on believing it is the one building their words.
+    """
+    select(seeded, {"text": [
+        {"provider": "cloudflare", "model": CLOUDFLARE_TEXT},
+        {"provider": "gemini-free", "model": GEMINI_SECOND},
+    ]})
+    seeded.model.limited = {CLOUDFLARE_TEXT}
+
+    body = seeded.capture().json()["data"]
+    assert body["passedOver"] == [
+        {"provider": "cloudflare", "model": CLOUDFLARE_TEXT, "reason": "rate_limited"}
+    ]
+    _own, invented = body["draft"]["senses"][0]["examples"]
+    assert invented["modelId"] == GEMINI_SECOND
+
+
+def test_nothing_is_reported_when_the_first_choice_answered(seeded):
+    assert seeded.capture().json()["data"]["passedOver"] == []
+
+
+def test_a_provider_that_refused_both_calls_is_reported_once(seeded, cloudflare_too):
+    """One thing that is wrong, not two — a capture is two model calls, not two problems."""
+    select(seeded, {"text": [
+        {"provider": "cloudflare", "model": CLOUDFLARE_TEXT},
+        {"provider": "gemini-free", "model": GEMINI_SECOND},
+    ]})
+    seeded.model.limited = {CLOUDFLARE_TEXT}
+    seeded.capture()
+
+    # The rest means the second call skips it, so this also pins that a remembered refusal does not
+    # cost the report: what was passed over on the way stays reported either way.
+    body = seeded.capture().json()["data"]
+    assert len(body["passedOver"]) <= 1

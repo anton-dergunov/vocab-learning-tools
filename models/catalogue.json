@@ -58,8 +58,8 @@
         "jsonSchema": "prompt",
         "audio": { "inputField": "text" }
       },
-      "params": { "text": {} },
-      "notes": "Workers AI has no account-less endpoint, so the account id is required as well as the token — and it is what makes the usage link point at the right dashboard. LiteLLM covers text only: image and audio go through the hand-written adapter, because FLUX.2 Klein needs multipart/form-data even for a text-only prompt. Audio is Deepgram Aura rather than melotts: melotts answers Spanish with AiError 8002 and answered a plain English word with a 500. Aura takes `text` where melotts took `prompt`. The model ids here are the ones that answered a live call; the rest of Workers AI's catalogue is unverified."
+      "params": { "text": { "max_tokens": 4096 } },
+      "notes": "Workers AI has no account-less endpoint, so the account id is required as well as the token — and it is what makes the usage link point at the right dashboard. LiteLLM covers text only: image and audio go through the hand-written adapter, because FLUX.2 Klein needs multipart/form-data even for a text-only prompt. Audio is Deepgram Aura rather than melotts: melotts answers Spanish with AiError 8002 and answered a plain English word with a 500. Aura takes `text` where melotts took `prompt`. The model ids here are the ones that answered a live call; the rest of Workers AI's catalogue is unverified. `max_tokens` is set because Workers AI defaults it to about 256, which silently truncates a composed article mid-JSON — the reply parses or not depending on how long the model felt like being, which reads as a model that cannot write JSON rather than as a cap."
     },
     {
       "id": "openai",

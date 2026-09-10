@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from acervo.errors import ApiError
-from acervo.models import ChainExhausted, ProviderError, TextResult, chain, load_catalogue
+from acervo.models import Answer, ChainExhausted, ProviderError, TextResult, chain, load_catalogue
 from acervo.models import call as provider
 from acervo.models.catalogue import Catalogue, Row, available, reason, usage_url
 from acervo.repository import model_selection
@@ -65,8 +65,11 @@ REFUSALS: dict[str, tuple[int, str, str]] = {
 }
 
 
-def deployment_chain(settings: Settings, kind: str = "text") -> list[chain.Choice]:
-    """The row ids this *deployment* asks for a kind. Empty means "every credentialed row".
+def deployment_chain(settings: Settings, kind: str = "text") -> list[chain.Choice] | None:
+    """The row ids this *deployment* asks for a kind, or None when it has not said.
+
+    None rather than an empty list, because an empty list now means "switched off" and an unset
+    variable means the opposite: fall back to catalogue order.
 
     Ids, never pairs: a deploy-time flag pins a provider and leaves the models to the catalogue,
     which is all it should decide. Only text has one — plans 05 and 06 are where image and audio get
@@ -74,10 +77,13 @@ def deployment_chain(settings: Settings, kind: str = "text") -> list[chain.Choic
     `--configure-llm` to keep in step for nothing.
     """
     named = settings.text_chain if kind == "text" else ""
-    return [part.strip() for part in (named or "").split(",") if part.strip()]
+    ids = [part.strip() for part in (named or "").split(",") if part.strip()]
+    return ids or None
 
 
-def chain_for(settings: Settings, owner: str | None, kind: str = "text") -> list[chain.Choice]:
+def chain_for(
+    settings: Settings, owner: str | None, kind: str = "text"
+) -> list[chain.Choice] | None:
     """The chain this request walks: the owner's choice, then the deployment's, then the catalogue.
 
     Read per call and never cached — that is what makes a change in Settings ▸ Models take effect on
@@ -86,11 +92,16 @@ def chain_for(settings: Settings, owner: str | None, kind: str = "text") -> list
 
     Pairs come back from the owner's record and ids from the environment; `chain.resolve` takes
     both, which is exactly why `chain.Choice` is a union.
+
+    Three answers, not two. A list is an order to walk — and an **empty** one means every model was
+    switched off on purpose. `None` means nobody has chosen and the catalogue's own order stands.
     """
     if owner is not None:
-        chosen = model_selection.chains(owner).get(kind)
-        if chosen:
-            return list(chosen)
+        stored = model_selection.chains(owner)
+        if kind in stored:
+            # Including an empty one: switching every model off is a choice, and it outranks the
+            # deployment default exactly as a non-empty order does.
+            return list(stored[kind])
     return deployment_chain(settings, kind)
 
 
@@ -141,11 +152,13 @@ def capture_health(settings: Settings) -> dict[str, Any]:
     return chain_readout(settings, None, "text")
 
 
-def llm_json(settings: Settings, owner: str | None, system: str, user: str) -> tuple[Any, str]:
+def llm_json(settings: Settings, owner: str | None, system: str, user: str) -> tuple[Any, Answer]:
     """One constrained call: pass text, get JSON and the model that produced it, or a code saying why not.
 
-    Returning the model is not decoration. The locked contract is that the entry records the model
-    that *answered*, and under a chain that is not knowable before the call.
+    Returning the `Answer` rather than a model id is not decoration. The locked contract is that the
+    entry records the model that *answered*, which under a chain is not knowable before the call —
+    and the answer also carries who was passed over on the way, which is the only record that a
+    fall-through happened at all.
 
     `owner` is required and has no default, so an omitted argument is a loud `TypeError` at the call
     site rather than a silent fall back to the deployment default. It is an owner id and never a
@@ -175,12 +188,15 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str) -> t
         raise ApiError(
             502, "llm_unusable", "The language model did not return a usable answer, so nothing was created."
         )
-    return result.parsed, result.answer.model
+    return result.parsed, result.answer
 
 
 def _refusal(error: ProviderError) -> ApiError:
     status, code, message = REFUSALS[error.reason]
-    return ApiError(status, code, message)
+    # "Unconfigured" is the one refusal whose *particular* cause the owner can act on, and it is
+    # already safe to show: it names an environment variable or says every model is switched off,
+    # never a value. `/health` has shown exactly this string since plan 01.
+    return ApiError(status, code, error.detail or message if error.reason == "unconfigured" else message)
 
 
 # ── what the owner is shown, and what they may choose ───────────────────────
@@ -220,9 +236,9 @@ def _chain_view(settings: Settings, owner: str, kind: str, catalogue: Catalogue)
     `reason` comes from `chain_readout`, the same producer `/health` uses, so this route is total: a
     mistyped `ACERVO_TEXT_CHAIN` renders a reason rather than failing the settings pane.
     """
-    chosen = model_selection.chains(owner).get(kind)
-    if chosen:
-        pairs = [{"provider": provider, "model": model} for provider, model in chosen]
+    stored = model_selection.chains(owner)
+    if kind in stored:
+        pairs = [{"provider": provider, "model": model} for provider, model in stored[kind]]
         source = "owner"
     else:
         source = "deployment"
@@ -256,10 +272,9 @@ def _submitted(kind: str, value: Any, catalogue: Catalogue) -> list[tuple[str, s
     """
     if not isinstance(value, list):
         raise ApiError(400, "invalid_input", f"The {kind} chain must be a list of providers.")
-    if not value:
-        raise ApiError(
-            400, "empty_chain", f"Choose at least one model for {kind}, or leave it to the server."
-        )
+    # An empty list is allowed and means "switch this off". Refusing it left no way to say so, and
+    # made unticking the last model bounce back to the server's order — which read as the tick
+    # having been ignored, while entries carried on being built.
     pairs: list[tuple[str, str]] = []
     for entry in value:
         if not isinstance(entry, dict):
