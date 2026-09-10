@@ -4,7 +4,8 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=7
+helper_protocol=8
+worker_arguments=
 
 mode=
 target=
@@ -45,6 +46,7 @@ usage:
   ./deploy.sh [--target USER@HOST] [--https-port PORT | --service NAME] --configure-https
   ./deploy.sh [--local | --target USER@HOST] --create-account
   ./deploy.sh [--local | --target USER@HOST] --status
+  ./deploy.sh [--target USER@HOST] --worker OPERATION [ARGUMENT...]
 
   --service NAME      publish through the Tailscale service svc:NAME on its own
                       hostname and its own 443, instead of a host port. Needed
@@ -119,6 +121,9 @@ while [ "$#" -gt 0 ]; do
     --install-helper) choose_action install-helper; shift ;;
     --configure-https) choose_action configure-https; shift ;;
     --status) choose_action status; shift ;;
+    # Everything after --worker belongs to the worker, so parsing stops here rather than trying to
+    # tell an operation's flags apart from this script's.
+    --worker) choose_action worker; shift; worker_arguments=$*; break ;;
     --create-account) choose_action create-account; shift ;;
     --reset-data) reset_data=true; shift ;;
     --reset-database) reset_database=true; shift ;;
@@ -512,6 +517,19 @@ if [ "$action" = status ]; then
   fi
   exit 0
 fi
+
+if [ "$action" = worker ]; then
+  # Straight through to the launcher, which finds the current release and runs its worker script as
+  # root. Remote only: locally there is no launcher, and `run-worker.sh` is the direct call.
+  if [ "$remote_mode" = root ]; then
+    echo "--worker needs the reviewed launcher; install it once with ./deploy.sh --install-helper" >&2
+    exit 2
+  fi
+  [ -n "$worker_arguments" ] || usage
+  ssh -T "$target" "sudo -n $helper_path worker $worker_arguments"
+  exit $?
+fi
+
 
 if [ "$action" = create-account ]; then
   prompt_account

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PROTOCOL=7
+PROTOCOL=8
 HELPER_PATH=/usr/local/sbin/deploy-acervo
 SUDOERS_PATH=/etc/sudoers.d/deploy-acervo
 PATH="$PATH:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
@@ -320,6 +320,63 @@ deploy_release() {
   sh "$installer" "$@"
 }
 
+# The batch worker, run as root without a password so a scheduled job can call it.
+#
+# On Synology the Docker socket is root-owned and there is no docker group, so reaching the worker
+# at all means reaching root. That is worth stating plainly: socket access *is* root access, since
+# anything holding it can start a privileged container over the host filesystem. The choice is
+# therefore not root versus not-root, but how narrow and reviewable the path to root is — which is
+# what this launcher exists to be, and why the answer is a named operation here rather than a
+# blanket `NOPASSWD: /usr/bin/docker`.
+#
+# The operation allow-list stays in `run-worker.sh` rather than being copied here. It already has
+# one, a second copy would drift from it, and this is a narrower privilege than the launcher grants
+# already: `deploy` extracts an installer out of a streamed archive and runs it as root. What is
+# checked here is only that the operation is a bare word, so nothing path-like or flag-like can
+# arrive where a subcommand is expected.
+run_worker() {
+  acervo_root=
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --root) [ "$#" -ge 2 ] || exit 2; acervo_root=$2; shift 2 ;;
+      --) shift; break ;;
+      -*) echo "worker takes an operation, not $1" >&2; exit 2 ;;
+      *) break ;;
+    esac
+  done
+
+  if [ -z "$acervo_root" ]; then
+    # The same resolution `run-worker.sh` and the installer use, because the script cannot be found
+    # without already knowing where it lives.
+    if [ -f /etc/acervo-root ]; then
+      IFS= read -r acervo_root </etc/acervo-root
+    elif [ -d /volume1 ]; then
+      acervo_root=/volume1/docker/acervo
+    else
+      acervo_root=/opt/acervo
+    fi
+  fi
+  case "$acervo_root" in /*/acervo) ;; *) echo "Refusing unexpected Acervo root: $acervo_root" >&2; exit 2 ;; esac
+
+  operation=${1:-}
+  case "$operation" in
+    "") echo "worker needs an operation, for example index-clips" >&2; exit 2 ;;
+    *[!a-z-]*|-*|*-) echo "worker operations are bare words; got: $operation" >&2; exit 2 ;;
+  esac
+
+  [ -f "$acervo_root/current-release" ] || {
+    echo "No deployed release at $acervo_root; deploy before running the worker" >&2
+    exit 2
+  }
+  IFS= read -r release <"$acervo_root/current-release"
+  script="$release/deploy/acervo/run-worker.sh"
+  [ -f "$script" ] || {
+    echo "The current release has no worker script at $script" >&2
+    exit 2
+  }
+  sh "$script" --root "$acervo_root" "$@"
+}
+
 command_name=${1:-}
 case "$command_name" in
   --install) [ "$#" -eq 1 ] || exit 2; install_helper ;;
@@ -328,5 +385,6 @@ case "$command_name" in
   configure-https) shift; configure_https "$@" ;;
   create-account) [ "$#" -eq 1 ] || exit 2; create_account ;;
   deploy) shift; deploy_release "$@" ;;
-  *) echo "deploy-acervo accepts only check, create-account, deploy, status, or configure-https" >&2; exit 2 ;;
+  worker) shift; run_worker "$@" ;;
+  *) echo "deploy-acervo accepts only check, create-account, deploy, status, worker, or configure-https" >&2; exit 2 ;;
 esac

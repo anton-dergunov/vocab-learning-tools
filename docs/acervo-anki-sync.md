@@ -180,6 +180,13 @@ override the profile for one invocation. Legacy profiles containing only `user@h
 accepted and are upgraded the next time `--remember-target` is used. Release archives contain code
 and configuration, never `secrets.env`.
 
+The launcher also runs the batch worker: `sudo -n /usr/local/sbin/deploy-acervo worker pull-state`
+on the NAS, or `./deploy.sh --worker pull-state` from the laptop. That path exists because the
+Docker socket on Synology is root-owned with no docker group, so reaching the worker at all means
+reaching root; a named operation on a reviewed script is a narrower way to do that than a blanket
+`NOPASSWD` on `docker`. `pull-state` needs `ACERVO_OWNER_EMAIL` and `ACERVO_OWNER_PASSWORD` in
+`secrets.env` — it writes through the owner's own account like any other client.
+
 The launcher setup operation may ask for the NAS sudo password. Routine `./deploy.sh` and
 `./deploy.sh --status` calls subsequently use only the reviewed launcher through `sudo -n`; changes
 to the packaged installer do not require copying the launcher again unless its protocol changes.

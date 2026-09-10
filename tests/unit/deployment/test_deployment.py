@@ -1677,3 +1677,97 @@ def test_pruning_releases_is_idempotent_and_safe_when_there_are_few(tmp_path: Pa
     assert len(survivors) == 3, survivors
     assert survivors[0] == "20260901T120000Z"
     assert Path((root / "current-release").read_text(encoding="utf-8").strip()).is_dir()
+
+
+def test_the_launcher_runs_the_worker_from_the_current_release(tmp_path: Path) -> None:
+    """A scheduled job needs root without a password, and on Synology reaching Docker *is* reaching
+    root — the socket is root-owned and there is no docker group. So the worker goes through the
+    same reviewed launcher as everything else rather than a blanket NOPASSWD on docker."""
+    helper = runnable_remote_helper(tmp_path)
+    root = tmp_path / "acervo"
+    release = root / "releases" / "20260910T120000Z"
+    (release / "deploy" / "acervo").mkdir(parents=True)
+    recorded = tmp_path / "recorded"
+    worker = release / "deploy" / "acervo" / "run-worker.sh"
+    worker.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >"{recorded}"\n', encoding="utf-8")
+    worker.chmod(0o755)
+    (root / "current-release").write_text(f"{release}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [str(helper), "worker", "--root", str(root), "index-clips"],
+        text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    # The root is passed on, so the worker script does not have to resolve it a second time and
+    # cannot disagree with the launcher about which deployment this is.
+    assert recorded.read_text(encoding="utf-8").strip() == f"--root {root} index-clips"
+
+
+def test_the_launcher_passes_worker_arguments_through(tmp_path: Path) -> None:
+    helper = runnable_remote_helper(tmp_path)
+    root = tmp_path / "acervo"
+    release = root / "releases" / "20260910T120000Z"
+    (release / "deploy" / "acervo").mkdir(parents=True)
+    recorded = tmp_path / "recorded"
+    worker = release / "deploy" / "acervo" / "run-worker.sh"
+    worker.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >"{recorded}"\n', encoding="utf-8")
+    worker.chmod(0o755)
+    (root / "current-release").write_text(f"{release}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [str(helper), "worker", "--root", str(root), "draw-pictures", "sweep", "--limit", "50"],
+        text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert recorded.read_text(encoding="utf-8").strip().endswith("draw-pictures sweep --limit 50")
+
+
+def test_the_launcher_refuses_a_worker_operation_that_is_not_a_bare_word(tmp_path: Path) -> None:
+    """The operation allow-list belongs to run-worker.sh, which already has one; a second copy here
+    would drift from it. What this guards is only that nothing path-like or flag-like arrives where
+    a subcommand is expected."""
+    helper = runnable_remote_helper(tmp_path)
+    root = tmp_path / "acervo"
+    release = root / "releases" / "20260910T120000Z"
+    (release / "deploy" / "acervo").mkdir(parents=True)
+    worker = release / "deploy" / "acervo" / "run-worker.sh"
+    worker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    worker.chmod(0o755)
+    (root / "current-release").write_text(f"{release}\n", encoding="utf-8")
+
+    for rejected in ("../../etc/shadow", "/bin/sh", "-rf", "index clips", "index;clips"):
+        result = subprocess.run(
+            [str(helper), "worker", "--root", str(root), rejected],
+            text=True, capture_output=True, check=False,
+        )
+        assert result.returncode == 2, f"{rejected!r} was accepted: {result.stdout}{result.stderr}"
+
+
+def test_the_launcher_refuses_a_worker_run_with_no_deployment(tmp_path: Path) -> None:
+    helper = runnable_remote_helper(tmp_path)
+    root = tmp_path / "acervo"
+    root.mkdir()
+
+    result = subprocess.run(
+        [str(helper), "worker", "--root", str(root), "index-clips"],
+        text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 2
+    assert "No deployed release" in result.stderr
+
+
+def test_the_launcher_refuses_an_unexpected_acervo_root(tmp_path: Path) -> None:
+    """The same guard `run-worker.sh` and the installer apply: a root that is not `/*/acervo` is a
+    mistake, and this one runs as root."""
+    helper = runnable_remote_helper(tmp_path)
+
+    result = subprocess.run(
+        [str(helper), "worker", "--root", str(tmp_path / "elsewhere"), "index-clips"],
+        text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 2
+    assert "Refusing unexpected Acervo root" in result.stderr
