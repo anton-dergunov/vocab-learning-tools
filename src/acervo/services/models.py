@@ -22,7 +22,16 @@ from typing import Any
 from acervo.errors import ApiError
 from acervo.models import Answer, ChainExhausted, ProviderError, TextResult, chain, load_catalogue
 from acervo.models import call as provider
-from acervo.models.catalogue import Catalogue, Row, available, reason, usage_url
+from acervo.models.catalogue import (
+    Catalogue,
+    Row,
+    available,
+    identity,
+    key_hint,
+    reason,
+    row_settings,
+    usage_url,
+)
 from acervo.repository import model_selection
 from acervo.settings import Settings
 
@@ -195,7 +204,7 @@ def _refusal(error: ProviderError) -> ApiError:
     status, code, message = REFUSALS[error.reason]
     # "Unconfigured" is the one refusal whose *particular* cause the owner can act on, and it is
     # already safe to show: it names an environment variable or says every model is switched off,
-    # never a value. `/health` has shown exactly this string since plan 01.
+    # never a value. `/health` has shown exactly this string since the route existed.
     return ApiError(status, code, error.detail or message if error.reason == "unconfigured" else message)
 
 
@@ -222,7 +231,39 @@ def _provider_view(row: Row) -> dict[str, Any]:
         "available": available(row),
         "reason": reason(row),
         "usageUrl": usage_url(row),
+        # Which account this row spends, for the one provider whose credentials do not say so in
+        # their own name. A laptop can hold a personal and a work Google login at once.
+        "account": identity(row),
+        "credential": _credential_view(row),
+        # The row's non-secret deployment facts, shown in full. `_validate` refuses a row that
+        # lists its key here, so this cannot become a way to publish one.
+        "settings": [{"name": name, "value": value} for name, value in row_settings(row)],
         "notes": row.notes,
+    }
+
+
+def _credential_view(row: Row) -> dict[str, Any]:
+    """Which credential this row would use, named and abbreviated — never the value.
+
+    Four characters at each end is the whole disclosure, and it exists because "a key is set" and
+    "*that* key is set" are different answers: a half-finished rotation, or two accounts, look
+    identical without it. A row whose credential is a file has no hint at all — it is identified by
+    the account it names, which is the better answer and the reason to prefer a key.
+    """
+    variable = row.keyEnv or row.authEnv
+    if not variable:
+        return {"kind": "none", "variable": None, "present": True, "hint": None}
+    if row.keyEnv:
+        hint = key_hint(row)
+        return {"kind": "key", "variable": variable, "present": hint is not None, "hint": hint}
+    return {
+        "kind": "file",
+        "variable": variable,
+        # A file credential is present when something can be read, which `identity` answers for a
+        # key and `reason` answers for the rest — asking `reason` here would be circular, so this
+        # is the narrow question of whether the row got past its own credential check.
+        "present": reason(row) is None,
+        "hint": None,
     }
 
 

@@ -134,16 +134,16 @@ def test_the_owners_topics_do_not_steer_the_picture():
 def test_an_anchor_from_another_sense_is_dropped():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, offered = _reply(article, styles, patch={1: {"anchorExampleId": "e00000000000002"}})
-    briefs = parse_reply(text, article, offered)
+    payload, offered = _reply(article, styles, patch={1: {"anchorExampleId": "e00000000000002"}})
+    briefs = parse_reply(payload, article, offered)
     assert briefs[1].anchor_example_id is None      # that example belongs to sense one
 
 
 def test_an_anchor_from_this_sense_is_kept():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, offered = _reply(article, styles, patch={0: {"anchorExampleId": "e00000000000002"}})
-    assert parse_reply(text, article, offered)[0].anchor_example_id == "e00000000000002"
+    payload, offered = _reply(article, styles, patch={0: {"anchorExampleId": "e00000000000002"}})
+    assert parse_reply(payload, article, offered)[0].anchor_example_id == "e00000000000002"
 
 
 def test_the_request_offers_every_style_and_marks_the_anchor():
@@ -155,7 +155,7 @@ def test_the_request_offers_every_style_and_marks_the_anchor():
     assert [item["id"] for item in marked] == ["e00000000000002"]
 
 
-def _reply(article, styles, **overrides) -> tuple[str, tuple[str, ...]]:
+def _reply(article, styles, **overrides) -> tuple[dict, tuple[str, ...]]:
     offered = tuple(style.id for style in styles.offer())
     senses = [
         {"senseId": sense.id, "styleId": offered[index], "anchorExampleId": None,
@@ -165,51 +165,51 @@ def _reply(article, styles, **overrides) -> tuple[str, tuple[str, ...]]:
     ]
     for index, patch in overrides.get("patch", {}).items():
         senses[index].update(patch)
-    return json.dumps({"senses": senses}), offered
+    return {"senses": senses}, offered
 
 
 def test_a_well_formed_reply_parses():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, offered = _reply(article, styles)
-    briefs = parse_reply(text, article, offered)
+    payload, offered = _reply(article, styles)
+    briefs = parse_reply(payload, article, offered)
     assert [item.sense_id for item in briefs] == [sense.id for sense in article.senses]
     assert all(not item.refused for item in briefs)
     assert briefs[0].subject == "the thing"
     assert briefs[0].situation == "A specific thing happening."
 
 
-def test_a_fenced_reply_still_parses():
-    styles = load_styles(STYLES)
+def test_a_reply_that_was_not_json_is_refused():
+    """Unfencing and `json.loads` belong to `models.call`, which does them for every kind of reply
+    and hands back None when the text was not readable. This is what that None means here."""
     article = build_articles(changes(), "es")[0]
-    text, offered = _reply(article, styles)
-    assert len(parse_reply(f"```json\n{text}\n```", article, offered)) == 2
+    with pytest.raises(ValueError, match="did not return JSON"):
+        parse_reply(None, article, ())
 
 
 def test_an_invented_style_is_refused():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, offered = _reply(article, styles, patch={0: {"styleId": "no-such-style"}})
+    payload, offered = _reply(article, styles, patch={0: {"styleId": "no-such-style"}})
     with pytest.raises(ValueError, match="not a style"):
-        parse_reply(text, article, offered)
+        parse_reply(payload, article, offered)
 
 
 def test_a_skipped_sense_is_refused():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, offered = _reply(article, styles)
-    payload = json.loads(text)
+    payload, offered = _reply(article, styles)
     payload["senses"] = payload["senses"][:1]
     with pytest.raises(ValueError, match="skipped"):
-        parse_reply(json.dumps(payload), article, offered)
+        parse_reply(payload, article, offered)
 
 
 def test_a_refusal_needs_no_style_or_brief():
     styles = load_styles(STYLES)
     article = build_articles(changes(), "es")[0]
-    text, offered = _reply(article, styles, patch={
+    payload, offered = _reply(article, styles, patch={
         1: {"refused": True, "styleId": "", "brief": None, "refusalReason": "hate insignia"}})
-    briefs = parse_reply(text, article, offered)
+    briefs = parse_reply(payload, article, offered)
     assert briefs[1].refused and briefs[1].refusal_reason == "hate insignia"
 
 
@@ -254,20 +254,35 @@ def test_a_sense_the_graph_already_holds_an_image_for_is_skipped(tmp_path: Path)
     assert len(plan(build_articles(payload, "es"), Store(tmp_path))) == 1
 
 
-def test_each_model_has_its_own_bucket():
-    """Measured: about one image per minute PER MODEL, so two models run at twice the rate."""
-    from acervo.models.pacing import ModelPool
-    pool = ModelPool([("lite", 1), ("flash", 1)])
-    assert sorted([pool.acquire(), pool.acquire()]) == ["flash", "lite"]
-    assert pool.gates["lite"].delay() > 0 and pool.gates["flash"].delay() > 0
+LITE = ("vertex", "lite")
+KLEIN = ("cloudflare", "klein")
 
 
-def test_a_quota_pause_is_per_model_not_pool_wide():
+def test_each_pair_has_its_own_bucket():
+    """Measured: about one image per minute PER MODEL, so two run at twice the rate.
+
+    Keyed by the pair rather than the bare model id, because an adapter row names its models
+    unprefixed and two providers offering the same id would otherwise share one gate."""
     from acervo.models.pacing import ModelPool
-    pool = ModelPool([("lite", 60), ("flash", 60)])
-    pool.penalise("lite")
-    assert pool.gates["lite"].delay() > 0
-    assert pool.acquire() == "flash"      # the other model keeps working
+    pool = ModelPool([(LITE, 1), (KLEIN, 1)])
+    assert sorted([pool.acquire(), pool.acquire()]) == sorted([LITE, KLEIN])
+    assert pool.gates[LITE].delay() > 0 and pool.gates[KLEIN].delay() > 0
+
+
+def test_a_quota_pause_is_per_pair_not_pool_wide():
+    from acervo.models.pacing import ModelPool
+    pool = ModelPool([(LITE, 60), (KLEIN, 60)])
+    pool.penalise(LITE)
+    assert pool.gates[LITE].delay() > 0
+    assert pool.acquire() == KLEIN      # the other pair keeps working
+
+
+def test_a_provider_that_says_how_long_to_wait_is_believed_over_the_doubling():
+    """Cloudflare's image allowance is a daily one that hard stops. Doubling from 30s caps at five
+    minutes, which is a lot of 429s between now and midnight."""
+    from acervo.models.pacing import ModelPool
+    pool = ModelPool([(KLEIN, 60)])
+    assert pool.penalise(KLEIN, retry_after=1800.0) == 1800.0
 
 
 def test_the_definition_is_labelled_with_its_own_language():
@@ -307,20 +322,23 @@ def test_a_provider_block_is_not_planned_again(tmp_path: Path):
     assert len(plan(articles, store, redo=True)) == 2
 
 
-def test_the_brief_writer_waits_out_a_quota_refusal():
-    """A text 429 used to lose every sense of that lexeme outright."""
+def test_the_brief_writer_waits_out_a_chain_that_is_entirely_over_quota():
+    """A text 429 used to lose every sense of that lexeme outright. With a chain the first 429 is
+    answered by the next provider, so this waits only when every pair has refused."""
     from acervo.jobs.images.brief import BriefWriter
+    from acervo.models import ChainExhausted, ProviderUnavailable
 
     class Flaky(BriefWriter):
-        def __init__(self):                    # no client, no template read
-            self.model = "test"
+        def __init__(self):                    # no catalogue, no template read
             self.calls = 0
 
         def _write_once(self, article):
             self.calls += 1
             if self.calls < 3:
-                raise RuntimeError("429 RESOURCE_EXHAUSTED")
-            return ["ok"], {"model": self.model}
+                # Not a string to sniff: the chain has already tried every pair and every one of
+                # them refused, which is the only case this retry is for.
+                raise ChainExhausted((("vertex", "m"),), ProviderUnavailable("rate_limited", "429"))
+            return ["ok"], {"model": "m"}
 
     writer, slept = Flaky(), []
     briefs, _ = writer.write(build_articles(changes(), "es")[0], wait=slept.append)
@@ -333,7 +351,6 @@ def test_a_brief_failure_that_is_not_quota_is_raised_at_once():
 
     class Broken(BriefWriter):
         def __init__(self):
-            self.model = "test"
             self.calls = 0
 
         def _write_once(self, article):
@@ -391,3 +408,178 @@ def test_a_blocked_record_is_not_a_problem(tmp_path: Path):
     _stored(store, "s00000000000001", imageRef=None, blocked=True, failureReason="IMAGE_SAFETY")
     report = verify(store)
     assert report.ok and report.blocked == 1 and report.drawn == 0
+
+
+# ── the chain, at the two call sites ────────────────────────────────────────
+# The catalogue rows, the adapter and the pacing were built by the provider package; what these
+# cover is that the image job actually goes through them and records what answered.
+
+
+def _candidates(*pairs):
+    """Resolved candidates over a throwaway catalogue, with no credentials involved."""
+    from acervo.models import chain
+    from acervo.models.catalogue import Catalogue, Row
+
+    rows = tuple(
+        Row(id=provider, label=provider.title(), kinds=("text", "image"),
+            litellm={"text": [model], "image": [model]}, auth="none")
+        for provider, model in dict.fromkeys((pair[0], pair[1]) for pair in pairs)
+    )
+    catalogue = Catalogue(1, "a throwaway catalogue", rows)
+    return catalogue, chain.resolve("image", list(pairs), catalogue)
+
+
+def _drawing(answers):
+    """A renderer that answers from a script, one entry per call, keyed by pair."""
+    from acervo.jobs.images.render import Rendered
+
+    class Scripted:
+        def __init__(self):
+            self.size = (1024, 1024)
+            self.asked = []
+
+        def draw(self, prompt, seed, output, candidate):
+            self.asked.append(candidate.named)
+            outcome = answers[candidate.named]
+            if isinstance(outcome, BaseException):
+                raise outcome
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"webp")
+            return Rendered(output, 4, outcome)
+
+    return Scripted()
+
+
+def _answer(provider, model):
+    from acervo.models.results import Answer
+    return Answer(provider_id=provider, model=model, seconds=0.1, cost_usd=0.03,
+                  attempts=((provider, model),))
+
+
+def _runner(tmp_path, renderer, candidates, briefs, **extra):
+    from acervo.jobs.images.run import Runner
+
+    styles = load_styles(STYLES)
+
+    class Writer:
+        def write(self, article, attempts=6, wait=None):
+            return briefs(article, styles), {"model": "brief-model", "costUsd": 0.001}
+
+    return Runner(store=Store(tmp_path), writer=Writer(), renderer=renderer, styles=styles,
+                  template_path=TEMPLATE, candidates=candidates, workers=1, rate_limit=0,
+                  report=lambda _line: None, **extra), styles
+
+
+def _one_brief(article, styles):
+    from acervo.jobs.images.brief import SenseBrief
+    offered = tuple(style.id for style in styles.offer())
+    return [SenseBrief(sense.id, offered[0], None, "A situation.", "the thing", "A scene.",
+                       False, None)
+            for sense in article.senses]
+
+
+def test_an_image_chain_falls_through_and_the_record_names_the_pair_that_drew(tmp_path):
+    """The locked provenance contract, at the one call site that can fall through."""
+    from acervo.models import ProviderUnavailable
+
+    _catalogue, candidates = _candidates(("vertex", "lite"), ("cloudflare", "klein"))
+    renderer = _drawing({
+        ("vertex", "lite"): ProviderUnavailable("rate_limited", "429", provider_id="vertex"),
+        ("cloudflare", "klein"): _answer("cloudflare", "klein"),
+    })
+    runner, _ = _runner(tmp_path, renderer, candidates, _one_brief)
+    articles = build_articles(changes(), "es")
+    jobs = plan(articles, runner.store)[:1]
+    result = runner.run(jobs)
+
+    assert result["drawn"] == 1
+    record = runner.store.read(runner.store.record_path(jobs[0].prompt_id))
+    assert record["imageModelId"] == "klein"
+    # Both pairs are in the record, so a fall-through is visible rather than invisible.
+    assert record["run"]["attempts"] == [["vertex", "lite"], ["cloudflare", "klein"]]
+    assert record["run"]["usage"]["provider"] == "cloudflare"
+
+
+def test_a_brief_kept_from_an_earlier_run_keeps_the_model_that_wrote_it(tmp_path):
+    """Stamping today's chain onto a cached brief is provenance that is wrong exactly when it is
+    most wanted — after the chain has changed."""
+    _catalogue, candidates = _candidates(("cloudflare", "klein"))
+    renderer = _drawing({("cloudflare", "klein"): _answer("cloudflare", "klein")})
+    runner, styles = _runner(tmp_path, renderer, candidates, _one_brief)
+    articles = build_articles(changes(), "es")
+    jobs = plan(articles, runner.store)[:1]
+
+    # A brief on disk, written by a model that is no longer in the chain.
+    runner.store.write(runner.store.brief_path(jobs[0].article.id), {
+        "lexemeId": jobs[0].article.id, "promptVersion": runner.version,
+        "usage": {"model": "a-retired-model"},
+        "senses": [{"senseId": sense.id, "styleId": tuple(s.id for s in styles.offer())[0],
+                    "anchorExampleId": None, "situation": "", "subject": "",
+                    "brief": "A scene.", "refused": False, "refusalReason": None}
+                   for sense in jobs[0].article.senses],
+    })
+    runner.run(jobs)
+    record = runner.store.read(runner.store.record_path(jobs[0].prompt_id))
+    assert record["modelId"] == "a-retired-model"
+
+
+def test_a_provider_that_declines_is_recorded_and_the_sweep_continues(tmp_path):
+    from acervo.models import ProviderRefused
+
+    _catalogue, candidates = _candidates(("cloudflare", "klein"))
+    renderer = _drawing({
+        ("cloudflare", "klein"): ProviderRefused("refused", "the prompt was blocked"),
+    })
+    runner, _ = _runner(tmp_path, renderer, candidates, _one_brief)
+    jobs = plan(build_articles(changes(), "es"), runner.store)[:1]
+    result = runner.run(jobs)
+
+    assert result["refused"] == 1 and result["stopped"] is None
+    assert runner.store.read(runner.store.record_path(jobs[0].prompt_id))["blocked"] is True
+
+
+def test_a_bad_credential_stops_the_run_rather_than_blocking_every_sense(tmp_path):
+    """A chain falls through on 429 and never on authentication. The sweep must do the same, or a
+    mistyped key marks two thousand senses as permanently undrawable."""
+    from acervo.models import ProviderRefused
+
+    _catalogue, candidates = _candidates(("cloudflare", "klein"))
+    renderer = _drawing({
+        ("cloudflare", "klein"): ProviderRefused("authentication", "that token is not valid"),
+    })
+    runner, _ = _runner(tmp_path, renderer, candidates, _one_brief)
+    jobs = plan(build_articles(changes(), "es"), runner.store)
+    result = runner.run(jobs)
+
+    assert result["stopped"] and "not valid" in result["stopped"]
+    assert result["drawn"] == 0
+    # Only the job that met the refusal wrote anything; the rest returned untouched.
+    assert not runner.store.read(runner.store.record_path(jobs[0].prompt_id)).get("blocked")
+    assert runner.store.read(runner.store.record_path(jobs[-1].prompt_id)) is None
+
+
+def test_the_configured_size_reaches_the_call(tmp_path):
+    """The defect `image-generation-research.md` recorded: the pipeline generated at its default
+    and resized afterwards. Asserted on the request, because the output file cannot tell you what
+    was asked for."""
+    from acervo.jobs.images.render import Renderer
+    from acervo.models import call
+
+    asked = {}
+
+    def fake_image(prompt, *, row, model=None, seed=None, size=None, timeout=None):
+        asked.update({"size": size, "seed": seed})
+        from acervo.models.results import ImageResult
+        import io
+        from PIL import Image
+        buffer = io.BytesIO()
+        Image.new("RGB", (512, 512)).save(buffer, format="PNG")
+        return ImageResult(data=buffer.getvalue(), mime="image/png",
+                           answer=_answer("cloudflare", "klein"))
+
+    _catalogue, candidates = _candidates(("cloudflare", "klein"))
+    import unittest.mock
+    with unittest.mock.patch.object(call, "image", fake_image):
+        Renderer(size=(512, 512)).draw("a scene", 17, tmp_path / "one.webp", candidates[0])
+    assert asked["size"] == (512, 512)
+    assert asked["seed"] == 17

@@ -9,9 +9,9 @@ This is a companion to the product design, not a restatement of it. `acervo-desi
 Acervo is and what the sync protocol guarantees; this says where the code that keeps those promises
 lives.
 
-> **Status.** The port is complete and §3's tree is now true in full: `models/` landed with
-> [plan 04](plans/04-one-python-provider-package.md) and `services/llm.py` is deleted. `corpus/` is
-> still a rule rather than a directory. Section §7 tracks what was built.
+> **Status.** The port is complete and §3's tree is now true in full: `models/` landed and
+> `services/llm.py` is deleted. `corpus/` is still a rule rather than a directory. Section §7 tracks
+> what was built.
 
 ---
 
@@ -320,7 +320,7 @@ and never on anything else. Capture goes through it and `services/llm.py` is gon
 
 It brought §3's sixth rule with it, which is the one this server can break most quietly.
 
-[Plan 03](plans/03-the-owner-chooses-a-model.md) then made the chain the *owner's*, in a
+The chain then became the *owner's*, in a
 `model_selection` table shaped like `sync_state` — owner-scoped, never replicated, and absent
 until something is chosen, because "no row" means "follow the deployment default" rather than
 naming a gap. `services/models.py` resolves owner, then environment, then catalogue order, and
@@ -341,7 +341,7 @@ an installed package rather than a `sys.path` insertion; and wrote this document
 Phases 1 and 2 landed together with the parts of phase 3 the cutover could not honestly leave
 behind. Deleting `pb_hooks/` deletes the only implementation of `/capture`, `/dictionaries` and
 `/dictionaries/online/{source}`, so those came forward: a server that cannot add a word is not a
-server. What stayed for phase 3 proper was `models/` — plan 04's provider catalogue, which replaced
+server. What stayed for phase 3 proper was `models/` — the provider catalogue, which replaced
 `services/llm.py` wholesale and has since landed — and a real HTML sanitiser in place of the one
 regex carried over from the sandbox, which has not.
 

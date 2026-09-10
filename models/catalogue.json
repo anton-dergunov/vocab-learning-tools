@@ -17,29 +17,34 @@
         "audio": { "defaultVoice": "kore" }
       },
       "params": { "text": {} },
-      "notes": "Two text models at 500 requests a day each, which is why both are listed rather than one: they are separate buckets, so the second is a genuine thousand-a-day rather than a spare. Speech is one model at 10 a day — enough for a handful of words, not for a batch. The tier allows a second speech model, `gemini-2.5-flash-preview-tts`, and it is deliberately not listed: it answers a short word with generated *text* often enough to be useless, which Gemini then refuses with a 400, and LiteLLM's speech bridge surfaces that as an IndexError rather than as a refusal — so the chain would read it as terminal and stop rather than falling through. Prompting it as a transcript instruction does not help. Worth revisiting in plan 06, which is where audio gets a caller. There is deliberately no `image` kind: on this tier every image model, Nano Banana included, is allowed 0 requests, so listing one would put a row in the chain that can only 429. Voice names do not carry across providers, so the row names one Gemini accepts; a caller that asks for a specific voice overrides it. Temperature is deliberately unset: LiteLLM recommends leaving Gemini 3+ at its default."
+      "notes": "Two text models at 500 requests a day each, which is why both are listed rather than one: they are separate buckets, so the second is a genuine thousand-a-day rather than a spare. Speech is one model at 10 a day — enough for a handful of words, not for a batch. The tier allows a second speech model, `gemini-2.5-flash-preview-tts`, and it is deliberately not listed: it answers a short word with generated *text* often enough to be useless, which Gemini then refuses with a 400, and LiteLLM's speech bridge surfaces that as an IndexError rather than as a refusal — so the chain would read it as terminal and stop rather than falling through. Prompting it as a transcript instruction does not help. Worth revisiting when audio gets a caller. There is deliberately no `image` kind: on this tier every image model, Nano Banana included, is allowed 0 requests, so listing one would put a row in the chain that can only 429. Voice names do not carry across providers, so the row names one Gemini accepts; a caller that asks for a specific voice overrides it. Temperature is deliberately unset: LiteLLM recommends leaving Gemini 3+ at its default."
     },
     {
       "id": "vertex",
       "label": "Vertex AI",
-      "kinds": ["text", "image"],
+      "kinds": ["text", "image", "audio"],
       "litellm": {
         "text": ["vertex_ai/gemini-3.8-flash", "vertex_ai/gemini-3.5-flash"],
-        "image": ["vertex_ai/gemini-3.1-flash-lite-image"]
+        "image": ["vertex_ai/gemini-3.1-flash-lite-image"],
+        "audio": ["vertex_ai/gemini-3.1-flash-tts-preview"]
       },
       "auth": "adc",
+      "authEnv": "GOOGLE_APPLICATION_CREDENTIALS",
+      "accountEnv": "ACERVO_VERTEX_ACCOUNT",
       "requires": ["ACERVO_VERTEX_PROJECT"],
       "passes": { "vertex_project": "ACERVO_VERTEX_PROJECT" },
       "usageUrl": "https://console.cloud.google.com/billing?project={ACERVO_VERTEX_PROJECT}",
       "capabilities": {
         "jsonSchema": "native",
-        "image": { "responseFormat": null }
+        "image": { "responseFormat": null, "size": "fixed", "seed": "ignored" },
+        "audio": { "defaultVoice": "Sulafat" }
       },
       "params": {
         "text": { "vertex_location": "global" },
-        "image": { "vertex_location": "global" }
+        "image": { "vertex_location": "global", "imageConfig": { "imageSize": "1K" } },
+        "audio": { "vertex_location": "global" }
       },
-      "notes": "Application default credentials, not an API key: LiteLLM has no Vertex express-key path (BerriAI/litellm#21036). Present on a workstation that has run `gcloud auth application-default login`; on a server it needs a service-account JSON and GOOGLE_APPLICATION_CREDENTIALS. This is the only row that can generate an image today, the free tier having no image allowance at all. The image model is a Gemini one rather than Imagen, no Imagen id being reachable in this project, and it is also what the sense-image pipeline already uses. Location stays `global`; the Gemini image models 404 in a named region. The text models are the ones this project actually has: `gemini-3-flash` and `gemini-3.1-flash` both 404 here, and `gemini-3.8-flash` is what the sense-image pipeline already asks for briefs. Being paid rather than metered, the second model is availability cover rather than a second quota. There is no `reasoning_effort`: the REST call this replaced sent `thinkingLevel: MEDIUM`, but LiteLLM refuses the parameter for `gemini-3-flash` outright, and `params` is where it goes back if that changes."
+      "notes": "Application default credentials, not an API key: LiteLLM has no Vertex express-key path (BerriAI/litellm#21036). Present on a workstation that has run `gcloud auth application-default login`; on a server it needs a service-account JSON and GOOGLE_APPLICATION_CREDENTIALS. This is the only row that can generate an image today, the free tier having no image allowance at all. The image model is a Gemini one rather than Imagen, no Imagen id being reachable in this project, and it is also what the sense-image pipeline already uses. Location stays `global`; the Gemini image models 404 in a named region. The text models are the ones this project actually has: `gemini-3-flash` and `gemini-3.1-flash` both 404 here, and `gemini-3.8-flash` is what the sense-image pipeline already asks for briefs. Being paid rather than metered, the second model is availability cover rather than a second quota. Set `ACERVO_VERTEX_ACCOUNT` to the service account this row is allowed to spend and it will refuse to run as anything else — application default credentials are whichever Google login was last signed in, so on a machine that holds a work account as well as a personal one that is the difference between noticing afterwards and it not happening. Speech is the same model the free tier offers and the best-sounding one tried across a separate prototype, but paid and so without the free tier's ten-a-day cap — which is the whole reason to reach it here. `Sulafat` is a Gemini voice name and a per-language table would be better still; that is audio's own plan, along with everything else about speech. Two image parameters are declarations rather than hopes, both measured against the installed LiteLLM: `size` reaches this row only as an aspect ratio, `image_size` falling through both of LiteLLM's parameter gates, so the resolution travels in `params.image.imageConfig` — the one channel that survives into `generationConfig`. And `seed` never reaches the request at all, the Vertex transformer not reading it, so the row says `ignored` and a caller is told its picture is not reproducible rather than recording a seed that does nothing. There is no `reasoning_effort`: the REST call this replaced sent `thinkingLevel: MEDIUM`, but LiteLLM refuses the parameter for `gemini-3-flash` outright, and `params` is where it goes back if that changes."
     },
     {
       "id": "cloudflare",
@@ -56,6 +61,7 @@
       "usageUrl": "https://dash.cloudflare.com/{CLOUDFLARE_ACCOUNT_ID}/ai/workers-ai",
       "capabilities": {
         "jsonSchema": "prompt",
+        "image": { "size": "native", "seed": "native" },
         "audio": { "inputField": "text" }
       },
       "params": { "text": { "max_tokens": 4096 } },
@@ -72,9 +78,12 @@
       },
       "keyEnv": "OPENAI_API_KEY",
       "usageUrl": "https://platform.openai.com/usage",
-      "capabilities": { "jsonSchema": "native" },
+      "capabilities": {
+        "jsonSchema": "native",
+        "image": { "size": "native", "seed": "ignored" }
+      },
       "params": { "text": {} },
-      "notes": "Listed, not verified: no live call has been made against this row."
+      "notes": "Listed, not verified: no live call has been made against this row. `seed` is `ignored` because LiteLLM turns it into an `extra_body` field the Images API rejects outright — a 400 rather than a picture without a seed."
     },
     {
       "id": "openrouter",
@@ -97,7 +106,7 @@
       "baseUrl": "{ACERVO_OLLAMA_URL}",
       "capabilities": { "jsonSchema": "native" },
       "params": { "text": {} },
-      "notes": "No credential, but declared rather than assumed: the row is available only where ACERVO_OLLAMA_URL says a server is listening. A row that were always available would make `capture_unavailable` unreachable and would send every exhausted chain at a port that is usually closed. There is no usage link because there is no bill. Plan 07 is where a local model runs somewhere other than this machine."
+      "notes": "No credential, but declared rather than assumed: the row is available only where ACERVO_OLLAMA_URL says a server is listening. A row that were always available would make `capture_unavailable` unreachable and would send every exhausted chain at a port that is usually closed. There is no usage link because there is no bill. Running a local model somewhere other than this machine is `docs/plans/nas-to-mac-job-queue.md`."
     }
   ]
 }

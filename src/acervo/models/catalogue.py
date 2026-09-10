@@ -12,7 +12,7 @@ that serves the kind, each of its models for that kind in turn. A row names *sev
 because a free tier is metered per model — two models with 500 requests a day each are a thousand
 requests a day, and the second is reached by the first one's 429.
 
-The unit of choice is therefore a (provider, model) pair, not a provider. Plan 03's Settings pane
+The unit of choice is therefore a (provider, model) pair, not a provider. Settings ▸ Providers
 enables, disables and reorders those pairs; this file is the list they are chosen from and the order
 they fall back in when nobody has chosen.
 """
@@ -52,9 +52,16 @@ class Row:
     keyEnv: str | None = None
     requires: tuple[str, ...] = ()
     auth: str | None = None
+    # The variable that points at this row's credentials *file*, for a provider that will not
+    # authenticate from a value. Not in `requires`: on a workstation the credentials are found
+    # without it, so demanding it would make an available row look unavailable.
+    authEnv: str | None = None
+    # An optional guard: the variable naming which account this row is *allowed* to spend. Set it
+    # and the row will not be used unless its credentials prove they belong to that account.
+    accountEnv: str | None = None
     baseUrl: str | None = None
     # Where the owner reads their own usage and spend. Interpolated like `baseUrl` and under the
-    # same rule — a `requires` name, never a key. Plan 03's Settings pane is what renders it; there
+    # same rule — a `requires` name, never a key. Settings ▸ Providers is what renders it; there
     # is no way to ask a provider for a usage figure over its API, so a link is the honest answer.
     usageUrl: str | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
@@ -90,7 +97,9 @@ class Row:
     def secret_names(self) -> tuple[str, ...]:
         """Every environment variable this row reads. What `redact.py` snapshots."""
         return tuple(dict.fromkeys(
-            name for name in (self.keyEnv, *self.requires, *self.passes.values()) if name
+            name
+            for name in (self.keyEnv, self.authEnv, *self.requires, *self.passes.values())
+            if name
         ))
 
 
@@ -140,6 +149,11 @@ def _validate(row: Row) -> None:
         raise CatalogueError(f"{row.id} declares an unknown jsonSchema mode {row.schema_mode!r}")
     if row.keyEnv and row.keyEnv in row.passes.values():
         raise CatalogueError(f"{row.id} passes its key as an ordinary call argument")
+    # `requires` names are the row's non-secret deployment facts — a project, an account id, a
+    # local URL — and they are shown to the owner in full, both interpolated into `usageUrl` and
+    # listed in Settings ▸ Providers. A key among them would be published by either route.
+    if row.keyEnv and row.keyEnv in row.requires:
+        raise CatalogueError(f"{row.id} lists its key among the settings it shows the owner")
     for field_name, template in (("baseUrl", row.baseUrl), ("usageUrl", row.usageUrl)):
         for name in _PLACEHOLDER.findall(template or ""):
             # A key does not belong in a URL. This is the locked contract as an assertion rather
@@ -182,8 +196,37 @@ def reason(row: Row) -> str | None:
     for name in row.requires:
         if not (os.environ.get(name) or "").strip():
             return f"{name} is not set"
-    if row.auth == "adc" and not _adc_present():
+    if row.auth == "adc" and not _adc_present(row.authEnv):
         return "Google application default credentials are not configured"
+    return _wrong_account(row)
+
+
+def _wrong_account(row: Row) -> str | None:
+    """Refuse a row whose credentials are not the account it was told to use.
+
+    A machine can hold a work Google login and a personal one, and application default credentials
+    are simply whichever was signed in last — so "which account is this spending?" can change under
+    a project without anything in Acervo changing. Naming the expected account turns that from a
+    thing to notice afterwards into a thing that cannot happen.
+
+    Deliberately strict: an account that cannot be *proved* is refused, not assumed. A plain
+    `gcloud auth application-default login` file does not record which account wrote it, so setting
+    this guard is also a decision to use a service-account key, which does. Half a guard that passes
+    when it cannot check is not a guard.
+    """
+    if not row.accountEnv:
+        return None
+    expected = (os.environ.get(row.accountEnv) or "").strip()
+    if not expected:
+        return None
+    found = identity(row)
+    if found is None:
+        return (
+            f"{row.accountEnv} names the account these credentials must belong to, and they do not "
+            "say which account they are. A service-account key does."
+        )
+    if found != expected:
+        return f"these credentials belong to {found}, and {row.accountEnv} names another account"
     return None
 
 
@@ -191,19 +234,46 @@ def available(row: Row) -> bool:
     return reason(row) is None
 
 
-def _adc_present() -> bool:
+def _adc_present(named: str | None) -> bool:
     """Vertex authenticates by ADC, so 'is it configured' is a file question, not a variable one.
 
     This is what makes the row present on a workstation that has run `gcloud auth
     application-default login` and absent on a server that has not, with nothing to configure
-    either way.
+    either way. A server says so with the row's `authEnv`, pointing at a mounted service-account
+    key — Google will not take a key as a value, which is why this is the one credential that
+    travels as a file.
     """
-    if (os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or "").strip():
+    if named and (os.environ.get(named) or "").strip():
         return True
     try:
         return _ADC_FILE.is_file()
     except OSError:
         return False
+
+
+def identity(row: Row) -> str | None:
+    """Whose credentials this row would use, for a row that authenticates by a file.
+
+    A service-account key names its own identity in `client_email`, and that is the answer. The file
+    `gcloud auth application-default login` writes usually does not — measured: it carries an
+    `account` field and leaves it empty — so a plain user login returns None here and the interface
+    says only that ADC is in use. That difference is a real argument for a key on a machine that
+    holds more than one Google login: "which account is Acervo spending?" becomes answerable without
+    running `gcloud`.
+
+    Only the naming fields are read — never the private key, never the refresh token.
+    """
+    if row.auth != "adc":
+        return None
+    path = (os.environ.get(row.authEnv) or "").strip() if row.authEnv else ""
+    try:
+        document = json.loads(Path(path or _ADC_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(document, dict):
+        return None
+    named = document.get("client_email") or document.get("account")
+    return str(named) if isinstance(named, str) and named else None
 
 
 def base_url(row: Row) -> str | None:
@@ -229,6 +299,41 @@ def _filled(template: str | None) -> str | None:
 
 def key(row: Row) -> str | None:
     return (os.environ.get(row.keyEnv) or "").strip() or None if row.keyEnv else None
+
+
+# Enough of a key to tell two of them apart, and never enough to use. Four at each end of a
+# thirty-nine character token leaves thirty-one unknown, which is not a credential by any measure —
+# and it is the difference between "a key is set" and "*that* key is set", which is the question
+# asked when a rotation half-happened or two accounts are in play.
+HINT_EDGE = 4
+# Below this a quarter of the value would be showing. Nothing Acervo talks to issues a key that
+# short, so this is a guard against a future row rather than a case that exists.
+HINT_MINIMUM = 16
+
+
+def key_hint(row: Row) -> str | None:
+    """This row's key as its first and last four characters, or None when it has none set.
+
+    A key that is set but too short to abbreviate safely comes back as a bare ellipsis: the caller
+    still learns that a value is present, which is the part that matters, without the value.
+    """
+    value = key(row)
+    if value is None:
+        return None
+    if len(value) < HINT_MINIMUM:
+        return "…"
+    return f"{value[:HINT_EDGE]}…{value[-HINT_EDGE:]}"
+
+
+def row_settings(row: Row) -> tuple[tuple[str, str], ...]:
+    """This row's `requires` variables and their values, in the order the row lists them.
+
+    Safe to show in full, and structurally so: `_validate` refuses a row whose `keyEnv` appears
+    here. These are the facts that distinguish one deployment from another — which Google project,
+    which Cloudflare account — and `usageUrl` already interpolates exactly these values into the
+    same response.
+    """
+    return tuple((name, (os.environ.get(name) or "").strip()) for name in row.requires)
 
 
 def passed(row: Row) -> dict[str, str]:

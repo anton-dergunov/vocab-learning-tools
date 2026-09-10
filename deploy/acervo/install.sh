@@ -7,7 +7,7 @@ PATH="$PATH:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/pa
 export PATH
 
 usage() {
-  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--llm-credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data] [--reset-database]" >&2
+  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--llm-credentials-file FILE] [--google-credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data] [--reset-database]" >&2
   exit 2
 }
 
@@ -35,6 +35,7 @@ archive=
 credentials_stdin=false
 credentials_file=
 llm_credentials_file=
+google_credentials_file=
 reset_data=false
 reset_database=false
 requested_bind_address=
@@ -48,6 +49,7 @@ while [ "$#" -gt 0 ]; do
     --credentials-stdin) credentials_stdin=true; shift ;;
     --credentials-file) [ "$#" -ge 2 ] || usage; credentials_file=$2; shift 2 ;;
     --llm-credentials-file) [ "$#" -ge 2 ] || usage; llm_credentials_file=$2; shift 2 ;;
+    --google-credentials-file) [ "$#" -ge 2 ] || usage; google_credentials_file=$2; shift 2 ;;
     --bind-address) [ "$#" -ge 2 ] || usage; requested_bind_address=$2; shift 2 ;;
     --port) [ "$#" -ge 2 ] || usage; requested_anki_port=$2; shift 2 ;;
     --app-bind-address) [ "$#" -ge 2 ] || usage; requested_app_bind_address=$2; shift 2 ;;
@@ -180,6 +182,26 @@ if [ ! -f "$acervo_root/llm.env" ]; then
 fi
 chmod 600 "$acervo_root/llm.env"
 
+# Google credentials are a *file*, not a variable, so they cannot travel in llm.env. The directory
+# is created whether or not one is configured: a bind mount of a path that does not exist makes a
+# root-owned directory instead, and the container then fails in a way that has nothing to do with
+# the missing credential.
+mkdir -p "$acervo_root/credentials"
+chmod 700 "$acervo_root/credentials"
+if [ -n "$google_credentials_file" ]; then
+  [ -f "$google_credentials_file" ] || { echo "Missing Google credentials file" >&2; exit 2; }
+  # Either shape Google's own libraries accept: a service-account key, or the `authorized_user`
+  # file `gcloud auth application-default login` writes. Refused here rather than discovered at the
+  # first capture, a deployment later.
+  grep -qE '"type"[[:space:]]*:[[:space:]]*"(service_account|authorized_user)"' "$google_credentials_file" || {
+    echo "That file is neither a Google service-account key nor an application-default" >&2
+    echo "credentials file." >&2
+    exit 2
+  }
+  cat "$google_credentials_file" >"$acervo_root/credentials/google.json"
+  chmod 600 "$acervo_root/credentials/google.json"
+fi
+
 # A model key used to be written to secrets.env as well, and compose passes llm.env last — so one
 # variable was defined in two files and the loser was silent. Move any such line here once. This
 # erases itself: after the first run there is nothing left to move.
@@ -303,6 +325,7 @@ ACERVO_SERVER_DATA=$acervo_root/data/server
 ACERVO_MEDIA=$acervo_root/data/media
 ACERVO_DOWNLOADS=$acervo_root/downloads
 ACERVO_INPUT_PATH=$acervo_root/input
+ACERVO_CREDENTIALS=$acervo_root/credentials
 EOF
 chmod 600 "$acervo_root/deployment.env"
 

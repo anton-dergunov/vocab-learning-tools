@@ -12,6 +12,13 @@ It is copied rather than imported: `research/` is outside the distribution, and
 `requests` because httpx emits the identical multipart body and is the one HTTP library this
 service already carries.
 
+The reverse — the benchmark calling *this* instead of keeping `run_cloudflare` — is possible and
+deliberately not done. Its candidates launch under `uv run --no-project`, so `acervo` is not
+importable in the child at all, and giving it one would change how every benchmark child is
+launched for a set of candidates that are all `enabled: false` and whose evaluation is finished.
+The duplication is one function, pinned by tests on both sides. Revisit it when a new hosted
+candidate is benchmarked, which is the first moment it costs anything.
+
 Failures go through `call.classify()`, the same table LiteLLM's exceptions go through, so a
 Cloudflare 429 and a Gemini 429 are the same kind of thing to the chain above.
 """

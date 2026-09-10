@@ -257,12 +257,69 @@ def test_an_image_comes_back_as_bytes_rather_than_a_url(monkeypatch):
     calls = []
     payload = litellm.ImageResponse(data=[{"b64_json": base64.b64encode(b"PNGDATA").decode()}])
     monkeypatch.setattr(call, "image_generation", _recording(calls, payload))
-    result = call.image("a hook", row=SHIPPED.find("openai"), seed=7, size=(512, 512))
+    result = call.image("a hook", row=SHIPPED.find("openai"), size=(512, 512))
     assert result.data == b"PNGDATA"
     # OpenAI answers with a URL unless told otherwise, so the parameter is sent by default.
     assert calls[-1]["response_format"] == "b64_json"
     assert calls[-1]["size"] == "512x512"
-    assert calls[-1]["seed"] == 7
+
+
+def test_the_requested_size_reaches_a_row_that_says_it_chooses_its_own_resolution(monkeypatch):
+    """Vertex takes `size` only as an aspect ratio — the resolution rides in `params.image` — so
+    the parameter is still sent and the caller is told the pixels were not honoured."""
+    calls = []
+    payload = litellm.ImageResponse(data=[{"b64_json": base64.b64encode(b"PNG").decode()}])
+    monkeypatch.setattr(call, "image_generation", _recording(calls, payload))
+    result = call.image("a hook", row=SHIPPED.find("vertex"), size=(512, 512))
+    assert calls[-1]["size"] == "512x512"
+    assert calls[-1]["imageConfig"] == {"imageSize": "1K"}
+    assert any("chooses its own resolution" in warning for warning in result.answer.warnings)
+
+
+def test_a_seed_a_provider_cannot_honour_is_dropped_with_a_warning_rather_than_sent(monkeypatch):
+    """The companion of the style rule in `speech`, and it exists because the two ways of getting
+    this wrong are both silent: LiteLLM never puts a seed in Vertex's request at all, and turns it
+    into an `extra_body` field OpenAI's Images API rejects with a 400. Recording a seed that did
+    nothing is worse than recording none — it claims a picture can be reproduced when it cannot."""
+    calls = []
+    payload = litellm.ImageResponse(data=[{"b64_json": base64.b64encode(b"PNG").decode()}])
+    monkeypatch.setattr(call, "image_generation", _recording(calls, payload))
+    result = call.image("a hook", row=SHIPPED.find("vertex"), seed=17)
+    assert "seed" not in calls[-1]
+    assert any("not reproducible" in warning for warning in result.answer.warnings)
+
+
+def test_a_seed_reaches_a_row_that_honours_it(monkeypatch):
+    monkeypatch.setattr("acervo.models.cloudflare.image",
+                        lambda *a, **k: (b"IMG", "image/png"))
+    result = call.image("a hook", row=CLOUDFLARE, seed=17)
+    assert result.answer.warnings == ()
+
+
+def test_the_requested_resolution_survives_litellms_vertex_mapping():
+    """A contract test against LiteLLM itself, because this failure is invisible at runtime.
+
+    `image_size` is in LiteLLM's supported-parameter list for this model and is dropped anyway: it
+    is not in `default_params`, so the non-default pass never sees it, and it *is* in
+    `openai_params`, so the provider-specific pass skips it. It falls through both gates and the
+    call succeeds at whatever resolution Vertex feels like. `imageConfig` is the one channel that
+    survives, and this pins it so a LiteLLM upgrade that changes the mapping fails here rather than
+    quietly costing a sweep its resolution.
+    """
+    from litellm.llms.vertex_ai.image_generation import get_vertex_ai_image_generation_config
+    from litellm.utils import get_optional_params_image_gen
+
+    row = SHIPPED.find("vertex")
+    model = row.models_for("image")[0].split("/", 1)[1]
+    mapped = get_optional_params_image_gen(
+        model=model,
+        custom_llm_provider="vertex_ai",
+        provider_config=get_vertex_ai_image_generation_config(model),
+        size="1024x1024",
+        **row.params_for("image"),
+    )
+    assert mapped["imageConfig"] == {"imageSize": "1K"}
+    assert mapped["aspectRatio"] == "1:1"
 
 
 def test_a_row_that_cannot_take_the_response_format_is_not_sent_it(monkeypatch):

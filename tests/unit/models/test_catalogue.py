@@ -20,7 +20,10 @@ from acervo.models.catalogue import (
     available,
     base_url,
     load_catalogue,
+    identity,
+    key_hint,
     reason,
+    row_settings,
     usage_url,
 )
 
@@ -47,7 +50,7 @@ def a_row(**overrides):
 
 
 def test_every_shipped_row_names_a_model_or_an_adapter_for_every_kind_it_declares():
-    """Plan 04's "assert every row has one", in the form a row with three kinds actually needs.
+    """Every row has one, in the form a row with three kinds actually needs.
 
     A scalar `litellm` field could not have said this: a row serving text, image and audio names
     different models for each, Cloudflare reaches two of those three through the adapter, and a kind
@@ -214,7 +217,9 @@ def test_vertex_asks_for_application_default_credentials_rather_than_a_key(monke
 def test_serving_keeps_catalogue_order():
     """Row order is the default preference order, so it is load-bearing rather than cosmetic."""
     assert [row.id for row in SHIPPED.serving("text")][:3] == ["gemini-free", "vertex", "cloudflare"]
-    assert [row.id for row in SHIPPED.serving("audio")] == ["gemini-free", "cloudflare", "openai"]
+    assert [row.id for row in SHIPPED.serving("audio")] == [
+        "gemini-free", "vertex", "cloudflare", "openai"
+    ]
 
 
 def test_params_are_data_rather_than_code():
@@ -230,9 +235,11 @@ def test_a_row_lists_every_variable_it_reads_so_redaction_can_be_built_from_it()
         "CLOUDFLARE_API_TOKEN",
         "CLOUDFLARE_ACCOUNT_ID",
     )
-    # Including the ones it passes as call arguments: Vertex's project id came back inside a 404
-    # from Google, and it is a deployment detail this repository does not publish.
+    # Including the ones it passes as call arguments and the one naming its credentials file:
+    # Vertex's project id came back inside a 404 from Google, and it is a deployment detail this
+    # repository does not publish.
     assert "ACERVO_VERTEX_PROJECT" in SHIPPED.find("vertex").secret_names
+    assert "GOOGLE_APPLICATION_CREDENTIALS" in SHIPPED.find("vertex").secret_names
     assert Row(id="x", label="X", kinds=("text",)).secret_names == ()
 
 
@@ -255,3 +262,127 @@ def test_reading_the_catalogue_does_not_drag_litellm_in():
         "assert 'litellm' not in sys.modules, sorted(n for n in sys.modules if 'litellm' in n)\n"
     )
     subprocess.run([sys.executable, "-c", probe], check=True, capture_output=True)
+
+
+# ── whose account is being spent ────────────────────────────────────────────
+# Application default credentials are whichever Google login was last signed in, so on a machine
+# that holds a work account as well as a personal one, "which account is this spending?" can change
+# under a project without anything in Acervo changing.
+
+
+def google(tmp_path, **fields):
+    path = tmp_path / "creds.json"
+    path.write_text(json.dumps(fields), encoding="utf-8")
+    return path
+
+
+def test_a_service_account_key_says_whose_it_is(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(google(
+        tmp_path, type="service_account", client_email="acervo-vertex@personal.example.com"
+    )))
+    assert identity(SHIPPED.find("vertex")) == "acervo-vertex@personal.example.com"
+
+
+def test_a_plain_user_login_does_not_say_whose_it_is(monkeypatch, tmp_path):
+    """Measured, not assumed: the file `gcloud auth application-default login` writes carries an
+    `account` field and leaves it empty. That is the argument for a key on a shared machine."""
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(google(
+        tmp_path, type="authorized_user", account="", quota_project_id="a-project"
+    )))
+    assert identity(SHIPPED.find("vertex")) is None
+
+
+def test_a_row_reading_a_key_is_never_asked_for_the_private_half(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(google(
+        tmp_path, type="service_account", client_email="acervo-vertex@personal.example.com",
+        private_key="-----BEGIN PRIVATE KEY-----secret-----END PRIVATE KEY-----",
+    )))
+    assert "PRIVATE KEY" not in (identity(SHIPPED.find("vertex")) or "")
+
+
+def test_credentials_belonging_to_another_account_are_refused(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(google(
+        tmp_path, type="service_account", client_email="acervo@employer.example.com"
+    )))
+    monkeypatch.setenv("ACERVO_VERTEX_ACCOUNT", "acervo@personal.example.com")
+    row = SHIPPED.find("vertex")
+    assert not available(row)
+    assert "acervo@employer.example.com" in reason(row)
+
+
+def test_the_expected_account_lets_the_right_credentials_through(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(google(
+        tmp_path, type="service_account", client_email="acervo@personal.example.com"
+    )))
+    monkeypatch.setenv("ACERVO_VERTEX_ACCOUNT", "acervo@personal.example.com")
+    assert available(SHIPPED.find("vertex"))
+
+
+def test_an_account_that_cannot_be_proved_is_refused_rather_than_assumed(monkeypatch, tmp_path):
+    """Half a guard that passes when it cannot check is not a guard. Naming the expected account is
+    therefore also a decision to use a key, which is the only credential that says whose it is."""
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(google(
+        tmp_path, type="authorized_user", account=""
+    )))
+    monkeypatch.setenv("ACERVO_VERTEX_ACCOUNT", "acervo@personal.example.com")
+    row = SHIPPED.find("vertex")
+    assert not available(row)
+    assert "do not say which account" in reason(row)
+
+
+def test_no_guard_means_no_check(monkeypatch, tmp_path):
+    """Opt-in. A deployment that holds one Google login has nothing to protect against."""
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(google(
+        tmp_path, type="service_account", client_email="acervo@anywhere.example.com"
+    )))
+    monkeypatch.delenv("ACERVO_VERTEX_ACCOUNT", raising=False)
+    assert available(SHIPPED.find("vertex"))
+
+
+# ── what may be shown to the owner ──────────────────────────────────────────
+
+
+def test_a_key_hint_is_four_characters_at_each_end(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyC1234567890abcdefghijklmnop")
+    assert key_hint(SHIPPED.find("gemini-free")) == "AIza…mnop"
+
+
+def test_an_unset_key_has_no_hint(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert key_hint(SHIPPED.find("gemini-free")) is None
+
+
+def test_a_key_too_short_to_abbreviate_is_not_abbreviated(monkeypatch):
+    """Below the minimum, four at each end would be most of the value. Say only that it is set."""
+    monkeypatch.setenv("GEMINI_API_KEY", "sk-tiny")
+    assert key_hint(SHIPPED.find("gemini-free")) == "…"
+
+
+def test_a_row_with_no_key_variable_has_no_hint():
+    assert key_hint(SHIPPED.find("vertex")) is None
+
+
+def test_settings_are_the_requires_variables_and_their_values(monkeypatch):
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project")
+    assert row_settings(SHIPPED.find("vertex")) == (("ACERVO_VERTEX_PROJECT", "a-project"),)
+
+
+def test_a_row_may_not_list_its_key_among_the_settings_it_shows(tmp_path):
+    """`row_settings` is rendered in full in Settings ▸ Providers, so this is what keeps that safe:
+    a structural refusal rather than a convention somebody has to remember."""
+    document = {"providers": [{
+        "id": "leaky", "label": "Leaky", "kinds": ["text"],
+        "litellm": {"text": ["leaky/one"]},
+        "keyEnv": "LEAKY_API_KEY", "requires": ["LEAKY_API_KEY"],
+    }]}
+    path = tmp_path / "catalogue.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(CatalogueError, match="lists its key among the settings"):
+        load_catalogue(path)

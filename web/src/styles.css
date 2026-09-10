@@ -687,6 +687,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .model-switch input { margin: 2px 0 0; width: 16px; height: 16px; accent-color: var(--core); flex: none; }
 .model-id { font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
 .model-warning { color: var(--warn); }
+.model-account { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
 /* Dimming alone was too quiet to catch while scrolling a long list, so an unavailable row also
    carries a badge. The icon is decorative and the word beside it is what a screen reader reads. */
 .model-badge {
@@ -700,7 +701,30 @@ details.fold .fold-body { padding: 4px 0 18px; }
    place in the order to move within. */
 .icon-btn:disabled { opacity: .3; cursor: not-allowed; }
 .icon-btn:disabled:hover { background: none; color: inherit; }
-.model-usage { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+/* ── the credentials table ──────────────────────────────────────────────
+   Four columns on a laptop, stacked pairs on a tablet held in one hand. It is deliberately not a
+   scrolling table: this is read to answer one question quickly — is the right key deployed — and a
+   table you have to drag sideways answers it slower than the SSH session it replaced. */
+.provider-table { display: grid; gap: 1px; margin-top: 9px; background: var(--rule); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.provider-line {
+  display: grid; grid-template-columns: minmax(9rem, 1.1fr) minmax(11rem, 1.4fr) minmax(9rem, 1.4fr) auto;
+  gap: 11px; align-items: baseline; padding: 8px 11px; background: var(--surface);
+}
+.provider-name { font-weight: 600; }
+.provider-credential, .provider-account { display: grid; gap: 2px; min-width: 0; }
+.provider-var { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+.provider-hint { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+.provider-none { font-size: 11px; color: var(--ink-3); font-style: italic; }
+.provider-setting { font-size: 11px; color: var(--ink-3); }
+.provider-usage { justify-self: end; white-space: nowrap; font-size: 11.5px; }
+/* An unavailable provider dims its own facts but keeps its name readable: the row is still the
+   answer to "is the key there", and that answer is no. */
+.provider-line.unavailable .provider-credential, .provider-line.unavailable .provider-account { opacity: .65; }
+.provider-heading { margin: 18px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+@media (max-width: 560px) {
+  .provider-line { grid-template-columns: 1fr auto; row-gap: 4px; }
+  .provider-credential, .provider-account { grid-column: 1 / -1; }
+}
 
 /* ══════════════════════════ composer ══════════════════════════ */
 /* Every surface you work in: a bounded column, a pinned head, one scroll region, pinned actions.

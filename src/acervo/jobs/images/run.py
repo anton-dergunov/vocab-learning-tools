@@ -16,14 +16,16 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Sequence
 
 from .brief import BriefWriter, SenseBrief
 from .compose import compose, prompt_version
 from .graph import ArticleView, SenseView
 from .ids import image_prompt_id, seed_for
-from acervo.models.pacing import ModelPool, is_quota_error
-from .render import Rendered, RenderRefused, Renderer
+from acervo.models import ProviderRefused, ProviderUnavailable, chain
+from acervo.models.cooldown import retry_after_of
+from acervo.models.pacing import Key, ModelPool
+from .render import Rendered, Renderer
 from .styles import StyleTable
 
 
@@ -129,7 +131,8 @@ def plan(articles: Iterable[ArticleView], store: Store, *, redo: bool = False,
 
 class Runner:
     def __init__(self, store: Store, writer: BriefWriter, renderer: Renderer, styles: StyleTable,
-                 template_path: str | Path, *, workers: int = 6, rate_limit: int = 0,
+                 template_path: str | Path, *, candidates: Sequence[chain.Candidate],
+                 workers: int = 6, rate_limit: int = 0,
                  attempts: int = 4, report: Callable[[str], None] = print) -> None:
         self.store = store
         self.writer = writer
@@ -138,27 +141,49 @@ class Runner:
         self.version = prompt_version(template_path, styles.digest)
         self.workers = workers
         self.attempts = max(1, attempts)
-        # The text calls are cheap and generous; the image models are the scarce ones, and each has
+        self.candidates = tuple(candidates)
+        if not self.candidates:
+            raise ValueError("An image run needs at least one (provider, model) pair.")
+        self._by_pair = {candidate.named: candidate for candidate in self.candidates}
+        # The text calls are cheap and generous; the image pairs are the scarce ones, and each has
         # its own bucket, so each gets its own gate and a job takes whichever is free soonest.
-        self.pace = ModelPool([(model, rate_limit) for model in renderer.models])
+        #
+        # This is the pool's chain walk, and deliberately *not* `chain.walk`: a sweep wants
+        # whichever pair is free soonest rather than a fixed order, and the pool's own `Pace` is
+        # already the cooldown. Do not add `cooldown.rests` beside it — two mechanisms would
+        # disagree about the ordering and neither would be in charge.
+        self.pace = ModelPool([(candidate.named, rate_limit) for candidate in self.candidates])
+        # Set by an authentication or configuration refusal: a mistake to fix, not a condition to
+        # route around. Every other job then returns at once rather than marking 500 senses blocked.
+        self._stop: ProviderRefused | None = None
         self.report = report
         self._lock = threading.Lock()
         self._brief_locks: dict[str, threading.Lock] = {}
         self._refreshed: set[str] = set()
-        self.stats = {"drawn": 0, "refused": 0, "failed": 0, "throttled": 0,
-                      "briefTokens": 0, "imageTokens": 0}
-        self.by_model: Counter[str] = Counter()
+        self.stats = {"drawn": 0, "refused": 0, "failed": 0, "throttled": 0}
+        # What each pair actually drew, and what it was billed. `None` from a provider that does
+        # not price its answer is a legal reading, not a zero — Cloudflare inside its free
+        # allocation genuinely costs nothing and outside it is priced per neuron.
+        self.by_pair: Counter[Key] = Counter()
+        self.cost_usd = 0.0
+        self.unpriced = 0
 
     def _brief_lock(self, lexeme_id: str) -> threading.Lock:
         with self._lock:
             return self._brief_locks.setdefault(lexeme_id, threading.Lock())
 
-    def _briefs_for(self, article: ArticleView, refresh: bool = False) -> dict[str, SenseBrief]:
+    def _briefs_for(self, article: ArticleView,
+                    refresh: bool = False) -> tuple[dict[str, SenseBrief], str]:
         """One text call per lexeme, cached, and reused by every sense of that lexeme in this run.
 
         `refresh` is set when a sense of this lexeme has been attempted before — you deleted the
         picture because you disliked it, and handing back the brief that produced it would waste the
         call. Refreshing happens at most once per lexeme per run.
+
+        It returns the model that *wrote* the briefs alongside them, taken from the cache file on
+        the cache path. Stamping the record with whatever model the chain names today would put a
+        brief written by one model under another one's name — provenance that is wrong exactly when
+        it is most wanted, which is after the chain has changed.
         """
         path = self.store.brief_path(article.id)
         with self._brief_lock(article.id):
@@ -168,6 +193,7 @@ class Runner:
                     self._refreshed.add(article.id)
             cached = None if stale else self.store.read(path)
             if cached and cached.get("promptVersion") == self.version:
+                written_by = str((cached.get("usage") or {}).get("model") or "")
                 return {
                     item["senseId"]: SenseBrief(
                         item["senseId"], item.get("styleId", ""), item.get("anchorExampleId"),
@@ -175,7 +201,7 @@ class Runner:
                         bool(item.get("refused")), item.get("refusalReason"),
                     )
                     for item in cached.get("senses", [])
-                }
+                }, written_by
             briefs, usage = self.writer.write(article)
             self.store.write(path, {
                 "lexemeId": article.id,
@@ -196,15 +222,22 @@ class Runner:
                 ],
             })
             with self._lock:
-                self.stats["briefTokens"] += int(usage.get("outputTokens") or 0)
-            return {item.sense_id: item for item in briefs}
+                if usage.get("costUsd") is None:
+                    self.unpriced += 1
+                else:
+                    self.cost_usd += float(usage["costUsd"])
+            return {item.sense_id: item for item in briefs}, str(usage.get("model") or "")
 
     def _run_one(self, job: Job) -> None:
         article, sense = job.article, job.sense
         label = f"{article.headword} · sense {sense.order + 1}"
+        # A mistake, not a condition: once one job has met a bad key or a rejected configuration,
+        # every remaining job returns without spending anything or writing a misleading record.
+        if self._stop is not None:
+            return
         attempts = self.store.attempts(job.prompt_id) + 1
         try:
-            briefs = self._briefs_for(article, refresh=attempts > 1)
+            briefs, brief_model = self._briefs_for(article, refresh=attempts > 1)
         except Exception as error:  # noqa: BLE001 - one bad lexeme must not stop the run
             self.report(f"  ✗ {label}: brief failed — {error}")
             with self._lock:
@@ -235,48 +268,68 @@ class Runner:
         started = time.time()
         drawn: Rendered | None = None
         failure = ""
+        tried: list[Key] = []
         for attempt in range(1, self.attempts + 1):
-            model = self.pace.acquire()
+            pair = self.pace.acquire()
+            tried.append(pair)
             try:
-                drawn = self.renderer.draw(prompt, seed, self.store.image_path(job.prompt_id), model)
-                self.pace.succeeded(model)
+                drawn = self.renderer.draw(
+                    prompt, seed, self.store.image_path(job.prompt_id), self._by_pair[pair]
+                )
+                self.pace.succeeded(pair)
                 break
-            except RenderRefused as error:
-                # The provider looked at the prompt and declined. Retrying is pointless and costs
-                # quota that a drawable sense could have had.
-                self._record(job, brief, style.id, seed, prompt, attempts, None, str(error), 0.0,
-                             blocked=True)
-                self.report(f"  · {label}: not drawn — {error}")
+            except ProviderRefused as refusal:
+                if refusal.reason == "refused":
+                    # The provider looked at the prompt and declined. Retrying is pointless and
+                    # costs quota that a drawable sense could have had.
+                    self._record(job, brief, brief_model, style.id, seed, prompt, attempts, None,
+                                 str(refusal), 0.0, tried, blocked=True)
+                    self.report(f"  · {label}: not drawn — {refusal}")
+                    with self._lock:
+                        self.stats["refused"] += 1
+                    return
+                # Authentication, or a configuration the provider rejected. Falling through would
+                # hide the mistake and spend the next provider's money on it.
                 with self._lock:
-                    self.stats["refused"] += 1
+                    self._stop = refusal
+                self._record(job, brief, brief_model, style.id, seed, prompt, attempts, None,
+                             str(refusal), 0.0, tried)
+                self.report(f"  ✗ {label}: {refusal} — stopping the run")
+                with self._lock:
+                    self.stats["failed"] += 1
                 return
-            except Exception as error:  # noqa: BLE001 - transport, quota, anything
-                failure = str(error)
-                if not is_quota_error(error) or attempt == self.attempts:
+            except ProviderUnavailable as unavailable:
+                failure = str(unavailable)
+                if attempt == self.attempts:
                     break
-                delay = self.pace.penalise(model)
+                delay = self.pace.penalise(pair, retry_after_of(unavailable))
                 with self._lock:
                     self.stats["throttled"] += 1
-                self.report(f"  ⏳ {label}: {model} over quota, it waits {delay:.0f}s")
+                self.report(f"  ⏳ {label}: {pair[0]}/{pair[1]} is resting {delay:.0f}s")
 
         if drawn is None:
-            self._record(job, brief, style.id, seed, prompt, attempts, None, failure, 0.0)
+            self._record(job, brief, brief_model, style.id, seed, prompt, attempts, None, failure,
+                         0.0, tried)
             self.report(f"  ✗ {label}: {failure}")
             with self._lock:
                 self.stats["failed"] += 1
             return
 
         elapsed = time.time() - started
-        self._record(job, brief, style.id, seed, prompt, attempts, drawn, None, elapsed)
+        self._record(job, brief, brief_model, style.id, seed, prompt, attempts, drawn, None,
+                     elapsed, tried)
         with self._lock:
             self.stats["drawn"] += 1
-            self.stats["imageTokens"] += int(drawn.usage.get("outputTokens") or 0)
-            self.by_model[str(drawn.usage.get("model") or "?")] += 1
+            self.by_pair[(drawn.answer.provider_id, drawn.answer.model)] += 1
+            if drawn.answer.cost_usd is None:
+                self.unpriced += 1
+            else:
+                self.cost_usd += drawn.answer.cost_usd
         self.report(f"  ✓ {label} · {style.id} · {elapsed:.1f}s · {drawn.bytes_written // 1024} KiB")
 
-    def _record(self, job: Job, brief: SenseBrief, style_id: str, seed: int, prompt: str,
-                attempts: int, drawn: Rendered | None, failure: str | None, elapsed: float,
-                blocked: bool = False) -> None:
+    def _record(self, job: Job, brief: SenseBrief, brief_model: str, style_id: str, seed: int,
+                prompt: str, attempts: int, drawn: Rendered | None, failure: str | None,
+                elapsed: float, tried: Sequence[Key] = (), blocked: bool = False) -> None:
         """The row a later import will write, plus everything needed to explain or redo it.
 
         `prompt` is the brief — what §04 says is stored. `composedPrompt` is kept here in the run
@@ -292,13 +345,15 @@ class Runner:
             "prompt": brief.brief,
             "styleId": style_id,
             "seed": seed,
-            "modelId": self.writer.model,
+            # The model that wrote the brief — the one that *answered*, and for a cached brief
+            # the one that answered when it was written rather than whatever the chain says now.
+            "modelId": brief_model,
             "promptVersion": self.version,
             # The path this image will have on the server. Locally the file is flat under
             # `images/`, so a contact sheet and a Finder window are both easy to work in; the
             # import is what fans it out into per-lexeme directories.
             "imageRef": f"images/{article.id}/{job.prompt_id}.webp" if drawn else None,
-            "imageModelId": (drawn.usage.get("model") if drawn else None),
+            "imageModelId": (drawn.answer.model if drawn else None),
             "attempts": attempts,
             "failureReason": failure,
             # The provider looked at the prompt and declined, as opposed to a transport or quota
@@ -319,7 +374,17 @@ class Runner:
                 "file": f"{job.prompt_id}.webp" if drawn else None,
                 "bytes": drawn.bytes_written if drawn else 0,
                 "seconds": round(elapsed, 2),
-                "usage": drawn.usage if drawn else None,
+                # `tried` comes from the pool rather than from the answer: the pool is what walked
+                # the pairs, so an answer names only the one that succeeded. Recording just that
+                # would hide every fall-through, which is the thing worth seeing.
+                "attempts": [list(pair) for pair in tried],
+                "usage": {
+                    "provider": drawn.answer.provider_id,
+                    "model": drawn.answer.model,
+                    "seconds": round(drawn.answer.seconds, 2),
+                    "costUsd": drawn.answer.cost_usd,
+                    "warnings": list(drawn.answer.warnings),
+                } if drawn else None,
             },
         })
 
@@ -327,5 +392,14 @@ class Runner:
         started = time.time()
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             list(pool.map(self._run_one, jobs))
-        return {**self.stats, "jobs": len(jobs), "byModel": self.by_model,
-                "seconds": round(time.time() - started, 1)}
+        return {
+            **self.stats,
+            "jobs": len(jobs),
+            "byPair": self.by_pair,
+            # What the providers said it cost, never a table in this repository. A provider that
+            # does not price its answer is counted rather than guessed at.
+            "costUsd": round(self.cost_usd, 4),
+            "unpriced": self.unpriced,
+            "stopped": str(self._stop) if self._stop else None,
+            "seconds": round(time.time() - started, 1),
+        }

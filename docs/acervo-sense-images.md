@@ -136,11 +136,11 @@ Existing fields, used as follows:
 | `senseId` | the sense — always set |
 | `prompt` | the scene brief |
 | `styleId` | the style the writer chose from the menu |
-| `seed` | derived from `senseId`, so a regeneration keeps the look |
-| `modelId` | the model that wrote the brief |
+| `seed` | derived from `senseId`, so a regeneration keeps the look — on a row whose `capabilities.image.seed` is `native`; see below |
+| `modelId` | the model that *answered* the brief call, not the one asked first |
 | `promptVersion` | checksum of `prompts/acervo_image_brief.txt` + the style table |
 | `imageRef` | relative path to the master, once drawn; null until then |
-| `imageModelId` | the model that drew it |
+| `imageModelId` | the model that *drew* it, which under a chain need not be the first tried |
 
 §09 says to seed from `lexemeId`, which was right when the plan was one image per word: the seed's
 job is to keep a word looking like itself across regenerations. Per-sense images make `senseId` the
@@ -150,20 +150,50 @@ same tendencies. The property §09 wanted survives: a sense keeps its look acros
 because the key is stable. The retry counter is mixed in, so deleting a picture you disliked and
 running again gives you a genuinely different one rather than the same picture back.
 
-### The gap: nothing records a failure
+### A seed is only a seed where the provider takes one
 
-`imageRef: null` currently means both "written, not yet drawn" and "drawing was refused or failed".
-A sweep defined as *"which senses lack an image"* therefore retries a permanently blocked sense
-forever. Two fields close it, and they are the only schema change this design needs:
+Now that the picture is drawn through the catalogue, the row says whether it honours a seed.
+Cloudflare does. Vertex does not — LiteLLM's transformer never puts one in the request — and OpenAI
+rejects the parameter outright, so both rows declare `capabilities.image.seed: "ignored"` and the
+answer comes back carrying a warning, which the record keeps under `run.usage.warnings`. The seed is
+still stored, because it is what a re-run derives, but on those rows "a regeneration keeps the look"
+is not true and the record says so rather than implying otherwise. Resolution is the same shape of
+fact: Vertex takes an aspect ratio and its own size name, so the row carries
+`params.image.imageConfig` and declares `size: "fixed"`.
+
+### The gap that is now closed: recording a failure
+
+`imageRef: null` used to mean both "written, not yet drawn" and "drawing was refused or failed", so
+a sweep defined as *"which senses lack an image"* retried a permanently blocked sense forever. Two
+fields close it and both are written today:
 
 | Field | Type | Notes |
 |---|---|---|
 | `attempts` | int | Drawing attempts made. The sweep skips a row past a threshold. |
 | `failureReason` | string? | Last refusal or error, in the provider's words. Null on success. |
 
-> **This change requires `--reset-database`, which destroys the database.** It must not happen
-> until the current ingestion has finished and a transfer bundle of the real vocabulary exists.
-> See §10.
+A provider that looks at the prompt and declines is terminal and marks the record `blocked`; one
+that is rate limited or down is not, and the next pair in the chain answers instead. A refused
+*credential* is neither: the run stops, because falling through to another provider would hide a
+mistake and spend somebody else's allowance on it.
+
+> **These fields require `--reset-database`, which destroys the database.** They exist in the run
+> directory now; landing them in the graph waits on §10.
+
+### Where the images already drawn will land
+
+There are roughly 2,285 pictures in `output/images/` and `output/images-en/`, and §00 explains why
+they cannot be published as they stand: their `senseId`s name senses nobody holds any more, and
+`image_prompt_id` is derived from `senseId`, so every filename is wrong too.
+
+Landing them is a data task with its own script, not part of this pipeline, and this is only its
+target. An imported image writes exactly the fields in the table above. The matching step must key
+on something that survived the export and re-import — headword, then sense order, then the
+definition — after which every id, filename and `imageRef` is re-derived from the *current*
+`senseId`. `imageModelId` records the Vertex model that actually drew each one, which is a fact
+about the past and is not re-derived from whatever the chain says today. `verify` cannot detect the
+mismatch, because a run directory is internally consistent either way; `publish` can, and refuses
+the whole run rather than writing half of it.
 
 ---
 
@@ -441,16 +471,23 @@ prompts/acervo_image_brief.txt        the brief-writing template
 src/acervo/jobs/images/styles.py      load the table, weighted sample seeded from senseId
 src/acervo/jobs/images/brief.py       build the LLM request, parse and validate the reply
 src/acervo/jobs/images/compose.py     brief + style + template -> the image prompt
-src/acervo/jobs/images/render.py      Vertex Gemini 3.1 Flash Lite Image -> WebP master
+src/acervo/jobs/images/render.py      one (provider, model) pair -> WebP master
 src/acervo/jobs/images/run.py         plan, execute concurrently, checkpoint
 src/acervo/jobs/images/verify.py      is this run directory safe to publish?
 src/acervo/jobs/images/publish.py     the rows into the graph, the files into the media directory
-scripts/generate_images.py            plan | run | verify | publish | sheet
+scripts/generate_images.py            check | plan | run | verify | publish | sheet
 ```
 
-`google-genai` is already a pinned dependency, so the renderer is a direct call, not the benchmark's
-`uv run --no-project` subprocess. The graph is pulled read-only through `GET /api/acervo/v1/graph`,
-the same cursor route the app uses, authenticated the way the ingest script authenticates.
+Both model calls go through `src/acervo/models/`, so neither file names a provider: the brief walks
+the text chain and the picture is drawn by whichever image pair the pool finds free soonest.
+`jobs/` may not read the owner's chain — `test_layering.py` forbids it importing `repository/` — so
+`generate_images.py` is given one: the `--brief-chain` / `--image-chain` flag, else the chain the
+owner chose, fetched over `GET /api/acervo/v1/models` like any other read, else the catalogue's own
+order. Only an *owner* chain travels; the server's own order is resolved against the server's
+credentials and would drop Vertex on exactly the machine that can reach it.
+
+The graph is pulled read-only through `GET /api/acervo/v1/graph`, the same cursor route the app
+uses, authenticated the way the ingest script authenticates.
 
 Output under `output/images/<runId>/`: a `manifest.json`, one `<imagePromptId>.json` per job holding
 the brief, the composed prompt, the style, the seed, the models, timings and cost, and one
@@ -525,9 +562,12 @@ Still open:
 ## §12 · What this deliberately does not do
 
 - No lexeme-level card images.
-- No local diffusion fallback yet. §09's provider chain stands as the plan; Phase A hardcodes
-  Vertex, because the point of Phase A is to spend expiring credits, and Cloudflare FLUX.2 Klein 4B
-  is the documented successor when they run out.
+- No local diffusion fallback. Both calls now go through `src/acervo/models/`, so which provider
+  draws is a chain of catalogue rows rather than a constant — `--image-chain cloudflare,vertex`
+  carries the steady state on Cloudflare FLUX.2 Klein 4B and falls through to Vertex when its daily
+  allocation stops. A *local* model is a different matter: the research measured 2.5–10 GiB of
+  unified memory and one image per child process, and the machine with the GPU is not the machine
+  that is always on. That is the job-queue sketch's territory, not this one's.
 - No automatic quality gate. The benchmark report sketches one — luminance and colour variance,
   entropy, edge density, dominant-colour share — and Gemini's 0/12 rejection rate does not justify
   building it. It becomes interesting when generation moves to a less reliable model.

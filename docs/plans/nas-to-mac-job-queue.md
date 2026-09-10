@@ -1,9 +1,12 @@
-# Plan 07: The NAS → MacBook job queue
+# The NAS → MacBook job queue
 
-**Status:** Planned — **sketch only, and deliberately so.** Nothing else in this roadmap waits on it,
-and it should not be built until something concretely needs it.
-**Depends on:** [04](04-one-python-provider-package.md), for a provider surface a remote worker can
-call.
+**Status:** A sketch, deliberately. Nothing waits on it, and it should not be built until something
+concretely needs it.
+
+The provider roadmap this began as plan 07 of is finished — one catalogue, one
+`src/acervo/models/` package, one place in Settings where the owner chooses. The provider surface a
+remote worker would call therefore exists; this is kept because the asymmetry it describes has not
+gone away, not because there is a plan queued behind it.
 
 ## Outcome
 
@@ -62,8 +65,10 @@ Build this when one of these is true, and not before:
 
 1. **A local model becomes genuinely better for a job**, not merely cheaper. A voice for plain
    pronunciation is the likeliest candidate: it runs thousands of times, needs no quality ceiling,
-   and Kokoro is small. Plan 06 step 1 measures exactly this — if Kokoro runs on the NAS, no queue is
-   needed; if it needs the Mac, this is the plan.
+   and Kokoro was small — though `src/acervo/tts/` has since been deleted, so a local voice is a
+   rebuild rather than a revival. [`pronunciation-and-audio.md`](pronunciation-and-audio.md) is
+   where that question is asked: if a local voice runs on the NAS, no queue is needed; if it needs
+   the Mac, this is the plan.
 2. **Hosted providers stop being acceptable** — a privacy requirement, a price change, or every free
    allocation exhausted at once.
 3. **A job is too large for a foreground command.** The Vertex bulk import was 2,000 images run by
@@ -137,8 +142,8 @@ Illustrative only. This shape has not been designed and should not be treated as
 
 The awkward question this sketch does not answer, and which whoever builds it must: **a job record is
 owner-scoped domain data and would therefore replicate to every client**, which means a phone would
-carry a queue of work it can never do. Either jobs are non-replicated like `sync_state` and plan 03's
-model choice — in which case the claiming worker reads them through a route rather than a replica — or
+carry a queue of work it can never do. Either jobs are non-replicated like `sync_state` and the
+owner's `model_selection` — in which case the claiming worker reads them through a route rather than a replica — or
 they are not records at all and the filesystem store the sweep already uses stays the queue, with the
 Mac reaching it over the network. **The second is simpler and is probably right.** Decide it
 deliberately.

@@ -96,6 +96,38 @@ def serve(settings: Settings, host: str, port: int) -> int:
     return 0
 
 
+def providers() -> int:
+    """Print which providers this machine can use, and whose account each one spends.
+
+    The same reading on a laptop and inside the server container, so "am I about to spend my work
+    Google account?" has one answer arrived at one way. It calls nothing and spends nothing: every
+    line comes from the catalogue and the environment.
+    """
+    from acervo.models import load_catalogue
+    from acervo.models.catalogue import identity, key_hint, reason, row_settings
+
+    for row in load_catalogue():
+        why = reason(row)
+        print(f"{'yes' if why is None else 'no ':>3}  {row.label}")
+        print(f"     kinds     {', '.join(row.kinds)}")
+        for kind in row.kinds:
+            print(f"     {kind:<9} {', '.join(row.models_for(kind))}")
+        # The same three facts Settings ▸ Providers renders, so the terminal reading and the pane
+        # cannot disagree about which credential is deployed. Four characters at each end of a key
+        # is the whole disclosure, here as there.
+        if row.keyEnv:
+            print(f"     key       {row.keyEnv} {key_hint(row) or '(not set)'}")
+        elif row.authEnv:
+            print(f"     key       {row.authEnv} (a credentials file)")
+        for name, value in row_settings(row):
+            print(f"     setting   {name}={value or '(not set)'}")
+        if (account := identity(row)) is not None:
+            print(f"     account   {account}")
+        if why is not None:
+            print(f"     why not   {why}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="acervo.admin", description="Manage an Acervo server.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -108,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
     seed_parser = commands.add_parser("seed", help="insert disposable demonstration vocabulary")
     seed_parser.add_argument("--owner-email", required=True)
 
+    commands.add_parser("providers", help="what this machine can call, and as whom")
+
     serve_parser = commands.add_parser("serve", help="run the HTTP service")
     serve_parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 - the container's own port
     serve_parser.add_argument("--port", type=int, default=8000)
@@ -118,6 +152,8 @@ def main(argv: list[str] | None = None) -> int:
         return create_account(settings, arguments.email)
     if arguments.command == "seed":
         return seed(settings, arguments.owner_email)
+    if arguments.command == "providers":
+        return providers()
     return serve(settings, arguments.host, arguments.port)
 
 

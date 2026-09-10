@@ -148,6 +148,15 @@ class AcervoClient:
     def health(self) -> dict[str, Any]:
         return self.call("GET", f"{API_PATH}/health", anonymous=True, timeout=15.0)
 
+    def models(self) -> dict[str, Any]:
+        """The catalogue as this owner sees it, and their chains, one kind at a time.
+
+        A batch job on a laptop reads this to find out which providers the owner chose, then
+        resolves that order against its *own* catalogue and its own credentials — the order is a
+        preference and the credentials are a fact about the machine.
+        """
+        return self.call("GET", f"{API_PATH}/models")
+
     def pull_graph(self, since: int = 0) -> dict[str, Any]:
         return self.call(
             "GET", f"{API_PATH}/graph", params={"since": since, "schemaVersion": SCHEMA_VERSION}

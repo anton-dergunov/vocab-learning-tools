@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=6
+helper_protocol=7
 
 mode=
 target=
@@ -15,6 +15,7 @@ llm_chain=
 llm_settings=
 llm_key_name=
 llm_api_key_stdin=false
+google_credentials=
 reset_data=false
 reset_database=false
 remember=false
@@ -62,6 +63,11 @@ usage:
   --llm-set NAME=VAL  set one non-secret provider variable, e.g. an account id
                       or a Vertex project. Repeatable
   --llm-key NAME      which key variable the value on standard input is
+  --google-credentials FILE
+                      Google credentials for Vertex, which will not
+                      authenticate from a variable. Either a service-account
+                      key or the file `gcloud auth application-default login`
+                      writes. Installed mode 600 and mounted read-only
 EOF
   exit 2
 }
@@ -101,6 +107,7 @@ while [ "$#" -gt 0 ]; do
     --llm-set) [ "$#" -ge 2 ] || usage; llm_settings="$llm_settings$2
 "; shift 2 ;;
     --llm-key) [ "$#" -ge 2 ] || usage; llm_key_name=$2; shift 2 ;;
+    --google-credentials) [ "$#" -ge 2 ] || usage; google_credentials=$2; shift 2 ;;
     --llm-api-key-stdin) llm_api_key_stdin=true; shift ;;
     --remember-target) remember=true; shift ;;
     --bind-address) [ "$#" -ge 2 ] || usage; bind_address=$2; shift 2 ;;
@@ -233,16 +240,29 @@ if [ "$reset_data" = true ] && [ "$action" != deploy ]; then usage; fi
 if [ "$reset_database" = true ] && [ "$action" != deploy ]; then usage; fi
 
 if [ "$configure_llm" = false ]; then
-  [ -z "$llm_chain$llm_settings$llm_key_name" ] && [ "$llm_api_key_stdin" = false ] || usage
+  [ -z "$llm_chain$llm_settings$llm_key_name$google_credentials" ] \
+    && [ "$llm_api_key_stdin" = false ] || usage
 else
   [ "$configure" = false ] || {
     echo "Configure server credentials and the LLM in separate commands" >&2
     exit 2
   }
-  [ -n "$llm_chain$llm_settings$llm_key_name" ] || {
-    echo "--configure-llm needs at least one of --llm-chain, --llm-set or --llm-key" >&2
+  [ -n "$llm_chain$llm_settings$llm_key_name$google_credentials" ] || {
+    echo "--configure-llm needs one of --llm-chain, --llm-set, --llm-key or --google-credentials" >&2
     exit 2
   }
+  if [ -n "$google_credentials" ]; then
+    [ -f "$google_credentials" ] || { echo "No such file: $google_credentials" >&2; exit 2; }
+    # Refused here rather than discovered at the first capture, a deployment later.
+    grep -qE '"type"[[:space:]]*:[[:space:]]*"(service_account|authorized_user)"' "$google_credentials" || {
+      echo "$google_credentials is neither a service-account key nor an" >&2
+      echo "application-default credentials file" >&2
+      exit 2
+    }
+    # The path names where the container will read it, not where it is now.
+    llm_settings="${llm_settings}GOOGLE_APPLICATION_CREDENTIALS=/run/acervo/credentials/google.json
+"
+  fi
   # A provider is a row in models/catalogue.json, so there is no list of provider names here and no
   # known-wrong model ids to keep up to date. What a name has to be is a variable the catalogue
   # actually reads; the installer checks that against the catalogue it was shipped, which is the one
@@ -432,6 +452,7 @@ if [ "$mode" = local ]; then
     --app-bind-address "$effective_app_bind_address" --app-port "$effective_app_port"
   [ -z "$credential_args" ] || set -- "$@" "$credential_args"
   [ -z "$llm_credentials" ] || set -- "$@" --llm-credentials-file "$llm_credentials"
+  [ -z "$google_credentials" ] || set -- "$@" --google-credentials-file "$google_credentials"
   [ "$reset_data" = false ] || set -- "$@" --reset-data
   [ "$reset_database" = false ] || set -- "$@" --reset-database
   if [ -n "$credential_args" ]; then
@@ -529,8 +550,9 @@ remote_installer="/tmp/acervo-install-$$.sh"
 remote_archive="/tmp/acervo-release-$$.tar.gz"
 remote_credentials="/tmp/acervo-credentials-$$"
 remote_llm_credentials="/tmp/acervo-llm-credentials-$$"
+remote_google_credentials="/tmp/acervo-google-credentials-$$"
 remote_cleanup() {
-  ssh -T "$target" "rm -f $remote_installer $remote_archive $remote_credentials $remote_llm_credentials" >/dev/null 2>&1 || true
+  ssh -T "$target" "rm -f $remote_installer $remote_archive $remote_credentials $remote_llm_credentials $remote_google_credentials" >/dev/null 2>&1 || true
 }
 remote_failed() {
   remote_cleanup
@@ -555,6 +577,11 @@ if [ "$configure_llm" = true ]; then
   } | ssh -T "$target" "umask 077 && cat > $remote_llm_credentials" || remote_failed
   llm_credential_args="--llm-credentials-file $remote_llm_credentials"
 fi
+if [ -n "$google_credentials" ]; then
+  # Over stdin like every other secret: a path on a command line is visible in `ps`.
+  ssh -T "$target" "umask 077 && cat > $remote_google_credentials" <"$google_credentials" || remote_failed
+  llm_credential_args="$llm_credential_args --google-credentials-file $remote_google_credentials"
+fi
 
 installer_arguments=
 [ -z "$acervo_root" ] || installer_arguments="$installer_arguments --root $acervo_root"
@@ -574,7 +601,7 @@ else
   ssh -T "$target" "umask 077 && cat > $remote_installer" <"$repo_root/deploy/acervo/install.sh" || remote_failed
   ssh -T "$target" \
     "sh $remote_installer --archive $remote_archive$installer_arguments; \
-     result=\$?; rm -f $remote_installer $remote_archive $remote_credentials $remote_llm_credentials; exit \$result" || remote_failed
+     result=\$?; rm -f $remote_installer $remote_archive $remote_credentials $remote_llm_credentials $remote_google_credentials; exit \$result" || remote_failed
 fi
 
 # The address to open, which is the one thing a deployment summary was not saying. The tailnet

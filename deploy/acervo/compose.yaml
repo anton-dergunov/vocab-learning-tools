@@ -32,6 +32,8 @@ services:
       # mounted into the container, the vertex row is simply unavailable and health says so.
       ACERVO_VERTEX_PROJECT: "${ACERVO_VERTEX_PROJECT:-}"
       GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-}"
+      # Optional guard: the account those credentials must belong to, or the row refuses to run.
+      ACERVO_VERTEX_ACCOUNT: "${ACERVO_VERTEX_ACCOUNT:-}"
     ports:
       - "${ACERVO_APP_BIND_ADDRESS:-127.0.0.1}:${ACERVO_APP_PORT:-27702}:8000"
     volumes:
@@ -39,6 +41,10 @@ services:
       - "${ACERVO_DOWNLOADS:-acervo-downloads}:/var/lib/acervo/downloads:ro"
       - "${ACERVO_DICTIONARIES:-acervo-dictionaries}:/var/lib/acervo/dictionaries:ro"
       - "${ACERVO_MEDIA:-acervo-media}:/var/lib/acervo/media:ro"
+      # Google will not authenticate from an environment variable: Vertex wants a credentials
+      # file, and LiteLLM has no express-key path. The directory is mounted rather than the
+      # file so the mount is valid whether or not one has been configured.
+      - "${ACERVO_CREDENTIALS:-acervo-credentials}:/run/acervo/credentials:ro"
     healthcheck:
       # Asserts an HTTP 200, not a TCP connect: a service that is listening but refusing every
       # request is not healthy. `wget` is deliberately not used — the alpine image had it and
@@ -125,11 +131,14 @@ services:
       # mounted into the container, the vertex row is simply unavailable and health says so.
       ACERVO_VERTEX_PROJECT: "${ACERVO_VERTEX_PROJECT:-}"
       GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-}"
+      # Optional guard: the account those credentials must belong to, or the row refuses to run.
+      ACERVO_VERTEX_ACCOUNT: "${ACERVO_VERTEX_ACCOUNT:-}"
     volumes:
       - "${ACERVO_WORKER_DATA:?Set ACERVO_WORKER_DATA}:/var/lib/acervo/worker"
       - "${ACERVO_DICTIONARIES:-acervo-dictionaries}:/var/lib/acervo/dictionaries"
       - "${ACERVO_MEDIA:-acervo-media}:/var/lib/acervo/media"
       - "${ACERVO_INPUT_PATH:?Set ACERVO_INPUT_PATH}:/input:ro"
+      - "${ACERVO_CREDENTIALS:-acervo-credentials}:/run/acervo/credentials:ro"
     depends_on:
       anki-sync-server:
         condition: service_healthy

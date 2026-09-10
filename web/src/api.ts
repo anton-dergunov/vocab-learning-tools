@@ -48,7 +48,27 @@ export interface ModelProvider {
   reason: string | null;
   /** Where the owner reads their own usage. No provider serves that figure over an API. */
   usageUrl: string | null;
+  /**
+   * Whose credentials this provider spends, where the credential names one. Null for a provider
+   * whose key is just a key, and for a Google login that does not record the account.
+   */
+  account?: string | null;
+  /**
+   * Which credential this provider would use, named and abbreviated. `hint` is four characters at
+   * each end of the key and never more — enough to tell two keys apart, never enough to use one —
+   * and is null for a credential that is a file, which is identified by its `account` instead.
+   */
+  credential?: ProviderCredential;
+  /** The provider's non-secret deployment facts: a project, an account id, a local URL. */
+  settings?: { name: string; value: string }[];
   notes: string | null;
+}
+
+export interface ProviderCredential {
+  kind: "key" | "file" | "none";
+  variable: string | null;
+  present: boolean;
+  hint: string | null;
 }
 
 export interface ModelPair {

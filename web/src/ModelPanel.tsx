@@ -85,6 +85,9 @@ function ModelRow({ pair, provider, on, first, last, onToggle, onMove }: {
         {missing && <span className="model-warning">
           {provider?.reason}. It keeps its place in the order and is passed over.
         </span>}
+        {/* Which account is being spent. Only Google needs saying: its credentials are a file that
+            may belong to any of several logins, where a key belongs to whoever holds it. */}
+        {provider?.account && <span className="model-account">Billed to {provider.account}</span>}
       </span>
     </label>
     <button
@@ -173,6 +176,61 @@ function KindSection({ kind, label, help, catalogue, onChange }: {
   </div>;
 }
 
+/**
+ * Every credential this server holds, and whose account it spends.
+ *
+ * This reading used to need an SSH session and a root password — `python -m acervo.admin
+ * providers` on the machine itself. It answers a question the chain above cannot: *which* key is
+ * deployed. Two keys for the same provider are otherwise indistinguishable, so a rotation that
+ * only half happened looks exactly like one that worked.
+ *
+ * A key is shown as four characters at each end and never more. That is enough to match against
+ * the provider's own dashboard by eye and not enough to use, and it is the entire relaxation of
+ * the rule that this route serves what the server is credentialed *for* and never the credential.
+ * A file credential shows no fragment at all — it is named by its account, which is the better
+ * answer and the reason to prefer a service-account key over a bare login.
+ */
+function ProviderTable({ providers }: { providers: ModelProvider[] }) {
+  return <div className="provider-table" data-testid="provider-table">
+    {providers.map((provider) => {
+      const credential = provider.credential;
+      const missing = provider.available === false;
+      return <div key={provider.id} className={`provider-line${missing ? " unavailable" : ""}`}>
+        <span className="provider-name">{provider.label}</span>
+        <span className="provider-credential">
+          {credential?.kind === "none" && <span className="provider-none">no credential needed</span>}
+          {credential?.kind === "key" && (credential.hint
+            ? <><span className="provider-var">{credential.variable}</span>{" "}
+                <span className="provider-hint">{credential.hint}</span></>
+            : <span className="provider-none">{credential.variable} not set</span>)}
+          {credential?.kind === "file" && <>
+            <span className="provider-var">{credential.variable}</span>{" "}
+            <span className="provider-none">
+              {credential.present ? "a credentials file" : "no file installed"}
+            </span>
+          </>}
+        </span>
+        <span className="provider-account">
+          {provider.account && <span className="provider-hint">{provider.account}</span>}
+          {(provider.settings ?? []).map((setting) => <span key={setting.name} className="provider-setting">
+            {setting.name.replace(/^ACERVO_|^CLOUDFLARE_/, "").toLowerCase().replace(/_/g, " ")}
+            {" "}
+            <span className="provider-hint">{setting.value || "not set"}</span>
+          </span>)}
+        </span>
+        <span className="provider-usage">
+          {/* The visible word is the same in every row, so the accessible name carries the
+              provider — otherwise a screen reader reads six links all called "usage". */}
+          {provider.usageUrl && <a
+            href={provider.usageUrl} target="_blank" rel="noreferrer noopener"
+            aria-label={`${provider.label} usage`}
+          >usage{" ↗"}</a>}
+        </span>
+      </div>;
+    })}
+  </div>;
+}
+
 export default function ModelPanel({ onNotify }: { onNotify(message: string): void }) {
   const [catalogue, setCatalogue] = useState<ModelCatalogue | null>(null);
   const [failed, setFailed] = useState(false);
@@ -221,16 +279,13 @@ export default function ModelPanel({ onNotify }: { onNotify(message: string): vo
       onChange={(kind, pairs) => void save(kind, pairs)}
     />)}
 
-    <div className="model-usage">
-      {catalogue.providers.filter((provider) => provider.usageUrl).map((provider) => <a
-        key={provider.id} className="tb-btn"
-        href={provider.usageUrl ?? undefined} target="_blank" rel="noreferrer noopener"
-      >{provider.label} usage</a>)}
-    </div>
+    <h4 className="provider-heading">Credentials</h4>
     <p className="config-help">
-      No provider will tell Acervo how much of an allowance is left, so these open the provider{"’"}s
-      own page.
+      What your server holds, and whose account each one spends. A key is shown as four characters
+      at each end — enough to tell two apart, never enough to use. No provider will tell Acervo how
+      much of an allowance is left, so the links open the provider{"’"}s own page.
     </p>
+    <ProviderTable providers={catalogue.providers} />
 
     {working && <p className="config-help" role="status">Saving…</p>}
   </section>;

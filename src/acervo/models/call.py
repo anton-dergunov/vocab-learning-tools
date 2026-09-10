@@ -256,10 +256,25 @@ def image(
     image_capabilities = (row.capabilities.get("image") or {}) if isinstance(row.capabilities, dict) else {}
     if image_capabilities.get("responseFormat", "b64_json"):
         request["response_format"] = image_capabilities.get("responseFormat", "b64_json")
+    warnings: list[str] = []
+    # Size and seed are declared, not assumed, for the same reason `speech` declares `style`: what
+    # a provider does with a parameter it does not support is not uniform. Vertex drops both
+    # silently — `size` becomes an aspect ratio and nothing else, and its transformer never reads
+    # `seed` at all — while OpenAI turns `seed` into an `extra_body` field the Images API rejects.
+    # Sending anyway would mean a recorded seed that never reproduced anything, and a 400.
     if size is not None:
-        request["size"] = f"{size[0]}x{size[1]}"
+        if image_capabilities.get("size", "native") == "native":
+            request["size"] = f"{size[0]}x{size[1]}"
+        else:
+            # Still sent: for Vertex it is the only channel that carries the aspect ratio, and the
+            # resolution rides in the row's `params.image.imageConfig` instead.
+            request["size"] = f"{size[0]}x{size[1]}"
+            warnings.append(f"this provider chooses its own resolution, not {size[0]}x{size[1]}")
     if seed is not None:
-        request["seed"] = seed
+        if image_capabilities.get("seed", "native") == "native":
+            request["seed"] = seed
+        else:
+            warnings.append("seed is not supported by this provider, so this is not reproducible")
     try:
         response = image_generation(**request)
     except Exception as error:  # noqa: BLE001
@@ -272,7 +287,9 @@ def image(
             "refused", "the provider returned no image data", provider_id=row.id, model=model
         )
     return ImageResult(
-        data=base64.b64decode(encoded), mime="image/png", answer=_answer(row, model, started, response)
+        data=base64.b64decode(encoded),
+        mime="image/png",
+        answer=_answer(row, model, started, response, warnings),
     )
 
 

@@ -8,21 +8,44 @@ the only reason per-sense images beat one picture per word.
 from __future__ import annotations
 
 import json
-import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
-from google import genai
-from google.genai import types
-
-from acervo.models.pacing import is_quota_error
+from acervo.models import ChainExhausted, TextResult, call, chain
+from acervo.models.catalogue import Catalogue
 
 from .graph import ArticleView
 from .styles import StyleTable
 
-FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+# What the writer must return. Sent as `response_format` where the row understands one and written
+# into the prompt where it does not — the row decides, and `parse_reply` checks the answer either
+# way against this article's own sense ids and this call's own three-style menu, which no schema
+# can name.
+BRIEF_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "senses": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "senseId": {"type": "string"},
+                    "styleId": {"type": "string"},
+                    "anchorExampleId": {"type": "string"},
+                    "situation": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "brief": {"type": "string"},
+                    "refused": {"type": "boolean"},
+                    "refusalReason": {"type": "string"},
+                },
+                "required": ["senseId"],
+            },
+        }
+    },
+    "required": ["senses"],
+}
 
 
 @dataclass(frozen=True)
@@ -86,13 +109,17 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
     }
 
 
-def parse_reply(text: str, article: ArticleView, offered: tuple[str, ...]) -> list[SenseBrief]:
-    """Treat the reply as untrusted: an unknown style or sense id is an error, not a nudge."""
-    cleaned = FENCE.sub("", text.strip())
-    try:
-        payload = json.loads(cleaned)
-    except ValueError as error:
-        raise ValueError(f"The brief writer did not return JSON: {error}") from error
+def parse_reply(payload: Any, article: ArticleView, offered: tuple[str, ...]) -> list[SenseBrief]:
+    """Treat the reply as untrusted: an unknown style or sense id is an error, not a nudge.
+
+    Takes the already-parsed document — unfencing and `json.loads` belong to `models.call`, which
+    does them for every kind of reply. What is left here is the part a JSON schema cannot express:
+    every check below is against *this article's* sense ids and *this call's* three-style menu.
+    """
+    if payload is None:
+        raise ValueError("The brief writer did not return JSON.")
+    if not isinstance(payload, dict):
+        raise ValueError("The brief writer did not return an object.")
 
     entries = payload.get("senses")
     if not isinstance(entries, list):
@@ -134,28 +161,36 @@ def parse_reply(text: str, article: ArticleView, offered: tuple[str, ...]) -> li
 
 
 class BriefWriter:
-    def __init__(self, client: genai.Client, model: str, template_path: str | Path,
-                 styles: StyleTable, weights: dict[str, float] | None = None) -> None:
-        self.client = client
-        self.model = model
+    """One text call per lexeme, through the owner's chain rather than through a Vertex client.
+
+    It is given resolved candidates rather than a chain to resolve: resolving once, at startup, is
+    what makes a mistyped provider or a retired model refuse before any money is spent, instead of
+    at the first word of a sweep.
+    """
+
+    def __init__(self, catalogue: Catalogue, candidates: Sequence[chain.Candidate],
+                 template_path: str | Path, styles: StyleTable,
+                 weights: dict[str, float] | None = None) -> None:
+        self.catalogue = catalogue
+        self.candidates = tuple(candidates)
         self.template = Path(template_path).read_text(encoding="utf-8")
         self.styles = styles
         self.weights = weights
 
     def write(self, article: ArticleView, attempts: int = 6,
               wait: Callable[[float], None] = time.sleep) -> tuple[list[SenseBrief], dict[str, Any]]:
-        """Write the briefs, retrying while the text model is over quota.
+        """Write the briefs, waiting out a chain that is entirely over quota.
 
-        The image model is paced by `ModelPool`; the text model is not, because its allowance is
-        generous — but it is not unlimited, and a long run does eventually meet it. Without a retry
-        a single 429 loses every sense of that lexeme, which is how ten English senses went missing
-        from an otherwise clean 13-hour run.
+        The chain handles one provider being rate limited by moving to the next, so this loop only
+        runs when *every* pair has refused — which is the single-provider case, and the long sweep
+        that eventually meets a daily allowance. Without it a 429 loses every sense of that lexeme,
+        which is how ten English senses went missing from an otherwise clean 13-hour run.
         """
         for attempt in range(1, attempts + 1):
             try:
                 return self._write_once(article)
-            except Exception as error:  # noqa: BLE001 - only quota is worth waiting out
-                if not is_quota_error(error) or attempt == attempts:
+            except ChainExhausted:
+                if attempt == attempts:
                     raise
                 wait(min(15.0 * 2 ** (attempt - 1), 240.0))
         raise AssertionError("unreachable")
@@ -163,19 +198,27 @@ class BriefWriter:
     def _write_once(self, article: ArticleView) -> tuple[list[SenseBrief], dict[str, Any]]:
         request = build_request(article, self.styles, self.weights)
         offered = tuple(style["styleId"] for style in request["styles"])
-        contents = f"{self.template}\n\n{json.dumps(request, ensure_ascii=False, indent=2)}\n"
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        prompt = f"{self.template}\n\n{json.dumps(request, ensure_ascii=False, indent=2)}\n"
+        result: TextResult = chain.walk(
+            "text",
+            [candidate.named for candidate in self.candidates],
+            self.catalogue,
+            lambda candidate: call.text(
+                prompt, row=candidate.row, model=candidate.model, schema=BRIEF_SCHEMA
+            ),
+            chain.stamped,
         )
-        text = response.text or ""
-        briefs = parse_reply(text, article, offered)
-        usage = response.usage_metadata
+        briefs = parse_reply(result.parsed, article, offered)
+        answer = result.answer
         return briefs, {
-            "model": self.model,
-            "promptTokens": getattr(usage, "prompt_token_count", None),
-            "outputTokens": getattr(usage, "candidates_token_count", None),
-            "thoughtTokens": getattr(usage, "thoughts_token_count", None),
+            "provider": answer.provider_id,
+            # The model that *answered*, not the one asked first. A fall-through that left this
+            # naming the head of the chain would be a lie in every record it stamped.
+            "model": answer.model,
+            "seconds": round(answer.seconds, 2),
+            "costUsd": answer.cost_usd,
+            "attempts": [list(pair) for pair in answer.attempts],
+            "passedOver": [list(item) for item in answer.passed_over],
+            "warnings": list(answer.warnings),
             "stylesOffered": len(offered),
         }

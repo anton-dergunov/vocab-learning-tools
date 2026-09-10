@@ -104,6 +104,46 @@ def test_it_never_returns_a_key_or_how_a_provider_is_reached(server, cloudflare,
                if row["id"] == "cloudflare")
 
 
+def test_a_key_is_shown_as_four_characters_at_each_end_and_never_more(server, monkeypatch):
+    """The one deliberate relaxation of the rule above, and its bound.
+
+    "A key is set" and "*that* key is set" are different answers, and only the second one closes a
+    half-finished rotation or tells two accounts apart. Four characters at each end of a long token
+    is enough to match against the provider's own dashboard by eye and is not a credential. The
+    test above is what stops this widening: it asserts the *whole* value is absent, on the whole
+    body, so any future field that carries more fails there.
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyC1234567890abcdefghijklmnop")
+    row = next(row for row in models(server)["providers"] if row["id"] == "gemini-free")
+    assert row["credential"] == {
+        "kind": "key", "variable": "GEMINI_API_KEY", "present": True, "hint": "AIza…mnop"
+    }
+
+
+def test_a_key_too_short_to_abbreviate_is_reported_as_present_and_not_shown(server, monkeypatch):
+    """Nothing Acervo talks to issues a key this short; the guard is against a row added later."""
+    monkeypatch.setenv("GEMINI_API_KEY", "short-key")
+    row = next(row for row in models(server)["providers"] if row["id"] == "gemini-free")
+    assert row["credential"]["present"] is True
+    assert row["credential"]["hint"] == "…"
+
+
+def test_a_provider_with_no_credential_names_the_variable_it_wants(server, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    row = next(row for row in models(server)["providers"] if row["id"] == "gemini-free")
+    assert row["credential"] == {
+        "kind": "key", "variable": "GEMINI_API_KEY", "present": False, "hint": None
+    }
+
+
+def test_the_settings_shown_are_the_row_s_own_deployment_facts(server, cloudflare):
+    """The project, the account id, the local URL — what tells one deployment from another. They
+    are shown in full, which `catalogue._validate` makes safe by refusing a row that lists its key
+    among them."""
+    row = next(row for row in models(server)["providers"] if row["id"] == "cloudflare")
+    assert row["settings"] == [{"name": "CLOUDFLARE_ACCOUNT_ID", "value": ACCOUNT_ID}]
+
+
 def test_a_mistyped_deployment_chain_renders_a_reason_rather_than_failing_the_pane(server, monkeypatch):
     monkeypatch.setattr(server.settings, "text_chain", "nonesuch")
     readout = models(server)
@@ -131,7 +171,7 @@ def test_only_the_kinds_named_change(server, cloudflare):
 
 
 def test_the_owner_may_pin_one_model_of_a_row(server):
-    """The thing plan 04 left here: a row offers two free-tier buckets and the owner picks one."""
+    """A row offers two free-tier buckets and the owner picks one."""
     choose(server, {"text": [pair("gemini-free", GEMINI_SECOND)]})
     assert models(server)["chains"]["text"]["pairs"] == [pair("gemini-free", GEMINI_SECOND)]
 

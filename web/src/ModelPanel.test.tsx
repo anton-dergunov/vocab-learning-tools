@@ -16,13 +16,21 @@ function catalogue(overrides: Partial<ModelCatalogue> = {}): ModelCatalogue {
         id: "gemini-free", label: "Gemini (free tier)", kinds: ["text", "audio"],
         models: { text: [GEMINI, GEMINI_SECOND], audio: ["gemini/gemini-3.1-flash-tts-preview"] },
         available: true, reason: null,
-        usageUrl: "https://aistudio.google.com/rate-limit", notes: "500 a day at no cost."
+        usageUrl: "https://aistudio.google.com/rate-limit", notes: "500 a day at no cost.",
+        credential: {
+          kind: "key", variable: "GEMINI_API_KEY", present: true, hint: "AIza…mnop"
+        },
+        settings: []
       },
       {
         id: "cloudflare", label: "Cloudflare Workers AI", kinds: ["text"],
         models: { text: [CLOUDFLARE] },
         available: false, reason: "CLOUDFLARE_API_TOKEN is not set",
-        usageUrl: "https://dash.cloudflare.com/abc/ai/workers-ai", notes: null
+        usageUrl: "https://dash.cloudflare.com/abc/ai/workers-ai", notes: null,
+        credential: {
+          kind: "key", variable: "CLOUDFLARE_API_TOKEN", present: false, hint: null
+        },
+        settings: [{ name: "CLOUDFLARE_ACCOUNT_ID", value: "abc" }]
       }
     ],
     chains: {
@@ -230,5 +238,56 @@ describe("the Providers pane", () => {
     vi.spyOn(backendSession, "fetchModels").mockRejectedValue(new Error("offline"));
     panel();
     expect(await screen.findByText(/could not be reached/i)).toBeInTheDocument();
+  });
+});
+
+/** The provider's row in the credentials table — its label also appears on every chain row. */
+async function credentialLine(label: string): Promise<HTMLElement> {
+  const table = await screen.findByTestId("provider-table");
+  return within(table).getByText(label).closest(".provider-line") as HTMLElement;
+}
+
+describe("the credentials table", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("shows which key is deployed without showing the key", async () => {
+    vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue());
+    panel();
+
+    const line = await credentialLine("Gemini (free tier)");
+    expect(within(line).getByText("GEMINI_API_KEY")).toBeTruthy();
+    expect(within(line).getByText("AIza…mnop")).toBeTruthy();
+  });
+
+  it("names the variable a provider is waiting for rather than leaving a blank", async () => {
+    vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue());
+    panel();
+
+    const line = await credentialLine("Cloudflare Workers AI");
+    expect(within(line).getByText("CLOUDFLARE_API_TOKEN not set")).toBeTruthy();
+    // The deployment fact stays visible: the account id is what the usage link is built from, and
+    // it is how you tell one Cloudflare account from another.
+    expect(within(line).getByText("abc")).toBeTruthy();
+  });
+
+  it("names the account for the one credential that is a file", async () => {
+    vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue({
+      providers: [{
+        id: "vertex", label: "Vertex AI", kinds: ["text"],
+        models: { text: ["vertex_ai/gemini-3.8-flash"] },
+        available: true, reason: null, usageUrl: null, notes: null,
+        account: "acervo-vertex@PROJECT_ID.iam.gserviceaccount.com",
+        credential: {
+          kind: "file", variable: "GOOGLE_APPLICATION_CREDENTIALS", present: true, hint: null
+        },
+        settings: [{ name: "ACERVO_VERTEX_PROJECT", value: "a-project" }]
+      }]
+    }));
+    panel();
+
+    const shown = await credentialLine("Vertex AI");
+    expect(within(shown).getByText("a credentials file")).toBeTruthy();
+    expect(within(shown).getByText("acervo-vertex@PROJECT_ID.iam.gserviceaccount.com")).toBeTruthy();
+    expect(within(shown).getByText("a-project")).toBeTruthy();
   });
 });

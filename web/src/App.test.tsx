@@ -926,7 +926,8 @@ describe("Acervo application", () => {
 
     expect(settings.queryByText(/Entries are built by/)).not.toBeInTheDocument();
     fireEvent.click(settings.getByRole("tab", { name: "Providers" }));
-    expect(await settings.findByText("Gemini (free tier)")).toBeInTheDocument();
+    // Twice on purpose: once as a row in the text chain, once in the credentials table below it.
+    expect(await settings.findAllByText("Gemini (free tier)")).toHaveLength(2);
     expect(settings.getByText("gemini/gemini-3.1-flash-lite")).toBeInTheDocument();
   });
 });

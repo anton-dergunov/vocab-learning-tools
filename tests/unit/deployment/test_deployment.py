@@ -989,30 +989,94 @@ def test_remote_helper_runs_the_packaged_installer_from_standard_input(tmp_path:
     env = os.environ.copy()
     env["PATH"] = f"{fake_docker_path(tmp_path)}:{env['PATH']}"
 
-    result = subprocess.run(
-        [
-            str(helper),
-            "deploy",
-            "--root",
-            str(root),
-            "--bind-address",
-            "127.0.0.1",
-            "--port",
-            "27701",
-            "--app-bind-address",
-            "127.0.0.1",
-            "--app-port",
-            "27702",
-        ],
-        env=env,
-        input=archive.read_bytes(),
-        capture_output=True,
-        check=False,
-    )
+    # The Google credential rides through the launcher too, and it is the one credential that is a
+    # file the whole way. The launcher only accepts it under the path the deployer streams it to,
+    # so the test has to use that path rather than tmp_path.
+    uploaded = Path(f"/tmp/acervo-google-credentials-{os.getpid()}")
+    uploaded.write_text('{"type": "service_account", "client_email": "a@b.example.com"}',
+                        encoding="utf-8")
+
+    try:
+        result = subprocess.run(
+            [
+                str(helper),
+                "deploy",
+                "--root",
+                str(root),
+                "--google-credentials-file",
+                str(uploaded),
+                "--bind-address",
+                "127.0.0.1",
+                "--port",
+                "27701",
+                "--app-bind-address",
+                "127.0.0.1",
+                "--app-port",
+                "27702",
+            ],
+            env=env,
+            input=archive.read_bytes(),
+            capture_output=True,
+            check=False,
+        )
+    finally:
+        uploaded.unlink(missing_ok=True)
 
     assert result.returncode == 0, result.stderr.decode()
     assert (root / "deployment.env").exists()
     assert b"internal HTTP backend" in result.stdout
+    installed = root / "credentials" / "google.json"
+    assert installed.read_text(encoding="utf-8").startswith('{"type": "service_account"')
+    assert installed.stat().st_mode & 0o777 == 0o600
+    # The launcher removes what it was handed, so nothing sensitive is left in /tmp on the server.
+    assert not uploaded.exists()
+
+
+def test_the_launcher_refuses_a_credential_path_it_did_not_expect(tmp_path: Path) -> None:
+    """The launcher runs as root out of sudoers, so every path it is handed is checked against the
+    shape the deployer would have written — the same guard the other two credentials already have."""
+    helper = runnable_remote_helper(tmp_path)
+    elsewhere = tmp_path / "google.json"
+    elsewhere.write_text('{"type": "service_account"}', encoding="utf-8")
+    result = subprocess.run(
+        [
+            str(helper), "deploy", "--root", str(tmp_path / "acervo"),
+            "--google-credentials-file", str(elsewhere),
+            "--bind-address", "127.0.0.1", "--port", "27701",
+            "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+        ],
+        text=True, capture_output=True, check=False,
+    )
+    assert result.returncode == 2
+    assert "Unexpected Google credentials path" in result.stderr
+
+
+def test_the_launcher_protocol_matches_the_deployer() -> None:
+    """The two numbers are how a server learns its installed launcher is stale. Letting them drift
+    means a launcher fix is written, shipped, and never installed — which is exactly how
+    `--google-credentials-file` reached a launcher that had never heard of it."""
+    helper = (REPO_ROOT / "deploy/acervo/remote-helper.sh").read_text(encoding="utf-8")
+    deployer = (REPO_ROOT / "deploy.sh").read_text(encoding="utf-8")
+    spoken = re.search(r"^PROTOCOL=(\d+)$", helper, re.MULTILINE)
+    expected = re.search(r"^helper_protocol=(\d+)$", deployer, re.MULTILINE)
+    assert spoken and expected
+    assert spoken.group(1) == expected.group(1)
+
+
+def test_every_installer_flag_the_deployer_forwards_is_one_the_launcher_accepts() -> None:
+    """The launcher is a middle hop with its own allow-list, and a flag added at both ends but not
+    in the middle fails only on a real server, at the end of a full release build."""
+    deployer = (REPO_ROOT / "deploy.sh").read_text(encoding="utf-8")
+    helper = (REPO_ROOT / "deploy/acervo/remote-helper.sh").read_text(encoding="utf-8")
+    # Only the remote half. `--local` runs the installer directly and legitimately passes
+    # `--credentials-stdin`, which the launcher has no reason to know about.
+    remote = deployer[deployer.index("remote_installer="):]
+    accepted = set(re.findall(r"^\s+(--[a-z-]+)\)", helper, re.MULTILINE))
+    forwarded = set(re.findall(r"installer_arguments\s+(--[a-z-]+)", remote))
+    forwarded |= set(re.findall(r"credential_args=[\"']?(--[a-z-]+)", remote))
+    forwarded |= set(re.findall(r"credential_args\s+(--[a-z-]+)", remote))
+    assert forwarded, "the pattern stopped matching; this test is no longer checking anything"
+    assert forwarded <= accepted, f"the launcher rejects {sorted(forwarded - accepted)}"
 
 
 def test_deploy_profile_supports_legacy_format_defaults_and_cli_precedence(tmp_path: Path) -> None:
@@ -1415,3 +1479,74 @@ def test_shared_host_guardrails_are_documented_and_global_serve_mutations_are_ab
     assert "serve --bg http://127.0.0.1:27702" not in combined
     assert "serve reset" not in helper
     assert "serve off" not in helper
+
+
+def test_a_google_credential_that_is_not_one_is_refused_before_it_is_deployed(tmp_path: Path) -> None:
+    """Vertex does not authenticate from a variable, so this is a file — and a file is the one kind
+    of credential that can be plausibly wrong: an API key pasted into a file, the wrong export,
+    something else entirely. Discovering that at the first capture costs a deployment cycle."""
+    wrong = tmp_path / "not-a-key.json"
+    wrong.write_text('{"api_key": "AIzaSyNotAKeyFile"}', encoding="utf-8")
+    result = run_configure_llm(tmp_path, "--google-credentials", str(wrong))
+    assert result.returncode == 2
+    assert "neither a service-account key nor an" in result.stderr
+
+
+@pytest.mark.parametrize("kind", ["service_account", "authorized_user"])
+def test_both_shapes_google_actually_writes_are_accepted(tmp_path: Path, kind: str) -> None:
+    """A key, and the file `gcloud auth application-default login` writes. Refusing the second would
+    mean the one-command path that already works on a workstation could not reach the server."""
+    good = tmp_path / "creds.json"
+    good.write_text(f'{{"type": "{kind}", "client_email": "acervo-vertex@personal.example.com"}}',
+                    encoding="utf-8")
+    result = run_configure_llm(tmp_path, "--google-credentials", str(good))
+    assert "neither a service-account key" not in result.stderr
+
+
+def test_a_google_credential_is_installed_beside_the_env_file_and_named_from_inside(tmp_path: Path) -> None:
+    env, root = deployment_env(tmp_path)
+    key = tmp_path / "google.json"
+    key.write_text('{"type": "service_account", "project_id": "p"}', encoding="utf-8")
+    settings = tmp_path / "llm-credentials"
+    settings.write_text(
+        "GOOGLE_APPLICATION_CREDENTIALS=/run/acervo/credentials/google.json\n", encoding="utf-8"
+    )
+    settings.chmod(0o600)
+
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy/acervo/install.sh"),
+            "--root", str(root),
+            "--llm-credentials-file", str(settings),
+            "--google-credentials-file", str(key),
+            "--bind-address", "127.0.0.1", "--port", "27701",
+            "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+        ],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    installed = root / "credentials" / "google.json"
+    assert installed.read_text(encoding="utf-8").startswith('{"type": "service_account"')
+    assert installed.stat().st_mode & 0o777 == 0o600
+    # The variable names the path the container will read, not the one it was uploaded from.
+    llm = (root / "llm.env").read_text(encoding="utf-8")
+    assert "GOOGLE_APPLICATION_CREDENTIALS=/run/acervo/credentials/google.json\n" in llm
+
+
+def test_the_credentials_directory_exists_even_when_no_key_is_configured(tmp_path: Path) -> None:
+    """A bind mount of a path that does not exist makes a root-owned directory instead, and the
+    container then fails in a way that has nothing to do with the missing credential."""
+    env, root = deployment_env(tmp_path)
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "deploy/acervo/install.sh"),
+            "--root", str(root),
+            "--bind-address", "127.0.0.1", "--port", "27701",
+            "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+        ],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (root / "credentials").is_dir()
+    assert "ACERVO_CREDENTIALS=" in (root / "deployment.env").read_text(encoding="utf-8")

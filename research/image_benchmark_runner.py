@@ -498,47 +498,6 @@ def run_cloudflare(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def run_bfl(request: dict[str, Any]) -> dict[str, Any]:
-    import requests
-
-    output = _output_path(request)
-    settings = _settings(request)
-    api_key = os.environ[str(settings.get("api_key_env", "BFL_API_KEY"))]
-    endpoint = str(settings.get("endpoint", "https://api.bfl.ai/v1/flux-2-klein-4b"))
-    response = requests.post(
-        endpoint,
-        headers={"x-key": api_key, "Content-Type": "application/json"},
-        json={
-            "prompt": request["job"]["prompt"],
-            "width": int(settings.get("width", 512)),
-            "height": int(settings.get("height", 512)),
-            "seed": int(request["job"]["seed"]),
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    task_id = response.json()["id"]
-    poll_url = str(settings.get("poll_url", "https://api.bfl.ai/v1/get_result"))
-    deadline = time.monotonic() + float(settings.get("request_timeout_seconds", 300))
-    result: dict[str, Any] = {}
-    while time.monotonic() < deadline:
-        poll = requests.get(poll_url, headers={"x-key": api_key}, params={"id": task_id}, timeout=30)
-        poll.raise_for_status()
-        result = poll.json()
-        if result.get("status") == "Ready":
-            break
-        if result.get("status") in {"Error", "Failed"}:
-            raise RuntimeError(str(result))
-        time.sleep(1.0)
-    else:
-        raise TimeoutError(f"BFL task {task_id} did not finish")
-    sample_url = result.get("result", {}).get("sample")
-    media = requests.get(sample_url, timeout=60)
-    media.raise_for_status()
-    _save_image_bytes(media.content, output)
-    return {"runtime_versions": _runtime_versions("requests"), "provenance": {"kind": "generation", "service": "BFL API", "task_id": task_id, "sample_url": sample_url}}
-
-
 def run_gemini(request: dict[str, Any]) -> dict[str, Any]:
     from google import genai
     from google.genai import types
@@ -663,7 +622,6 @@ BACKENDS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "mflux-z-image": run_mflux_z_image,
     "drawthings": run_drawthings,
     "cloudflare": run_cloudflare,
-    "bfl": run_bfl,
     "gemini": run_gemini,
     "starvector": run_starvector,
 }

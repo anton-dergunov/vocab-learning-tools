@@ -576,39 +576,6 @@ candidates:
       token_env: CLOUDFLARE_API_TOKEN
       timeout_seconds: 300
 
-  bfl_flux2_klein:
-    label: BFL API FLUX.2 Klein 4B
-    provider: bfl-api
-    model: flux-2-klein-4b
-    enabled: false
-    remote: true
-    estimated_cost_usd: 0.014
-    output_extension: png
-    command:
-      - uv
-      - run
-      - --no-project
-      - --python
-      - "3.12"
-      - --with
-      - "requests>=2.32,<3"
-      - --with
-      - "pillow>=11,<13"
-      - python
-      - "{repo_root}/research/image_benchmark_runner.py"
-      - run
-      - --backend
-      - bfl
-      - --request
-      - "{request}"
-      - --result
-      - "{result}"
-    settings:
-      width: 512
-      height: 512
-      api_key_env: BFL_API_KEY
-      timeout_seconds: 360
-
   gemini_flash_lite_image:
     label: Gemini 3.1 Flash Lite Image (Nano Banana 2 Lite)
     provider: vertex-ai

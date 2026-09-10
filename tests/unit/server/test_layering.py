@@ -190,8 +190,6 @@ def test_batch_work_does_not_read_the_services_environment(path):
 
 
 ALLOWED_HTTP = {
-    # Google's ADC token check, on the laptop that has the credentials.
-    "jobs/images/preflight.py",
     # Third-party dictionary sources, downloaded to be compiled.
     "dictionaries/build.py",
     # Model providers and online dictionaries: outbound, not the Acervo API.

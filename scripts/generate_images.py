@@ -34,7 +34,6 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from acervo.jobs.images import preflight
 from acervo.jobs.images.brief import BriefWriter
 from acervo.jobs.images.compose import prompt_version
 from acervo.client import AcervoClient, AcervoError
@@ -45,39 +44,90 @@ from acervo.jobs.images.run import Runner, Store, plan
 from acervo.jobs.images.sheet import write_sheet
 from acervo.jobs.images.styles import load_styles
 from acervo.jobs.images.verify import verify
+from acervo.models import chain, load_catalogue
+from acervo.models.catalogue import identity, reason
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = REPO_ROOT / "output" / "images"
 DEFAULT_STYLES = REPO_ROOT / "config" / "image-styles.yaml"
 DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "acervo_image_brief.txt"
-# The brief writer now reasons in two steps — commit to a concrete situation, then draw it — so it
-# gets the strongest Flash this project can reach rather than the Lite the capture hook uses. Text
-# calls are cheap and generously quota'd next to the images; the reasoning is what limits quality.
-# `gemini-3.1-flash` is NOT available here — check `models.list()` before changing this.
-BRIEF_MODEL = "gemini-3.8-flash"
-# Flash Lite alone by default: the cheapest of the three at roughly half the price of Flash, and
-# within a point of it in the finalist benchmark. Each image model has its own quota bucket, so
-# passing several to `--image-models` multiplies the rate — about one image per minute per model —
-# but it multiplies the bill too, and the budget is the binding constraint rather than the clock.
-IMAGE_MODELS = ("gemini-3.1-flash-lite-image",)
-IMAGE_COST_USD = {
-    "gemini-3.1-flash-lite-image": 0.0336,
-    "gemini-3.1-flash-image": 0.067,
-    "gemini-3-pro-image": 0.134,
-}
+def parse_chain(text: str) -> list[chain.Choice] | None:
+    """`--image-chain cloudflare,vertex` or `--image-chain cloudflare:@cf/…`, or nothing.
+
+    A bare provider id means every model that row offers, in the order it lists them, which is what
+    `chain.resolve` already understands.
+    """
+    chosen: list[chain.Choice] = []
+    for item in (part.strip() for part in text.split(",")):
+        if not item:
+            continue
+        provider, _, model = item.partition(":")
+        chosen.append((provider, model) if model else provider)
+    return chosen or None
 
 
-def confirm_account(assume_yes: bool) -> preflight.Identity:
-    identity = preflight.resolve()
-    print(f"Google account  {identity.account}")
-    print(f"Project         {identity.project}")
-    print(f"Configuration   {identity.configuration}")
-    if assume_yes:
-        return identity
-    answer = input("Bill this account? [y/N] ").strip().lower()
-    if answer not in {"y", "yes"}:
+def owner_chain(args: argparse.Namespace, kind: str) -> list[chain.Choice] | None:
+    """The chain the owner chose in Settings, or None to use this machine's catalogue order.
+
+    Only an *owner* chain is carried across. The server also answers with the order it would use
+    itself, and that one is resolved on the server — against the server's credentials — so it drops
+    the Vertex row on exactly the machine that cannot reach it while this laptop can. A deployment's
+    order is not a preference and does not travel.
+
+    An owner chain that is empty is not a gap: it means every image model was switched off on
+    purpose, and the sweep must stop rather than quietly fall back to the catalogue.
+    """
+    if not getattr(args, "server_url", ""):
+        return None
+    password = os.environ.get("ACERVO_PASSWORD") or getpass.getpass("Acervo password: ")
+    try:
+        with AcervoClient(args.server_url) as client:
+            client.sign_in(args.owner_email, password)
+            readout = client.models()
+    except AcervoError as error:
+        print(f"note: the server did not say which models you chose ({error}); "
+              f"using this machine's catalogue order for {kind}", file=sys.stderr)
+        return None
+    found = (readout.get("chains") or {}).get(kind) or {}
+    if found.get("source") != "owner":
+        return None
+    return [(pair["provider"], pair["model"]) for pair in found.get("pairs") or []]
+
+
+def resolve_chain(args: argparse.Namespace, kind: str, flag: str) -> tuple[chain.Candidate, ...]:
+    """Resolve once, before anything is spent.
+
+    A mistyped provider or a model the catalogue no longer offers refuses here rather than at the
+    first word of a sweep — which is the whole reason this resolves at startup instead of per call.
+    """
+    chosen = parse_chain(flag) if flag else owner_chain(args, kind)
+    catalogue = load_catalogue()
+    candidates = chain.resolve(kind, chosen, catalogue)
+    if not candidates:
+        raise SystemExit(chain.unconfigured(kind, chosen, catalogue).detail
+                         or f"Nothing in the catalogue can produce {kind}.")
+    return candidates
+
+
+def confirm_unnamed_credentials(candidates, assume_yes: bool) -> None:
+    """The hazard the old `gcloud` preflight existed for, narrowed to the case that still has one.
+
+    A row that can name its account is held to `accountEnv` by the catalogue and simply cannot run
+    as the wrong one — no question needed, and no `gcloud` subprocess to ask it. Plain application
+    default credentials do not record which login wrote them, so on that path, and only on it, the
+    old "Bill this account?" question is still worth asking. Naming the account in
+    `ACERVO_VERTEX_ACCOUNT` is how you stop being asked.
+    """
+    unnamed = [candidate.row for candidate in candidates
+               if candidate.row.auth == "adc" and identity(candidate.row) is None
+               and not (os.environ.get(candidate.row.accountEnv or "") or "").strip()]
+    if not unnamed or assume_yes:
+        return
+    for row in dict.fromkeys(unnamed):
+        print(f"{row.label} will spend whichever Google account is signed in, and its credentials "
+              f"do not say which.")
+    if input("Draw anyway? [y/N] ").strip().lower() not in {"y", "yes"}:
         raise SystemExit("Stopped without spending anything.")
-    return identity
 
 
 def load_graph(args: argparse.Namespace):
@@ -88,28 +138,25 @@ def load_graph(args: argparse.Namespace):
         return build_articles(client.pull_graph()["changes"], args.language)
 
 
-def make_client(project: str, location: str):
-    from google import genai
-    from google.genai import types
-    return genai.Client(
-        vertexai=True,
-        project=project,
-        location=location,
-        http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(
-            attempts=4, initial_delay=10.0, max_delay=60.0, exp_base=2.0, jitter=1.0,
-            http_status_codes=[408, 429, 500, 502, 503, 504],
-        )),
-    )
-
-
 def command_check(args: argparse.Namespace) -> int:
-    confirm_account(assume_yes=True)
+    """What this machine would use, and as whom. Calls nothing and spends nothing.
+
+    No prices: nobody in this repository knows what a picture costs, and a table here would be
+    wrong the first time a provider changed one. Each answer reports what it was billed, and
+    `usageUrl` in Settings ▸ Providers is where the running total is read.
+    """
     styles = load_styles(args.styles)
     print(f"Styles          {len(styles.styles)} ({styles.digest})")
     print(f"Prompt version  {prompt_version(args.template, styles.digest)}")
-    print(f"Brief model     {BRIEF_MODEL}")
-    for model in IMAGE_MODELS:
-        print(f"Image model     {model}  (~${IMAGE_COST_USD.get(model, 0):.4f}/image)")
+    catalogue = load_catalogue()
+    for kind in ("text", "image"):
+        for candidate in chain.resolve(kind, parse_chain(getattr(args, f"{kind}_chain", "")), catalogue):
+            account = identity(candidate.row)
+            print(f"{kind:<15} {candidate.row.label} · {candidate.model}"
+                  + (f"  ({account})" if account else ""))
+        for row in catalogue.serving(kind):
+            if (why := reason(row)) is not None:
+                print(f"{'':<15} {row.label} is unavailable — {why}")
     return 0
 
 
@@ -131,10 +178,9 @@ def command_plan(args: argparse.Namespace) -> int:
 
 
 def command_run(args: argparse.Namespace) -> int:
-    identity = confirm_account(args.yes)
-    project = args.project or identity.project
-    if not project:
-        raise SystemExit("No Google Cloud project is configured.")
+    brief_chain = resolve_chain(args, "text", args.brief_chain)
+    image_chain = resolve_chain(args, "image", args.image_chain)
+    confirm_unnamed_credentials([*brief_chain, *image_chain], args.yes)
 
     articles = load_graph(args)
     store = Store(args.output)
@@ -146,35 +192,41 @@ def command_run(args: argparse.Namespace) -> int:
         return 0
 
     styles = load_styles(args.styles)
-    models = tuple(m.strip() for m in args.image_models.split(",") if m.strip())
-    client = make_client(project, args.location)
+    catalogue = load_catalogue()
     runner = Runner(
         store=store,
-        writer=BriefWriter(client, args.brief_model, args.template, styles),
-        renderer=Renderer(client, models),
+        writer=BriefWriter(catalogue, brief_chain, args.template, styles),
+        renderer=Renderer(size=(args.size, args.size)),
         styles=styles,
         template_path=args.template,
+        candidates=image_chain,
         workers=args.workers,
         rate_limit=args.rate_limit,
         attempts=args.attempts,
     )
-    print(f"Drawing {len(jobs)} senses · {args.workers} workers · "
-          f"{len(models)} model(s) × {args.rate_limit or '∞'}/min → {store.root}")
+    drawn_by = ", ".join(f"{c.row.id}/{c.model}" for c in image_chain)
+    print(f"Drawing {len(jobs)} senses at {args.size}² · {args.workers} workers · "
+          f"{args.rate_limit or '∞'}/min per pair → {store.root}")
+    print(f"  briefs by  {', '.join(f'{c.row.id}/{c.model}' for c in brief_chain)}")
+    print(f"  pictures by {drawn_by}")
     result = runner.run(jobs)
     print(f"\n{result['drawn']} drawn, {result['refused']} refused, {result['failed']} failed "
           f"in {result['seconds']}s ({result['throttled']} quota waits)")
-    print(f"Image output tokens: {result['imageTokens']:,}")
-    spend = sum(IMAGE_COST_USD.get(model, 0) for model in result["byModel"].elements()) \
-        if hasattr(result["byModel"], "elements") else 0
-    for model, count in sorted(result["byModel"].items()):
-        print(f"  {count:>4} × {model}  ≈ ${count * IMAGE_COST_USD.get(model, 0):.2f}")
-    print(f"Estimated spend this run: ${spend:.2f}")
+    for (provider, model), count in sorted(result["byPair"].items()):
+        print(f"  {count:>4} × {provider}  {model}")
+    # What the providers said, never a table in this repository. A provider that does not price its
+    # answer is counted rather than guessed at: Cloudflare inside its free allocation genuinely
+    # costs nothing, and outside it the price is per neuron, which the response does not carry.
+    print(f"Billed ${result['costUsd']:.2f}"
+          + (f" · {result['unpriced']} calls reported no cost" if result["unpriced"] else ""))
+    if result["stopped"]:
+        print(f"Stopped early: {result['stopped']}", file=sys.stderr)
 
     sheet = write_sheet(store)
     print(f"Contact sheet: {sheet}")
     if args.open:
         webbrowser.open(sheet.as_uri())
-    return 0
+    return 1 if result["stopped"] else 0
 
 
 def command_verify(args: argparse.Namespace) -> int:
@@ -233,7 +285,9 @@ def main() -> int:
         target.add_argument("--only", default="",
                             help="Comma-separated headwords, sense ids or image ids to restrict to.")
 
-    sub.add_parser("check", help="Say which Google account and prompt version a run would use")
+    checker = sub.add_parser("check", help="Say which providers a run would use, and as whom")
+    checker.add_argument("--text-chain", default="", help="Override the brief chain for this reading.")
+    checker.add_argument("--image-chain", default="", help="Override the image chain for this reading.")
 
     planner = sub.add_parser("plan", help="List the senses that have no picture yet")
     graph_arguments(planner)
@@ -242,15 +296,22 @@ def main() -> int:
     graph_arguments(runner)
     runner.add_argument("--workers", type=int, default=3)
     runner.add_argument("--rate-limit", type=int, default=1,
-                        help="Image calls per minute PER MODEL. Measured ceiling is 1. 0 removes it.")
-    runner.add_argument("--brief-model", default=BRIEF_MODEL)
-    runner.add_argument("--image-models", default=",".join(IMAGE_MODELS),
-                        help="Comma-separated image models. Each has its own quota bucket.")
+                        help="Image calls per minute PER PAIR. Measured ceiling is 1. 0 removes it.")
+    # Deliberately a flag rather than a catalogue field: a rate limit is a fact about *this
+    # account* on *this model*, not about the provider, and a number in a tracked file is a lie the
+    # day a quota increase comes through.
+    runner.add_argument("--brief-chain", default="",
+                        help="Providers to write briefs with, e.g. `vertex,gemini-free`. "
+                             "Default: your chain from the server, else the catalogue's order.")
+    runner.add_argument("--image-chain", default="",
+                        help="Providers to draw with, e.g. `cloudflare,vertex` or "
+                             "`cloudflare:@cf/black-forest-labs/flux-2-klein-4b`.")
+    runner.add_argument("--size", type=int, default=1024,
+                        help="Square master in pixels. 512 is the cheap Cloudflare sweep.")
     runner.add_argument("--attempts", type=int, default=12,
                         help="Tries per sense when the project is over quota.")
-    runner.add_argument("--project", default=os.environ.get("GOOGLE_CLOUD_PROJECT", ""))
-    runner.add_argument("--location", default=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"))
-    runner.add_argument("--yes", action="store_true", help="Skip the billing confirmation")
+    runner.add_argument("--yes", action="store_true",
+                        help="Do not ask about credentials that cannot name their account")
     runner.add_argument("--open", action="store_true", help="Open the contact sheet when finished")
 
     sub.add_parser("verify", help="Check the run directory is internally consistent before import")
