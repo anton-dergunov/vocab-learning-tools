@@ -13,7 +13,7 @@ import pytest
 from graph_records import DEVICE, lexeme, sense, vocabulary
 
 from acervo.consumers.anki.state import held_by_lexeme, study_states
-from acervo.jobs.images.ids import image_prompt_id, seed_for
+from acervo.images.ids import image_prompt_id, seed_for
 from acervo.jobs.images.publish import plan_publish, publish
 from acervo.jobs.images.run import Store
 

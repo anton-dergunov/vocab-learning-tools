@@ -46,8 +46,18 @@ export interface ExampleDraft {
   approved: boolean;
 }
 
+/**
+ * What a document says about a picture, which is deliberately less than the record holds.
+ *
+ * `attempts`, `failureReason` and `suppressed` are state, like `revision`, and are not in the
+ * projection: they are facts about what the server did, not things a document can assert. A save
+ * carries them through untouched (`repository.saveArticle`), so editing a word's YAML cannot
+ * un-suppress a picture you deleted or zero an attempt counter.
+ */
 export interface ImagePromptDraft {
   id: string | null;
+  /** The example the scene was built from — content, so it travels with the document. */
+  exampleId: string | null;
   prompt: string;
   styleId: string;
   seed: number;
@@ -154,6 +164,7 @@ function exampleFields(example: ExampleDraft): Plain {
 function promptFields(image: ImagePromptDraft): Plain {
   return compact({
     id: image.id,
+    exampleId: image.exampleId,
     prompt: image.prompt,
     styleId: image.styleId,
     seed: image.seed,
@@ -199,6 +210,7 @@ function exampleDraft(example: Example): ExampleDraft {
 function promptDraft(image: ImagePrompt): ImagePromptDraft {
   return {
     id: image.id,
+    exampleId: image.exampleId,
     prompt: image.prompt,
     styleId: image.styleId,
     seed: image.seed,
@@ -486,7 +498,8 @@ const EXAMPLE_KEYS = [
   "matchedForm", "matchedTranslationForm", "approved"
 ];
 const PROMPT_KEYS = [
-  "id", "prompt", "styleId", "seed", "modelId", "promptVersion", "imageRef", "imageModelId"
+  "id", "exampleId", "prompt", "styleId", "seed", "modelId", "promptVersion", "imageRef",
+  "imageModelId"
 ];
 const SENSE_KEYS = [
   "id", "order", "definition", "definitionLang", "domain", "glosses", "examples", "imagePrompts"
@@ -532,8 +545,11 @@ function readPrompt(reader: Reader, raw: unknown, path: string): ImagePromptDraf
   reader.keys(fields, path, PROMPT_KEYS);
   return {
     id: reader.id(fields.id, `${path}.id`),
-    prompt: reader.required(fields.prompt, `${path}.prompt`),
-    styleId: reader.required(fields.styleId, `${path}.styleId`),
+    exampleId: reader.id(fields.exampleId, `${path}.exampleId`),
+    // Not `required` any more, and both for the same reason: a picture the owner attached has no
+    // brief and no style, because no writer produced it.
+    prompt: reader.text(fields.prompt, `${path}.prompt`),
+    styleId: reader.text(fields.styleId, `${path}.styleId`),
     seed: reader.number(fields.seed, `${path}.seed`, 0),
     modelId: reader.text(fields.modelId, `${path}.modelId`),
     promptVersion: reader.text(fields.promptVersion, `${path}.promptVersion`),

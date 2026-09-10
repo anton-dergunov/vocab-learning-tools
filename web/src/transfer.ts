@@ -35,6 +35,7 @@ export const MANIFEST_FILE = "acervo.yaml";
 export const VOCABULARIES_FILE = "vocabularies.yaml";
 export const TOPICS_FILE = "topics.yaml";
 export const MARKDOWN_DIRECTORY = "markdown";
+export const MEDIA_DIRECTORY = "media";
 
 const RESERVED = [MANIFEST_FILE, VOCABULARIES_FILE, TOPICS_FILE];
 
@@ -47,6 +48,15 @@ export interface ExportOptions {
   /** A language tag, or every language the replica holds. */
   language: string | "all";
   markdown: boolean;
+  /**
+   * Whether to carry the picture files as well as the records that name them.
+   *
+   * Off by default and deliberately so. A bundle is a text archive you can read, and pictures are
+   * regenerable by design — what must not be lost is the brief that produced one, and that is in
+   * the word file either way. It is also the one export that is not offline-capable: the bytes come
+   * from the server, or from this device's cache if it happens to hold them.
+   */
+  images: boolean;
 }
 
 /* ── filenames ──────────────────────────────────────────────────────────
@@ -122,23 +132,31 @@ function document(value: unknown): string {
 /**
  * Ids leave, except the ones that mean something.
  *
- * An example drawn from a sentence the owner supplied names the attestation it came from — a
- * reference between two records in the same file, which is how provenance is modelled rather than
- * flagged. That id has to survive or the lineage does not. Every other id is the database's private
- * business: dropping them is what lets a file be read as a new word, in any account, including a
- * rebuilt one, where a stated lexeme id would be refused.
+ * Two kinds of id survive, and they are the same kind: a reference between two records **in this
+ * file**. An example drawn from a sentence the owner supplied names its attestation, and a picture
+ * names the example whose scene it draws. Drop either id and the lineage is gone, so both stay and
+ * `remintIds` re-mints them on the way in — which is what keeps a bundle from depending on the
+ * account it came from. Every other id is the database's private business: dropping them is what
+ * lets a file be read as a new word, in any account, including a rebuilt one, where a stated lexeme
+ * id would be refused.
+ *
+ * `imageRef` and `imageModelId` go with the ids, and they are not references at all — they are
+ * facts about the server that drew the picture. `imageRef` embeds a lexeme id that will not exist
+ * after import, so keeping it imported a live-looking reference to a file nobody has.
  */
 export function stripIds(draft: ArticleDraft): ArticleDraft {
+  const forget = (image: ArticleDraft["images"][number]) => ({
+    ...image, id: null, imageRef: null, imageModelId: null
+  });
   return {
     ...draft,
     id: null,
     senses: draft.senses.map((sense) => ({
       ...sense,
       id: null,
-      examples: sense.examples.map((example) => ({ ...example, id: null })),
-      images: sense.images.map((image) => ({ ...image, id: null }))
+      images: sense.images.map(forget)
     })),
-    images: draft.images.map((image) => ({ ...image, id: null }))
+    images: draft.images.map(forget)
   };
 }
 
@@ -167,6 +185,52 @@ function topicContent(graph: VocabularyGraph): TopicInput[] {
     .slice()
     .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
     .map((topic) => ({ name: topic.name, icon: topic.icon, order: topic.order }));
+}
+
+/** One picture to carry: where it goes in the bundle, and the reference it comes from. */
+export interface BundlePicture {
+  path: string;
+  reference: string;
+}
+
+/**
+ * Which pictures a bundle would carry, named after the word file they belong to.
+ *
+ * Named rather than fetched, because this module has no transport and should not grow one:
+ * `TransferPanel.tsx` owns the zip and the browser's file handling, and the bytes are its business.
+ * The name pairs by eye with the word file — `es/picar.yaml` and `media/es/picar-1.webp` — which is
+ * what makes an archive you can open in Finder worth having.
+ *
+ * Suffixed by sense order rather than by prompt id: a bundle carries no ids a human can use, and
+ * "the second sense of picar" is a thing you can find in the word file.
+ */
+export function picturesIn(graph: VocabularyGraph, options: ExportOptions): BundlePicture[] {
+  const present = languageOptions(graph).map((option) => option.code);
+  const languages = options.language === "all"
+    ? present
+    : present.filter((code) => code === options.language);
+
+  const pictures: BundlePicture[] = [];
+  languages.forEach((language) => {
+    const words = lexemesIn(graph, language)
+      .slice()
+      .sort((left, right) => left.lemma.localeCompare(right.lemma) || left.id.localeCompare(right.id));
+    const names = uniqueNames(words);
+    words.forEach((lexeme) => {
+      const article = articleFor(graph, lexeme.id);
+      if (!article) return;
+      article.senses.forEach((entry, index) => {
+        entry.images.forEach((image) => {
+          if (!image.imageRef) return;
+          pictures.push({
+            path: `${MEDIA_DIRECTORY}/${language}/${names.get(lexeme.id)}-${index + 1}.webp`,
+            reference: image.imageRef
+          });
+        });
+      });
+    });
+  });
+  return pictures;
 }
 
 export function exportBundle(graph: VocabularyGraph, options: ExportOptions, exportedAt: string): BundleFile[] {
@@ -255,10 +319,20 @@ export interface BundlePlan {
  * is refused and converted outside the application, and this function must never grow into a second
  * pipeline.
  *
- * Today one schema version has ever existed, so there is nothing to adapt and nothing to invent.
+ * Version 6 is readable as it stands. Version 7 added optional keys to a picture — the example it
+ * anchors on, and the state the server keeps about drawing it — and a version 6 word file simply
+ * does not carry them, which `readPrompt` already reads as "none" and "nothing attempted". Nothing
+ * was renamed and nothing was removed, so there is no text to rewrite: this is a version being
+ * *accepted*, which is the cheapest form the exception takes and the one to prefer.
+ *
+ * Note what is not here. A version 6 bundle carries no example ids, so a picture in one cannot name
+ * the sentence it illustrates and does not get an anchor invented for it — matching by position or
+ * by text would be a guess, and a wrong anchor puts the picture under the wrong sentence.
  */
+const READABLE = new Set([SCHEMA_VERSION, 6]);
+
 function upgradeBundle(files: BundleFile[], from: number): BundleFile[] {
-  if (from === SCHEMA_VERSION) return files;
+  if (READABLE.has(from)) return files;
   throw new Error(
     `This bundle was exported from schema version ${from} and Acervo now uses version ${SCHEMA_VERSION}. `
     + "Convert its YAML files to the current shape and import it again."
@@ -277,6 +351,7 @@ function unwrap(files: BundleFile[]): BundleFile[] {
 function isWordFile(path: string): boolean {
   if (RESERVED.includes(path)) return false;
   if (path.startsWith(`${MARKDOWN_DIRECTORY}/`)) return false;
+  if (path.startsWith(`${MEDIA_DIRECTORY}/`)) return false;
   if (!/\.ya?ml$/i.test(path)) return false;
   return path.split("/").length <= 2;
 }
@@ -401,26 +476,34 @@ const DISCONNECTED = "not connected to the server";
  */
 export function remintIds(draft: ArticleDraft): ArticleDraft {
   const minted = new Map<string, string>();
-  draft.attestations.forEach((attestation) => {
-    if (attestation.id) minted.set(attestation.id, newId());
-  });
+  const mint = (id: string | null) => {
+    if (id) minted.set(id, newId());
+  };
+  draft.attestations.forEach((attestation) => mint(attestation.id));
+  draft.senses.forEach((sense) => sense.examples.forEach((example) => mint(example.id)));
+  // A reference to an id this file never stated cannot be honoured, so it becomes none rather than
+  // pointing at whatever happens to hold that id in the destination account.
+  const remap = (id: string | null) => (id ? minted.get(id) ?? null : null);
+
+  const stripped = stripIds(draft);
   return {
-    ...stripIds(draft),
+    ...stripped,
     attestations: draft.attestations.map((attestation) => ({
       ...attestation,
-      id: attestation.id ? minted.get(attestation.id)! : null
+      id: remap(attestation.id)
     })),
-    senses: draft.senses.map((sense) => ({
+    senses: draft.senses.map((sense, index) => ({
       ...sense,
       id: null,
       examples: sense.examples.map((example) => ({
         ...example,
-        id: null,
-        sourceAttestationId: example.sourceAttestationId
-          ? minted.get(example.sourceAttestationId) ?? null
-          : null
+        id: remap(example.id),
+        sourceAttestationId: remap(example.sourceAttestationId)
       })),
-      images: sense.images.map((image) => ({ ...image, id: null }))
+      images: stripped.senses[index].images.map((image) => ({
+        ...image,
+        exampleId: remap(image.exampleId)
+      }))
     }))
   };
 }

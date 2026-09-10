@@ -112,6 +112,33 @@ model_selection = Table(
     Index("idx_model_selection_owner", "owner", unique=True),
 )
 
+# How this owner wants sense images drawn. Server state for the same reason `model_selection` is:
+# the drawing happens on the server, so unlike the editor's wrapping preference this cannot live on
+# the device. Never replicated, no `revision`/`deleted`/`edited_by`, and the unique index is safe for
+# `sync_state`'s reason — this row never syncs, so it cannot be a constraint two offline devices
+# each satisfy on their own.
+#
+# **No row means "use the deployment default"**, exactly as with `model_selection`, so nothing
+# creates one eagerly — see `repository/image_settings.py`.
+image_settings = Table(
+    "image_settings",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    # Whether the unattended sweep may spend money while nobody is watching. It deliberately does
+    # not gate the buttons: you pressed those, so you meant them.
+    Column("sweep_enabled", Boolean, nullable=False, default=True),
+    # The styles switched **off**, never the ones switched on. A set of switched-on ids left the
+    # online dictionary sources permanently silent when one was added later; a style added to
+    # `config/image-styles.yaml` must be on by default, and only this direction gives that.
+    Column("styles_off", JSON, nullable=False, default=list),
+    # Present each style with a few of its example subjects, sampled per word, which pushes the
+    # writer toward styles it would otherwise pass over. `StyleTable.hints()` on or off.
+    Column("boost_variety", Boolean, nullable=False, default=True),
+    Column("edited_at", String(24), nullable=False),
+    Index("idx_image_settings_owner", "owner", unique=True),
+)
+
 # The languages this owner studies, and how they want each presented. Replicated like any other
 # record and deliberately without a unique index on `language`: uniqueness is forbidden on a
 # replicated collection, because it is exactly the constraint two offline devices can each satisfy on
@@ -249,6 +276,18 @@ image_prompts = Table(
     Column("prompt_version", String(128), nullable=False),
     Column("image_ref", String(500), nullable=False, default=""),
     Column("image_model_id", String(240), nullable=False, default=""),
+    # Which sentence the picture illustrates. Not a cascade, for the reason `source_attestation`
+    # above is not one: deleting the example must not delete the picture drawn from it.
+    Column("example", String(15), ForeignKey("examples.id"), nullable=True),
+    # Why an undrawn row is undrawn. Without these three, `image_ref = ""` meant both "briefed, not
+    # yet drawn" and "drawing was refused", so a sweep defined as "which senses lack a picture"
+    # retried a permanently blocked sense forever.
+    Column("attempts", Integer, nullable=False, default=0),
+    Column("failure_reason", String(500), nullable=False, default=""),
+    # The owner has ruled on this sense. Deliberately not a tombstone: `image_prompt_id` is derived
+    # from `sense`, so a tombstoned row is invisible to the sweep, which re-briefs the sense and
+    # mints the same id — tombstoning does not prevent regeneration, it guarantees a collision.
+    Column("suppressed", Boolean, nullable=False, default=False),
     *_sync_fields(),
     Index("idx_image_prompts_owner_revision", "owner", "revision"),
     Index("idx_image_prompts_owner_lexeme", "owner", "lexeme"),

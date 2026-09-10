@@ -123,17 +123,36 @@ export interface Example extends SyncFields, OwnedFields {
   approved: boolean;
 }
 
+/**
+ * One sense's picture, and everything about how it came to exist or failed to.
+ *
+ * The state a picture is in is derived from these fields rather than named by a status:
+ * `imageRef` set is *ready*; empty with no attempts is *briefed, not yet drawn*; empty with a
+ * `failureReason` is *failed*; and `suppressed` is the owner having ruled on it. A status column
+ * would be a fifth thing to keep in step with the four facts that already say all of this.
+ *
+ * `suppressed` is deliberately not a tombstone. An image prompt's id is derived from its `senseId`,
+ * so a tombstoned row is invisible to the sweep, which re-briefs the sense and mints the same id —
+ * tombstoning does not prevent regeneration, it guarantees a collision.
+ */
 export interface ImagePrompt extends SyncFields, OwnedFields {
   id: string;
   lexemeId: string;
   senseId: string | null;
+  /** The example the scene was built from, so the article can put the picture under it. */
+  exampleId: string | null;
+  /** The scene brief. Empty on a picture the owner attached, and on one the writer refused. */
   prompt: string;
   styleId: string;
   seed: number;
   modelId: string;
   promptVersion: string;
   imageRef: string | null;
+  /** Absent on a picture the owner supplied — provenance modelled, never a flag. */
   imageModelId: string | null;
+  attempts: number;
+  failureReason: string | null;
+  suppressed: boolean;
 }
 
 export interface StudyState extends SyncFields, OwnedFields {
@@ -314,6 +333,7 @@ export function validateGraph(graph: VocabularyGraph): void {
     attestations.set(record.id, record);
   });
 
+  const examples = new Map<string, Example>();
   graph.examples.forEach((record) => {
     remember(record);
     const sense = senses.get(record.senseId);
@@ -345,6 +365,7 @@ export function validateGraph(graph: VocabularyGraph): void {
       invariant(record.translation.includes(record.matchedTranslationForm), "The matched translation form must occur in the translation.");
     }
     invariant(typeof record.approved === "boolean", "Example approval is invalid.");
+    examples.set(record.id, record);
   });
 
   graph.imagePrompts.forEach((record) => {
@@ -358,11 +379,26 @@ export function validateGraph(graph: VocabularyGraph): void {
       invariant(sense?.lexemeId === record.lexemeId, "Image prompt sense belongs to another lexeme.");
       invariant(sense.ownerId === record.ownerId, "Image prompt and sense must have the same owner.");
     }
-    invariant(record.prompt.trim() && record.styleId.trim() && record.modelId.trim() && record.promptVersion.trim(), "Image prompt fields are required.");
+    optionalString(record.exampleId, "Image prompt example id");
+    if (record.exampleId) {
+      const example = examples.get(record.exampleId);
+      invariant(example?.senseId === record.senseId, "Image prompt example belongs to another sense.");
+      invariant(example.ownerId === record.ownerId, "Image prompt and example must have the same owner.");
+    }
+    // A brief is three fields or none of them: without the style and the version there is no way to
+    // rebuild the prompt that was actually sent, so half a brief reproduces nothing.
+    if (record.prompt.trim()) {
+      invariant(record.styleId.trim() && record.promptVersion.trim(), "An image brief must name its style and prompt version.");
+    }
     invariant(Number.isSafeInteger(record.seed) && record.seed >= 0 && record.seed <= 2147483647, "Image prompt seed is invalid.");
+    invariant(Number.isSafeInteger(record.attempts) && record.attempts >= 0, "Image prompt attempt count is invalid.");
+    invariant(typeof record.suppressed === "boolean", "Image prompt suppression is invalid.");
+    optionalString(record.failureReason, "Image failure reason");
     optionalString(record.imageRef, "Rendered image reference");
     optionalString(record.imageModelId, "Rendering model id");
-    invariant(Boolean(record.imageRef) === Boolean(record.imageModelId), "A rendered image and its rendering model must be supplied together.");
+    // One direction only. A rendering model with nothing rendered is nonsense; a rendered image
+    // with no model is a picture the owner attached themselves.
+    invariant(!record.imageModelId || Boolean(record.imageRef), "A rendering model without a rendered image is not a record of anything.");
   });
 
   graph.studyStates.forEach((record) => {

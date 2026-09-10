@@ -6,23 +6,26 @@ article, that style variety is pedagogical, that a master is 1024×1024 WebP, an
 no image is complete. What was missing was *what the picture is of*, *how the prompt is written*,
 and *where the work runs first*. That is this document.
 
-Status: **Phase A is complete and Phase B's machinery is built.** 2,285 images sit in
-`output/images/` and `output/images-en/`. `generate_images.py publish` writes a verified run into the
-graph and fans the files out into the media directory, which `GET /api/acervo/media/{path}` now
-serves behind auth.
+Status: **In the product.** Pictures are drawn on the server, from the interface and from a sweep,
+and shown in the article. `src/acervo/images/` is the pipeline — a brief writer and a renderer,
+standing alone on `src/acervo/models/` so that a route and a batch job can share it;
+`src/acervo/services/images.py` binds it to Acervo; `src/acervo/api/routes/images.py` is the five
+routes; `src/acervo/jobs/images/sweep.py` is the unattended half.
 
-**What has not happened is publishing *those* 2,285 images, and they cannot be published as they
-stand.** Their `senseId`s were read from the pre-port database. The vocabulary has since been
-exported and re-imported, and `transfer.ts` mints fresh ids on import — a bundle carries no sense
-ids at all — so every `senseId` in those run directories now names a sense nobody holds. Because
-`image_prompt_id` is *derived from* `senseId`, all 2,285 filenames are wrong for the current database
-too. `verify` cannot see this: a run directory is internally consistent either way, and it will keep
-reporting "safe to import". `publish` does see it, refuses the whole run, and says which records are
-stranded.
+**What has not happened is landing the 2,285 pictures drawn on the laptop**, and the reason is an
+accident of history rather than anything about the design. Their `senseId`s were read from the
+pre-port database. The vocabulary has since been exported and re-imported, and `transfer.ts` mints
+fresh ids on import — a bundle carries no sense ids at all — so every `senseId` in those run
+directories names a sense nobody holds. Because `image_prompt_id` is *derived from* `senseId`, all
+2,285 filenames are wrong for the current database too. `verify` cannot see this: a run directory is
+internally consistent either way, and it will keep reporting "safe to import". `publish` does see
+it, refuses the whole run, and says which records are stranded.
 
-Landing them therefore needs a matching step first, keyed on something that survived the round trip —
-headword, sense order, definition — after which every id, filename and `imageRef` is re-derived. That
-is a data task with its own decisions, not part of the pipeline. §10 records the phases; the prompt
+`scripts/rekey_image_runs.py` is the matching step, keyed on what survived the round trip — language,
+headword, and the sense's order within the word, all three of which the run records carry — after
+which every id, filename and `imageRef` is re-derived. It writes a new run directory and never edits
+the one it read, and it refuses a word it cannot match rather than guessing, because a picture landing
+on the wrong sense is worse than a missing one. It is a throwaway with no second use; the prompt
 iteration that produced the images is in `experiments/sense-images/`.
 
 ---
@@ -161,24 +164,44 @@ is not true and the record says so rather than implying otherwise. Resolution is
 fact: Vertex takes an aspect ratio and its own size name, so the row carries
 `params.image.imageConfig` and declares `size: "fixed"`.
 
-### The gap that is now closed: recording a failure
+### The gap that is now closed: what an undrawn record means
 
-`imageRef: null` used to mean both "written, not yet drawn" and "drawing was refused or failed", so
-a sweep defined as *"which senses lack an image"* retried a permanently blocked sense forever. Two
-fields close it and both are written today:
+`imageRef: null` used to mean three things at once — "written, not yet drawn", "drawing was refused",
+and "the owner does not want one here" — so a sweep defined as *"which senses lack a picture"*
+retried a permanently blocked sense forever and could not be told to stop. Three columns close it,
+and every other state derives from them rather than being named:
 
 | Field | Type | Notes |
 |---|---|---|
-| `attempts` | int | Drawing attempts made. The sweep skips a row past a threshold. |
-| `failureReason` | string? | Last refusal or error, in the provider's words. Null on success. |
+| `attempts` | int | Render calls spent. Past a threshold the sweep leaves the row alone. |
+| `failureReason` | string? | The last refusal, in the provider's words. Null on success. |
+| `suppressed` | bool | The owner has ruled on this sense. Nothing ever regenerates it. |
 
-A provider that looks at the prompt and declines is terminal and marks the record `blocked`; one
-that is rate limited or down is not, and the next pair in the chain answers instead. A refused
-*credential* is neither: the run stops, because falling through to another provider would hide a
-mistake and spend somebody else's allowance on it.
+*ready* = `imageRef` set · *pending* = empty with no attempts · *failed* = empty with a reason ·
+*terminal* = failed at or past `MAX_ATTEMPTS`, which lives in `services/images.py` and not in the
+record. That split is what keeps `attempts` a count: the row says what happened, the threshold says
+what to do about it, and only the first of those is data.
 
-> **These fields require `--reset-database`, which destroys the database.** They exist in the run
-> directory now; landing them in the graph waits on §10.
+> ### DECISION
+> **`suppressed` is not a tombstone, and could not be.**
+>
+> An image prompt's id is *derived* from its `senseId`. A tombstoned row is invisible to the sweep,
+> which re-briefs the sense and mints **the same id** — so tombstoning does not prevent
+> regeneration, it guarantees a collision at a higher revision. The row has to stay, visible, saying
+> the owner ruled on this sense.
+>
+> The same derivation is what makes two engines safe with no coordination whatsoever: the interface
+> and the sweep converge on one row, and whichever arrives second finds the work done or is refused
+> as stale.
+
+A provider that looks at the prompt and declines is terminal for that wording: `attempts`
+increments, `failureReason` records what it said, and it is deliberately **not** suppressed —
+a different brief may well pass, which is what the edit-and-draw flow is for. A writer refusal *is*
+suppressed, because that is a judgement about the sense rather than about a wording, and it becomes
+a row with no brief so the sweep can see it at all. A rate limit is neither: nothing is recorded
+against the sense, because an allowance running out says nothing about it and must not spend one of
+its retries. A refused *credential* stops the run, since falling through would hide a mistake and
+spend somebody else's allowance on it.
 
 ### Where the images already drawn will land
 
@@ -186,14 +209,15 @@ There are roughly 2,285 pictures in `output/images/` and `output/images-en/`, an
 they cannot be published as they stand: their `senseId`s name senses nobody holds any more, and
 `image_prompt_id` is derived from `senseId`, so every filename is wrong too.
 
-Landing them is a data task with its own script, not part of this pipeline, and this is only its
-target. An imported image writes exactly the fields in the table above. The matching step must key
-on something that survived the export and re-import — headword, then sense order, then the
-definition — after which every id, filename and `imageRef` is re-derived from the *current*
-`senseId`. `imageModelId` records the Vertex model that actually drew each one, which is a fact
-about the past and is not re-derived from whatever the chain says today. `verify` cannot detect the
-mismatch, because a run directory is internally consistent either way; `publish` can, and refuses
-the whole run rather than writing half of it.
+Landing them is `scripts/rekey_image_runs.py`, a throwaway outside the pipeline. It keys on what
+survived the export and re-import — language, headword and the sense's *order* within the word — and
+uses the definition as a **check** on that key rather than as part of it, because a picture landing
+on the wrong sense of the right word is the quiet failure worth spending a comparison on. All 2,286
+records carry those four fields and no two of them collide, so the key resolves for every one.
+`imageModelId` records the Vertex model that actually drew each one, which is a fact about the past
+and is not re-derived from whatever the chain says today. `verify` cannot detect the mismatch,
+because a run directory is internally consistent either way; `publish` can, and refuses the whole
+run rather than writing half of it.
 
 ---
 
@@ -213,62 +237,78 @@ roughly the size of a photo in a feed, and they should be worth looking at.
 
 | id | Label | mono |
 |---|---|---|
-| `cinematic-photoreal` | Cinematic photograph | |
-| `golden-hour` | Golden-hour photography | |
-| `oil-painting` | Oil on canvas | |
-| `baroque-chiaroscuro` | Baroque chiaroscuro | |
-| `watercolour-storybook` | Watercolour storybook | |
-| `gouache-poster` | Mid-century gouache poster | |
-| `art-nouveau` | Art nouveau | |
-| `ukiyo-e` | Japanese woodblock | |
-| `anime-cel` | Anime cel | |
+| `cinematic-photoreal` | Cinematic photograph |  |
+| `golden-hour` | Golden-hour photography |  |
+| `oil-painting` | Oil on canvas |  |
+| `baroque-chiaroscuro` | Baroque chiaroscuro |  |
+| `watercolour-storybook` | Watercolour storybook |  |
+| `gouache-poster` | Mid-century gouache poster |  |
+| `art-nouveau` | Art nouveau |  |
+| `ukiyo-e` | Japanese woodblock |  |
+| `anime-cel` | Anime cel |  |
 | `manga-panel` | Manga panel | ✓ |
-| `comic-book` | Comic-book ink and halftone | |
-| `pixar-3d` | 3D animated feature | |
-| `claymation` | Stop-motion clay | |
-| `papercraft-diorama` | Cut-paper diorama | |
-| `retro-futurism` | 1970s sci-fi paperback | |
+| `comic-book` | Comic-book ink and halftone |  |
+| `pixar-3d` | 3D animated feature |  |
+| `claymation` | Stop-motion clay |  |
+| `papercraft-diorama` | Cut-paper diorama |  |
+| `retro-futurism` | Retro-futurism |  |
 | `film-noir` | Film noir | ✓ |
-| `surrealism` | Surrealist dream logic | |
-| `vintage-botanical` | 19th-century engraved plate | |
-| `constructivist-poster` | Constructivist poster | |
-| `neon-cyberpunk` | Neon night, cyberpunk | |
-| `pixel-art` | 16-bit pixel art | |
+| `surrealism` | Surrealist dream logic |  |
+| `vintage-botanical` | 19th-century engraved plate |  |
+| `constructivist-poster` | Constructivist poster |  |
+| `neon-cyberpunk` | Neon night |  |
+| `pixel-art` | 16-bit pixel art |  |
 | `charcoal-sketch` | Charcoal on toned paper | ✓ |
-| `stained-glass` | Stained glass | |
-| `folk-naive` | Naïve folk painting | |
+| `folk-naive` | Naïve folk painting |  |
 
-Twenty-four, and the file is meant to be edited. Each `brief` is a full sentence of art direction,
+Twenty-three, and the file is meant to be edited. `stained-glass` was one of them until round 1,
+where leaded glass kept dragging every scene into a church; removing a style is editing the file,
+which is the point of it being a file. Each `brief` is a full sentence of art direction,
 not a label — `oil-painting` becomes *"thick impasto oil on canvas, visible brushwork, deep varnish
 tones, old-master lighting"*.
 
 > ### DECISION
-> **Sample three styles per sense, ranked, and let the prompt writer pick one of the three. It may
-> not invent a fourth.**
+> **Offer the writer every style the owner has left switched on, and let it pick. It may not invent
+> one that is not on the menu.**
 >
 > **Because** a real style sometimes cannot express a real meaning — `vintage-botanical` has nothing
-> to say about *bitterness*, and forcing it produces the bad image. Giving the writer an escape
-> hatch costs one sentence of instruction. Letting it *invent* a style, though, breaks the record:
-> an invented style has no id, so `styleId` stops naming anything and the look is not reproducible.
-> Instead the writer must return an id from its own menu, and the parser rejects the reply if it
-> does not — an off-menu style is an error, not a nudge.
+> to say about *bitterness*, and forcing it produces the bad image. The writer needs room to pass
+> over a style that cannot carry the sense. Letting it *invent* one, though, breaks the record: an
+> invented style has no id, so `styleId` stops naming anything and the look is not reproducible.
+> The writer must return an id from its own menu, and `parse_reply` rejects the reply if it does
+> not — an off-menu style is an error, not a nudge.
 
-The fallback slot is a *role*, not a fixed style. It happens to be filled by `cinematic-photoreal`
-only because photorealism is the one register that can carry any meaning at all: an abstraction, a
-a thing you can photograph, a joke, a threat. It is the least likely to be the reason a picture fails.
-Nothing else about it is special, and it is not privileged in the sampling — it is one of
-twenty-four with the same weight, so it will not dominate the deck. If a menu of three happens not
-to include it, the writer picks the best of the three it has, which is the normal case.
+This replaces the sampled three-style menu, which round 1 abandoned, and the reason is worth keeping
+because it is the opposite of what it looks like. With a menu of three the style is **assigned, not
+chosen**: the scene gets written to fit whatever arrived at random, and the writer argues with a dice
+roll instead of reading the sense. It shows up in the numbers — `baroque-chiaroscuro` drew three of
+that round's fourteen images and *three of its seven rejections*, because a period style drags the
+scene into its period and an architectural one into its architecture, neither of which the sentence
+asked for. Random assignment buys variety at the cost of meaning, which is the wrong trade for the
+only thing the picture is for.
 
-Sampling is weighted random without replacement, seeded from `senseId`, so re-running the sweep
-proposes the same menu and the whole stage is idempotent. Within one lexeme the writer is told not
-to pick the same style twice.
+Round 2 then found what the short menu had been hiding: **position bias**. Offered the table in file
+order, the writer read the first row, `cinematic-photoreal`, as the default. The fix was not to
+shorten the menu again but to turn it — `StyleTable.offer(rotate=lexemeId)` rotates by a stable
+amount derived from the lexeme, which removes the anchor without taking the choice away and stays
+idempotent on a re-run. Within one lexeme the writer is told not to pick the same style twice.
+
+`cinematic-photoreal` still has a role, but it is no longer a reserved slot: photorealism is the one
+register that can carry any meaning at all — an abstraction, a thing you can photograph, a joke, a
+threat — so it is where the writer lands when nothing else suits. The template says so in as many
+words, and it carries the same weight as every other row.
 
 ### What the owner controls
 
 Two settings, and deliberately not a third. Rounds 1–7 tried weights, a sampled three-style menu, and
 per-style applicability hints; what survived is that the owner should say *which styles exist for
 them* and *how adventurously to choose among them*, and nothing finer.
+
+Both map onto parameters the code already takes, which is why the settings screen adds no mechanism:
+a style switched off is a weight of zero in `StyleTable.offer(weights)`, and *boost variety* is
+`StyleTable.hints()` on or off. They are stored as the **off** list rather than the on list, for the
+reason the dictionary switches record — a set of switched-*on* ids leaves anything added later
+permanently silent, so a style added to `config/image-styles.yaml` must be on by default.
 
 | Control | Shape | Default |
 |---|---|---|
@@ -286,8 +326,9 @@ interesting of two good options, and the switch exists because the distinction i
 of taste rather than of correctness.
 
 **These are per owner, and therefore server state.** Generation runs on the server, so unlike the
-editor's wrapping preference they cannot live on the device. For the local phase they live in the
-run's config file; where they live in the product is §11.
+editor's wrapping preference they cannot live on the device. They live in `image_settings`, an
+owner-scoped table that is never replicated — the same shape and the same three-state doctrine as
+`model_selection`, where **no row means "follow the deployment default"** rather than meaning a gap.
 
 ---
 
@@ -367,21 +408,35 @@ list thumbnail.
 Path shape: `images/<lexemeId>/<imagePromptId>.webp`. Content-addressed by the record that owns it,
 so a regeneration overwrites in place and nothing accumulates orphans.
 
-Two consequences to note now and handle in the display phase:
+Two consequences, both now handled:
 
-- **The route needs auth, so `<img src>` cannot fetch it directly.** The client will need to fetch
-  with the token and hand the element a blob URL — exactly what the dictionary reader already does.
-- **Offline-first reads apply to images too.** The natural home is a third IndexedDB database
-  alongside `dictionaryStore.ts`, holding whole files as Blobs, deliberately separate from the
-  replica so neither wipe touches the other. Not in the replica: per-record overhead and a wipe on
-  account change are both wrong for megabytes of pictures.
+- **The route needs auth, so `<img src>` cannot fetch it directly.** `web/src/media.ts` fetches with
+  the token and hands the element a blob URL — exactly what the dictionary reader already does.
+  `LexemeArticle.tsx` used to put `imageRef` straight in a `src`, which is why it had never once
+  displayed a picture.
+- **Offline-first reads apply to pictures too.** `web/src/mediaStore.ts` is a **third** IndexedDB
+  database alongside `dictionaryStore.ts`, holding whole files as Blobs and deliberately separate
+  from the replica so neither wipe touches the other. Not in the replica: per-record overhead and a
+  wipe on account change are both wrong for megabytes of pictures.
+- **The server's media volume is read-write**, unlike the dictionaries beside it. That asymmetry
+  used to be one fact and is now two: a dictionary is compiled only by the worker, so the server has
+  no reason to hold a pen, while a picture is drawn by whichever of the two was asked and the file
+  and the row naming it must be written by the same party.
 
-**The transfer bundle carries the reference, not the bytes.** `imagePrompts` round-trip through the
-YAML projection already, so `prompt`, `styleId`, `seed` and `imageRef` survive an export/import; the
-WebP files do not. That is the right call — a bundle should stay a text archive you can read — and
-it means the media directory is a separate backup concern under §17, alongside PocketBase's data
-directory. Images are regenerable by design; the briefs that produced them are what must not be lost,
-and those are in the bundle.
+**The transfer bundle carries the reference by default, and the bytes when asked.** `imagePrompts`
+round-trip through the YAML projection, so `prompt`, `styleId` and `seed` survive an export/import.
+`imageRef` and `imageModelId` deliberately do **not**: they are facts about the server that drew the
+picture, and `imageRef` embeds a lexeme id that will not exist after import — keeping it imported a
+live-looking reference to a file nobody has.
+
+The bytes are an opt-in `media/<language>/<slug>-<n>.webp` directory, **export-only**, exactly as the
+Obsidian mirror under `markdown/` already is: `isWordFile` excludes it and `readBundle` ignores it,
+so the import path grows no second writer. Named after the word file so the two pair by eye, and
+suffixed by sense order rather than by prompt id, because a bundle carries no ids a person can use.
+It defaults to off — a bundle should stay a text archive you can read, pictures are regenerable by
+design, and the briefs that produced them are in the word file either way. It is also the one export
+that is not offline-capable, which the panel says plainly; `transfer.ts` names the pictures and
+`TransferPanel.tsx` fetches them, because this module holds no transport and should not grow one.
 
 ---
 
@@ -390,54 +445,139 @@ and those are in the bundle.
 ### It is a sweep, not a watcher
 
 You described a background service that monitors for new articles. The design's existing rule is
-sharper and I would keep it: **derive the work from a query, never from a queue.** "Which senses
-have no live `imagePrompt` with an `imageRef`" is a `SELECT`, so a lost event cannot lose work, the
-worker being down for a week costs latency and nothing else, and every run is idempotent by
-construction.
+sharper and it is the one that was kept: **derive the work from a query, never from a queue.** "Which
+senses have no live `imagePrompt` with an `imageRef`" is a `SELECT` on the server and a filter on the
+replica, so a lost event cannot lose work, the worker being down for a week costs latency and nothing
+else, and every run is idempotent by construction.
 
-It is also not a service in this repo's sense. `acervo-worker` is one-shot by design —
-`profiles: ["tools"]`, no ports, `docker compose run --rm`, exit — and AGENTS.md is explicit that a
-new job is a new *subcommand*, never a new compose service. So:
-
-```bash
-docker compose -f deploy/acervo/compose.yaml --profile tools run --rm acervo-worker \
-  images sweep --owner learner@account.example.com --limit 200
-```
-
-driven by cron or a timer. Nothing runs continuously.
-
-### But not first
+### Two engines, one pipeline, and the unit is one model call
 
 > ### DECISION
-> **Phase A runs entirely on the laptop, reads the graph read-only, and writes only to the local
+> **The interface enriches the word you just saved. Everything else is the server's sweep. Neither
+> is a queue, and they need no coordination at all.**
+>
+> **Because** the two have different jobs. You are looking at the word you just added, and a picture
+> in a minute beats a picture in five — so `web/src/enrichment.ts` asks for it straight away, one
+> unit at a time, with the progress in view. But 2,285 senses at roughly one picture a minute is
+> thirty-three hours, and a backgrounded browser tab freezes its timers and drops its fetches within
+> minutes; a client loop cannot be the answer to "give my whole vocabulary pictures", and it is not
+> at a tablet at all when the ingest script adds a word. That is `acervo-worker images sweep`, on a
+> timer.
+>
+> What makes this safe rather than a race is that **an image prompt's id is derived from its
+> `senseId`**. Both engines compute the same id for the same sense, so the second one to arrive finds
+> the work already done or is refused as a stale revision. There is nothing to lock and nothing to
+> claim.
+>
+> And do **not** try to share a rate limit between them. `acervo.models.pacing` is process-local and
+> the worker is a different container; the chain's fall-through plus a backoff on exactly the three
+> transient codes *is* the pacing. A cross-process limiter would be inventing a problem.
+
+The interface deliberately does **not** sweep the backlog on open, and the server deliberately runs
+no daemon. Both were considered and both are worse: a tablet working through two thousand pictures
+is not a tablet you can read on, and an in-process background task dies on every deploy, makes the
+process that must stay responsive into the orchestrator, and needs a job store — which would be
+owner-scoped domain data and would therefore replicate to every device, so a phone would carry a
+queue of work it can never do. That is the question `docs/plans/nas-to-mac-job-queue.md` declined to
+answer, and this design leaves it unasked.
+
+### The routes
+
+Five, and the unit of every one is a single model call:
+
+| Route | Calls | |
+|---|---|---|
+| `POST /images/lexemes/{id}/brief` | 1 text | Every sense of the word at once — §03's batching. |
+| `POST /images/prompts/{id}/render` | 1 image | `prompt`/`styleId` in the body is edit-and-draw. |
+| `PUT /images/prompts/{id}/picture` | none | The owner's own file, as a raw body. |
+| `DELETE /images/prompts/{id}` | none | Removes the picture and sets `suppressed`. |
+| `GET`/`PUT /images/settings` | none | The two settings, plus the style table. |
+
+> ### DECISION
+> **Per-unit routes, not one route per word.**
+>
+> Not symmetry with capture. `web/src/api.ts` gives an ordinary request 15 seconds and capture 300,
+> while a picture takes 30–60 and providers meter roughly one a minute. A route that briefed and drew
+> a whole word would outlive even the capture timeout while the server carried on drawing — the
+> client would retry, and the picture would be drawn, and billed, twice.
+
+And three *named* actions rather than one that guesses, because they cost different things: **draw
+again** is one image call with a fresh seed, **write a new brief** is one text call that rewrites
+every sense of the word, and **edit and draw** costs no text call at all.
+
+> ### DECISION
+> **The server writes the file *and* the row, and this is not an exception to the capture rule.**
+>
+> Only headless transports ask `/capture` to apply, because a draft is a proposal for a person to
+> review and the interface is where reviewing happens. Drawing has no review step and produces a
+> binary the client cannot make and cannot put in the graph. So the routes write both — through
+> `repository.graph.merge_graph`, the route every other writer uses, with the same validation and
+> the same revision allocation. Calling it an exception would invite a second one.
+
+### Where the pipeline lives, and why not under `jobs/`
+
+`src/acervo/images/` stands alone on `src/acervo/models/` and imports nothing else of Acervo's — not
+settings, not the graph, not `acervo.errors`. `tests/unit/server/test_layering.py` enforces it, the
+same way it enforces the provider package's independence.
+
+That independence is the point rather than tidiness: **`api/` may not import `acervo.jobs`**, so
+while these modules lived under `jobs/images/` a picture could not be drawn from a route without
+either breaking that rule or writing the pipeline twice. Routing through `services/` to reach
+`jobs/` would have been worse — the request path would then transitively import `acervo.client`, the
+HTTP client of its own service, keeping the letter of the test while breaking exactly what it exists
+to protect.
+
+What stayed in `jobs/images/` is what is genuinely batch: the run directory that *is* the queue,
+the concurrent runner, `verify`, `publish`, and `sweep.py`. The sweep calls the service's **own
+routes** through `acervo.client`, which is the layering rule — a job's write path is a client's
+write path — and earns its keep twice here: the model call, the media write and the graph write all
+happen in one place, the sweep cannot become a second pipeline because it has no way to draw a
+picture itself, and the worker image needs neither LiteLLM nor Pillow.
+
+`ArticleView` is the reuse that matters. `build_articles` takes the `changes` mapping the graph route
+speaks, so the sweep feeds it a `client.pull_graph()` payload and `services/images.py` feeds it rows
+the repository projected — one view model, two feeders, the same idea `articleFor` and
+`articleFromDraft` already use on the client.
+
+### Phase A ran on the laptop, and that was right
+
+> ### DECISION
+> **Phase A ran entirely on the laptop, read the graph read-only, and wrote only to the local
 > filesystem.**
 >
-> Three reasons, in order. The prompt is going to need several rounds of iteration and a local run
-> is a thirty-second edit-and-see loop. The Vertex credits expire in a week or two and the server
-> path is at least a schema change and a deploy away. And the ingestion of ~1,500 real entries is
-> running right now against that same server — a read-only local script cannot disturb it.
+> Three reasons, in order. The prompt needed eight rounds of iteration and a local run is a
+> thirty-second edit-and-see loop. The Vertex credits expired on a calendar and the server path was
+> a schema change and a deploy away. And the ingestion of ~1,500 real entries was running against
+> that same server — a read-only local script could not disturb it.
 
-Phase A is not throwaway. **It mints the real 15-character `imagePrompt` ids offline**, which is
-what the ID rule already requires of every client, and writes the files under their final names. The
-import in Phase B is then a plain write of rows that already know their ids, pointing at files
-already sitting at their final paths.
-
----
+Phase A was not throwaway. **It minted the real 15-character `imagePrompt` ids offline**, which is
+what the ID rule already requires of every client, and wrote the files under their final names — so
+publishing is a plain write of rows that already know their ids. What it could not anticipate is that
+the database those ids were derived from would be rebuilt; hence §00 and the re-keying step.
 
 ## §10 · Phases
 
-| | What | Touches the server | Blocked by |
+| | What | Touches the server | State |
 |---|---|---|---|
-| **A** | Local generation: brief writer, style sampling, renderer, contact sheet | reads only | **done** |
-| **B** | Import of a run into the graph and the media directory | writes | **built**; the existing runs need re-keying first |
-| **C** | `acervo-worker images sweep`, plus `attempts` / `failureReason` | writes, schema | **a transfer bundle of the real vocabulary must exist first** |
-| **D** | Article view: render, regenerate, delete; the two style settings | | C |
-| **E** | Anki cards, one per example, with the sense image | | D and the Anki generator, which does not exist |
+| **A** | Local generation: brief writer, style offering, renderer, contact sheet | reads only | **done** |
+| **B** | Import of a run into the graph and the media directory | writes | **done** |
+| **C** | The schema: `example`, `attempts`, `failureReason`, `suppressed` | writes, schema | **built; needs the reset** |
+| **D** | The routes, the sweep, the article, Settings ▸ Pictures, the export | writes | **built; needs C deployed** |
+| **E** | Landing the ~2,285 pictures drawn on the laptop | writes | **needs D deployed** |
+| **F** | Anki cards, one per example, with the sense image | | E, and the Anki generator, which does not exist |
 
-The ordering constraint that matters: **C requires `--reset-database`, which destroys the
-database.** The sequence is finish ingesting → export a bundle → verify the bundle imports into a
-throwaway database → only then change the schema. Nothing about the image work justifies risking
-1,500 hand-collected entries.
+Two ordering constraints, and both are about not losing work.
+
+**C requires `--reset-database`, which destroys the database**, and there are ~1,500 hand-collected
+entries in it. The sequence is: finish ingesting → export a bundle at schema version 6 → verify that
+bundle imports into a throwaway database → only then deploy the schema change, recreate the account,
+and re-import. `upgradeBundle` accepts version 6 as well as 7 for exactly this reason: nothing in a
+word file changed, so version 7 is a version being *accepted* rather than text being rewritten,
+which is the cheapest form that exception takes and the one to prefer.
+
+**E has to come last**, and this is the one that is easy to get wrong. The reset destroys the graph
+and the bundle carries no sense ids, so re-keying against anything but the *final* database is work
+thrown away — the ids would be re-derived from senses that the re-import replaces.
 
 ### Phase A, as built
 
@@ -453,13 +593,16 @@ image per minute the project's quota allows. Eight review rounds found and fixed
 failures in the brief-writing prompt; the reject rate went from 7 in 14 to 0 in 50, and the image
 model never changed.
 
-Two operational lessons worth carrying into Phase C, because both cost real work:
+Two operational lessons, both of which cost real work and both of which are now built in:
 
 - **Pace every model, not just the expensive one.** The image path had a gate and twelve retries; the
   brief path had neither, and one text-quota refusal silently lost every sense of that lexeme — ten
-  senses in a thirteen-hour run.
-- **A terminal outcome must be recorded as terminal.** A writer refusal and a provider block are
-  both finished, and both were being re-planned on every subsequent run until they were marked.
+  senses in a thirteen-hour run. `BriefWriter.write` waits out an exhausted chain for this reason,
+  and the sweep retries on exactly the three transient codes.
+- **A terminal outcome must be recorded as terminal.** A writer refusal and a provider block are both
+  finished, and both were being re-planned on every subsequent run until they were marked. That is
+  what `attempts`, `failureReason` and `suppressed` are for, and it is the difference between a sweep
+  that converges and one that spends every night on the same handful of senses.
 
 ### Phase A, concretely
 
@@ -468,10 +611,11 @@ New code, all in new files, so nothing the running ingestion imports is touched:
 ```
 config/image-styles.yaml              the style table
 prompts/acervo_image_brief.txt        the brief-writing template
-src/acervo/jobs/images/styles.py      load the table, weighted sample seeded from senseId
-src/acervo/jobs/images/brief.py       build the LLM request, parse and validate the reply
-src/acervo/jobs/images/compose.py     brief + style + template -> the image prompt
-src/acervo/jobs/images/render.py      one (provider, model) pair -> WebP master
+src/acervo/images/styles.py           load the table, offer every style the owner left on
+src/acervo/images/article.py          the article view the brief writer is given
+src/acervo/images/brief.py            build the LLM request, parse and validate the reply
+src/acervo/images/compose.py          brief + style + template -> the image prompt
+src/acervo/images/render.py           one (provider, model) pair -> WebP master
 src/acervo/jobs/images/run.py         plan, execute concurrently, checkpoint
 src/acervo/jobs/images/verify.py      is this run directory safe to publish?
 src/acervo/jobs/images/publish.py     the rows into the graph, the files into the media directory
@@ -536,28 +680,34 @@ together again.
 
 ## §11 · Settled, and still open
 
-Settled in review:
+Settled:
 
 | | |
 |---|---|
-| What `prompt` stores | The brief. It is also what the article view will show. |
-| Scope | Every sense, no cap. **Spanish first**, English after. |
-| Style menu | Three, sampled by owner weight, writer picks one, may not invent. |
-| Style weights | Equal for now; they move into owner state when Settings grows the screen. |
-| Aspect | 1:1. Square suits the article fold and an Anki card, and it is the model's native output. |
-| `attempts` / `failureReason` | Agreed, and deferred to Phase C with the rest of the schema change. |
-| Backups of the masters | The owner copies them off periodically. Out of scope here. |
-| Budget | Uncapped. The credits expire; spending them is the point. |
+| What `prompt` stores | The brief. It is what the article shows and what the dialog lets you edit; the full prompt is composed on demand and never stored. |
+| Scope | Every sense, no cap. |
+| Style menu | Every style the owner left on, rotated per lexeme; the writer picks and may not invent. |
+| The two settings | `image_settings`, an owner-scoped table never replicated — `model_selection`'s shape and its three-state doctrine, where no row means "follow the deployment default". |
+| Style storage | The switched-**off** ids, never the on ones, so a style added later arrives on. |
+| Aspect | 1:1. Square suits the article and an Anki card, and it is the model's native output. |
+| `attempts` / `failureReason` / `suppressed` | Columns, with the threshold in code. Derived states, no status enum. |
+| Where a picture is shown | Under the sentence it was drawn from, which is what `exampleId` records; under the sense when it names none. |
+| Backups of the masters | An opt-in `media/` directory in the export, plus whatever backs up the media volume. |
+| Budget | Uncapped. |
 
 Still open:
 
-1. **Where do the two style settings live?** (§05 — the style switches and "boost variety".) Needs
-   server-side owner state, and there is no preferences collection. Decide before Phase D, not
-   before then.
-2. **Does the quota increase come through?** Everything about the schedule depends on it (§10).
-3. **Do the abstract senses actually work as mnemonics?** The briefs read well and the pictures are
+1. **How pictures are presented.** Deliberately deferred and deliberately plain for now: a square
+   frame under the sentence, a fold with the brief and the model, and the controls. Several things
+   about the article are due to change at once, and picture layout should be decided with them
+   rather than ahead of them. What is built is the infrastructure that work will sit on — which is
+   why every state occupies the same box, so nothing reflows when a picture arrives.
+2. **Do the abstract senses actually work as mnemonics?** The briefs read well and the pictures are
    beautiful; whether a glowing knot of woven threads recalls *abundar en un tema* specifically, or
-   merely recalls "convergence", is a judgement only review answers. This is what the ladder is for.
+   merely recalls "convergence", is a judgement only use answers.
+3. **Audio.** `docs/plans/pronunciation-and-audio.md` inherits all of this — the media directory, the
+   route, the sweep's shape, and `EnrichmentJob`'s `kind`, which is `"image" | "audio"` from the
+   start so that audio is a caller rather than a rewrite.
 
 ## §12 · What this deliberately does not do
 
@@ -571,5 +721,11 @@ Still open:
 - No automatic quality gate. The benchmark report sketches one — luminance and colour variance,
   entropy, edge density, dominant-colour share — and Gemini's 0/12 rejection rate does not justify
   building it. It becomes interesting when generation moves to a less reliable model.
-- No regenerate-with-a-note flow. Phase D.
-- No Anki anything. Phase E, and the Anki generator does not exist yet.
+- **No lexeme-level card images.** `Article.images` is still derived by `selectors.ts` and still
+  rendered nowhere, because §02 decided nothing generates it. Left alone rather than removed: it is
+  the shape a card image would take if one is ever wanted.
+- **No job store, and not for want of asking.** What is outstanding is a query — `imageWork` on the
+  client, `plan` on the server — and what is in flight is the session's own business, gone when the
+  tab closes, at which point the sweep finishes the word. See §09.
+- **No cross-process rate limiter** between the interface and the sweep. See §09.
+- No Anki anything, and the Anki generator does not exist yet.

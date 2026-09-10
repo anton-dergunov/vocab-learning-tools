@@ -26,7 +26,7 @@ function fileOf(bytes: Uint8Array, name: string): File {
 
 function bundleFile(name = "acervo-all-2026-09-01.zip"): File {
   const archive: Record<string, Uint8Array> = {};
-  exportBundle(testGraph(), { language: "all", markdown: false }, AT)
+  exportBundle(testGraph(), { language: "all", markdown: false, images: false }, AT)
     .forEach((file) => { archive[file.path] = strToU8(file.text); });
   return fileOf(zipSync(archive), name);
 }

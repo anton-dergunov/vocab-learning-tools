@@ -9,7 +9,7 @@ import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase,
 import { newDeviceId, newId, nowInstant } from "./ids";
 import type { ArticleDraft, ImagePromptDraft } from "./yaml";
 
-export const LOCAL_SCHEMA_VERSION = 6;
+export const LOCAL_SCHEMA_VERSION = 7;
 
 const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
@@ -358,14 +358,28 @@ export class LocalAcervoRepository implements AcervoRepository {
       return existing;
     };
 
+    /**
+     * A document says what a picture is *of*; it does not say what the server did about it.
+     *
+     * `attempts`, `failureReason` and `suppressed` are deliberately not named below. The
+     * `...existing` spread carries them through untouched, so editing a word's YAML cannot
+     * un-suppress a picture you deleted or zero an attempt counter — and the defaults after it are
+     * reached only when there is no existing row. The cast is why this has to be deliberate: it
+     * silences the compiler, so a field left out here is a field silently reset rather than a
+     * build error.
+     */
     const prompt = (image: ImagePromptDraft, senseId: string | null): string => {
       const existing = claim(this.graph.imagePrompts, image.id, (record) => record.lexemeId === lexemeId);
       const id = image.id ?? newId();
       change("imagePrompts", {
+        attempts: 0,
+        failureReason: null,
+        suppressed: false,
         ...existing,
         id,
         lexemeId,
         senseId,
+        exampleId: image.exampleId,
         prompt: image.prompt,
         styleId: image.styleId,
         seed: image.seed,

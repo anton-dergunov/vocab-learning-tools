@@ -10,6 +10,8 @@ Four rules, each of which stops being true silently:
   same validation and same revision allocation as a phone. One writer, one pipeline.
 - Nothing that ships imports `research/`.
 - `models/` stands alone: it is a provider package, not an Acervo one.
+- `images/` stands alone too, on `models/` and nothing else, which is what lets a route and a
+  batch sweep share one pipeline instead of writing it twice.
 - `repository/` stores; it does not know the catalogue.
 """
 
@@ -90,6 +92,7 @@ def test_the_rules_below_are_not_vacuous():
         for path in modules_under("jobs") + modules_under("consumers")
     ), "no batch module goes through acervo.client, so nothing exercises the write-path rule"
     assert modules_under("models"), "no models/ modules: the stands-alone rule would be vacuous"
+    assert modules_under("images"), "no images/ modules: the stands-alone rule would be vacuous"
     assert modules_under("repository"), "no repository/ modules"
 
 
@@ -148,6 +151,25 @@ def test_the_provider_package_stands_alone(path):
     """
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the provider package stands alone"
+
+
+@pytest.mark.parametrize("path", modules_under("images"), ids=identify)
+def test_the_image_pipeline_stands_on_the_provider_package_and_nothing_else(path):
+    """An article in, a brief and a WebP out — and no idea whose article it is.
+
+    This is why the pipeline is not under `jobs/`. `api/` may not import `acervo.jobs`, so while
+    these modules lived there a picture could not be drawn from a route without either breaking that
+    rule or writing the pipeline a second time. Standing alone is what lets `services/images.py` and
+    `jobs/images/sweep.py` be two callers of one thing.
+
+    `acervo.errors` is on the list for the same reason it is on `models/`'s: this package decides
+    what a picture is, `services/images.py` decides what Acervo's wire calls a failure to draw one,
+    and a single `ApiError` import here would merge them in code that still worked.
+    """
+    # `STANDS_ALONE` deliberately does not list `acervo.models`, which is the one Acervo package
+    # both of these may import.
+    offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
+    assert not offenders, f"{path} imports {sorted(offenders)}; the image pipeline stands alone"
 
 
 @pytest.mark.parametrize("path", modules_under("repository"), ids=identify)

@@ -7,14 +7,18 @@ real service with a throwaway database the same tests are about the thing that s
 
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from litellm import ModelResponse
 from fastapi.testclient import TestClient
+
+from acervo.domain import SCHEMA_VERSION
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 PROMPTS = REPOSITORY_ROOT / "prompts"
@@ -41,6 +45,9 @@ class ModelStub:
 
     resolution: dict[str, Any] = field(default_factory=dict)
     article: dict[str, Any] = field(default_factory=dict)
+    # The image brief writer, which is told apart by carrying no system message at all: capture
+    # puts its instructions there and the brief writer puts the whole template in the user turn.
+    brief: dict[str, Any] = field(default_factory=dict)
     calls: list[dict[str, Any]] = field(default_factory=list)
     error: BaseException | None = None
     errors: list[BaseException | None] = field(default_factory=list)
@@ -66,8 +73,13 @@ class ModelStub:
         if self.text is not None:
             body = self.text
         else:
-            system = next(m["content"] for m in kwargs["messages"] if m["role"] == "system")
-            body = _dumped(self.resolution if "You decide what a learner" in system else self.article)
+            system = next(
+                (m["content"] for m in kwargs["messages"] if m["role"] == "system"), None
+            )
+            if system is None:
+                body = _dumped(self.brief)
+            else:
+                body = _dumped(self.resolution if "You decide what a learner" in system else self.article)
         answered = ModelResponse(
             model=kwargs["model"],
             choices=[
@@ -83,6 +95,35 @@ def _dumped(answer: Any) -> str:
     return answer if isinstance(answer, str) else json.dumps(answer)
 
 
+# A real 2x2 PNG, so the encoder in `images/render.py` runs for real rather than being stubbed past.
+# The WebP that comes out is what the media route then serves, which is the thing worth asserting.
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAF0lEQVQIHWNkYPjPgAQYkdhgJlSAgQEA"
+    "HqQCAQ0QzWkAAAAASUVORK5CYII="
+)
+
+
+@dataclass
+class ImageStub:
+    """Stands in for LiteLLM's image call, and records what it was asked.
+
+    Failures are raised as real LiteLLM exceptions for `ModelStub`'s reason: `models.call.classify`
+    is what decides whether a refusal is terminal or whether the chain moves on, and a stub that
+    raised Acervo's own exception would skip the function the tests exist to pin.
+    """
+
+    data: bytes | None = PNG
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    error: BaseException | None = None
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        encoded = base64.b64encode(self.data).decode() if self.data else None
+        return SimpleNamespace(data=[SimpleNamespace(b64_json=encoded)], usage=None)
+
+
 @dataclass
 class Server:
     client: TestClient
@@ -90,6 +131,7 @@ class Server:
     token: str
     settings: Any
     model: ModelStub
+    painter: ImageStub
     downloads: Path
     dictionaries: Path
     media: Path
@@ -117,15 +159,32 @@ class Server:
     def post(self, path: str, body: dict, **kwargs):
         return self.client.post(f"/api/acervo/v1{path}", headers=self.auth, json=body, **kwargs)
 
+    def put(self, path: str, body: dict, **kwargs):
+        return self.client.put(f"/api/acervo/v1{path}", headers=self.auth, json=body, **kwargs)
+
+    def delete(self, path: str, **kwargs):
+        """The device rides in a header, because a DELETE has no body to put it in."""
+        headers = {**self.auth, "X-Acervo-Device": DEVICE, **kwargs.pop("headers", {})}
+        return self.client.delete(f"/api/acervo/v1{path}", headers=headers, **kwargs)
+
+    def send(self, path: str, payload: bytes, **kwargs):
+        """A raw body, which is how the owner's own picture arrives — no multipart, one part."""
+        return self.client.put(
+            f"/api/acervo/v1{path}",
+            headers={**self.auth, "Content-Type": "image/png", "X-Acervo-Device": DEVICE},
+            content=payload,
+            **kwargs,
+        )
+
     def push(self, changes: dict, device: str = DEVICE):
-        return self.post("/graph", {"schemaVersion": 6, "deviceId": device, "changes": changes})
+        return self.post("/graph", {"schemaVersion": SCHEMA_VERSION, "deviceId": device, "changes": changes})
 
     def pull(self, since: int = 0):
-        return self.get(f"/graph?schemaVersion=6&since={since}")
+        return self.get(f"/graph?schemaVersion={SCHEMA_VERSION}&since={since}")
 
     def capture(self, **overrides):
         body = {
-            "schemaVersion": 6,
+            "schemaVersion": SCHEMA_VERSION,
             "deviceId": DEVICE,
             "mode": "single",
             "text": "some text",
@@ -186,7 +245,9 @@ def server(tmp_path, monkeypatch) -> Server:
 
     prompts.forget_prompts()
     model = ModelStub()
+    painter = ImageStub()
     monkeypatch.setattr(model_call, "completion", model)
+    monkeypatch.setattr(model_call, "image_generation", painter)
 
     app = create_app()
     client = TestClient(app, raise_server_exceptions=False)
@@ -201,6 +262,7 @@ def server(tmp_path, monkeypatch) -> Server:
         token=signed_in["token"],
         settings=app.state.settings,
         model=model,
+        painter=painter,
         downloads=downloads,
         dictionaries=dictionaries,
         media=media,
@@ -224,6 +286,7 @@ def other(server) -> Server:
         token=signed_in["token"],
         settings=server.settings,
         model=server.model,
+        painter=server.painter,
         downloads=server.downloads,
         dictionaries=server.dictionaries,
         media=server.media,

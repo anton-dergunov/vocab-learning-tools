@@ -6,7 +6,7 @@ type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type LoginResponse = { token: string; user: { id: string; email: string } };
 
 /** Shared with the server hook. A mismatch stops synchronisation until the app is updated. */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 interface SyncEnvelope {
   schemaVersion: number;
@@ -64,6 +64,55 @@ export interface ModelProvider {
   notes: string | null;
 }
 
+/* Sense images. Owner-scoped server state and a picture the server draws, so like the provider
+   types above these do not go through `AcervoRepository` — but the *rows* they return are ordinary
+   `imagePrompts`, and they reach the replica the way everything else does, on the next sync pull. */
+
+/** One image prompt as the image routes answer, which is the stored row plus one derived field. */
+export interface ImagePromptRow {
+  id: string;
+  lexemeId: string;
+  senseId: string | null;
+  exampleId: string | null;
+  prompt: string;
+  styleId: string;
+  seed: number;
+  modelId: string;
+  promptVersion: string;
+  imageRef: string | null;
+  imageModelId: string | null;
+  attempts: number;
+  failureReason: string | null;
+  suppressed: boolean;
+  /**
+   * The whole prompt the image model is sent — brief, style and frame. Composed on the server and
+   * deliberately never stored: the brief, the style id and the version reproduce it exactly, and
+   * storing it too would hold the same text twice. Null where there is no brief to compose from.
+   */
+  composedPrompt: string | null;
+}
+
+export interface ImageStyle {
+  id: string;
+  label: string;
+  /** A style with no colour to spend, which the writer avoids where the meaning needs colour. */
+  mono: boolean;
+}
+
+export interface ImageSettings {
+  /** Whether the unattended sweep may spend money while nobody is watching. */
+  sweepEnabled: boolean;
+  /** The styles switched **off**, never the ones switched on — so a new style arrives on. */
+  stylesOff: string[];
+  boostVariety: boolean;
+  /** False means nothing has been chosen and the deployment default is in force. */
+  chosen: boolean;
+  maxAttempts: number;
+  styles: ImageStyle[];
+  /** Whether this server is credentialed to draw at all, so a screen can say so plainly. */
+  available: boolean;
+}
+
 export interface ProviderCredential {
   kind: "key" | "file" | "none";
   variable: string | null;
@@ -105,9 +154,15 @@ export type ResetResponse = SyncEnvelope & { deleted: number };
 const API_PATH = "/api/acervo/v1";
 /** Compiled dictionaries are served as plain files, outside the JSON API and outside `pb_public`. */
 const DICTIONARY_PATH = "/api/acervo/dictionaries";
+const MEDIA_PATH = "/api/acervo/media";
 const REQUEST_TIMEOUT = 15_000;
 /** Capture is two model calls deep, so the sync timeout would abort a request that is working. */
 const CAPTURE_TIMEOUT = 300_000;
+// Model calls, so nowhere near the 15 seconds an ordinary read gets. A brief is one text call over
+// a chain that waits out a rate limit; an image is 30-60 seconds and providers meter roughly one a
+// minute, so a pause on the way is normal rather than a fault.
+const BRIEF_TIMEOUT = 180_000;
+const RENDER_TIMEOUT = 300_000;
 
 /* ── capture ────────────────────────────────────────────────────────────
    The ingest endpoint of design §05. What comes back is a *proposal*: a draft the interface renders
@@ -230,11 +285,11 @@ class ApiClient {
   configure(session: StoredSession | null) { this.session = session; }
   current() { return this.session; }
 
-  /** Where an artifact file lives, for the direct reads that do not go through the JSON envelope. */
-  fileUrl(path: string): string {
+  /** Where a file lives, for the direct reads that do not go through the JSON envelope. */
+  fileUrl(root: string, path: string): string {
     const baseUrl = this.session?.baseUrl;
     if (!baseUrl) throw new AcervoApiError("Configure the Acervo server first.", 0, "not_configured");
-    return `${baseUrl}${DICTIONARY_PATH}${path}`;
+    return `${baseUrl}${root}${path}`;
   }
 
   authHeaders(): Record<string, string> {
@@ -249,7 +304,9 @@ class ApiClient {
     if (!baseUrl) throw new AcervoApiError("Configure the Acervo server first.", 0, "not_configured");
     const headers = new Headers(options.headers);
     headers.set("Accept", "application/json");
-    if (options.body) headers.set("Content-Type", "application/json");
+    // Only where the caller has not said otherwise: a picture is sent as a raw body with its own
+    // type, and overwriting that would hand the server a WebP labelled as JSON.
+    if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (!anonymous && this.session?.token) headers.set("Authorization", `Bearer ${this.session.token}`);
     let response: Response;
     try { response = await fetch(`${baseUrl}${API_PATH}${path}`, { ...options, headers, cache: "no-store", signal: timeoutSignal(timeout) }); }
@@ -373,6 +430,66 @@ export const backendSession = {
     });
   },
 
+  imageSettings(): Promise<ImageSettings> {
+    return client.call<ImageSettings>("/images/settings");
+  },
+  saveImageSettings(changes: Partial<Pick<ImageSettings, "sweepEnabled" | "stylesOff" | "boostVariety">>): Promise<ImageSettings> {
+    return client.call<ImageSettings>("/images/settings", {
+      method: "PUT", body: JSON.stringify(changes)
+    });
+  },
+
+  /** One text call covering every sense of the word. Its own timeout — a model call, not a read. */
+  briefLexeme(lexemeId: string, deviceId: string): Promise<{ lexemeId: string; imagePrompts: ImagePromptRow[] }> {
+    return client.call<{ lexemeId: string; imagePrompts: ImagePromptRow[] }>(
+      `/images/lexemes/${encodeURIComponent(lexemeId)}/brief`,
+      { method: "POST", body: JSON.stringify({ deviceId }) },
+      false,
+      BRIEF_TIMEOUT
+    );
+  },
+
+  /**
+   * One image call. `prompt` and `styleId` are edit-and-draw and cost no text call; without them
+   * the stored brief is drawn again with a fresh seed.
+   */
+  renderImage(promptId: string, deviceId: string, overrides: { prompt?: string; styleId?: string } = {}): Promise<ImagePromptRow> {
+    return client.call<ImagePromptRow>(
+      `/images/prompts/${encodeURIComponent(promptId)}/render`,
+      { method: "POST", body: JSON.stringify({ deviceId, ...overrides }) },
+      false,
+      RENDER_TIMEOUT
+    );
+  },
+
+  /**
+   * The owner's own file, as a raw body — one part, so no multipart and no dependency for it.
+   *
+   * Keyed by the sense rather than by a prompt: a picture you supply may be the first thing that
+   * sense ever gets, and the prompt id is derived from the sense, so the server finds or mints the
+   * row at the id it was always going to have.
+   */
+  async attachImage(senseId: string, deviceId: string, file: Blob): Promise<ImagePromptRow> {
+    return client.call<ImagePromptRow>(
+      `/images/senses/${encodeURIComponent(senseId)}/picture`,
+      {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream", "X-Acervo-Device": deviceId }
+      },
+      false,
+      RENDER_TIMEOUT
+    );
+  },
+
+  /** Remove the picture and rule the sense out. Not a tombstone — see `services/images.py`. */
+  removeImage(promptId: string, deviceId: string): Promise<ImagePromptRow> {
+    return client.call<ImagePromptRow>(
+      `/images/prompts/${encodeURIComponent(promptId)}`,
+      { method: "DELETE", headers: { "X-Acervo-Device": deviceId } }
+    );
+  },
+
   listDictionaries(): Promise<{ dictionaries: RemoteDictionary[] }> {
     return client.call<{ dictionaries: RemoteDictionary[] }>("/dictionaries");
   },
@@ -382,9 +499,20 @@ export const backendSession = {
     return client.call<OnlineLookup>(`/dictionaries/online/${encodeURIComponent(source)}?${query}`);
   },
   dictionaryFileUrl(id: string, extension: "dict" | "idx" | "json"): string {
-    return client.fileUrl(`/${encodeURIComponent(id)}.${extension}`);
+    return client.fileUrl(DICTIONARY_PATH, `/${encodeURIComponent(id)}.${extension}`);
   },
   dictionaryHeaders(): Record<string, string> {
+    return client.authHeaders();
+  },
+
+  /**
+   * Where a picture lives. The route is behind bearer auth, so this URL cannot go in an `<img src>`
+   * — `media.ts` fetches it with the token and hands the element a blob URL instead.
+   */
+  mediaFileUrl(reference: string): string {
+    return client.fileUrl(MEDIA_PATH, `/${reference.split("/").map(encodeURIComponent).join("/")}`);
+  },
+  mediaHeaders(): Record<string, string> {
     return client.authHeaders();
   },
 

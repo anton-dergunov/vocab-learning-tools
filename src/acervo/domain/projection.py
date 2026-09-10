@@ -254,6 +254,10 @@ def _project_image_prompt(row: Mapping[str, Any]) -> dict[str, Any]:
         "promptVersion": row["prompt_version"],
         "imageRef": text_or_none(row["image_ref"]),
         "imageModelId": text_or_none(row["image_model_id"]),
+        "exampleId": text_or_none(row["example"]),
+        "attempts": to_int(row["attempts"]),
+        "failureReason": text_or_none(row["failure_reason"]),
+        "suppressed": to_bool(row["suppressed"]),
     }
 
 
@@ -268,6 +272,11 @@ def _assign_image_prompt(value: Mapping[str, Any]) -> dict[str, Any]:
         "prompt_version": trimmed(value.get("promptVersion")),
         "image_ref": trimmed(value.get("imageRef")),
         "image_model_id": trimmed(value.get("imageModelId")),
+        # An empty string here would be a foreign key of "", which trips the constraint.
+        "example": trimmed(value.get("exampleId")) or None,
+        "attempts": to_int(value.get("attempts")),
+        "failure_reason": trimmed(value.get("failureReason")),
+        "suppressed": to_bool(value.get("suppressed")),
     }
 
 

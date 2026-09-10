@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import jwt
 
 from conftest import OWNER_EMAIL, OWNER_PASSWORD
+from acervo.domain import SCHEMA_VERSION
 
 
 def test_signing_in_returns_a_token_and_the_account_it_belongs_to(server):
@@ -36,11 +37,11 @@ def test_both_header_shapes_are_accepted(server):
     """The interface and two scripts send `Bearer`; the integration helper sends a bare token, and
     `HTTPBearer` answers a bare one with a 403 no client handles."""
     bearer = server.client.get(
-        "/api/acervo/v1/graph?schemaVersion=6&since=0",
+        f"/api/acervo/v1/graph?schemaVersion={SCHEMA_VERSION}&since=0",
         headers={"Authorization": f"Bearer {server.token}"},
     )
     bare = server.client.get(
-        "/api/acervo/v1/graph?schemaVersion=6&since=0", headers={"Authorization": server.token}
+        f"/api/acervo/v1/graph?schemaVersion={SCHEMA_VERSION}&since=0", headers={"Authorization": server.token}
     )
     assert bearer.status_code == bare.status_code == 200
 
@@ -78,7 +79,7 @@ def test_changing_a_password_signs_out_every_outstanding_token(server):
 def test_a_token_signed_with_another_secret_is_refused(server):
     forged = jwt.encode({"sub": server.owner, "exp": 9999999999}, "a-secret-that-is-not-this-servers-secret", algorithm="HS256")
     answer = server.client.get(
-        "/api/acervo/v1/graph?schemaVersion=6&since=0", headers={"Authorization": forged}
+        f"/api/acervo/v1/graph?schemaVersion={SCHEMA_VERSION}&since=0", headers={"Authorization": forged}
     )
     assert answer.status_code == 401
 

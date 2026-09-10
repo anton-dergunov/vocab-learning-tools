@@ -9,10 +9,11 @@ from __future__ import annotations
 import pytest
 
 from graph_records import DEVICE, lexeme
+from acervo.domain import SCHEMA_VERSION
 
 
 def test_a_refusal_carries_a_code_and_a_message_the_owner_can_act_on(server):
-    answer = server.post("/graph/reset", {"schemaVersion": 6, "deviceId": DEVICE, "confirm": "yes"})
+    answer = server.post("/graph/reset", {"schemaVersion": SCHEMA_VERSION, "deviceId": DEVICE, "confirm": "yes"})
     assert answer.status_code == 400
     assert answer.json() == {
         "error": {
@@ -23,7 +24,7 @@ def test_a_refusal_carries_a_code_and_a_message_the_owner_can_act_on(server):
 
 
 def test_an_unsigned_request_is_401_and_an_unknown_route_is_404(server):
-    anonymous = server.client.get("/api/acervo/v1/graph?schemaVersion=6&since=0")
+    anonymous = server.client.get(f"/api/acervo/v1/graph?schemaVersion={SCHEMA_VERSION}&since=0")
     assert anonymous.status_code == 401
     assert anonymous.json()["error"]["code"] == "unauthenticated"
 

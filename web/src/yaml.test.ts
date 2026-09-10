@@ -90,6 +90,19 @@ describe("reading YAML back", () => {
     expect(problemsOf(document)[0]).toContain("document.emojis: is not a field Acervo knows");
   });
 
+  it("keeps a picture's state out of the document, so editing YAML cannot rewrite it", () => {
+    // `attempts`, `failureReason` and `suppressed` are facts about what the server did, like
+    // `revision` — not things a document can assert. They are carried through a save by the
+    // repository's `...existing` spread instead, which is what stops editing a word's YAML from
+    // un-suppressing a picture you deleted or zeroing an attempt counter.
+    const document = yamlFor(articleFor(testGraph(), "lexemepicar0001")!);
+    expect(document).not.toContain("attempts:");
+    expect(document).not.toContain("suppressed:");
+    expect(document).not.toContain("failureReason:");
+    expect(problemsOf(document.replace("styleId:", "suppressed: true\n        styleId:"))[0])
+      .toContain("is not a field Acervo knows");
+  });
+
   it("refuses an id that is not an Acervo id", () => {
     const document = yamlFor(articleFor(testGraph(), "lexemepicar0001")!)
       .replace("id: sensepicaritch0", "id: sense-2");

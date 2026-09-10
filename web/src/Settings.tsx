@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CaptureHealth } from "./api";
 import { TopicEditor, VocabularyEditor } from "./Configuration";
 import DictionaryPanel from "./DictionaryPanel";
+import ImagePanel from "./ImagePanel";
 import ModelPanel from "./ModelPanel";
 import { fetchMacRelease, type MacRelease } from "./macRelease";
 import { installUpdate, isNativeHost, shouldOfferMacApplication, type UpdateStage } from "./pwa";
@@ -15,7 +16,9 @@ import { editorPreferences, setEditorPreference, type EditorPreferences } from "
 /** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
 const CONFIRMATION = "DELETE";
 
-export type Page = "general" | "vocabularies" | "topics" | "models" | "dictionaries" | "editor" | "sync" | "data";
+export type Page =
+  | "general" | "vocabularies" | "topics" | "models" | "images" | "dictionaries" | "editor"
+  | "sync" | "data";
 
 export default function Settings({ update, email, status, snapshot, language, captureHealth, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
   update?: UpdateStage;
@@ -106,6 +109,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
     { id: "vocabularies", label: "Vocabularies" },
     { id: "topics", label: "Topics" },
     { id: "models", label: "Providers" },
+    { id: "images", label: "Pictures" },
     { id: "dictionaries", label: "Dictionaries" },
     { id: "editor", label: "Editor" },
     { id: "sync", label: "Sync" },
@@ -186,6 +190,8 @@ export default function Settings({ update, email, status, snapshot, language, ca
         </section>}
 
         {page === "models" && <ModelPanel onNotify={onNotify} />}
+
+        {page === "images" && <ImagePanel onNotify={onNotify} />}
 
         {page === "dictionaries" && <DictionaryPanel onNotify={onNotify} />}
 

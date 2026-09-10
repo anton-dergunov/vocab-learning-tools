@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AddView, { type AddTab, type CaptureSeed } from "./AddView";
-import { backendSession, type CaptureHealth, type CaptureRequest } from "./api";
+import type { ImagePrompt } from "./domain";
+import { backendSession, type CaptureHealth, type CaptureRequest, type ImageStyle } from "./api";
 import {
   forgetCachedLookups, hydrateGlosses, lookup as lookupDictionaries, searchDictionaries,
   type SearchTier
@@ -11,7 +12,7 @@ import {
   type ExternalEntry, type ExternalRow, type RawHit
 } from "./externalEntries";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
-import LexemeArticle from "./LexemeArticle";
+import LexemeArticle, { type PictureSlot } from "./LexemeArticle";
 import LexemeList, { type ExternalSearch } from "./LexemeList";
 import { languageOf } from "./languages";
 import {
@@ -21,15 +22,24 @@ import {
 } from "./pwa";
 import { repository, type ReplicaSnapshot } from "./repository";
 import {
-  articleFor, inboxCount, languageOptions, topicOptions, visibleRows,
-  type SortKey, type TopicSelection
+  articleFor, imageWork, inboxCount, languageOptions, topicOptions, visibleRows,
+  type ImageWork, type SortKey, type TopicSelection
 } from "./selectors";
 import Settings, { type Page as SettingsPage } from "./Settings";
+
+/** A stable empty result, so the memo does not hand a new object to every render before load. */
+const EMPTY_IMAGE_WORK: ImageWork = {
+  unbriefed: [], undrawn: [], failed: [], suppressed: [], ready: 0
+};
 import SignIn from "./SignIn";
 import { setSearchScope, useSearchScope, type SearchScope } from "./searchScope";
 import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
+import { enrichment } from "./enrichment";
+import { ImageDialog } from "./ImageDialog";
+import { clearPictures } from "./media";
 import { SyncChip } from "./SyncStatus";
+import { ActivityChip, ActivityPanel } from "./ActivityPanel";
 import { parseArticle, yamlFor, YamlProblems, type YamlProblem } from "./yaml";
 import "./styles.css";
 
@@ -203,6 +213,7 @@ export default function App() {
   useEffect(() => {
     backendSession.onUnauthorized(() => {
       syncEngine.stop();
+      enrichment.stop();
       void backendSession.reject().then(() => setSession(null));
     });
     return () => backendSession.onUnauthorized(null);
@@ -218,6 +229,10 @@ export default function App() {
       if (cancelled) return;
       setSnapshot(repository.snapshot());
       syncEngine.start();
+      // The engine deliberately does not sweep the backlog on open — that is the server's job, and
+      // a tablet working through two thousand pictures at one a minute is not one. `resume` only
+      // undoes a sign-out's stop.
+      enrichment.resume();
       await syncEngine.syncNow();
       // Extending the token happens once the vocabulary is already on screen, and signs the owner
       // out only if the server answers and rejects it.
@@ -253,6 +268,47 @@ export default function App() {
   useEffect(() => {
     document.title = article ? `${article.lexeme.headword} — Acervo` : "Acervo";
   }, [article]);
+
+  /* ── pictures ─────────────────────────────────────────────────────────
+     The article shows what the replica holds; the dialog is the only thing that changes a picture,
+     and it writes through the image routes. A write is followed by a pull, so the record the server
+     stored is what the article re-renders from rather than this component's optimism. */
+  const enrichmentStatus = useSyncExternalStore(enrichment.subscribe, enrichment.getStatus);
+  const [imageStyles, setImageStyles] = useState<ImageStyle[]>([]);
+  const [editingImage, setEditingImage] = useState<{ senseId: string; prompt: ImagePrompt | null } | null>(null);
+
+  /* The style list is needed only once a dialog opens, so it is fetched then rather than at start:
+     it is server state behind auth, and an offline session should reach the article regardless. */
+  useEffect(() => {
+    if (!editingImage || imageStyles.length) return;
+    void backendSession.imageSettings()
+      .then((settings) => setImageStyles(settings.styles))
+      .catch(() => notify("The style list could not be read from the server."));
+  }, [editingImage, imageStyles.length, notify]);
+
+  const [activity, setActivity] = useState(false);
+  /* Derived, never stored: "what is left" is a query against the replica, which is also how work
+     the server's sweep is doing shows up here with no job store to poll. */
+  const imageBacklog = useMemo(
+    () => (snapshot ? imageWork(snapshot) : EMPTY_IMAGE_WORK),
+    [snapshot]
+  );
+
+  const pictures = useMemo<PictureSlot | null>(() => {
+    if (!article || mode !== "read") return null;
+    return {
+      open: (senseId, prompt) => setEditingImage({ senseId, prompt }),
+      // Only what this device is doing right now. Work the server's sweep is doing shows as a
+      // sense that is still blank, and turns into a picture on the next pull — there is no job
+      // store to ask, and deliberately none to build.
+      busy: (senseId) => {
+        const active = enrichmentStatus.active;
+        if (!active || active.lexemeId !== article.lexeme.id) return false;
+        // A brief covers every sense at once, so all of them are working; a render names one.
+        return active.senseId === null || active.senseId === senseId;
+      }
+    };
+  }, [article, mode, enrichmentStatus.active]);
 
   /* ── searching the dictionaries ───────────────────────────────────────
      Three speeds, and the difference between them is what each one costs. A dictionary stored on
@@ -450,6 +506,9 @@ export default function App() {
     const id = await applyYaml(text);
     if (!id) return;
     setMode("read");
+    // A sense the edit added has no picture, and this is the moment to notice. Already-drawn senses
+    // cost one query and no call, so asking unconditionally is cheaper than deciding here.
+    enrichment.enqueue(id, repository.snapshot().lexemes.find((one) => one.id === id)?.headword ?? "");
     notify("Saved to the server");
   }
 
@@ -458,6 +517,11 @@ export default function App() {
     if (!id) return;
     setAddTab(null);
     openLexeme(id);
+    /* Pictures are the enrichment phase, deliberately not part of making the entry: the article is
+       readable the moment it is saved, and its pictures arrive behind it one at a time. Only the
+       word you just saved — the backlog and anything the ingest script added belong to
+       `acervo-worker images sweep`, which this must not duplicate. */
+    enrichment.enqueue(id, repository.snapshot().lexemes.find((one) => one.id === id)?.headword ?? "");
     notify("Added to your vocabulary");
   }
 
@@ -497,9 +561,13 @@ export default function App() {
 
   async function signOut() {
     syncEngine.stop();
+    // Stops after the unit in flight rather than mid-call: abandoning a picture the provider has
+    // already been paid for buys nothing, and the sweep would draw it again anyway.
+    enrichment.stop();
     // The next session may be a different account on a different server, so nothing an external
     // source answered under this one survives into it.
     forgetCachedLookups();
+    await clearPictures();
     await backendSession.logout();
     await repository.clear();
     setSnapshot(null);
@@ -567,6 +635,11 @@ export default function App() {
               app updates; sync status, signing out and deleting the vocabulary are operations on
               the vocabulary, which the host deliberately does not own — so they live here, and
               without this they were unreachable on macOS altogether. */}
+          <ActivityChip
+            status={enrichmentStatus}
+            outstanding={imageBacklog.unbriefed.length + imageBacklog.undrawn.length}
+            onOpen={() => setActivity(true)}
+          />
           <SyncChip status={syncStatus} onOpen={() => setSettings("general")} />
 
           <button
@@ -663,7 +736,7 @@ export default function App() {
                   onSort={setSort} onOpen={openLexeme}
                   external={externalSearch}
                 />
-              : mode === "read" ? <LexemeArticle article={article} onUnsupported={notify} />
+              : mode === "read" ? <LexemeArticle article={article} onUnsupported={notify} pictures={pictures} />
               // Editing is a composer above, so only reading and the read-only projection get here.
               : <Suspense fallback={<p className="empty">Loading the editor…</p>}>
                   <YamlView name={article.lexeme.headword} yaml={yamlFor(article)} />
@@ -684,6 +757,25 @@ export default function App() {
       onClose={() => { setSettings(null); setArmed(null); }}
       onNotify={notify}
       onChanged={() => setSnapshot(repository.snapshot())}
+    />}
+    {editingImage && article && <ImageDialog
+      prompt={editingImage.prompt}
+      headword={article.lexeme.headword}
+      styles={imageStyles}
+      deviceId={snapshot?.deviceId ?? ""}
+      lexemeId={article.lexeme.id}
+      senseId={editingImage.senseId}
+      onClose={() => setEditingImage(null)}
+      onChanged={() => {
+        // The row the server wrote is authoritative; pull it rather than patching the replica here.
+        void syncEngine.syncNow().then(() => setSnapshot(repository.snapshot()));
+      }}
+      onNotify={notify}
+    />}
+    {activity && <ActivityPanel
+      status={enrichmentStatus}
+      work={imageBacklog}
+      onClose={() => setActivity(false)}
     />}
     <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
   </>;

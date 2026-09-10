@@ -21,7 +21,13 @@ from acervo.db import tables
 from acervo.db.tables import TABLES
 from acervo.domain import validation
 from acervo.domain.ids import DEVICE_ID, is_instant, is_record_id, new_record_id, now_instant
-from acervo.domain.projection import COLLECTIONS, WORD_COLLECTIONS, Collection, projected
+from acervo.domain.projection import (
+    COLLECTION_BY_KEY,
+    COLLECTIONS,
+    WORD_COLLECTIONS,
+    Collection,
+    projected,
+)
 from acervo.errors import ApiError, RecordRefused
 from acervo.repository.session import reading, transaction
 from acervo.domain import SCHEMA_VERSION
@@ -337,6 +343,93 @@ def duplicate_lexemes(owner: str, language: str, headword: str, lemma: str) -> l
             }
             for row in rows
         ]
+
+
+def article_records(owner: str, lexeme_id: str) -> dict[str, list[dict[str, Any]]]:
+    """One word and everything hanging off it, in the wire shape `build_articles` reads.
+
+    The second feeder for `acervo.images.article`. The worker sweep builds its `ArticleView`s from a
+    `client.pull_graph()` payload; the request path has the database right here and a pull of the
+    whole graph to draw one picture would be absurd — so both produce the same `changes` mapping and
+    neither knows which it was given. One view model, two feeders, exactly as `articleFor` and
+    `articleFromDraft` work on the client.
+
+    Tombstones are included rather than filtered, because `live()` in that module is what drops
+    them and doing it twice in two places is how the two feeders would come to disagree.
+    """
+    wanted = {
+        "lexemes": tables.lexemes.c.id,
+        "senses": tables.senses.c.lexeme,
+        "attestations": tables.attestations.c.lexeme,
+        "imagePrompts": tables.image_prompts.c.lexeme,
+    }
+    changes: dict[str, list[dict[str, Any]]] = {collection.key: [] for collection in COLLECTIONS}
+    with reading() as connection:
+        for key, column in wanted.items():
+            collection = COLLECTION_BY_KEY[key]
+            rows = connection.execute(
+                select(collection.table).where(
+                    collection.table.c.owner == owner, column == lexeme_id
+                )
+            ).mappings()
+            changes[key] = [projected(collection, row) for row in rows]
+
+        # Examples hang off senses, so they are reached through the ids just read rather than by a
+        # join — which keeps this a query per collection and the shapes identical to a pull's.
+        sense_ids = [sense["id"] for sense in changes["senses"]]
+        if sense_ids:
+            collection = COLLECTION_BY_KEY["examples"]
+            rows = connection.execute(
+                select(collection.table).where(
+                    collection.table.c.owner == owner,
+                    collection.table.c.sense.in_(sense_ids),
+                )
+            ).mappings()
+            changes["examples"] = [projected(collection, row) for row in rows]
+
+        collection = COLLECTION_BY_KEY["vocabularies"]
+        rows = connection.execute(
+            select(collection.table).where(collection.table.c.owner == owner)
+        ).mappings()
+        changes["vocabularies"] = [projected(collection, row) for row in rows]
+    return changes
+
+
+def sense_record(owner: str, sense_id: str) -> dict[str, Any] | None:
+    """One live sense this owner holds, in the wire shape, or nothing.
+
+    Nothing covers "no such sense", "somebody else's" and "deleted" alike, for `image_prompt`'s
+    reason: telling them apart would answer whether an id exists in another account.
+    """
+    collection = COLLECTION_BY_KEY["senses"]
+    with reading() as connection:
+        row = connection.execute(
+            select(collection.table).where(
+                collection.table.c.id == sense_id,
+                collection.table.c.owner == owner,
+                collection.table.c.deleted.is_(False),
+            )
+        ).mappings().first()
+    return projected(collection, row) if row is not None else None
+
+
+def image_prompt(owner: str, prompt_id: str) -> dict[str, Any] | None:
+    """One image prompt this owner holds, in the wire shape, or nothing.
+
+    Nothing covers three cases the caller must not tell apart: no such row, a row belonging to
+    somebody else, and a tombstone. Distinguishing them would answer "does this id exist in another
+    account", which is not a question an owner-scoped route may answer.
+    """
+    collection = COLLECTION_BY_KEY["imagePrompts"]
+    with reading() as connection:
+        row = connection.execute(
+            select(collection.table).where(
+                collection.table.c.id == prompt_id,
+                collection.table.c.owner == owner,
+                collection.table.c.deleted.is_(False),
+            )
+        ).mappings().first()
+    return projected(collection, row) if row is not None else None
 
 
 def held_ids(owner: str) -> set[str]:

@@ -40,7 +40,10 @@ services:
       - "${ACERVO_SERVER_DATA:-acervo-server-data}:/var/lib/acervo/server"
       - "${ACERVO_DOWNLOADS:-acervo-downloads}:/var/lib/acervo/downloads:ro"
       - "${ACERVO_DICTIONARIES:-acervo-dictionaries}:/var/lib/acervo/dictionaries:ro"
-      - "${ACERVO_MEDIA:-acervo-media}:/var/lib/acervo/media:ro"
+      # Read-write, unlike the dictionaries beside it: the server draws sense images now, and the
+      # file and the row that names it have to be written by the same party. Dictionaries stay
+      # read-only because nothing but the worker ever compiles one.
+      - "${ACERVO_MEDIA:-acervo-media}:/var/lib/acervo/media"
       # Google will not authenticate from an environment variable: Vertex wants a credentials
       # file, and LiteLLM has no express-key path. The directory is mounted rather than the
       # file so the mount is valid whether or not one has been configured.

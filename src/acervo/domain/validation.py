@@ -49,8 +49,12 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
         "matched_translation_form": (False, 240),
     },
     "image_prompts": {
-        "prompt": (True, 10000), "style_id": (True, 120), "model_id": (True, 240),
-        "prompt_version": (True, 128), "image_ref": (False, 500), "image_model_id": (False, 240),
+        # `prompt` is optional because two legitimate rows have none: one the writer refused, which
+        # is a finished outcome recorded so nothing asks again, and one holding a picture the owner
+        # supplied themselves, which no brief produced.
+        "prompt": (False, 10000), "style_id": (False, 120), "model_id": (False, 240),
+        "prompt_version": (False, 128), "image_ref": (False, 500), "image_model_id": (False, 240),
+        "failure_reason": (False, 500),
     },
     "study_states": {"system": (True, 80)},
 }
@@ -72,7 +76,7 @@ NUMBER_RULES: dict[str, dict[str, tuple[float, float | None]]] = {
     "topics": {"topic_order": (0, None)},
     "senses": {"sense_order": (0, None)},
     "examples": {"video_start": (0, None)},
-    "image_prompts": {"seed": (0, 2147483647)},
+    "image_prompts": {"seed": (0, 2147483647), "attempts": (0, None)},
     "study_states": {
         "note_id": (0, None), "reps": (0, None), "lapses": (0, None),
         "stability": (0, None), "difficulty": (0, None), "retrievability": (0, 1),
@@ -254,8 +258,24 @@ def validate(name: str, row: Mapping[str, Any], lookup: Lookup) -> None:
             _same_owner(row, sense, "Image prompt sense")
             if sense.get("lexeme") != lexeme.get("id"):
                 refuse("Image prompt sense must belong to its lexeme.")
-        if bool(_text(row, "image_ref")) != bool(_text(row, "image_model_id")):
-            refuse("A rendered image and its rendering model must be provided together.")
+        example_id = _text(row, "example")
+        if example_id:
+            example = _related(lookup, "examples", example_id, "Image prompt example")
+            _same_owner(row, example, "Image prompt example")
+            # The second hop, exactly as for an example's source attestation: an example belonging
+            # to the right owner but the wrong sense would otherwise pass.
+            if sense_id and example.get("sense") != sense_id:
+                refuse("Image prompt example must belong to its sense.")
+        # A brief the writer wrote is three fields or none of them: `compose()` needs the style to
+        # build the prompt that was actually sent, and `prompt_version` is what says which template
+        # and style table produced it. Half a brief reproduces nothing.
+        if _text(row, "prompt") and not (_text(row, "style_id") and _text(row, "prompt_version")):
+            refuse("An image brief must name the style and the prompt version it was written for.")
+        # One direction, not both. A rendering model with nothing rendered is nonsense; a rendered
+        # image with no model is a picture the owner attached themselves, which is how provenance is
+        # modelled everywhere else here — an example the learner wrote carries no `model_id` either.
+        if _text(row, "image_model_id") and not _text(row, "image_ref"):
+            refuse("A rendering model without a rendered image is not a record of anything.")
         return
 
     if name == "study_states":

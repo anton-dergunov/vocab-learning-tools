@@ -87,7 +87,9 @@ generated examples, prompts, study statistics, and a Chinese reading.
 - `deploy/acervo/server/` — the image it ships in.
 - `src/acervo/client.py` — the one HTTP client against the API; every job and script goes through it.
 - `src/acervo/dictionaries/` — the external-dictionary compiler.
-- `src/acervo/jobs/images/` — the sense-image generation pipeline.
+- `src/acervo/images/` — the sense-image pipeline: a brief writer and a renderer. Stands alone
+  on `src/acervo/models/`, so a route and a batch sweep share it.
+- `src/acervo/jobs/images/` — the unattended half: the run directory, the sweep, the import.
 - `src/acervo/consumers/anki/` — headless Anki consumer infrastructure.
 - `research/` — benchmark tooling, outside the distribution and never imported by the service.
 - `macos/` — native host for the shared web interface.

@@ -2,8 +2,9 @@ import { Fragment } from "react";
 import type { Example, Gloss, ImagePrompt } from "./domain";
 import { formatClock, formatDay } from "./format";
 import { DictionaryFold } from "./ExternalArticle";
-import { CaretIcon, PlayIcon } from "./icons";
+import { PlayIcon } from "./icons";
 import type { Article, ArticleSense } from "./selectors";
+import { EmptySenseImage, SenseImage } from "./SenseImage";
 
 const POS_LABEL: Record<string, string> = {
   noun: "n.", verb: "v.", adj: "adj.", adv: "adv.", phrase: "phr.", idiom: "idiom", expression: "expr."
@@ -62,26 +63,30 @@ function ExampleBlock({ example, onUnsupported }: { example: Example; onUnsuppor
   </div>;
 }
 
-function ImageFold({ images }: { images: ImagePrompt[] }) {
-  const rendered = images.filter((image) => image.imageRef);
-  return <details className="fold">
-    <summary><span className="caret"><CaretIcon /></span><span className="label">Images · {images.length}</span></summary>
-    <div className="fold-body">
-      {rendered.length > 0 && <div className="thumbs">
-        {rendered.map((image) => <figure key={image.id} className="thumb" style={{ margin: 0 }}>
-          <img src={image.imageRef!} alt="" />
-          <figcaption className="cap"><span className="label">{image.styleId}</span></figcaption>
-        </figure>)}
-      </div>}
-      {images.map((image) => <p key={image.id} className="hint" style={{ marginTop: 11 }}>{image.prompt}</p>)}
-    </div>
-  </details>;
-}
-
-function SenseSection({ entry, index, onUnsupported }: {
-  entry: ArticleSense; index: number; onUnsupported(message: string): void;
+/**
+ * Where a picture goes: under the sentence it was drawn from, or under the sense when it names none.
+ *
+ * The record says which — `exampleId` is the anchor the brief writer chose — so the picture sits
+ * beside the thing it illustrates rather than in a fold at the bottom of the sense. A sense with no
+ * prompt row at all still shows a frame, so the article has one shape whether or not a word has been
+ * through the pipeline.
+ */
+function SenseSection({ entry, index, headword, pictures, onUnsupported }: {
+  entry: ArticleSense; index: number; headword: string;
+  pictures: PictureSlot | null;
+  onUnsupported(message: string): void;
 }) {
   const { sense, examples, images } = entry;
+  const anchored = new Map(images.filter((image) => image.exampleId).map((image) => [image.exampleId!, image]));
+  const loose = images.filter((image) => !image.exampleId);
+
+  const frame = (image: ImagePrompt) => pictures && <SenseImage
+    prompt={image}
+    headword={headword}
+    busy={pictures.busy(sense.id)}
+    onOpen={() => pictures.open(sense.id, image)}
+  />;
+
   return <section className="sec">
     <div className="rail-l"><div className="inner">
       <span className="num">{String(index + 1).padStart(2, "0")}</span>
@@ -90,8 +95,15 @@ function SenseSection({ entry, index, onUnsupported }: {
     <div className="body">
       <p className="sense-def">{sense.definition}</p>
       <div className="glosses">{sense.glosses.map((gloss) => <GlossLine key={gloss.lang} gloss={gloss} />)}</div>
-      {examples.map((example) => <ExampleBlock key={example.id} example={example} onUnsupported={onUnsupported} />)}
-      {images.length > 0 && <ImageFold images={images} />}
+      {examples.map((example) => <Fragment key={example.id}>
+        <ExampleBlock example={example} onUnsupported={onUnsupported} />
+        {anchored.has(example.id) && frame(anchored.get(example.id)!)}
+      </Fragment>)}
+      {loose.map((image) => <Fragment key={image.id}>{frame(image)}</Fragment>)}
+      {images.length === 0 && pictures && <EmptySenseImage
+        busy={pictures.busy(sense.id)}
+        onOpen={() => pictures.open(sense.id, null)}
+      />}
     </div>
   </section>;
 }
@@ -101,8 +113,26 @@ function SenseSection({ entry, index, onUnsupported }: {
  * and rev are facts about a stored record, and a generated entry under review has none of them yet.
  * Everything above it is identical, because a proposal and the entry it becomes are the same thing.
  */
-export default function LexemeArticle({ article, onUnsupported, meta = true }: {
+/**
+ * How a picture is reached and whether one is being drawn — both of which only the caller knows.
+ *
+ * Absent for an unsaved proposal: `articleFromDraft`'s placeholder ids are deliberately not valid
+ * record ids, so there is nothing a control could act on. The frames disappear rather than
+ * offering buttons that cannot work.
+ */
+export interface PictureSlot {
+  /**
+   * `senseId` is always the sense that was clicked, and `prompt` is null for one that has no row
+   * yet. Both are needed: a sense with no row still belongs to a word whose brief can be written,
+   * and the dialog has to know *which* sense's brief to show when it comes back.
+   */
+  open(senseId: string, prompt: ImagePrompt | null): void;
+  busy(senseId: string): boolean;
+}
+
+export default function LexemeArticle({ article, onUnsupported, meta = true, pictures = null }: {
   article: Article; onUnsupported(message: string): void; meta?: boolean;
+  pictures?: PictureSlot | null;
 }) {
   const { lexeme, topics, senses, attestations, study } = article;
   return <>
@@ -126,7 +156,14 @@ export default function LexemeArticle({ article, onUnsupported, meta = true }: {
     </div>
 
     {senses.map((entry, index) =>
-      <SenseSection key={entry.sense.id} entry={entry} index={index} onUnsupported={onUnsupported} />)}
+      <SenseSection
+        key={entry.sense.id}
+        entry={entry}
+        index={index}
+        headword={lexeme.headword}
+        pictures={pictures}
+        onUnsupported={onUnsupported}
+      />)}
 
     {attestations.length > 0 && <section className="sec">
       <div className="rail-l"><div className="inner"><span className="num">✳</span><span className="label">Where you<br />met it</span></div></div>

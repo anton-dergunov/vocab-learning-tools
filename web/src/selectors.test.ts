@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { validateGraph } from "./domain";
 import {
-  articleFor, articleFromDraft, inboxCount, languageOptions, shortGlossOf, strengthOf, topicOptions,
-  visibleRows
+  articleFor, articleFromDraft, imageWork, inboxCount, isRetryable, languageOptions, shortGlossOf,
+  strengthOf, topicOptions, visibleRows
 } from "./selectors";
 import { testGraph } from "./testGraph";
 import { draftFor, parseArticle, yamlFor } from "./yaml";
@@ -145,5 +145,67 @@ describe("vocabulary selectors", () => {
     expect(strengthOf(null)).toBe(0);
     expect(strengthOf({ stability: 4.2 } as never)).toBeLessThan(strengthOf({ stability: 402.7 } as never));
     expect(strengthOf({ stability: 402.7 } as never)).toBe(4);
+  });
+});
+
+
+describe("what still needs a picture", () => {
+  /* A query against the replica, never a stored queue — which is also how the interface reports
+     work the *server's* sweep is doing, with no job store to poll and deliberately none to build. */
+
+  const pictured = () => {
+    const graph = testGraph();
+    const [drawn] = graph.imagePrompts;
+    return { graph, drawn };
+  };
+
+  it("counts a drawn picture as done and every other sense as unbriefed", () => {
+    const { graph } = pictured();
+    const work = imageWork(graph);
+    expect(work.ready).toBe(1);
+    expect(work.undrawn).toEqual([]);
+    // Every other sense in the fixture has no prompt row at all.
+    expect(work.unbriefed.length).toBeGreaterThan(0);
+    expect(work.unbriefed.every((item) => item.senseId !== "sensepicaritch0")).toBe(true);
+  });
+
+  it("separates briefed-not-drawn from attempted-and-still-blank", () => {
+    const { graph, drawn } = pictured();
+    Object.assign(drawn, { imageRef: null, imageModelId: null, attempts: 0 });
+    expect(imageWork(graph).undrawn.map((row) => row.id)).toEqual([drawn.id]);
+
+    drawn.attempts = 2;
+    drawn.failureReason = "the provider declined to draw this";
+    expect(imageWork(graph).undrawn).toEqual([]);
+    expect(imageWork(graph).failed.map((row) => row.id)).toEqual([drawn.id]);
+  });
+
+  it("counts a sense the owner ruled on rather than offering it again", () => {
+    const { graph, drawn } = pictured();
+    Object.assign(drawn, { imageRef: null, imageModelId: null, suppressed: true });
+    const work = imageWork(graph);
+    expect(work.suppressed.map((row) => row.id)).toEqual([drawn.id]);
+    expect(work.undrawn).toEqual([]);
+    expect(work.failed).toEqual([]);
+  });
+
+  it("says what will be tried again, and the threshold is the only thing that decides", () => {
+    const { drawn } = pictured();
+    Object.assign(drawn, { imageRef: null, imageModelId: null, attempts: 1 });
+    expect(isRetryable(drawn, 4)).toBe(true);
+    drawn.attempts = 4;
+    expect(isRetryable(drawn, 4)).toBe(false);
+
+    drawn.attempts = 0;
+    drawn.suppressed = true;
+    expect(isRetryable(drawn, 4)).toBe(false);
+  });
+
+  it("leaves a sense whose word was deleted, rather than being told about it", () => {
+    const { graph } = pictured();
+    const before = imageWork(graph).unbriefed.length;
+    graph.lexemes.forEach((lexeme) => { lexeme.deleted = true; });
+    expect(imageWork(graph).unbriefed).toEqual([]);
+    expect(before).toBeGreaterThan(0);
   });
 });

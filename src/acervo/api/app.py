@@ -11,6 +11,7 @@ from acervo.api.routes import (
     dictionaries,
     graph,
     health,
+    images,
     mac_release,
     models,
     session,
@@ -46,7 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     errors.install(app)
 
     api = APIRouter(prefix=API_ROOT)
-    for module in (health, session, graph, capture, dictionaries, mac_release, models):
+    for module in (health, session, graph, capture, dictionaries, images, mac_release, models):
         api.include_router(module.router)
     app.include_router(api)
 

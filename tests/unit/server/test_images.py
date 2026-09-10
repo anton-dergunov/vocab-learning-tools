@@ -1,0 +1,478 @@
+"""Drawing a sense picture from a route, and the states a picture can be in.
+
+Against the real service and the real WebP encoder over a throwaway media directory: what is stubbed
+is the provider, and only the provider. A test that stubbed the encoder too would assert that this
+file's own mock returns bytes.
+"""
+
+from __future__ import annotations
+
+import litellm
+import pytest
+
+from acervo.images.ids import image_prompt_id
+from acervo.services.images import MAX_ATTEMPTS
+
+from graph_records import attestation, example, lexeme, sense, vocabulary
+
+DEVICE = "device000000001"
+
+
+@pytest.fixture(autouse=True)
+def a_provider_that_draws(server, monkeypatch):
+    """The default chain is `gemini-free`, which deliberately offers no image model — its free tier
+    allows zero image requests, so listing one would put a row in the chain that can only 429.
+
+    Set *after* the `server` fixture, which clears every provider but Gemini, and it takes effect
+    without a restart because `settings` is deliberately re-read on every request.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "stub-key")
+
+
+def word(server, **overrides):
+    """One word with two senses and an example, pushed and ready to be drawn."""
+    entry = lexeme(**overrides)
+    itch = sense(entry["id"], definition="Producir comezón.", order=0)
+    chop = sense(entry["id"], definition="Cortar en trozos.", order=1)
+    source = attestation(entry["id"])
+    sentence = example(
+        itch["id"], text=source["text"], translation=source["translation"], translationLang="en",
+        origin="attestation", sourceAttestationId=source["id"], modelId=None,
+    )
+    answer = server.push({
+        "vocabularies": [vocabulary()],
+        "lexemes": [entry], "senses": [itch, chop],
+        "attestations": [source], "examples": [sentence],
+    })
+    assert answer.status_code == 200, answer.json()
+    return entry, itch, chop, sentence
+
+
+def a_brief_for(*senses, style="oil-painting"):
+    return {"senses": [
+        {"senseId": one["id"], "styleId": style, "anchorExampleId": anchor,
+         "situation": "a kitchen", "subject": "an onion", "brief": f"A picture for {one['id']}"}
+        for one, anchor in senses
+    ]}
+
+
+def brief(server, entry, *senses, **overrides):
+    server.model.brief = a_brief_for(*senses, **overrides)
+    return server.post(f"/images/lexemes/{entry['id']}/brief", {"deviceId": DEVICE})
+
+
+def rows(answer):
+    return {row["senseId"]: row for row in answer.json()["data"]["imagePrompts"]}
+
+
+# ── the two calls ───────────────────────────────────────────────────────────
+
+
+def test_one_text_call_covers_every_sense_of_the_word(server):
+    entry, itch, chop, sentence = word(server)
+    answer = brief(server, entry, (itch, sentence["id"]), (chop, None))
+
+    assert answer.status_code == 200, answer.json()
+    assert len(server.model.calls) == 1, "batching per lexeme is the reason per-sense pictures work"
+    written = rows(answer)
+    assert set(written) == {itch["id"], chop["id"]}
+    assert written[itch["id"]]["prompt"] == f"A picture for {itch['id']}"
+    # Nothing has been drawn yet: a brief is what to draw, not the drawing.
+    assert written[itch["id"]]["imageRef"] is None
+    assert written[itch["id"]]["attempts"] == 0
+
+
+def test_the_picture_records_the_sentence_it_was_built_from(server):
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    assert written[itch["id"]]["exampleId"] == sentence["id"]
+    # A sense with no example still gets a picture; the definition and gloss are enough.
+    assert written[chop["id"]]["exampleId"] is None
+
+
+def test_the_id_is_derived_from_the_sense_so_two_engines_converge(server):
+    """The whole reason a client loop and a worker sweep need no coordination."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    assert written[itch["id"]]["id"] == image_prompt_id(itch["id"])
+
+
+def test_briefing_twice_updates_the_same_rows_rather_than_making_more(server):
+    entry, itch, chop, sentence = word(server)
+    first = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    second = rows(brief(server, entry, (itch, sentence["id"]), (chop, None), style="ukiyo-e"))
+    assert first[itch["id"]]["id"] == second[itch["id"]]["id"]
+    assert second[itch["id"]]["styleId"] == "ukiyo-e"
+    assert second[itch["id"]]["revision"] > first[itch["id"]]["revision"]
+
+    held = server.pull().json()["data"]["changes"]["imagePrompts"]
+    assert len([row for row in held if not row["deleted"]]) == 2
+
+
+def test_a_render_writes_the_file_and_the_row(server):
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+
+    answer = server.post(f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE})
+    assert answer.status_code == 200, answer.json()
+    row = answer.json()["data"]
+
+    assert row["imageRef"] == f"images/{entry['id']}/{written[itch['id']]['id']}.webp"
+    assert row["imageModelId"], "the record names the model that answered"
+    assert row["attempts"] == 1
+    assert row["failureReason"] is None
+
+    drawn = server.media / row["imageRef"]
+    assert drawn.is_file() and drawn.read_bytes()[:4] == b"RIFF"
+    assert not list(drawn.parent.glob("*.part")), "the staging file is moved, never left behind"
+
+
+def test_the_media_route_serves_what_was_just_drawn(server):
+    """The picture has to come back through the authenticated route, because that is the only way
+    the interface can reach it — `<img src>` cannot carry a bearer token."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    row = server.post(
+        f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE}
+    ).json()["data"]
+
+    served = server.client.get(f"/api/acervo/media/{row['imageRef']}", headers=server.auth)
+    assert served.status_code == 200
+    assert served.content[:4] == b"RIFF"
+    assert server.client.get(f"/api/acervo/media/{row['imageRef']}").status_code == 401
+
+
+def test_drawing_again_keeps_the_path_and_changes_the_seed(server):
+    """Content-addressed by the record that owns it, so a regeneration overwrites in place and
+    nothing accumulates orphans — and the seed moves so the picture is genuinely different."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    path = f"/images/prompts/{written[itch['id']]['id']}/render"
+
+    first = server.post(path, {"deviceId": DEVICE}).json()["data"]
+    second = server.post(path, {"deviceId": DEVICE}).json()["data"]
+
+    assert first["imageRef"] == second["imageRef"]
+    assert second["attempts"] == 2
+    # The attempt count is mixed into the seed, so deleting a picture you disliked and drawing again
+    # gives a genuinely different one rather than the same picture back. It is stored either way:
+    # whether it reaches the provider is the row's business — the OpenAI row drawing here declares
+    # `seed: "ignored"`, so nothing is sent and `call.image` says so in the answer's warnings.
+    assert second["seed"] != first["seed"]
+    assert "seed" not in server.painter.calls[-1]
+    assert len(list((server.media / f"images/{entry['id']}").iterdir())) == 1
+
+
+def test_editing_the_brief_draws_it_without_a_second_text_call(server):
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    before = len(server.model.calls)
+
+    answer = server.post(
+        f"/images/prompts/{written[itch['id']]['id']}/render",
+        {"deviceId": DEVICE, "prompt": "A nose, enormous", "styleId": "film-noir"},
+    )
+    assert answer.status_code == 200, answer.json()
+    assert answer.json()["data"]["prompt"] == "A nose, enormous"
+    assert answer.json()["data"]["styleId"] == "film-noir"
+    assert len(server.model.calls) == before, "edit-and-draw costs no text call"
+    assert "A nose, enormous" in server.painter.calls[-1]["prompt"]
+
+
+def test_the_composed_prompt_is_rebuilt_rather_than_stored(server):
+    """§04 stores the brief, the style and the version; the full prompt is a function of those plus
+    the tracked files. The regenerate screen wants to show it, so it is rebuilt, not a column."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    row = written[itch["id"]]
+    assert row["composedPrompt"].startswith(row["prompt"])
+    assert "no letters" in row["composedPrompt"], "the frame is appended to every prompt"
+    held = server.pull().json()["data"]["changes"]["imagePrompts"][0]
+    assert "composedPrompt" not in held, "it is not a stored field"
+
+
+# ── the states a picture can be in ──────────────────────────────────────────
+
+
+def test_a_provider_refusal_is_recorded_rather_than_raised(server):
+    """A provider that looks at the prompt and declines is a finished outcome for that wording. It
+    is not suppressed, because a different brief may well pass — which is what editing is for."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    server.painter.data = None  # no image data: `call.image` reads this as a refusal
+
+    answer = server.post(f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE})
+    assert answer.status_code == 200, answer.json()
+    row = answer.json()["data"]
+    assert row["imageRef"] is None
+    assert row["attempts"] == 1
+    assert row["failureReason"]
+    assert row["suppressed"] is False
+
+
+def test_a_rate_limit_does_not_spend_one_of_the_senses_retries(server):
+    """An allowance that ran out says nothing about this sense, so counting it against the sense
+    would let a bad afternoon exhaust every retry a word had."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    server.painter.error = litellm.RateLimitError(
+        message="provider details that must stay private", llm_provider="stub", model="gpt-image-1"
+    )
+
+    answer = server.post(f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE})
+    assert answer.status_code == 503
+    assert answer.json()["error"]["code"] == "llm_rate_limited"
+    assert "provider details" not in answer.text
+
+    held = server.pull().json()["data"]["changes"]["imagePrompts"]
+    assert [row["attempts"] for row in held if row["senseId"] == itch["id"]] == [0]
+
+
+def test_a_writer_refusal_becomes_a_row_so_nothing_asks_again(server):
+    entry, itch, chop, sentence = word(server)
+    server.model.brief = {"senses": [
+        {"senseId": itch["id"], "refused": True, "refusalReason": "nothing to picture here"},
+        {"senseId": chop["id"], "styleId": "oil-painting", "brief": "An onion, quartered"},
+    ]}
+    written = rows(server.post(f"/images/lexemes/{entry['id']}/brief", {"deviceId": DEVICE}))
+
+    refused = written[itch["id"]]
+    assert refused["prompt"] == ""
+    assert refused["suppressed"] is True
+    assert refused["failureReason"] == "nothing to picture here"
+    assert written[chop["id"]]["suppressed"] is False
+
+
+def test_a_tombstoned_row_is_revived_rather_than_blocking_the_sense_forever(server):
+    """The id is derived from the sense, so a tombstoned row is the only row this brief could ever
+    occupy — and writing revision zero over it would be refused as stale. Editing a word's YAML and
+    dropping its imagePrompts block is enough to produce one."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    buried = written[itch["id"]]
+
+    # What `repository.saveArticle` does to a prompt the saved document did not mention.
+    held = [row for row in server.pull().json()["data"]["changes"]["imagePrompts"]
+            if row["id"] == buried["id"]][0]
+    assert server.push({"imagePrompts": [{**held, "deleted": True}]}).status_code == 200
+
+    again = brief(server, entry, (itch, sentence["id"]), (chop, None), style="ukiyo-e")
+    assert again.status_code == 200, again.json()
+    revived = rows(again)[itch["id"]]
+    assert revived["id"] == buried["id"]
+    assert revived["styleId"] == "ukiyo-e"
+    assert [row for row in server.pull().json()["data"]["changes"]["imagePrompts"]
+            if row["id"] == buried["id"]][0]["deleted"] is False
+
+
+def test_a_suppressed_sense_is_not_re_briefed(server):
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    assert server.delete(f"/images/prompts/{written[itch['id']]['id']}").status_code == 200
+
+    again = rows(brief(server, entry, (itch, sentence["id"]), (chop, None), style="ukiyo-e"))
+    assert itch["id"] not in again, "the owner has ruled on this sense"
+    assert chop["id"] in again
+
+
+def test_deleting_a_picture_removes_the_file_and_rules_the_sense_out(server):
+    """Deliberately not a tombstone: the id is derived from the sense, so a tombstoned row would be
+    invisible to the sweep, re-briefed, and re-minted at the same id."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    prompt_id = written[itch["id"]]["id"]
+    reference = server.post(
+        f"/images/prompts/{prompt_id}/render", {"deviceId": DEVICE}
+    ).json()["data"]["imageRef"]
+    assert (server.media / reference).is_file()
+
+    answer = server.delete(f"/images/prompts/{prompt_id}")
+    assert answer.status_code == 200
+    assert answer.json()["data"]["imageRef"] is None
+    assert answer.json()["data"]["suppressed"] is True
+    assert not (server.media / reference).exists()
+
+    held = [row for row in server.pull().json()["data"]["changes"]["imagePrompts"]
+            if row["id"] == prompt_id]
+    assert held and held[0]["deleted"] is False, "the row stays, saying the owner ruled on it"
+
+
+# ── the owner's own picture ─────────────────────────────────────────────────
+
+
+def test_an_attached_picture_carries_no_rendering_model(server):
+    """Provenance modelled, never flagged — the same way an example the learner wrote carries no
+    `modelId`, and nothing anywhere has a "the user supplied this" boolean."""
+    from conftest import PNG
+
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    prompt_id = written[itch["id"]]["id"]
+
+    answer = server.send(f"/images/senses/{itch['id']}/picture", PNG)
+    assert answer.status_code == 200, answer.json()
+    row = answer.json()["data"]
+
+    assert row["imageRef"] and row["imageModelId"] is None
+    assert row["suppressed"] is True, "choosing a picture stops anything drawing over it"
+    assert not server.painter.calls, "attaching is not a model call"
+    # Re-encoded to the same master, so one article is not a mix of formats and sizes.
+    assert (server.media / row["imageRef"]).read_bytes()[:4] == b"RIFF"
+
+
+def test_drawing_over_an_attached_picture_stamps_the_version_it_was_composed_under(server):
+    """A picture the owner attached has no brief, no style and no prompt version. Editing one in and
+    drawing has to stamp all three, or the validator refuses the write with a message about the
+    prompt version rather than about anything the owner did."""
+    from conftest import PNG
+
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    prompt_id = written[itch["id"]]["id"]
+    server.send(f"/images/senses/{itch['id']}/picture", PNG)
+
+    answer = server.post(
+        f"/images/prompts/{prompt_id}/render",
+        {"deviceId": DEVICE, "prompt": "A nose, enormous", "styleId": "film-noir"},
+    )
+    assert answer.status_code == 200, answer.json()
+    row = answer.json()["data"]
+    assert row["prompt"] == "A nose, enormous" and row["promptVersion"].startswith("img-")
+    assert row["imageModelId"], "it is a drawn picture now, not the attached one"
+
+
+def test_a_declined_prompt_is_kept_so_the_reason_has_something_to_sit_beside(server):
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    server.painter.data = None
+
+    row = server.post(
+        f"/images/prompts/{written[itch['id']]['id']}/render",
+        {"deviceId": DEVICE, "prompt": "Something the provider will not draw", "styleId": "film-noir"},
+    ).json()["data"]
+    assert row["prompt"] == "Something the provider will not draw"
+    assert row["styleId"] == "film-noir"
+    assert row["failureReason"] and row["imageRef"] is None
+
+
+def test_a_picture_can_be_attached_to_a_sense_that_has_never_been_briefed(server):
+    """The case the sense-keyed route exists for: no row, no brief, and no reason to spend a text
+    call before putting your own picture there. The id is derived, so the row is minted at the id it
+    was always going to have."""
+    from conftest import PNG
+
+    entry, itch, chop, sentence = word(server)
+    answer = server.send(f"/images/senses/{chop['id']}/picture", PNG)
+    assert answer.status_code == 200, answer.json()
+    row = answer.json()["data"]
+
+    assert row["id"] == image_prompt_id(chop["id"])
+    assert row["senseId"] == chop["id"] and row["lexemeId"] == entry["id"]
+    assert row["prompt"] == "" and row["styleId"] == ""
+    assert row["imageRef"] and row["imageModelId"] is None
+    assert row["suppressed"] is True
+    assert not server.model.calls, "no text call was spent"
+    assert (server.media / row["imageRef"]).read_bytes()[:4] == b"RIFF"
+
+
+def test_another_accounts_sense_cannot_be_given_a_picture(server, other):
+    from conftest import PNG
+
+    entry, itch, chop, sentence = word(server)
+    assert other.send(f"/images/senses/{itch['id']}/picture", PNG).status_code == 404
+
+
+def test_a_file_that_is_not_an_image_is_refused(server):
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    answer = server.send(f"/images/senses/{itch['id']}/picture", b"not a picture")
+    assert answer.status_code == 400
+    assert answer.json()["error"]["code"] == "unreadable_image"
+
+
+# ── whose picture it is ─────────────────────────────────────────────────────
+
+
+def test_another_accounts_picture_is_not_found_rather_than_forbidden(server, other):
+    """One answer for "no such id", "somebody else's" and "deleted": telling them apart would say
+    whether an id exists in another account."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    prompt_id = written[itch["id"]]["id"]
+
+    assert other.post(f"/images/prompts/{prompt_id}/render", {"deviceId": DEVICE}).status_code == 404
+    assert other.post(f"/images/lexemes/{entry['id']}/brief", {"deviceId": DEVICE}).status_code == 404
+    assert other.delete(f"/images/prompts/{prompt_id}").status_code == 404
+
+
+def test_the_routes_need_a_signed_in_owner(server):
+    entry, *_ = word(server)
+    assert server.client.post(
+        f"/api/acervo/v1/images/lexemes/{entry['id']}/brief", json={"deviceId": DEVICE}
+    ).status_code == 401
+    assert server.client.get("/api/acervo/v1/images/settings").status_code == 401
+
+
+# ── settings ────────────────────────────────────────────────────────────────
+
+
+def test_no_record_means_following_the_deployment_default(server):
+    view = server.get("/images/settings").json()["data"]
+    assert view["chosen"] is False
+    assert view["stylesOff"] == []
+    assert view["sweepEnabled"] is True
+    assert view["boostVariety"] is True
+    assert view["maxAttempts"] == MAX_ATTEMPTS
+    assert {style["id"] for style in view["styles"]} >= {"oil-painting", "film-noir"}
+    assert view["available"] is True
+
+
+def test_a_switched_off_style_is_never_offered(server):
+    entry, itch, chop, sentence = word(server)
+    kept = "ukiyo-e"
+    view = server.get("/images/settings").json()["data"]
+    off = [style["id"] for style in view["styles"] if style["id"] != kept]
+
+    assert server.put("/images/settings", {"stylesOff": off}).status_code == 200
+    brief(server, entry, (itch, sentence["id"]), (chop, None), style=kept)
+
+    asked = server.model.calls[-1]["messages"][-1]["content"]
+    assert f'"styleId": "{kept}"' in asked
+    assert '"styleId": "oil-painting"' not in asked
+
+
+def test_boost_variety_is_what_decides_whether_a_style_carries_examples(server):
+    entry, itch, chop, sentence = word(server)
+
+    brief(server, entry, (itch, sentence["id"]), (chop, None))
+    assert '"suits": []' not in server.model.calls[-1]["messages"][-1]["content"]
+
+    server.put("/images/settings", {"boostVariety": False})
+    brief(server, entry, (itch, sentence["id"]), (chop, None))
+    assert '"suits": []' in server.model.calls[-1]["messages"][-1]["content"]
+
+
+def test_switching_every_style_off_is_refused_where_it_can_still_be_explained(server):
+    """`StyleTable.offer` raises on an empty menu, which would refuse every brief from then on with
+    an error about the style table rather than about the choice that caused it."""
+    view = server.get("/images/settings").json()["data"]
+    answer = server.put("/images/settings", {"stylesOff": [s["id"] for s in view["styles"]]})
+    assert answer.status_code == 400
+    assert answer.json()["error"]["code"] == "no_styles_left"
+
+
+def test_a_style_this_server_does_not_have_is_refused(server):
+    answer = server.put("/images/settings", {"stylesOff": ["art-deco-airbrush"]})
+    assert answer.status_code == 400
+    assert answer.json()["error"]["code"] == "unknown_style"
+
+
+def test_settings_are_per_owner(server, other):
+    server.put("/images/settings", {"boostVariety": False})
+    assert other.get("/images/settings").json()["data"]["boostVariety"] is True
+    assert other.get("/images/settings").json()["data"]["chosen"] is False
+
+
+def test_a_server_with_no_image_provider_says_so_instead_of_offering_a_button(server, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert server.get("/images/settings").json()["data"]["available"] is False

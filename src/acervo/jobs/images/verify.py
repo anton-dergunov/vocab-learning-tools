@@ -11,7 +11,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from .ids import ID_LENGTH, image_prompt_id
+from acervo.images.ids import ID_LENGTH, image_prompt_id
 from .run import Store
 
 RECORD_ID = re.compile(rf"^[a-z0-9]{{{ID_LENGTH}}}$")

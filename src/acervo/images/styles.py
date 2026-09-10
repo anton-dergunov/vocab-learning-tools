@@ -86,8 +86,14 @@ class StyleTable:
         return tuple(offered)
 
 
-def load_styles(path: str | Path) -> StyleTable:
-    source = Path(path)
+# Tracked content, resolved relative to the package rather than through an environment variable —
+# the same call `models/catalogue.json` and `dictionaries/catalogue.json` already make, and the
+# Dockerfile copies the file to the matching place so the resolution holds inside the image too.
+STYLES_PATH = Path(__file__).resolve().parents[3] / "config" / "image-styles.yaml"
+
+
+def load_styles(path: str | Path | None = None) -> StyleTable:
+    source = Path(path or STYLES_PATH)
     raw = source.read_bytes()
     data = yaml.safe_load(raw) or {}
     entries = data.get("styles") or {}

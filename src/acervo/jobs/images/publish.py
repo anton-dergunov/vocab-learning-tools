@@ -12,9 +12,10 @@ Two orderings matter and neither is arbitrary:
 - **Every check before any write.** A half-published run is worse than an unpublished one, so a
   record that cannot be written stops the whole publish rather than being skipped past.
 
-What it deliberately drops: `attempts`, `failureReason` and `blocked`. There are no columns for them,
-and adding some means rebuilding the database, which the design defers to a later phase for exactly
-that reason.
+`attempts` and `failureReason` now have columns and travel, so a run's terminal outcomes land with
+its successes and the sweep does not re-plan them. `blocked` does not: it was the run directory's
+word for a provider refusal, and in the graph that is a `failureReason` plus `suppressed`, so it is
+translated here rather than carried as a third spelling of the same fact.
 """
 
 from __future__ import annotations
@@ -68,6 +69,12 @@ def _wire(record: dict[str, Any], at: str, device: str) -> dict[str, Any]:
         "promptVersion": record["promptVersion"],
         "imageRef": record["imageRef"],
         "imageModelId": record["imageModelId"],
+        "exampleId": record.get("exampleId"),
+        "attempts": record.get("attempts", 0),
+        "failureReason": record.get("failureReason") or "",
+        # A provider that looked at the prompt and declined is finished, not pending. Recording it
+        # as suppressed is what stops the sweep coming back to it every night forever.
+        "suppressed": bool(record.get("blocked")),
         "deleted": False,
         "createdAt": at,
         "editedAt": at,

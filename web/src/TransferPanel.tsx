@@ -11,8 +11,9 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { languageOf } from "./languages";
 import { repository, type ReplicaSnapshot } from "./repository";
 import { languageOptions } from "./selectors";
+import { bytesFor } from "./media";
 import {
-  bundleName, exportBundle, importBundle, readBundle,
+  bundleName, exportBundle, importBundle, picturesIn, readBundle,
   type BundleFile, type BundlePlan, type ImportReport
 } from "./transfer";
 
@@ -39,22 +40,49 @@ async function filesIn(file: File): Promise<BundleFile[]> {
     .map(([path, content]) => ({ path, text: strFromU8(content) }));
 }
 
+/** ~110 KiB a picture, which is what makes the size worth warning about before it is asked for. */
+const PICTURE_BYTES = 110 * 1024;
+
 export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
   const [language, setLanguage] = useState<string>("all");
   const [markdown, setMarkdown] = useState(true);
+  const [images, setImages] = useState(false);
   const [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState("");
   const languages = languageOptions(snapshot);
+  const pictures = picturesIn(snapshot, { language, markdown, images: true });
 
-  function run() {
+  async function run() {
+    setBusy("Writing…");
     try {
       const at = new Date().toISOString();
-      const files = exportBundle(snapshot, { language, markdown }, at);
+      const files = exportBundle(snapshot, { language, markdown, images }, at);
       const archive: Record<string, Uint8Array> = {};
       files.forEach((file) => { archive[file.path] = strToU8(file.text); });
+
+      let missing = 0;
+      if (images) {
+        // Sequential and counted, because this is the one export that is not offline-capable: the
+        // bytes come from this device's cache where it has them and from the server where it does
+        // not. A picture that cannot be read is skipped with a count rather than failing the whole
+        // archive — the words are the part you cannot regenerate.
+        for (const [index, picture] of pictures.entries()) {
+          setBusy(`Fetching pictures… ${index + 1} of ${pictures.length}`);
+          try {
+            archive[picture.path] = await bytesFor(picture.reference);
+          } catch {
+            missing += 1;
+          }
+        }
+      }
+
+      setBusy("Writing…");
       save(bundleName(language, at), zipSync(archive));
-      setProblem("");
+      setProblem(missing ? `${missing} picture(s) could not be read and were left out.` : "");
     } catch (error) {
       setProblem(error instanceof Error ? error.message : "The export could not be written.");
+    } finally {
+      setBusy("");
     }
   }
 
@@ -81,7 +109,24 @@ export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
         <span>A readable file per topic, named the way a vault expects: Spanish vocab - Food.md.</span>
       </span>
     </label>
-    <button className="tb-btn" onClick={run}>Export…</button>
+    <label className="config-switch">
+      <input type="checkbox" checked={images} onChange={(event) => setImages(event.target.checked)} />
+      <span>
+        <strong>Include pictures</strong>
+        <span>
+          {pictures.length > 0
+            ? `${pictures.length} picture${pictures.length === 1 ? "" : "s"}, roughly `
+              + `${Math.max(1, Math.round(pictures.length * PICTURE_BYTES / 1024 / 1024))} MB, `
+              + "named after the word file they belong to. This is the one part of an export that "
+              + "needs the server."
+            : "No pictures have been drawn yet."}
+        </span>
+      </span>
+    </label>
+    <button className="tb-btn" onClick={() => void run()} disabled={busy !== ""}>
+      {busy || "Export…"}
+    </button>
+    {busy && <p className="config-help" role="status">{busy}</p>}
     {problem && <p className="transfer-problem" role="alert">{problem}</p>}
   </section>;
 }

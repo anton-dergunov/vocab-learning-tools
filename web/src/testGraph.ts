@@ -114,8 +114,10 @@ export function testGraph(): VocabularyGraph {
       {
         id: "imagepicar00010", lexemeId: "lexemepicar0001", senseId: "sensepicaritch0",
         prompt: "A hand hovering near an itchy nose, flat vector, no text.", styleId: "flat-vector",
-        seed: 184521, modelId: "demo-prompt", promptVersion: "demo-v1", imageRef: null,
-        imageModelId: null, ...sync("02-11")
+        seed: 184521, modelId: "demo-prompt", promptVersion: "demo-v1",
+        imageRef: "images/lexemepicar0001/imagepicar00010.webp", imageModelId: "demo-painter",
+        exampleId: "examplepicar010", attempts: 1, failureReason: null, suppressed: false,
+        ...sync("02-11")
       }
     ],
     studyStates: [

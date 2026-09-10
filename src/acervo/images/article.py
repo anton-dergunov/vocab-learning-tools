@@ -1,11 +1,13 @@
-"""The articles assembled from a pull of the vocabulary graph.
+"""The article view the brief writer is given, assembled from wire-shaped records.
 
-Deliberately a duplicate of the shape `web/src/selectors.ts` derives rather than a shared one: this
-stage runs beside a live ingestion and must not be able to disturb it.
+One view model with two feeders, the way `articleFor` and `articleFromDraft` both build one
+`Article` on the client. `build_articles` takes the `changes` mapping the graph route speaks, so the
+worker sweep feeds it a `client.pull_graph()` payload and `services/images.py` feeds it rows the
+repository projected — neither knows which. That is what keeps the interactive path and the
+unattended one on one pipeline rather than two.
 
-The pull itself is `acervo.client`. This module used to carry its own read-only client, whose comment
-said "there is no write method here on purpose" — but a wrapper with a method missing is not what
-keeps a run from disturbing an ingestion. Not making the call is.
+Deliberately a duplicate of the shape `web/src/selectors.ts` derives rather than a shared one. The
+pull itself is `acervo.client`; this module reads no graph and opens no connection.
 """
 
 from __future__ import annotations
@@ -54,6 +56,11 @@ class ArticleView:
     vocabulary: dict | None
     topics: list[str]
     senses: list[SenseView]
+    # The live image-prompt rows for this word, so a caller writing new ones can see what it is
+    # editing. `SenseView.has_image` answers "is there a picture"; this answers "what does the row
+    # say", which is what a re-brief needs in order to keep the revision, the attempt count and the
+    # picture already drawn.
+    image_prompts: list[dict] = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -78,6 +85,9 @@ def build_articles(changes: dict[str, list[dict]], language: str | None = None) 
     prompts = live(changes.get("imagePrompts", []))
 
     drawn = {prompt.get("senseId") for prompt in prompts if prompt.get("imageRef")}
+    prompts_by_lexeme: dict[str, list[dict]] = {}
+    for prompt in prompts:
+        prompts_by_lexeme.setdefault(prompt.get("lexemeId", ""), []).append(prompt)
 
     by_lexeme: dict[str, list[SenseView]] = {}
     for sense in sorted(senses, key=lambda record: (record.get("order", 0), record.get("id", ""))):
@@ -113,6 +123,7 @@ def build_articles(changes: dict[str, list[dict]], language: str | None = None) 
                 vocabulary=vocabularies.get(lexeme.get("language", "")),
                 topics=[topics[topic]["name"] for topic in lexeme.get("topicIds", []) if topic in topics],
                 senses=views,
+                image_prompts=prompts_by_lexeme.get(lexeme["id"], []),
             )
         )
     return articles

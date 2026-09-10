@@ -12,6 +12,7 @@ decides which pair is free soonest — see the note on `Runner.pace`.
 from __future__ import annotations
 
 import io
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,19 +49,25 @@ class Renderer:
         result: ImageResult = call.image(
             prompt, row=candidate.row, model=candidate.model, seed=seed, size=self.size
         )
-        return Rendered(output, _save_webp(result.data, output, self.size), result.answer)
+        return Rendered(output, save_master(result.data, output, self.size), result.answer)
 
 
-def _save_webp(data: bytes, output: Path, master: tuple[int, int]) -> int:
+def save_master(data: bytes, output: Path, master: tuple[int, int] = MASTER) -> int:
     """Save at the master size, downsampling if the provider drew larger and never upscaling.
 
     Upscaling would invent detail and cost bytes for nothing; a provider that draws smaller than
     asked has already been reported as such in the answer's warnings, and the file says what it is.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
+    # Written beside the target and moved into place, so a reader never sees a half-written file
+    # and two writers racing on the same derived path cannot tear one. The path is derived from the
+    # sense, so two devices asking for the same picture *will* collide — this is the ordinary case,
+    # not the unlucky one.
+    staging = output.with_suffix(output.suffix + ".part")
     with Image.open(io.BytesIO(data)) as image:
         picture = image.convert("RGB")
         if picture.size[0] > master[0] or picture.size[1] > master[1]:
             picture = picture.resize(master, Image.LANCZOS)
-        picture.save(output, format="WEBP", quality=WEBP_QUALITY, method=6)
+        picture.save(staging, format="WEBP", quality=WEBP_QUALITY, method=6)
+    os.replace(staging, output)
     return output.stat().st_size

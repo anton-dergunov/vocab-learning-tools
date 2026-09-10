@@ -16,13 +16,13 @@ from typing import Any, Callable, Sequence
 from acervo.models import ChainExhausted, TextResult, call, chain
 from acervo.models.catalogue import Catalogue
 
-from .graph import ArticleView
+from .article import ArticleView
 from .styles import StyleTable
 
 # What the writer must return. Sent as `response_format` where the row understands one and written
 # into the prompt where it does not — the row decides, and `parse_reply` checks the answer either
-# way against this article's own sense ids and this call's own three-style menu, which no schema
-# can name.
+# way against this article's own sense ids and the styles this call actually offered, neither of
+# which a schema can name.
 BRIEF_SCHEMA = {
     "type": "object",
     "properties": {
@@ -70,8 +70,15 @@ def _example_payload(example: dict, anchor_id: str | None) -> dict[str, Any]:
     }
 
 
-def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, float] | None = None) -> dict[str, Any]:
-    """Everything the writer sees about one word, and every style it may choose from."""
+def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, float] | None = None,
+                  boost_variety: bool = True) -> dict[str, Any]:
+    """Everything the writer sees about one word, and every style it may choose from.
+
+    `boost_variety` presents each style with a few of its example subjects, sampled per word, which
+    pushes the writer toward styles it would otherwise pass over. Switched off, a style is offered
+    on its own description alone. Both modes were reviewed and both produce good pictures, so this
+    is a matter of taste rather than of correctness — which is exactly why it is a setting.
+    """
     lexeme = article.lexeme
     vocabulary = article.vocabulary or {}
     senses = []
@@ -103,7 +110,7 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
         "senses": senses,
         "styles": [
             {"styleId": style.id, "label": style.label, "mono": style.mono,
-             "suits": list(styles.hints(style, article.id))}
+             "suits": list(styles.hints(style, article.id)) if boost_variety else []}
             for style in styles.offer(weights, rotate=article.id)
         ],
     }
@@ -114,7 +121,7 @@ def parse_reply(payload: Any, article: ArticleView, offered: tuple[str, ...]) ->
 
     Takes the already-parsed document — unfencing and `json.loads` belong to `models.call`, which
     does them for every kind of reply. What is left here is the part a JSON schema cannot express:
-    every check below is against *this article's* sense ids and *this call's* three-style menu.
+    every check below is against *this article's* sense ids and the styles *this call* offered.
     """
     if payload is None:
         raise ValueError("The brief writer did not return JSON.")
@@ -170,12 +177,13 @@ class BriefWriter:
 
     def __init__(self, catalogue: Catalogue, candidates: Sequence[chain.Candidate],
                  template_path: str | Path, styles: StyleTable,
-                 weights: dict[str, float] | None = None) -> None:
+                 weights: dict[str, float] | None = None, boost_variety: bool = True) -> None:
         self.catalogue = catalogue
         self.candidates = tuple(candidates)
         self.template = Path(template_path).read_text(encoding="utf-8")
         self.styles = styles
         self.weights = weights
+        self.boost_variety = boost_variety
 
     def write(self, article: ArticleView, attempts: int = 6,
               wait: Callable[[float], None] = time.sleep) -> tuple[list[SenseBrief], dict[str, Any]]:
@@ -196,7 +204,7 @@ class BriefWriter:
         raise AssertionError("unreachable")
 
     def _write_once(self, article: ArticleView) -> tuple[list[SenseBrief], dict[str, Any]]:
-        request = build_request(article, self.styles, self.weights)
+        request = build_request(article, self.styles, self.weights, self.boost_variety)
         offered = tuple(style["styleId"] for style in request["styles"])
         prompt = f"{self.template}\n\n{json.dumps(request, ensure_ascii=False, indent=2)}\n"
         result: TextResult = chain.walk(

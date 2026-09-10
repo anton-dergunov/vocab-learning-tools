@@ -21,6 +21,7 @@ from graph_records import (
 )
 
 from acervo.domain.ids import now_instant
+from acervo.domain import SCHEMA_VERSION
 
 
 def stored(server, key, index=0):
@@ -188,7 +189,7 @@ def test_the_editing_device_is_recorded_from_the_request_not_from_the_record(ser
 
 @pytest.mark.parametrize("bad", ["", "NOTLOWERCASE", "a" * 33, "has a space"])
 def test_a_write_needs_a_valid_device_identifier(server, bad):
-    answer = server.post("/graph", {"schemaVersion": 6, "deviceId": bad, "changes": {}})
+    answer = server.post("/graph", {"schemaVersion": SCHEMA_VERSION, "deviceId": bad, "changes": {}})
     assert answer.status_code == 400
     assert answer.json()["error"]["code"] == "invalid_input"
 
@@ -239,18 +240,44 @@ def test_a_translation_and_its_language_are_required_together(server):
     assert server.push({"examples": [only_language]}).status_code == 400
 
 
-def test_a_rendered_image_and_its_model_are_required_together(server):
+def test_a_rendering_model_without_a_rendered_image_is_refused(server):
+    """One direction, not both — and the direction matters.
+
+    A model id with nothing rendered is a record of nothing. A picture with no model is the owner
+    having attached their own file, which is how provenance is modelled everywhere else here: an
+    example the learner wrote carries no `modelId` either, and nothing anywhere carries a
+    "the user supplied this" flag.
+    """
     changes, word, *_ = article()
     server.push(changes)
-    assert server.push(
-        {"imagePrompts": [image_prompt(word["id"], imageRef="images/a.webp", imageModelId=None)]}
-    ).status_code == 400
     assert server.push(
         {"imagePrompts": [image_prompt(word["id"], imageRef=None, imageModelId="imagen")]}
     ).status_code == 400
     assert server.push(
         {"imagePrompts": [image_prompt(word["id"], imageRef="images/a.webp", imageModelId="imagen")]}
     ).status_code == 200
+
+
+def test_a_picture_the_owner_attached_needs_no_brief_and_no_model(server):
+    changes, word, *_ = article()
+    server.push(changes)
+    assert server.push({"imagePrompts": [image_prompt(
+        word["id"], prompt="", styleId="", modelId="", promptVersion="",
+        imageRef="images/a.webp", imageModelId=None,
+    )]}).status_code == 200
+
+
+def test_half_a_brief_is_refused_because_it_reproduces_nothing(server):
+    """`compose()` needs the style to rebuild the prompt that was sent, and `promptVersion` is what
+    says which template and style table produced it."""
+    changes, word, *_ = article()
+    server.push(changes)
+    assert server.push({"imagePrompts": [image_prompt(
+        word["id"], prompt="a chopped onion", styleId="", promptVersion="demo-v1"
+    )]}).status_code == 400
+    assert server.push({"imagePrompts": [image_prompt(
+        word["id"], prompt="a chopped onion", styleId="oil-painting", promptVersion=""
+    )]}).status_code == 400
 
 
 def test_a_clip_title_or_start_needs_a_video_reference_and_neither_is_shown_without_one(server):
@@ -409,7 +436,7 @@ def test_the_reset_tombstones_words_and_descendants_and_keeps_languages_and_topi
 
     before = server.pull().json()["data"]["datasetId"]
     answer = server.post(
-        "/graph/reset", {"schemaVersion": 6, "deviceId": DEVICE, "confirm": "delete-all-words"}
+        "/graph/reset", {"schemaVersion": SCHEMA_VERSION, "deviceId": DEVICE, "confirm": "delete-all-words"}
     )
     assert answer.status_code == 200
     assert answer.json()["data"]["deleted"] == 6
@@ -425,7 +452,7 @@ def test_the_reset_tombstones_words_and_descendants_and_keeps_languages_and_topi
 def test_a_second_reset_finds_nothing_left_to_tombstone(server):
     changes, *_ = article()
     server.push(changes)
-    body = {"schemaVersion": 6, "deviceId": DEVICE, "confirm": "delete-all-words"}
+    body = {"schemaVersion": SCHEMA_VERSION, "deviceId": DEVICE, "confirm": "delete-all-words"}
     assert server.post("/graph/reset", body).json()["data"]["deleted"] == 4
     assert server.post("/graph/reset", body).json()["data"]["deleted"] == 0
 
@@ -433,7 +460,7 @@ def test_a_second_reset_finds_nothing_left_to_tombstone(server):
 def test_the_reset_needs_its_confirmation_token(server):
     for confirm in ("", "yes", "delete all words"):
         answer = server.post(
-            "/graph/reset", {"schemaVersion": 6, "deviceId": DEVICE, "confirm": confirm}
+            "/graph/reset", {"schemaVersion": SCHEMA_VERSION, "deviceId": DEVICE, "confirm": confirm}
         )
         assert answer.status_code == 400
         assert answer.json()["error"]["code"] == "confirmation_required"

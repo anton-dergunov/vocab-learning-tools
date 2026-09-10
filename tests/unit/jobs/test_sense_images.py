@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from acervo.jobs.images.brief import build_request, parse_reply
-from acervo.jobs.images.compose import FRAME, compose, prompt_version
-from acervo.jobs.images.graph import build_articles
-from acervo.jobs.images.ids import ID_LENGTH, image_prompt_id, seed_for
+from acervo.images.article import build_articles
+from acervo.images.brief import build_request, parse_reply
+from acervo.images.compose import FRAME, compose, prompt_version
+from acervo.images.ids import ID_LENGTH, image_prompt_id, seed_for
+from acervo.images.styles import load_styles
 from acervo.jobs.images.run import Store, plan
-from acervo.jobs.images.styles import load_styles
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STYLES = REPO_ROOT / "config" / "image-styles.yaml"
@@ -325,7 +325,7 @@ def test_a_provider_block_is_not_planned_again(tmp_path: Path):
 def test_the_brief_writer_waits_out_a_chain_that_is_entirely_over_quota():
     """A text 429 used to lose every sense of that lexeme outright. With a chain the first 429 is
     answered by the next provider, so this waits only when every pair has refused."""
-    from acervo.jobs.images.brief import BriefWriter
+    from acervo.images.brief import BriefWriter
     from acervo.models import ChainExhausted, ProviderUnavailable
 
     class Flaky(BriefWriter):
@@ -347,7 +347,7 @@ def test_the_brief_writer_waits_out_a_chain_that_is_entirely_over_quota():
 
 
 def test_a_brief_failure_that_is_not_quota_is_raised_at_once():
-    from acervo.jobs.images.brief import BriefWriter
+    from acervo.images.brief import BriefWriter
 
     class Broken(BriefWriter):
         def __init__(self):
@@ -431,7 +431,7 @@ def _candidates(*pairs):
 
 def _drawing(answers):
     """A renderer that answers from a script, one entry per call, keyed by pair."""
-    from acervo.jobs.images.render import Rendered
+    from acervo.images.render import Rendered
 
     class Scripted:
         def __init__(self):
@@ -471,7 +471,7 @@ def _runner(tmp_path, renderer, candidates, briefs, **extra):
 
 
 def _one_brief(article, styles):
-    from acervo.jobs.images.brief import SenseBrief
+    from acervo.images.brief import SenseBrief
     offered = tuple(style.id for style in styles.offer())
     return [SenseBrief(sense.id, offered[0], None, "A situation.", "the thing", "A scene.",
                        False, None)
@@ -562,7 +562,7 @@ def test_the_configured_size_reaches_the_call(tmp_path):
     """The defect `image-generation-research.md` recorded: the pipeline generated at its default
     and resized afterwards. Asserted on the request, because the output file cannot tell you what
     was asked for."""
-    from acervo.jobs.images.render import Renderer
+    from acervo.images.render import Renderer
     from acervo.models import call
 
     asked = {}

@@ -8,13 +8,13 @@ import { articleFor, lexemesIn } from "./selectors";
 import { testGraph, TEST_OWNER } from "./testGraph";
 import { fakeRemote } from "./testRemote";
 import {
-  BUNDLE_FORMAT, bundleName, exportBundle, importBundle, MANIFEST_FILE, readBundle, remintIds,
+  BUNDLE_FORMAT, bundleName, exportBundle, importBundle, MANIFEST_FILE, picturesIn, readBundle, remintIds,
   slugFor, TOPICS_FILE, VOCABULARIES_FILE, type BundleFile, type ExportOptions
 } from "./transfer";
 import { parseArticle } from "./yaml";
 
 const AT = "2026-09-01T12:00:00.000Z";
-const everything: ExportOptions = { language: "all", markdown: true };
+const everything: ExportOptions = { language: "all", markdown: true, images: false };
 
 const bundle = (graph = testGraph(), options: ExportOptions = everything) => exportBundle(graph, options, AT);
 const at = (files: BundleFile[], path: string) => files.find((file) => file.path === path)!;
@@ -60,15 +60,37 @@ describe("exporting a bundle", () => {
     ]);
   });
 
-  it("strips every id but the attestation the lineage points at", () => {
+  it("strips every id but the ones the file itself points at", () => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const word = parse(at(bundle(), "es/picar.yaml").text) as any;
     expect(word.id).toBeUndefined();
     expect(word.senses[0].id).toBeUndefined();
-    expect(word.senses[0].examples[0].id).toBeUndefined();
     expect(word.senses[0].imagePrompts[0].id).toBeUndefined();
+    // Kept, because something in this same document names them: an example names the attestation it
+    // was drawn from, and a picture names the example whose scene it draws. Drop either and the
+    // lineage is gone. `remintIds` re-mints both on import, so the bundle depends on no account.
     expect(word.attestations[0].id).toBe("attestpicar0010");
     expect(word.senses[0].examples[0].sourceAttestationId).toBe("attestpicar0010");
+    expect(word.senses[0].examples[0].id).toBe("examplepicar010");
+  });
+
+  it("names a picture after the word file it belongs to, and carries no bytes by default", () => {
+    // Export-only, exactly as the Obsidian mirror is: `readBundle` never looks at `media/`, so the
+    // import path grows no second writer. The bytes are `TransferPanel`'s business — this module
+    // holds no transport and should not grow one.
+    expect(bundle().map((file) => file.path).some((path) => path.startsWith("media/"))).toBe(false);
+    expect(picturesIn(testGraph(), { language: "es", markdown: false, images: true })).toEqual([
+      { path: "media/es/picar-1.webp", reference: "images/lexemepicar0001/imagepicar00010.webp" }
+    ]);
+  });
+
+  it("leaves the server's own facts about a picture behind", () => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const word = parse(at(bundle(), "es/picar.yaml").text) as any;
+    // Not references — facts about the machine that drew it. `imageRef` embeds a lexeme id that
+    // will not exist after import, so keeping it imports a live-looking reference to nothing.
+    expect(word.senses[0].imagePrompts[0].imageRef).toBeUndefined();
+    expect(word.senses[0].imagePrompts[0].imageModelId).toBeUndefined();
   });
 
   it("says what an id-less document means in its own header", () => {
@@ -81,15 +103,15 @@ describe("exporting a bundle", () => {
   });
 
   it("exports one language on its own, for handing to someone else", () => {
-    const paths = bundle(testGraph(), { language: "es", markdown: true }).map((file) => file.path);
+    const paths = bundle(testGraph(), { language: "es", markdown: true, images: false }).map((file) => file.path);
     expect(paths).toContain("es/picar.yaml");
     expect(paths.some((path) => path.startsWith("en/"))).toBe(false);
-    expect(parse(at(bundle(testGraph(), { language: "es", markdown: true }), VOCABULARIES_FILE).text))
+    expect(parse(at(bundle(testGraph(), { language: "es", markdown: true, images: false }), VOCABULARIES_FILE).text))
       .toHaveLength(1);
   });
 
   it("omits the markdown when it is not wanted", () => {
-    const paths = bundle(testGraph(), { language: "all", markdown: false }).map((file) => file.path);
+    const paths = bundle(testGraph(), { language: "all", markdown: false, images: false }).map((file) => file.path);
     expect(paths.some((path) => path.startsWith("markdown/"))).toBe(false);
   });
 
@@ -162,6 +184,56 @@ describe("reading a bundle", () => {
     expect(plan.problems).toHaveLength(1);
     expect(plan.problems[0].path).toBe("es/picar.yaml");
     expect(plan.problems[0].message).toContain("at least one sense");
+  });
+
+  it("reads a version 6 bundle, which is the safety net the database rebuild rested on", () => {
+    // A real version 6 word file, pinned as text rather than derived from today's writer: examples
+    // carry no ids, and a picture has none of version 7's keys. Nothing was renamed and nothing
+    // removed, so `upgradeBundle` rewrites no text — it accepts the version and the reader finds
+    // the new keys simply absent.
+    const older = [
+      "language: es",
+      "headword: picar",
+      "lemma: picar",
+      "pos: verb",
+      "status: active",
+      "shortGloss: to itch",
+      "senses:",
+      "  - order: 0",
+      "    definition: Producir comezón.",
+      "    definitionLang: es",
+      "    glosses:",
+      "      - {lang: en, terms: [to itch]}",
+      "    examples:",
+      "      - text: Me pica la nariz.",
+      "        textLang: es",
+      "        origin: llm",
+      "    imagePrompts:",
+      "      - prompt: A hand hovering near an itchy nose.",
+      "        styleId: flat-vector",
+      "        seed: 184521",
+      "        modelId: demo-prompt",
+      "        promptVersion: demo-v1",
+      ""
+    ].join("\n");
+
+    const files = bundle()
+      .filter((file) => !file.path.endsWith(".yaml") || file.path === MANIFEST_FILE
+        || file.path === VOCABULARIES_FILE || file.path === TOPICS_FILE)
+      .map((file) => file.path === MANIFEST_FILE
+        ? { ...file, text: file.text.replace(`schemaVersion: ${SCHEMA_VERSION}`, "schemaVersion: 6") }
+        : file)
+      .concat([{ path: "es/picar.yaml", text: older }]);
+
+    const plan = readBundle(files);
+    expect(plan.problems).toEqual([]);
+    const word = plan.articles.find((article) => article.path === "es/picar.yaml")!.draft;
+    const image = word.senses.flatMap((sense) => sense.images)[0];
+    expect(image.prompt).toBe("A hand hovering near an itchy nose.");
+    // No anchor is invented for it. A version 6 bundle carries no example ids at all, so matching
+    // by position or by text would be a guess — and a wrong anchor puts the picture under the
+    // wrong sentence, which is worse than putting it under none.
+    expect(image.exampleId).toBeNull();
   });
 
   it("refuses a bundle from another schema version, naming both", () => {
@@ -282,9 +354,22 @@ describe("re-minting ids", () => {
     expect(minted.senses[0].id).toBeNull();
   });
 
+  it("rewrites a picture's anchor to match the example it now names", () => {
+    const draft = parseArticle(at(bundle(), "es/picar.yaml").text);
+    const minted = remintIds(draft);
+    const example = minted.senses[0].examples[0];
+    expect(example.id).not.toBe("examplepicar010");
+    expect(example.id).toMatch(/^[a-z0-9]{15}$/);
+    expect(minted.senses[0].images[0].exampleId).toBe(example.id);
+  });
+
   it("drops a reference that names nothing in the document rather than inventing one", () => {
     const draft = parseArticle(at(bundle(), "es/picar.yaml").text);
     draft.attestations = [];
-    expect(remintIds(draft).senses[0].examples[0].sourceAttestationId).toBeNull();
+    draft.senses[0].examples = [];
+    const minted = remintIds(draft);
+    expect(minted.senses[0].examples).toEqual([]);
+    // The picture survives its anchor: a sentence you deleted must not take the drawing with it.
+    expect(minted.senses[0].images[0].exampleId).toBeNull();
   });
 });

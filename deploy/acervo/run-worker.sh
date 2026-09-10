@@ -10,6 +10,9 @@ usage() {
   echo "       run-worker.sh [--root PATH] build-dictionary <compiler arguments...>" >&2
   echo "         e.g. build-dictionary --id cc-cedict" >&2
   echo "              build-dictionary --all --language es,en,zh" >&2
+  echo "       run-worker.sh [--root PATH] draw-pictures <sweep arguments...>" >&2
+  echo "         e.g. draw-pictures sweep --limit 50" >&2
+  echo "              draw-pictures plan --language es" >&2
   exit 2
 }
 
@@ -19,14 +22,14 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
     --input-archive) [ "$#" -ge 2 ] || usage; input_archive=$2; shift 2 ;;
-    bootstrap-upload|push|export-state|pull-state|adopt-server|build-dictionary) operation=$1; shift; break ;;
+    bootstrap-upload|push|export-state|pull-state|adopt-server|build-dictionary|draw-pictures) operation=$1; shift; break ;;
     *) usage ;;
   esac
 done
 [ "${operation:-}" ] || usage
 # The compiler's own flags are passed straight through, so building one dictionary and building
 # every Spanish one are the same command with different arguments rather than two wrappers.
-if [ "$operation" = build-dictionary ]; then
+if [ "$operation" = build-dictionary ] || [ "$operation" = draw-pictures ]; then
   [ "$#" -ge 1 ] || usage
 else
   [ "$#" -eq 0 ] || usage
@@ -105,5 +108,12 @@ case "$operation" in
     # runs rather than something a checkbox triggers.
     # shellcheck disable=SC2086
     compose $common_args --profile tools run --rm --build acervo-worker dictionary build "$@"
+    ;;
+  draw-pictures)
+    # The unattended half of sense images. A sweep rather than a watcher: it asks the graph what has
+    # no picture, so being run late or twice costs nothing. This is what a cron line calls, and it
+    # is one subcommand rather than a new container — the whole reason `acervo-worker` exists.
+    # shellcheck disable=SC2086
+    compose $common_args --profile tools run --rm --build acervo-worker images "$@"
     ;;
 esac

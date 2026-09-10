@@ -157,6 +157,30 @@ class AcervoClient:
         """
         return self.call("GET", f"{API_PATH}/models")
 
+    def image_settings(self) -> dict[str, Any]:
+        """How this owner wants pictures drawn, plus the style table and the attempt threshold.
+
+        A job cannot read the owner's settings any other way: `jobs/` may not import `repository/`,
+        so the sweep asks the service the way `generate_images.py` already asks for the chain.
+        """
+        return self.call("GET", f"{API_PATH}/images/settings")
+
+    def brief_lexeme(self, lexeme_id: str, *, device_id: str, timeout: float = 180.0) -> dict[str, Any]:
+        return self.call(
+            "POST",
+            f"{API_PATH}/images/lexemes/{lexeme_id}/brief",
+            body={"deviceId": device_id},
+            timeout=timeout,
+        )
+
+    def render_image(self, prompt_id: str, *, device_id: str, timeout: float = CAPTURE_TIMEOUT) -> dict[str, Any]:
+        return self.call(
+            "POST",
+            f"{API_PATH}/images/prompts/{prompt_id}/render",
+            body={"deviceId": device_id},
+            timeout=timeout,
+        )
+
     def pull_graph(self, since: int = 0) -> dict[str, Any]:
         return self.call(
             "GET", f"{API_PATH}/graph", params={"since": since, "schemaVersion": SCHEMA_VERSION}

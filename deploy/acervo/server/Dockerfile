@@ -24,6 +24,10 @@ RUN pip install --no-cache-dir --no-deps -e /app
 # The capture prompts are content, not code: tracked once at the repository root and read at request
 # time, so changing what an entry says never means changing the code that builds a request.
 COPY prompts /app/prompts
+# The style table is content of the same kind, and `acervo.images.styles` resolves it relative to
+# the package exactly as the two catalogues above do — hence the matching path rather than a third
+# environment variable.
+COPY config/image-styles.yaml /app/config/image-styles.yaml
 # The built interface. `.dockerignore` excludes `web/dist`, so `scripts/stage-web.sh` is what puts it
 # somewhere a build context can see.
 COPY deploy/acervo/server/web /app/web

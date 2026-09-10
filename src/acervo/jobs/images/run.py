@@ -18,15 +18,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
-from .brief import BriefWriter, SenseBrief
-from .compose import compose, prompt_version
-from .graph import ArticleView, SenseView
-from .ids import image_prompt_id, seed_for
+from acervo.images.article import ArticleView, SenseView
+from acervo.images.brief import BriefWriter, SenseBrief
+from acervo.images.compose import compose, prompt_version
+from acervo.images.ids import image_prompt_id, seed_for
+from acervo.images.render import Rendered, Renderer
+from acervo.images.styles import StyleTable
 from acervo.models import ProviderRefused, ProviderUnavailable, chain
 from acervo.models.cooldown import retry_after_of
 from acervo.models.pacing import Key, ModelPool
-from .render import Rendered, Renderer
-from .styles import StyleTable
 
 
 @dataclass
@@ -354,6 +354,8 @@ class Runner:
             # import is what fans it out into per-lexeme directories.
             "imageRef": f"images/{article.id}/{job.prompt_id}.webp" if drawn else None,
             "imageModelId": (drawn.answer.model if drawn else None),
+            # The sentence the scene was built from, so the article can put the picture under it.
+            "exampleId": brief.anchor_example_id,
             "attempts": attempts,
             "failureReason": failure,
             # The provider looked at the prompt and declined, as opposed to a transport or quota

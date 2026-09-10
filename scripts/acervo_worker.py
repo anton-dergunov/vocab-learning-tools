@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import sys
 
-USAGE = "usage: acervo_worker.py {anki|dictionary} ...\n"
+USAGE = "usage: acervo_worker.py {anki|dictionary|images} ...\n"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,6 +33,10 @@ def main(argv: list[str] | None = None) -> int:
         from acervo.dictionaries.cli import main as dictionary_main
 
         return dictionary_main(rest)
+    if job == "images":
+        from acervo.jobs.images.sweep import main as images_main
+
+        return images_main(rest)
     sys.stderr.write(f"unknown job {job!r}\n{USAGE}")
     return 2
 

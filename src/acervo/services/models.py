@@ -13,6 +13,10 @@ provider knowledge and does not belong in every caller. The table is the seam.
 **The mapping is a contract, not an implementation detail.** `scripts/ingest_vocabulary_file.py`
 retries on exactly `llm_rate_limited`, `llm_unavailable` and `llm_unreachable`. A change here
 changes the retry behaviour without changing a line of the retry code.
+
+`refusal()` is public for the same reason: `services/images.py` binds the *same* provider package
+and must speak the *same* codes, so a picture that could not be drawn and an entry that could not be
+written fail alike. A second mapping would be a second contract.
 """
 
 from __future__ import annotations
@@ -185,9 +189,9 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str) -> t
             chain.stamped,
         )
     except ChainExhausted as exhausted:
-        raise _refusal(exhausted.last) from None
+        raise refusal(exhausted.last) from None
     except ProviderError as error:
-        raise _refusal(error) from None
+        raise refusal(error) from None
 
     if not result.text.strip():
         raise ApiError(502, "llm_empty", "The language model returned nothing, so nothing was created.")
@@ -200,7 +204,7 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str) -> t
     return result.parsed, result.answer
 
 
-def _refusal(error: ProviderError) -> ApiError:
+def refusal(error: ProviderError) -> ApiError:
     status, code, message = REFUSALS[error.reason]
     # "Unconfigured" is the one refusal whose *particular* cause the owner can act on, and it is
     # already safe to show: it names an environment variable or says every model is switched off,

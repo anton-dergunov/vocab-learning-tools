@@ -49,6 +49,57 @@ export interface Article {
   study: StudyState | null;
 }
 
+/**
+ * What is still missing a picture, and why.
+ *
+ * A **query, not a queue** — the rule the whole image design rests on, applied on the client. The
+ * replica already holds every sense and every image prompt, so "what is left" is derived on each
+ * read rather than stored; a word deleted mid-run simply leaves it, and nothing has to be told.
+ *
+ * This is also how the interface reports work the *server's* sweep is doing. There is no job store
+ * to poll and deliberately none to build: an owner-scoped job record would replicate to every
+ * device, which is the question `docs/plans/nas-to-mac-job-queue.md` declined to answer.
+ */
+export interface ImageWork {
+  /** Senses with no live prompt at all, so nothing has even been briefed for them. */
+  unbriefed: { lexemeId: string; senseId: string }[];
+  /** Briefed but not yet drawn, and not out of attempts. */
+  undrawn: ImagePrompt[];
+  /** Attempted and still without a picture. `isRetryable` says which of these will be tried again. */
+  failed: ImagePrompt[];
+  /** Ruled out by the owner, or refused by the writer. Counted, never retried. */
+  suppressed: ImagePrompt[];
+  ready: number;
+}
+
+export function imageWork(graph: VocabularyGraph): ImageWork {
+  const prompts = live(graph.imagePrompts);
+  const bySense = new Map(prompts.filter((p) => p.senseId).map((p) => [p.senseId!, p]));
+  const words = new Map(live(graph.lexemes).map((lexeme) => [lexeme.id, lexeme]));
+
+  const work: ImageWork = { unbriefed: [], undrawn: [], failed: [], suppressed: [], ready: 0 };
+  live(graph.senses).forEach((sense) => {
+    if (!words.has(sense.lexemeId)) return;
+    const prompt = bySense.get(sense.id);
+    if (!prompt) {
+      work.unbriefed.push({ lexemeId: sense.lexemeId, senseId: sense.id });
+      return;
+    }
+    if (prompt.imageRef) work.ready += 1;
+    else if (prompt.suppressed) work.suppressed.push(prompt);
+    // Attempted and still blank. Whether anything will try again is `isRetryable`'s question, not
+    // a second list: the record says what happened and the threshold says what to do about it.
+    else if (prompt.attempts > 0) work.failed.push(prompt);
+    else work.undrawn.push(prompt);
+  });
+  return work;
+}
+
+/** Whether anything more can be tried for this picture without the owner asking for it. */
+export function isRetryable(prompt: ImagePrompt, maxAttempts: number): boolean {
+  return !prompt.suppressed && !prompt.imageRef && prompt.attempts < maxAttempts;
+}
+
 export interface LanguageOption extends LanguagePresentation {
   count: number;
   /** False for a language that has words but no vocabulary record behind it any more. */
@@ -293,6 +344,11 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
       id: image.id ?? placeholder(`${path}:${index}`),
       lexemeId,
       senseId,
+      exampleId: image.exampleId,
+      // A draft is a proposal, so nothing has been attempted, refused or ruled on yet.
+      attempts: 0,
+      failureReason: null,
+      suppressed: false,
       prompt: image.prompt,
       styleId: image.styleId,
       seed: image.seed,

@@ -72,7 +72,8 @@ def image_prompt(lexeme_id: str, **overrides: Any) -> dict[str, Any]:
     return {
         "id": new_record_id(), "lexemeId": lexeme_id, "senseId": None, "prompt": "a chopped onion",
         "styleId": "flat", "seed": 7, "modelId": "stub-model", "promptVersion": "v1",
-        "imageRef": None, "imageModelId": None, **stamp(), **overrides,
+        "imageRef": None, "imageModelId": None, "exampleId": None, "attempts": 0,
+        "failureReason": None, "suppressed": False, **stamp(), **overrides,
     }
 
 

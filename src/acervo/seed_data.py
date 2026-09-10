@@ -517,7 +517,8 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
                     "id": rid("image_prompts", f"{key}-{image['key']}"), **base, "lexeme": lexeme_id,
                     "sense": sense_id, "prompt": image["prompt"], "style_id": image["style_id"],
                     "seed": image["seed"], "model_id": "demo-prompt", "prompt_version": "demo-v1",
-                    "image_ref": "", "image_model_id": "",
+                    "image_ref": "", "image_model_id": "", "example": None,
+                    "attempts": 0, "failure_reason": "", "suppressed": False,
                 }))
 
         study = entry.get("study")
