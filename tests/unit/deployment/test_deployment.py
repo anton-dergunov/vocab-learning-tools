@@ -1629,3 +1629,51 @@ def test_neither_reset_can_reach_the_caption_cache(tmp_path: Path) -> None:
     launcher = (REPO_ROOT / "deploy.sh").read_text(encoding="utf-8")
     assert "docker volume rm" not in launcher
     assert "down -v" not in launcher and "down --volumes" not in launcher
+
+
+def test_old_release_trees_are_pruned_but_the_current_one_survives(tmp_path: Path) -> None:
+    """Releases used to accumulate forever; backups have always rotated.
+
+    Each tree carries the compiled dictionaries and the macOS application, so an unpruned
+    `releases/` grows by hundreds of megabytes per deployment — 48 had piled up before this existed.
+    Nothing rolls back to an old release, so the ones kept are for looking at rather than running,
+    and the current one must survive because `run-worker.sh` reads its compose file.
+    """
+    env, root = deployment_env(tmp_path)
+    releases = root / "releases"
+    releases.mkdir(parents=True)
+    for day in range(1, 6):
+        tree = releases / f"2026090{day}T120000Z"
+        tree.mkdir()
+        (tree / "marker").write_text("release", encoding="utf-8")
+
+    result = run_local(env)
+    assert result.returncode == 0, result.stderr
+
+    survivors = sorted(path.name for path in releases.iterdir())
+    current = Path((root / "current-release").read_text(encoding="utf-8").strip())
+
+    # Three kept: the release this deployment just made, plus the two newest of the five.
+    assert len(survivors) == 3, survivors
+    assert survivors[:2] == ["20260904T120000Z", "20260905T120000Z"], survivors
+    assert current.name == survivors[2], (current, survivors)
+    assert current.is_dir(), "the current release must survive; run-worker.sh reads its compose file"
+
+
+def test_pruning_releases_is_idempotent_and_safe_when_there_are_few(tmp_path: Path) -> None:
+    env, root = deployment_env(tmp_path)
+    releases = root / "releases"
+    releases.mkdir(parents=True)
+    (releases / "20260901T120000Z").mkdir()
+
+    assert run_local(env).returncode == 0
+    # One old tree plus the one this deployment made: under the limit, so nothing is pruned.
+    assert sorted(path.name for path in releases.iterdir())[0] == "20260901T120000Z"
+    assert len(list(releases.iterdir())) == 2
+
+    # A second deployment prunes nothing new and never removes what it is about to run from.
+    assert run_local(env).returncode == 0
+    survivors = sorted(path.name for path in releases.iterdir())
+    assert len(survivors) == 3, survivors
+    assert survivors[0] == "20260901T120000Z"
+    assert Path((root / "current-release").read_text(encoding="utf-8").strip()).is_dir()

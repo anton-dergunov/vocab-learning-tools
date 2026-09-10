@@ -476,6 +476,36 @@ if [ -z "$published" ]; then
 fi
 
 printf '%s\n' "$release_dir" >"$acervo_root/current-release"
+
+# Prune old release trees, keeping the current one and the two before it. Only reached once the
+# deployment is healthy and `current-release` has been repointed, so a failed deploy prunes nothing
+# and leaves every tree it might be diagnosed from.
+#
+# Each tree carries the compiled dictionaries and the macOS application, so an unpruned `releases/`
+# grows by hundreds of megabytes per deployment — 48 of them had accumulated before this existed.
+# Nothing rolls back to an old release (there is no such command), so the ones kept are for looking
+# at, not for running. The current one must survive: `run-worker.sh` reads its compose file.
+release_keep=3
+if [ -d "$acervo_root/releases" ]; then
+  # Sorted by name, which for these UTC timestamps is chronological. The current release is excluded
+  # from the list rather than trusted to sort last, because `--local` deploys from a checkout whose
+  # directory is not under `releases/` at all.
+  stale_releases=$(mktemp)
+  find "$acervo_root/releases" -mindepth 1 -maxdepth 1 -type d \
+    ! -name "$(basename "$release_dir")" | sort >"$stale_releases"
+  stale_total=$(wc -l <"$stale_releases" | tr -d " ")
+  # `head -n` with a positive count, not GNU's negative form: this script also runs on macOS.
+  stale_remove=$((stale_total - (release_keep - 1)))
+  if [ "$stale_remove" -gt 0 ]; then
+    head -n "$stale_remove" "$stale_releases" | while IFS= read -r stale; do
+      case "$stale" in
+        "$acervo_root/releases/"*) rm -rf -- "$stale" ;;
+      esac
+    done
+    echo "Pruned $stale_remove old release tree(s), keeping $release_keep"
+  fi
+  rm -f "$stale_releases"
+fi
 echo "Acervo Anki sync server is healthy at $bind_address:$anki_port"
 echo "Acervo internal HTTP backend is healthy at http://$app_bind_address:$app_port"
 echo "Open the separately configured HTTPS reverse-proxy or Tailscale Serve address; this deployment does not claim the host's default HTTPS endpoint."

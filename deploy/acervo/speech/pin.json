@@ -1,12 +1,12 @@
 {
-  "note": "The one version of spoken-usage-retrieval this deployment runs. Acervo names a version and upgrades deliberately; the two repositories do not share a release cadence. See docs/plans/spoken-clips.md §2.1.",
+  "note": "The one version of spoken-usage-retrieval this deployment runs. Acervo names a version and upgrades deliberately; the two repositories do not share a release cadence. See docs/plans/spoken-clips.md \u00a72.1.",
   "repository": "https://github.com/anton-dergunov/spoken-usage-retrieval",
   "version": "0.2.0",
   "tag": "v0.2.0",
   "artifacts": {
     "wheel": {
       "file": "spoken_usage_retrieval-0.2.0-py3-none-any.whl",
-      "sha256": "3f372abbbe510f18503d5bada539a5830a303e82ac8a6d415e44e0943af5b113"
+      "sha256": "85e61458a89590f0bbe3c7a6dfdd84bb39e216feb189ab4ff7862f470e0c2467"
     },
     "react": {
       "file": "spoken-usage-retrieval-react-0.2.0.tgz",
