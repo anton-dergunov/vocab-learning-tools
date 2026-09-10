@@ -13,7 +13,9 @@ usage() {
   echo "       run-worker.sh [--root PATH] draw-pictures <sweep arguments...>" >&2
   echo "         e.g. draw-pictures sweep --limit 50" >&2
   echo "              draw-pictures plan --language es" >&2
-  echo "       run-worker.sh [--root PATH] index-clips" >&2
+  echo "       run-worker.sh [--root PATH] index-clips [update arguments...]" >&2
+  echo "         e.g. index-clips" >&2
+  echo "              index-clips --limit 40 --json" >&2
   exit 2
 }
 
@@ -32,6 +34,11 @@ done
 # every Spanish one are the same command with different arguments rather than two wrappers.
 if [ "$operation" = build-dictionary ] || [ "$operation" = draw-pictures ]; then
   [ "$#" -ge 1 ] || usage
+elif [ "$operation" = index-clips ]; then
+  # Optional pass-through. Bare `index-clips` is the routine cron call; a first harvest usually
+  # wants a larger `--limit` than the default ten videos per language, and `--json` is how you get
+  # a machine-readable summary out of it.
+  :
 else
   [ "$#" -eq 0 ] || usage
 fi
@@ -128,6 +135,6 @@ case "$operation" in
     # rename, and readers open a fresh read-only connection per query. Cached captions are not
     # re-downloaded, so running this often costs a channel scan and nothing else.
     # shellcheck disable=SC2086
-    compose $common_args exec -T speech-retrieval speech-retrieval update --once
+    compose $common_args exec -T speech-retrieval speech-retrieval update --once "$@"
     ;;
 esac
