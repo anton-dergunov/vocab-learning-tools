@@ -248,7 +248,12 @@ def test_reset_requires_exact_confirmation_and_backs_up_first(tmp_path: Path) ->
     assert any(path.read_bytes() == b"important" for path in root.rglob("collection.anki2"))
 
 
-def test_release_archive_excludes_deployment_secrets(tmp_path: Path) -> None:
+def packaged(tmp_path: Path) -> str:
+    """Build a release archive and return where it landed.
+
+    Where that is comes from `conftest.py`'s autouse fixture, which redirects it away from `build/`
+    for every test here — see the note there.
+    """
     result = subprocess.run(
         [str(REPO_ROOT / "scripts" / "package_acervo_server.sh")],
         cwd=REPO_ROOT,
@@ -256,7 +261,11 @@ def test_release_archive_excludes_deployment_secrets(tmp_path: Path) -> None:
         capture_output=True,
         check=True,
     )
-    archive = Path(result.stdout.strip())
+    return result.stdout.strip()
+
+
+def test_release_archive_excludes_deployment_secrets(tmp_path: Path) -> None:
+    archive = Path(packaged(tmp_path))
     with tarfile.open(archive) as package:
         members = package.getnames()
     assert not any(name.endswith("secrets.env") for name in members)
@@ -978,14 +987,7 @@ def test_remote_helper_runs_the_packaged_installer_from_standard_input(tmp_path:
         encoding="utf-8",
     )
     secrets.chmod(0o600)
-    archive_result = subprocess.run(
-        [str(REPO_ROOT / "scripts/package_acervo_server.sh")],
-        cwd=REPO_ROOT,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    archive = Path(archive_result.stdout.strip())
+    archive = Path(packaged(tmp_path))
     env = os.environ.copy()
     env["PATH"] = f"{fake_docker_path(tmp_path)}:{env['PATH']}"
 

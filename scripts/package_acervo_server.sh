@@ -2,8 +2,14 @@
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-output_dir="$repo_root/build"
-archive="$output_dir/acervo-server.tar.gz"
+# Where the archive lands. Overridable, and the reason is a deployment that failed for it: the path
+# used to be fixed at `build/acervo-server.tar.gz`, so the deployment tests rewrote the very file a
+# concurrent `./deploy.sh` was streaming. The remote saw a valid gzip stream with another process's
+# bytes appended, reported "trailing garbage" and a tar child status 2, and gave up with "the
+# release archive has no Acervo installer" — a failure with nothing in it pointing at the cause.
+# Tests pass a path of their own; a real deploy keeps the default.
+archive=${ACERVO_PACKAGE_ARCHIVE:-"$repo_root/build/acervo-server.tar.gz"}
+output_dir=$(dirname -- "$archive")
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/acervo-server-package.XXXXXX")
 bundle="$temporary/release"
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM

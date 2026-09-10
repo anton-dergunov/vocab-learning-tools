@@ -6,10 +6,11 @@ Keeping the two lists in step is what this checks.
 """
 
 import json
-import pathlib
+import os
 import re
+from pathlib import Path, PurePosixPath
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[3]
 # Both images are built from the packaged archive, so both have to be checked. The worker one was
 # added with the dictionary compiler, which copies `dictionaries/` for the catalogue.
 DOCKERFILES = (
@@ -42,7 +43,7 @@ def image_sources() -> set[str]:
                                                flags=re.MULTILINE):
             if source.startswith("--"):
                 continue
-            sources.add(pathlib.PurePosixPath(source).parts[0])
+            sources.add(PurePosixPath(source).parts[0])
     assert sources, "expected the Dockerfiles to copy something from the build context"
     return sources
 
@@ -90,3 +91,24 @@ def test_both_images_leave_their_own_files_readable_by_the_user_they_run_as():
         assert "chmod -R a+rX /app" in source, (
             f"{dockerfile} copies files a non-root container could not read"
         )
+
+
+def test_the_suite_never_writes_the_archive_a_deployment_streams():
+    """A regression test for a *deployment* failure, not a test failure.
+
+    The packager used to write a fixed `build/acervo-server.tar.gz`, and these tests wrote it too —
+    so running the suite during a `./deploy.sh` rewrote the archive while it was being streamed. The
+    remote found a complete gzip stream with another process's bytes after it, reported trailing
+    garbage and a tar child status 2, and failed with "the release archive has no Acervo installer":
+    a message with nothing in it pointing at a second writer.
+
+    Asserted against the environment every test here actually runs in, rather than against the text
+    of a file: `conftest.py` sets this on `os.environ`, so it reaches the packager whether a test
+    runs it directly or runs `deploy.sh`, which packages before it streams.
+    """
+    assert "ACERVO_PACKAGE_ARCHIVE" in PACKAGER.read_text(encoding="utf-8"), \
+        "the archive path must be overridable"
+
+    redirected = os.environ.get("ACERVO_PACKAGE_ARCHIVE", "")
+    assert redirected, "conftest must redirect packaging away from build/"
+    assert not Path(redirected).is_relative_to(ROOT / "build")
