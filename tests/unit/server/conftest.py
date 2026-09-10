@@ -167,14 +167,16 @@ class Server:
         headers = {**self.auth, "X-Acervo-Device": DEVICE, **kwargs.pop("headers", {})}
         return self.client.delete(f"/api/acervo/v1{path}", headers=headers, **kwargs)
 
-    def send(self, path: str, payload: bytes, **kwargs):
-        """A raw body, which is how the owner's own picture arrives — no multipart, one part."""
-        return self.client.put(
-            f"/api/acervo/v1{path}",
-            headers={**self.auth, "Content-Type": "image/png", "X-Acervo-Device": DEVICE},
-            content=payload,
-            **kwargs,
-        )
+    def send(self, path: str, payload: bytes, drawn_by: str = "", **kwargs):
+        """A raw body, which is how a picture arrives — no multipart, one part.
+
+        `drawn_by` names the model that drew it, which is what tells a *restore* from a picture the
+        owner chose.
+        """
+        headers = {**self.auth, "Content-Type": "image/png", "X-Acervo-Device": DEVICE}
+        if drawn_by:
+            headers["X-Acervo-Drawn-By"] = drawn_by
+        return self.client.put(f"/api/acervo/v1{path}", headers=headers, content=payload, **kwargs)
 
     def push(self, changes: dict, device: str = DEVICE):
         return self.post("/graph", {"schemaVersion": SCHEMA_VERSION, "deviceId": device, "changes": changes})

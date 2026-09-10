@@ -43,7 +43,7 @@ class FakeClient:
 
     def __init__(self, changes, *, settings=None, refuse=None, draws=True):
         self.changes = changes
-        self._settings = settings or {"sweepEnabled": True, "available": True, "maxAttempts": 4}
+        self._settings = settings or {"drawEnabled": True, "available": True, "maxAttempts": 4}
         self.refuse = refuse or {}
         self.draws = draws
         self.briefed: list[str] = []
@@ -187,11 +187,12 @@ def test_the_limit_counts_pictures_and_stops_the_run():
     assert len(client.rendered) == 2 and result.drawn == 2
 
 
-def test_switching_unattended_drawing_off_spends_nothing():
-    """The master switch gates *this*, and deliberately not the buttons: you pressed those."""
+def test_switching_drawing_off_spends_nothing():
+    """The switch gates this and the interface's own enrichment, and deliberately not the buttons:
+    you pressed those, so you meant them."""
     client = FakeClient(
         graph(lexemes=[word("w1")], senses=[sense("s1", "w1")]),
-        settings={"sweepEnabled": False, "available": True, "maxAttempts": 4},
+        settings={"drawEnabled": False, "available": True, "maxAttempts": 4},
     )
     result = sweep(client, report=lambda line: None)
     assert client.briefed == [] and client.rendered == []
@@ -201,7 +202,7 @@ def test_switching_unattended_drawing_off_spends_nothing():
 def test_a_server_with_no_picture_provider_stops_before_asking():
     client = FakeClient(
         graph(lexemes=[word("w1")], senses=[sense("s1", "w1")]),
-        settings={"sweepEnabled": True, "available": False, "maxAttempts": 4},
+        settings={"drawEnabled": True, "available": False, "maxAttempts": 4},
     )
     sweep(client, report=lambda line: None)
     assert client.briefed == [] and client.rendered == []

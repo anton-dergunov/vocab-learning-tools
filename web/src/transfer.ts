@@ -21,7 +21,7 @@ import type { Lexeme, TopicInput, VocabularyGraph, VocabularyInput } from "./dom
 import { newId } from "./ids";
 import { markdownFor } from "./markdown";
 import type { AcervoRepository } from "./repository";
-import { articleFor, lexemesIn, languageOptions, vocabularies } from "./selectors";
+import { articleFor, lexemesIn, languageOptions, sensesOf, vocabularies } from "./selectors";
 import { draftFor, parseArticle, yamlForDraft, YamlProblems, type ArticleDraft } from "./yaml";
 
 /**
@@ -140,13 +140,19 @@ function document(value: unknown): string {
  * lets a file be read as a new word, in any account, including a rebuilt one, where a stated lexeme
  * id would be refused.
  *
- * `imageRef` and `imageModelId` go with the ids, and they are not references at all — they are
- * facts about the server that drew the picture. `imageRef` embeds a lexeme id that will not exist
- * after import, so keeping it imported a live-looking reference to a file nobody has.
+ * `imageRef` goes with the ids and is not a reference at all: it is a path on the server that drew
+ * the picture, embedding a lexeme id that will not exist after import — keeping it imported a
+ * live-looking reference to a file nobody has.
+ *
+ * `imageModelId` **stays**, and the distinction is worth stating: it is not a path, it is the name
+ * of the model that drew this picture, which is a fact about the past exactly as an example's
+ * `origin` and `modelId` are. Provenance travels in a bundle; server paths do not. `remintIds`
+ * drops it again on the way in, because a row cannot name a rendering model with nothing rendered —
+ * it is handed to the step that supplies the bytes instead.
  */
 export function stripIds(draft: ArticleDraft): ArticleDraft {
   const forget = (image: ArticleDraft["images"][number]) => ({
-    ...image, id: null, imageRef: null, imageModelId: null
+    ...image, id: null, imageRef: null
   });
   return {
     ...draft,
@@ -456,6 +462,8 @@ export interface ImportReport {
   vocabulariesAdded: number;
   topicsAdded: number;
   added: number;
+  /** Pictures put back from the bundle's `media/` directory. */
+  picturesRestored: number;
   skipped: { language: string; headword: string }[];
   failed: BundleProblem[];
   /** True when the run stopped early: the server went away, or the owner cancelled. */
@@ -463,6 +471,22 @@ export interface ImportReport {
 }
 
 export interface ImportSignal { cancelled: boolean }
+
+/**
+ * The bytes of one picture, and the model that drew it, on their way back into a word.
+ *
+ * A callback rather than a transport, so this module keeps holding neither: `TransferPanel.tsx`
+ * owns the zip and the browser's file handling, and putting a picture back is the same act — and
+ * the same route — as attaching one by hand.
+ */
+export type RestorePicture = (
+  senseId: string,
+  bytes: Uint8Array,
+  drawnBy: string | null
+) => Promise<void>;
+
+/** `media/<language>/<slug>-<sense number>.webp` -> its bytes, as the zip holds them. */
+export type BundlePictures = ReadonlyMap<string, Uint8Array>;
 
 const DISCONNECTED = "not connected to the server";
 
@@ -502,7 +526,10 @@ export function remintIds(draft: ArticleDraft): ArticleDraft {
       })),
       images: stripped.senses[index].images.map((image) => ({
         ...image,
-        exampleId: remap(image.exampleId)
+        exampleId: remap(image.exampleId),
+        // The validator refuses a rendering model with nothing rendered, and the picture arrives
+        // separately — so this is carried by `restoredPictures` and written with the bytes.
+        imageModelId: null
       }))
     }))
   };
@@ -522,10 +549,13 @@ export async function importBundle(
   repository: AcervoRepository,
   plan: BundlePlan,
   onProgress: (done: number, total: number) => void = () => {},
-  signal: ImportSignal = { cancelled: false }
+  signal: ImportSignal = { cancelled: false },
+  pictures: BundlePictures = new Map(),
+  restore: RestorePicture | null = null
 ): Promise<ImportReport> {
   const report: ImportReport = {
-    vocabulariesAdded: 0, topicsAdded: 0, added: 0, skipped: [], failed: [], aborted: false
+    vocabulariesAdded: 0, topicsAdded: 0, added: 0, picturesRestored: 0,
+    skipped: [], failed: [], aborted: false
   };
 
   const snapshot = repository.snapshot();
@@ -583,9 +613,14 @@ export async function importBundle(
       continue;
     }
     try {
-      await repository.saveArticle(remintIds(draft));
+      const lexemeId = await repository.saveArticle(remintIds(draft));
       words.add(identity);
       report.added += 1;
+      // After the word exists, because a picture belongs to a sense that has to be there first —
+      // and the sense ids are the ones just minted, which only the replica knows.
+      report.picturesRestored += await restorePictures(
+        repository, lexemeId, path, draft, pictures, restore, report
+      );
     } catch (error) {
       report.failed.push({ path, message: messageOf(error) });
       if (disconnected(error)) return { ...report, aborted: true };
@@ -594,4 +629,69 @@ export async function importBundle(
   }
 
   return report;
+}
+
+/**
+ * Put a word's pictures back, one per sense, from the bundle's `media/` directory.
+ *
+ * Matched by **position**: `media/es/picar-2.webp` is the second sense of `es/picar.yaml`, which is
+ * the same pairing the export writes and the only one a bundle can express — it carries no ids a
+ * person or a second account could use. So the sense ids come from the replica, in the order
+ * `sensesOf` gives, which is the order the article numbers them in.
+ *
+ * A picture that cannot be put back is reported and the word is kept. The words are the part that
+ * cannot be regenerated; a picture is regenerable by design, and losing the whole import over one
+ * refused upload would be the wrong trade.
+ */
+async function restorePictures(
+  repository: AcervoRepository,
+  lexemeId: string,
+  path: string,
+  draft: ArticleDraft,
+  pictures: BundlePictures,
+  restore: RestorePicture | null,
+  report: ImportReport
+): Promise<number> {
+  if (!restore || pictures.size === 0) return 0;
+  const base = path.replace(/\.ya?ml$/i, "");
+  const senses = sensesOf(repository.snapshot(), lexemeId);
+  // By `order`, matching how `sensesOf` sorts and how the export numbered the files. Not document
+  // order: a hand-edited word file may list its senses in any order, and indexing by position
+  // would then put each picture under the wrong sense — the one failure here that says nothing.
+  const written = draft.senses.slice().sort((left, right) => left.order - right.order);
+
+  let restored = 0;
+  for (const [index, sense] of senses.entries()) {
+    const name = `${MEDIA_DIRECTORY}/${base}-${index + 1}.webp`;
+    const bytes = pictures.get(name) ?? bySuffix(pictures, name);
+    if (!bytes) continue;
+    // The model that drew it, carried by the word file and written together with the bytes: a row
+    // may not name a rendering model with nothing rendered, so neither travels without the other.
+    const drawnBy = written[index]?.images[0]?.imageModelId ?? null;
+    try {
+      await restore(sense.id, bytes, drawnBy);
+      restored += 1;
+    } catch (error) {
+      report.failed.push({
+        path: name,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+  return restored;
+}
+
+/**
+ * The same picture under a folder the archiver added.
+ *
+ * `readBundle` already unwraps a single wrapping directory from the text files — re-zipping a
+ * bundle on a Mac produces one — but the pictures are read straight from the archive, so their
+ * keys would still carry it and every lookup would miss in silence. The suffix includes the
+ * language directory and the word's own slug, so it is specific enough to match on.
+ */
+function bySuffix(pictures: BundlePictures, name: string): Uint8Array | undefined {
+  for (const [path, bytes] of pictures) {
+    if (path.endsWith(`/${name}`)) return bytes;
+  }
+  return undefined;
 }

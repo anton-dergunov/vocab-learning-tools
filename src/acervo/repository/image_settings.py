@@ -34,17 +34,17 @@ class ImageSettings(Mapping):
     "following the default" rather than showing the default as though it had been picked.
     """
 
-    __slots__ = ("sweep_enabled", "styles_off", "boost_variety", "chosen")
+    __slots__ = ("draw_enabled", "styles_off", "boost_variety", "chosen")
 
     def __init__(
         self,
         *,
-        sweep_enabled: bool = True,
+        draw_enabled: bool = True,
         styles_off: Iterable[str] = (),
         boost_variety: bool = True,
         chosen: bool = False,
     ) -> None:
-        self.sweep_enabled = bool(sweep_enabled)
+        self.draw_enabled = bool(draw_enabled)
         # A tuple, sorted and de-duplicated, so two saves of the same set compare equal and a
         # hand-edited row cannot make the offered list depend on JSON key order.
         self.styles_off = tuple(sorted({str(one) for one in styles_off if str(one).strip()}))
@@ -53,14 +53,14 @@ class ImageSettings(Mapping):
 
     def __getitem__(self, key: str) -> Any:
         return {
-            "sweepEnabled": self.sweep_enabled,
+            "drawEnabled": self.draw_enabled,
             "stylesOff": list(self.styles_off),
             "boostVariety": self.boost_variety,
             "chosen": self.chosen,
         }[key]
 
     def __iter__(self):
-        return iter(("sweepEnabled", "stylesOff", "boostVariety", "chosen"))
+        return iter(("drawEnabled", "stylesOff", "boostVariety", "chosen"))
 
     def __len__(self) -> int:
         return 4
@@ -81,7 +81,7 @@ def _read(row: Any) -> ImageSettings:
         return ImageSettings()
     stored = row["styles_off"]
     return ImageSettings(
-        sweep_enabled=row["sweep_enabled"],
+        draw_enabled=row["draw_enabled"],
         # Dropping anything malformed rather than raising: a hand-edited row must not take the
         # capture path down, and an unknown style id is harmless — it switches nothing off.
         styles_off=stored if isinstance(stored, list) else (),
@@ -101,7 +101,7 @@ def settings(owner: str) -> ImageSettings:
 def save(
     owner: str,
     *,
-    sweep_enabled: bool | None = None,
+    draw_enabled: bool | None = None,
     styles_off: Iterable[str] | None = None,
     boost_variety: bool | None = None,
 ) -> ImageSettings:
@@ -123,13 +123,13 @@ def save(
         current = _read(row)
 
         wanted = ImageSettings(
-            sweep_enabled=current.sweep_enabled if sweep_enabled is None else sweep_enabled,
+            draw_enabled=current.draw_enabled if draw_enabled is None else draw_enabled,
             styles_off=current.styles_off if styles_off is None else styles_off,
             boost_variety=current.boost_variety if boost_variety is None else boost_variety,
             chosen=True,
         )
         values = {
-            "sweep_enabled": wanted.sweep_enabled,
+            "draw_enabled": wanted.draw_enabled,
             "styles_off": list(wanted.styles_off),
             "boost_variety": wanted.boost_variety,
             "edited_at": now_instant(),

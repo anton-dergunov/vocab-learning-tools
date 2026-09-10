@@ -1015,6 +1015,16 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 .image-actions button.primary:hover:not(:disabled) { color: var(--paper); filter: brightness(1.06); }
 .image-actions button.danger:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
 
+/* The two bulk moves for twenty-three switches. Small and quiet: they sit above the list rather
+   than competing with it, and the count is what actually answers "where am I". */
+.style-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.style-bulk button {
+  padding: 5px 10px; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.style-bulk button:hover:not(:disabled) { border-color: var(--core); color: var(--core); }
+.style-bulk button:disabled { opacity: .4; cursor: not-allowed; }
+.style-count { margin-left: auto; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 /* Twenty-three switches, so a column each would be a screen of scrolling to find one name. */
 .style-grid {
   display: grid; gap: 2px 14px; margin-top: 4px;

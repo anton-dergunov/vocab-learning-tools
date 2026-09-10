@@ -375,6 +375,39 @@ def test_a_picture_can_be_attached_to_a_sense_that_has_never_been_briefed(server
     assert (server.media / row["imageRef"]).read_bytes()[:4] == b"RIFF"
 
 
+def test_a_restored_picture_keeps_the_model_that_drew_it_and_stays_replaceable(server):
+    """What an import needs, and the half that was missing from the export round trip.
+
+    A bundle carries the picture files and the model that drew each one; without naming it, every
+    restored picture would read as one the owner had chosen — no provenance, and suppressed, so
+    nothing would ever redraw two thousand of them.
+    """
+    from conftest import PNG
+
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+
+    answer = server.send(f"/images/senses/{itch['id']}/picture", PNG, drawn_by="vertex/imagen-4")
+    assert answer.status_code == 200, answer.json()
+    row = answer.json()["data"]
+
+    assert row["imageModelId"] == "vertex/imagen-4"
+    assert row["suppressed"] is False, "a restored picture is an ordinary drawn one"
+    # The brief the bundle carried is still there, so it can be redrawn from.
+    assert row["prompt"] == written[itch["id"]]["prompt"]
+    assert not server.painter.calls, "restoring draws nothing"
+
+
+def test_a_picture_the_owner_chose_is_told_apart_by_having_no_model(server):
+    from conftest import PNG
+
+    entry, itch, chop, sentence = word(server)
+    brief(server, entry, (itch, sentence["id"]), (chop, None))
+    row = server.send(f"/images/senses/{itch['id']}/picture", PNG).json()["data"]
+    assert row["imageModelId"] is None
+    assert row["suppressed"] is True, "choosing a picture stops anything drawing over it"
+
+
 def test_another_accounts_sense_cannot_be_given_a_picture(server, other):
     from conftest import PNG
 
@@ -420,11 +453,24 @@ def test_no_record_means_following_the_deployment_default(server):
     view = server.get("/images/settings").json()["data"]
     assert view["chosen"] is False
     assert view["stylesOff"] == []
-    assert view["sweepEnabled"] is True
+    assert view["drawEnabled"] is True
     assert view["boostVariety"] is True
     assert view["maxAttempts"] == MAX_ATTEMPTS
     assert {style["id"] for style in view["styles"]} >= {"oil-painting", "film-noir"}
     assert view["available"] is True
+
+
+def test_switching_drawing_off_is_stored_and_leaves_the_buttons_working(server):
+    """It governs the two things that draw by themselves, and nothing else. Gating the routes would
+    take away the reason to switch it off: a word with no pictures, and then the one you want."""
+    entry, itch, chop, sentence = word(server)
+    assert server.put("/images/settings", {"drawEnabled": False}).status_code == 200
+    assert server.get("/images/settings").json()["data"]["drawEnabled"] is False
+
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    answer = server.post(f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE})
+    assert answer.status_code == 200, answer.json()
+    assert answer.json()["data"]["imageRef"]
 
 
 def test_a_switched_off_style_is_never_offered(server):

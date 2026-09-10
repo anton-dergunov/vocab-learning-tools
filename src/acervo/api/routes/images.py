@@ -96,16 +96,22 @@ async def picture(sense_id: str, request: Request) -> JSONResponse:
     to send. The device id rides in a header for the same reason — there is no form to put it in.
 
     Keyed by the **sense** while drawing is keyed by the prompt, and the asymmetry is deliberate:
-    drawing needs a brief, so the row that holds one is the right key, while a picture you supply
-    has no brief and may be the first thing that sense ever gets. The prompt id is derived from the
-    sense, so the row is found or minted at the id it was always going to have.
+    drawing needs a brief, so the row that holds one is the right key, while a picture that arrives
+    as bytes has no brief and may be the first thing that sense ever gets. The prompt id is derived
+    from the sense, so the row is found or minted at the id it was always going to have.
+
+    `X-Acervo-Drawn-By` names the model that drew the picture originally, which makes this a
+    *restore* — an import putting a bundle's `media/` back — rather than a picture the owner chose.
+    The row then keeps its provenance and stays replaceable. Without it the picture is the owner's
+    own: no rendering model, and left alone by anything that draws.
     """
     owner = owner_id(request)
     device = graph.require_device(request.headers.get("x-acervo-device"))
+    drawn_by = (request.headers.get("x-acervo-drawn-by") or "")[:240]
     payload = await binary_body(request, PICTURE_LIMIT)
     return data(
         await run_in_threadpool(
-            attach_picture, request.app.state.settings, owner, device, sense_id, payload
+            attach_picture, request.app.state.settings, owner, device, sense_id, payload, drawn_by
         )
     )
 

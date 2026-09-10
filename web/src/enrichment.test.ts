@@ -51,6 +51,11 @@ describe("enriching a word that was just saved", () => {
     await repository.applyRemote(graph, 1, "dataset00000001");
     enrichment.resume();
     vi.spyOn(syncEngine, "syncNow").mockResolvedValue(syncEngine.getStatus());
+    // Automatic work asks the server whether the owner wants pictures drawn at all.
+    vi.spyOn(backendSession, "imageSettings").mockResolvedValue({
+      drawEnabled: true, stylesOff: [], boostVariety: true, chosen: false,
+      maxAttempts: 4, styles: [], available: true
+    });
   });
 
   afterEach(() => { enrichment.stop(); enrichment.resume(); vi.restoreAllMocks(); });
@@ -195,6 +200,53 @@ describe("enriching a word that was just saved", () => {
     });
     await settled();
     expect(forget).toHaveBeenCalledWith("images/lexemepicar0001/imagepicar00010.webp");
+  });
+
+  it("draws nothing on its own once the owner switches drawing off", async () => {
+    // The bug this closes: the switch used to gate only the server's sweep, so saving a word still
+    // produced pictures with it off. The setting lives on the server, so it is asked rather than
+    // cached — a stale copy would either draw for someone who had switched it off or refuse to
+    // draw for someone who never opened Settings.
+    vi.spyOn(backendSession, "imageSettings").mockResolvedValue({
+      drawEnabled: false, stylesOff: [], boostVariety: true, chosen: true,
+      maxAttempts: 4, styles: [], available: true
+    });
+    const brief = vi.spyOn(backendSession, "briefLexeme");
+    const render = vi.spyOn(backendSession, "renderImage");
+
+    enrichment.enqueue("lexemepicar0001", "picar");
+    await settled();
+
+    expect(brief).not.toHaveBeenCalled();
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it("still draws a picture the owner asks for by hand with drawing switched off", async () => {
+    // Switching it off is how you get a word with no pictures and then add the one you want.
+    vi.spyOn(backendSession, "imageSettings").mockResolvedValue({
+      drawEnabled: false, stylesOff: [], boostVariety: true, chosen: true,
+      maxAttempts: 4, styles: [], available: true
+    });
+    const render = vi.spyOn(backendSession, "renderImage")
+      .mockResolvedValue(row({ imageRef: "images/a.webp", imageModelId: "painter" }));
+
+    enrichment.redraw({
+      lexemeId: "lexemepicar0001", senseId: "sensepicaritch0", promptId: "imagepicar00010",
+      label: "picar", prompt: "Dog with a sausage", styleId: "folk-naive"
+    });
+    await settled();
+
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws nothing on its own when the server cannot be asked", async () => {
+    /* Unreachable means no. Nothing can be drawn without the server anyway, so this costs only the
+       decision — and the sweep picks the word up later regardless. */
+    vi.spyOn(backendSession, "imageSettings").mockRejectedValue(new Error("offline"));
+    const brief = vi.spyOn(backendSession, "briefLexeme");
+    enrichment.enqueue("lexemepicar0001", "picar");
+    await settled();
+    expect(brief).not.toHaveBeenCalled();
   });
 
   it("stops without a call once the owner signs out", async () => {

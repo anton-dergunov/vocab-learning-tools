@@ -46,6 +46,12 @@ from acervo.settings import Settings
 # says what happened, the threshold says what to do about it, and only one of those is data.
 MAX_ATTEMPTS = 4
 
+# `drawEnabled` is checked by the two things that draw *on their own* — `jobs/images/sweep.py` and
+# the interface's enrichment engine — and deliberately not by the routes below. A route draws what
+# it is asked, because every caller of it other than those two is a person pressing a button, and
+# switching automatic drawing off is precisely how you get a word with no pictures and then add the
+# one you want by hand. Gating the routes would take that away.
+
 BRIEF_TEMPLATE = "acervo_image_brief.txt"
 
 
@@ -109,8 +115,8 @@ def apply_settings(settings: Settings, owner: str, body: dict[str, Any]) -> dict
     table = _styles()
     changes: dict[str, Any] = {}
 
-    if "sweepEnabled" in body:
-        changes["sweep_enabled"] = _flag(body["sweepEnabled"], "sweepEnabled")
+    if "drawEnabled" in body:
+        changes["draw_enabled"] = _flag(body["drawEnabled"], "drawEnabled")
     if "boostVariety" in body:
         changes["boost_variety"] = _flag(body["boostVariety"], "boostVariety")
     if "stylesOff" in body:
@@ -350,17 +356,26 @@ def _draw(candidates: tuple[chain.Candidate, ...], prompt: str, seed: int, desti
 
 
 def attach_picture(settings: Settings, owner: str, device: str, sense_id: str,
-                   data: bytes) -> dict[str, Any]:
-    """Put the owner's own file where a drawn one would have gone.
+                   data: bytes, drawn_by: str = "") -> dict[str, Any]:
+    """Put a file where a drawn picture would have gone.
+
+    Two callers, told apart by `drawn_by`, and the difference is provenance rather than mechanism:
+
+    - **The owner choosing a picture.** No model drew it, so `imageModelId` stays empty — the same
+      way an example the learner wrote carries no `modelId` — and the row is `suppressed`, because
+      choosing a picture is choosing it and nothing should draw over it.
+    - **An import putting one back**, naming the model that drew it originally. That is a fact about
+      the past, carried in the bundle exactly as an example's `origin` is, so the row keeps it and
+      is *not* suppressed: a restored picture is an ordinary drawn one and can be redrawn.
+
+    Nothing anywhere in Acervo has a "the user supplied this" boolean and this must not be the
+    first; the absence of a rendering model is what says it.
 
     Keyed by the **sense**, not by an image prompt, and that is the point rather than a detail: a
-    sense that has never been briefed has no prompt to name, and attaching your own picture is
-    exactly the case where you would not want to spend a text call first. The prompt id is *derived*
-    from the sense, so the row is either found or minted at the id it was always going to have.
-
-    Modelled, not flagged: the row gains a picture with **no** `imageModelId`, which is how an
-    example the learner wrote carries no `modelId`. Nothing anywhere in Acervo has a "the user
-    supplied this" boolean and this must not be the first.
+    sense that has never been briefed has no prompt to name, and both callers hit exactly that case
+    — the owner would not want to spend a text call before choosing a file, and an import restores
+    a picture into a word it has only just written. The prompt id is *derived* from the sense, so
+    the row is either found or minted at the id it was always going to have.
 
     Re-encoded to the same 1024² WebP master rather than stored as handed over, so every picture in
     the article is one kind of thing and a 12 MB phone photograph does not become a 12 MB download.
@@ -380,16 +395,18 @@ def attach_picture(settings: Settings, owner: str, device: str, sense_id: str,
         "prompt": "", "styleId": "", "seed": 0, "modelId": "", "promptVersion": "",
         "attempts": 0, "createdAt": at, "revision": 0,
     }
+    restoring = bool(drawn_by.strip())
     return _write(owner, device, {
         **base,
         "editedAt": at,
         # A tombstoned row is revived: the id is derived, so this is the only row it could be.
         "deleted": False,
         "imageRef": reference,
-        "imageModelId": None,
+        "imageModelId": drawn_by.strip() or None,
         "failureReason": None,
-        # Attaching a picture is choosing one, so it stops anything drawing over it.
-        "suppressed": True,
+        # Choosing a picture is choosing it, so nothing draws over it. A restored one is an
+        # ordinary drawn picture and stays replaceable.
+        "suppressed": not restoring,
     }, _styles())
 
 

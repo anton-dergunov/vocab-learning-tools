@@ -11,9 +11,10 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { languageOf } from "./languages";
 import { repository, type ReplicaSnapshot } from "./repository";
 import { languageOptions } from "./selectors";
+import { backendSession } from "./api";
 import { bytesFor } from "./media";
 import {
-  bundleName, exportBundle, importBundle, picturesIn, readBundle,
+  bundleName, exportBundle, importBundle, MEDIA_DIRECTORY, picturesIn, readBundle,
   type BundleFile, type BundlePlan, type ImportReport
 } from "./transfer";
 
@@ -32,12 +33,26 @@ function save(name: string, bytes: Uint8Array): void {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-async function filesIn(file: File): Promise<BundleFile[]> {
+/**
+ * The bundle's text files, and its pictures kept as bytes.
+ *
+ * Split because `strFromU8` on a WebP produces mojibake, not a picture — everything under `media/`
+ * has to stay binary all the way to the route that stores it.
+ */
+async function filesIn(file: File): Promise<{ files: BundleFile[]; pictures: Map<string, Uint8Array> }> {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (!/\.zip$/i.test(file.name)) return [{ path: file.name, text: strFromU8(bytes) }];
-  return Object.entries(unzipSync(bytes))
+  if (!/\.zip$/i.test(file.name)) {
+    return { files: [{ path: file.name, text: strFromU8(bytes) }], pictures: new Map() };
+  }
+  const files: BundleFile[] = [];
+  const pictures = new Map<string, Uint8Array>();
+  Object.entries(unzipSync(bytes))
     .filter(([path, content]) => !path.endsWith("/") && !NOISE.test(path) && content.length > 0)
-    .map(([path, content]) => ({ path, text: strFromU8(content) }));
+    .forEach(([path, content]) => {
+      if (path.startsWith(`${MEDIA_DIRECTORY}/`)) pictures.set(path, content);
+      else files.push({ path, text: strFromU8(content) });
+    });
+  return { files, pictures };
 }
 
 /** ~110 KiB a picture, which is what makes the size worth warning about before it is asked for. */
@@ -133,7 +148,7 @@ export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
 
 type Stage =
   | { at: "idle" }
-  | { at: "chosen"; name: string; plan: BundlePlan }
+  | { at: "chosen"; name: string; plan: BundlePlan; pictures: Map<string, Uint8Array> }
   | { at: "running"; done: number; total: number }
   | { at: "done"; report: ImportReport };
 
@@ -147,20 +162,29 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
     if (!file) return;
     setProblem("");
     try {
-      setStage({ at: "chosen", name: file.name, plan: readBundle(await filesIn(file)) });
+      const { files, pictures } = await filesIn(file);
+      setStage({ at: "chosen", name: file.name, plan: readBundle(files), pictures });
     } catch (error) {
       setStage({ at: "idle" });
       setProblem(error instanceof Error ? error.message : "That file could not be read.");
     }
   }
 
-  async function run(plan: BundlePlan) {
+  async function run(plan: BundlePlan, pictures: Map<string, Uint8Array>) {
     cancel.current = { cancelled: false };
     setStage({ at: "running", done: 0, total: 0 });
+    const deviceId = repository.snapshot().deviceId;
     const report = await importBundle(
       repository, plan,
       (done, total) => setStage({ at: "running", done, total }),
-      cancel.current
+      cancel.current,
+      pictures,
+      /* Putting a picture back is the same act, and the same route, as attaching one by hand —
+         naming the model that drew it is what makes it a restore rather than a file you chose. */
+      async (senseId, bytes, drawnBy) => {
+        const blob = new Blob([bytes as unknown as BlobPart], { type: "image/webp" });
+        await backendSession.attachImage(senseId, deviceId, blob, drawnBy);
+      }
     );
     onChanged();
     setStage({ at: "done", report });
@@ -175,8 +199,9 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
   return <section className="config-section">
     <h3>Import</h3>
     <p className="config-help">
-      Adds the words in a bundle to your vocabulary. A word you already have is left exactly as it
-      is, never replaced. Importing writes to the server, so it needs a connection.
+      Adds the words in a bundle to your vocabulary, with their pictures where the bundle carries
+      them. A word you already have is left exactly as it is, never replaced — pictures included.
+      Importing writes to the server, so it needs a connection.
     </p>
 
     <input
@@ -191,6 +216,7 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
           {stage.plan.articles.length} {stage.plan.articles.length === 1 ? "entry" : "entries"}
           {stage.plan.topics.length ? `, ${stage.plan.topics.length} topics` : ""}
           {stage.plan.vocabularies.length ? `, ${stage.plan.vocabularies.length} languages` : ""}
+          {stage.pictures.size ? `, ${stage.pictures.size} pictures` : ""}
         </span>
       </div>
       {stage.plan.problems.length > 0 && <ProblemList
@@ -201,7 +227,7 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
         <button className="tb-btn" onClick={reset}>Cancel</button>
         <button
           className="tb-btn" disabled={stage.plan.articles.length === 0}
-          onClick={() => void run(stage.plan)}
+          onClick={() => void run(stage.plan, stage.pictures)}
         >Import {stage.plan.articles.length} {stage.plan.articles.length === 1 ? "entry" : "entries"}</button>
       </div>
     </>}
@@ -221,6 +247,7 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
         </strong>
         <span>
           {stage.report.added} added
+          {stage.report.picturesRestored > 0 && `, ${stage.report.picturesRestored} pictures put back`}
           {stage.report.skipped.length > 0 && `, ${stage.report.skipped.length} already present`}
           {stage.report.failed.length > 0 && `, ${stage.report.failed.length} refused`}
           {stage.report.topicsAdded > 0 && `, ${stage.report.topicsAdded} new topics`}

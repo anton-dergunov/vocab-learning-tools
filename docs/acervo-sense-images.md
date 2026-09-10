@@ -312,7 +312,8 @@ permanently silent, so a style added to `config/image-styles.yaml` must be on by
 
 | Control | Shape | Default |
 |---|---|---|
-| **The styles** | one switch per style, on or off. A style switched off is never offered. | all on |
+| **Draw pictures** | one switch, and it governs everything that draws *by itself* — the sweep, and a client enriching a word that was just saved. It deliberately does not gate the per-sense buttons: switching it off is how you get a word with no pictures and then add the one you want by hand. Checked by the two drivers rather than by the routes, for that reason. | on |
+| **The styles** | one switch per style, on or off. A style switched off is never offered. At least one must stay on — with none there is nothing to draw with, and "draw nothing" is the switch above rather than an empty list. | all on |
 | **Boost variety** | one switch. On, each style is presented with a few of its example subjects, sampled per word, which pushes the writer toward styles it would otherwise pass over. Off, styles are offered on their own descriptions alone. | **on** |
 
 No per-style weight, no sampling temperature. A weight is a number nobody can set meaningfully
@@ -429,14 +430,45 @@ round-trip through the YAML projection, so `prompt`, `styleId` and `seed` surviv
 picture, and `imageRef` embeds a lexeme id that will not exist after import — keeping it imported a
 live-looking reference to a file nobody has.
 
-The bytes are an opt-in `media/<language>/<slug>-<n>.webp` directory, **export-only**, exactly as the
-Obsidian mirror under `markdown/` already is: `isWordFile` excludes it and `readBundle` ignores it,
-so the import path grows no second writer. Named after the word file so the two pair by eye, and
-suffixed by sense order rather than by prompt id, because a bundle carries no ids a person can use.
-It defaults to off — a bundle should stay a text archive you can read, pictures are regenerable by
-design, and the briefs that produced them are in the word file either way. It is also the one export
-that is not offline-capable, which the panel says plainly; `transfer.ts` names the pictures and
-`TransferPanel.tsx` fetches them, because this module holds no transport and should not grow one.
+The bytes are an opt-in `media/<language>/<slug>-<n>.webp` directory. Named after the word file so
+the two pair by eye, and suffixed by sense order rather than by prompt id, because a bundle carries
+no ids a person or a second account could use — which also makes position the only pairing a restore
+can key on. It defaults to off: a bundle should stay a text archive you can read, pictures are
+regenerable by design, and the briefs that produced them are in the word file either way. It is the
+one export that is not offline-capable, which the panel says plainly.
+
+> ### DECISION
+> **The import puts the pictures back, through the same route that attaches one by hand.**
+>
+> This was first built export-only, by analogy with the Obsidian mirror under `markdown/`, on the
+> reasoning that reading the bytes would grow a second writer beside `repository.saveArticle`. That
+> was wrong, and the round trip proved it: exporting with pictures and importing into a rebuilt
+> database gave every sense its brief and *"Not drawn yet"*, which is an archive rather than a
+> backup — and a backup is what the export is for.
+>
+> It is not a second writer, because a picture is not a graph record. `saveArticle` writes the word,
+> and then each picture goes to `PUT /images/senses/{senseId}/picture` — the route a person uses to
+> attach one. One pipeline, two callers, exactly as with capture.
+>
+> `transfer.ts` still holds no transport: it *names* the pictures and takes a callback, and
+> `TransferPanel.tsx` supplies it along with the zip, because owning the zip and the browser's file
+> handling is already its job.
+
+What travels with the bytes is `imageModelId`, and the distinction is the point. `imageRef` is a
+path on the server, embedding a lexeme id that will not exist after import, so it is stripped —
+keeping it imported a live-looking reference to a file nobody has. `imageModelId` is not a path: it
+is the name of the model that drew this picture, a fact about the past exactly as an example's
+`origin` and `modelId` are. Provenance travels in a bundle; server paths do not.
+
+That is also what tells a **restore** from a picture the owner chose, on one route. Naming the model
+means the row keeps its provenance and stays replaceable; naming none means the owner picked this
+file, so `imageModelId` is empty — the way an example the learner wrote carries no `modelId` — and
+the row is `suppressed`, because choosing a picture is choosing it. Without that distinction every
+restored picture would read as hand-chosen, and nothing would ever redraw two thousand of them.
+
+A picture that cannot be put back is reported and its word is kept: the words are the part that
+cannot be regenerated. And a word the import skips as already held keeps its own picture, for the
+same reason it keeps its own text — an import must never cost you what you did after the export.
 
 ---
 

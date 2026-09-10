@@ -125,9 +125,11 @@ image_settings = Table(
     metadata,
     Column("id", String(15), primary_key=True),
     _owner(),
-    # Whether the unattended sweep may spend money while nobody is watching. It deliberately does
-    # not gate the buttons: you pressed those, so you meant them.
-    Column("sweep_enabled", Boolean, nullable=False, default=True),
+    # Whether pictures are drawn on their own at all — by the sweep, and by a client enriching a
+    # word that was just saved. It deliberately does not gate the buttons: you pressed those, so
+    # you meant them, and switching this off is how you get a word with no pictures and then add
+    # the one you want by hand.
+    Column("draw_enabled", Boolean, nullable=False, default=True),
     # The styles switched **off**, never the ones switched on. A set of switched-on ids left the
     # online dictionary sources permanently silent when one was added later; a style added to
     # `config/image-styles.yaml` must be on by default, and only this direction gives that.

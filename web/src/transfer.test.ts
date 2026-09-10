@@ -75,22 +75,26 @@ describe("exporting a bundle", () => {
   });
 
   it("names a picture after the word file it belongs to, and carries no bytes by default", () => {
-    // Export-only, exactly as the Obsidian mirror is: `readBundle` never looks at `media/`, so the
-    // import path grows no second writer. The bytes are `TransferPanel`'s business — this module
-    // holds no transport and should not grow one.
+    // `readBundle` never looks at `media/`: a picture is not a graph record, so it does not come
+    // in through the document reader. The bytes are `TransferPanel`'s business, and putting one
+    // back is the route that attaches one by hand — this module names the pictures and takes a
+    // callback, because it holds no transport and should not grow one.
     expect(bundle().map((file) => file.path).some((path) => path.startsWith("media/"))).toBe(false);
     expect(picturesIn(testGraph(), { language: "es", markdown: false, images: true })).toEqual([
       { path: "media/es/picar-1.webp", reference: "images/lexemepicar0001/imagepicar00010.webp" }
     ]);
   });
 
-  it("leaves the server's own facts about a picture behind", () => {
+  it("leaves the server's path behind but carries the model that drew the picture", () => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const word = parse(at(bundle(), "es/picar.yaml").text) as any;
-    // Not references — facts about the machine that drew it. `imageRef` embeds a lexeme id that
-    // will not exist after import, so keeping it imports a live-looking reference to nothing.
+    // `imageRef` is a path on the server, embedding a lexeme id that will not exist after import —
+    // keeping it imports a live-looking reference to a file nobody has.
     expect(word.senses[0].imagePrompts[0].imageRef).toBeUndefined();
-    expect(word.senses[0].imagePrompts[0].imageModelId).toBeUndefined();
+    // `imageModelId` is not a path. It is the name of the model that drew this picture, which is a
+    // fact about the past exactly as an example's `origin` and `modelId` are, and it is what lets a
+    // restored picture keep its provenance instead of reading as one the owner attached.
+    expect(word.senses[0].imagePrompts[0].imageModelId).toBe("demo-painter");
   });
 
   it("says what an id-less document means in its own header", () => {
@@ -253,6 +257,78 @@ describe("reading a bundle", () => {
 
   it("refuses a file that is not an export at all", () => {
     expect(() => readBundle([{ path: "notes.txt", text: "hello" }])).toThrow(/does not look like/);
+  });
+});
+
+describe("putting pictures back", () => {
+  /* The round trip the export exists for, and the half that was missing: the bundle carried the
+     files and the import ignored them, so a restored word showed its brief and "Not drawn yet". */
+
+  const media = () => new Map([
+    ["media/es/picar-1.webp", new Uint8Array([1, 2, 3])],
+    ["media/es/picar-2.webp", new Uint8Array([4, 5, 6])]
+  ]);
+
+  it("hands each picture to the sense it belongs to, with the model that drew it", async () => {
+    const repository = await emptyReplica();
+    const restored: { senseId: string; bytes: number; drawnBy: string | null }[] = [];
+
+    const report = await importBundle(
+      repository, readBundle(bundle()), undefined, undefined, media(),
+      async (senseId, bytes, drawnBy) => { restored.push({ senseId, bytes: bytes[0], drawnBy }); }
+    );
+
+    expect(report.picturesRestored).toBe(2);
+    expect(report.failed).toEqual([]);
+
+    // Matched by position, which is the only pairing a bundle can express: it carries no ids a
+    // person or a second account could use. `picar-2.webp` is the second sense of `es/picar.yaml`.
+    const graph = repository.snapshot() as VocabularyGraph;
+    const picar = lexemesIn(graph, "es").find((lexeme) => lexeme.headword === "picar")!;
+    const senses = articleFor(graph, picar.id)!.senses.map((entry) => entry.sense.id);
+    expect(restored.map((one) => one.senseId)).toEqual(senses);
+    expect(restored.map((one) => one.bytes)).toEqual([1, 4]);
+    // Provenance, so a restored picture is not mistaken for one the owner attached.
+    expect(restored.map((one) => one.drawnBy)).toEqual(["demo-painter", null]);
+  });
+
+  it("keeps the word when a picture cannot be put back", async () => {
+    const repository = await emptyReplica();
+    const report = await importBundle(
+      repository, readBundle(bundle()), undefined, undefined, media(),
+      async () => { throw new Error("the server refused the picture"); }
+    );
+
+    // The words are the part that cannot be regenerated; a picture is regenerable by design, so
+    // losing the whole import over one refused upload would be the wrong trade.
+    expect(report.added).toBe(4);
+    expect(report.picturesRestored).toBe(0);
+    expect(report.failed.map((problem) => problem.path)).toEqual([
+      "media/es/picar-1.webp", "media/es/picar-2.webp"
+    ]);
+  });
+
+  it("asks for nothing when the bundle carries no pictures", async () => {
+    const repository = await emptyReplica();
+    const restore = vi.fn(async () => undefined);
+    const report = await importBundle(
+      repository, readBundle(bundle()), undefined, undefined, new Map(), restore
+    );
+    expect(restore).not.toHaveBeenCalled();
+    expect(report.picturesRestored).toBe(0);
+  });
+
+  it("puts nothing back for a word it skipped as already present", async () => {
+    // A word you already have is left exactly as it is — pictures included, or an import would
+    // overwrite the picture you chose with the one the bundle happened to carry.
+    const repository = await emptyReplica();
+    await importBundle(repository, readBundle(bundle()));
+    const restore = vi.fn(async () => undefined);
+    const again = await importBundle(
+      repository, readBundle(bundle()), undefined, undefined, media(), restore
+    );
+    expect(again.skipped).toHaveLength(4);
+    expect(restore).not.toHaveBeenCalled();
   });
 });
 

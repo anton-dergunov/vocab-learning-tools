@@ -101,7 +101,7 @@ export interface ImageStyle {
 
 export interface ImageSettings {
   /** Whether the unattended sweep may spend money while nobody is watching. */
-  sweepEnabled: boolean;
+  drawEnabled: boolean;
   /** The styles switched **off**, never the ones switched on — so a new style arrives on. */
   stylesOff: string[];
   boostVariety: boolean;
@@ -433,7 +433,7 @@ export const backendSession = {
   imageSettings(): Promise<ImageSettings> {
     return client.call<ImageSettings>("/images/settings");
   },
-  saveImageSettings(changes: Partial<Pick<ImageSettings, "sweepEnabled" | "stylesOff" | "boostVariety">>): Promise<ImageSettings> {
+  saveImageSettings(changes: Partial<Pick<ImageSettings, "drawEnabled" | "stylesOff" | "boostVariety">>): Promise<ImageSettings> {
     return client.call<ImageSettings>("/images/settings", {
       method: "PUT", body: JSON.stringify(changes)
     });
@@ -469,13 +469,22 @@ export const backendSession = {
    * sense ever gets, and the prompt id is derived from the sense, so the server finds or mints the
    * row at the id it was always going to have.
    */
-  async attachImage(senseId: string, deviceId: string, file: Blob): Promise<ImagePromptRow> {
+  async attachImage(
+    senseId: string, deviceId: string, file: Blob, drawnBy: string | null = null
+  ): Promise<ImagePromptRow> {
     return client.call<ImagePromptRow>(
       `/images/senses/${encodeURIComponent(senseId)}/picture`,
       {
         method: "PUT",
         body: file,
-        headers: { "Content-Type": file.type || "application/octet-stream", "X-Acervo-Device": deviceId }
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-Acervo-Device": deviceId,
+          /* Naming the model that drew it makes this a *restore* rather than a picture you chose:
+             the row keeps its provenance and stays replaceable. Absent, it is your own file, which
+             carries no model and is left alone by anything that draws. */
+          ...(drawnBy ? { "X-Acervo-Drawn-By": drawnBy } : {})
+        }
       },
       false,
       RENDER_TIMEOUT

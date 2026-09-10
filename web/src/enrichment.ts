@@ -100,6 +100,14 @@ class EnrichmentEngine {
   private status: EnrichmentStatus = EMPTY;
   private listeners = new Set<() => void>();
   private queue: Unit[] = [];
+  /**
+   * The unit being worked on, which is *not* the same as `status.active`.
+   *
+   * `status.active` is for display and is set once a model call actually begins; a word spends a
+   * moment before that asking whether drawing is switched on at all. Deduping against the display
+   * state let a second `enqueue` slip into that window and brief the same word twice.
+   */
+  private current: Unit | null = null;
   private working: Promise<void> | null = null;
   private rest = FIRST_REST;
   private stopped = false;
@@ -120,8 +128,8 @@ class EnrichmentEngine {
    */
   enqueue(lexemeId: string, label: string): void {
     if (this.stopped) return;
-    if (this.status.active?.lexemeId === lexemeId) return;
-    if (this.queue.some((item) => item.kind === "word" && item.lexemeId === lexemeId)) return;
+    const asked = (item: Unit | null) => item?.kind === "word" && item.lexemeId === lexemeId;
+    if (asked(this.current) || this.queue.some(asked)) return;
     this.push({ kind: "word", lexemeId, label });
   }
 
@@ -167,6 +175,7 @@ class EnrichmentEngine {
   stop(): void {
     this.stopped = true;
     this.queue = [];
+    this.current = null;
     this.update({ waiting: [] });
   }
 
@@ -201,9 +210,38 @@ class EnrichmentEngine {
     while (!this.stopped) {
       const next = this.queue.shift();
       if (!next) return;
+      this.current = next;
       this.update({ waiting: this.waits() });
-      if (next.kind === "word") await this.word(next.lexemeId, next.label);
-      else await this.picture(next);
+      try {
+        if (next.kind === "word") {
+          if (await this.drawingIsOn()) await this.word(next.lexemeId, next.label);
+        } else {
+          // A redraw is deliberately not gated. You pressed the button; switching automatic
+          // drawing off is how you get a word with no pictures and then add the one you want.
+          await this.picture(next);
+        }
+      } finally {
+        this.current = null;
+      }
+    }
+  }
+
+  /**
+   * Whether the owner wants pictures drawn on their own, asked of the server each time.
+   *
+   * Not cached, and asked here rather than trusted from a copy this module keeps: the setting is
+   * owner state on the server, and a stale copy would either draw for someone who had switched it
+   * off — which is the bug this fixes — or refuse to draw for someone who never opened Settings.
+   * It is one indexed read against a local SQLite file, set against a model call.
+   *
+   * Unreachable means no: nothing can be drawn without the server anyway, so a failure here costs
+   * only the *decision*, and the sweep will pick the word up later regardless.
+   */
+  private async drawingIsOn(): Promise<boolean> {
+    try {
+      return (await backendSession.imageSettings()).drawEnabled;
+    } catch {
+      return false;
     }
   }
 

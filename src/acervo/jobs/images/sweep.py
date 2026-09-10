@@ -120,8 +120,8 @@ def sweep(client: AcervoClient, *, language: str | None = None, limit: int = 0,
     the rows are in the graph saying what to draw, and the next run draws them.
     """
     settings = client.image_settings()
-    if not settings.get("sweepEnabled", True):
-        report("Unattended drawing is switched off in Settings ▸ Pictures.")
+    if not settings.get("drawEnabled", True):
+        report("Drawing pictures is switched off in Settings ▸ Pictures.")
         return Swept()
     if not settings.get("available", False):
         report("This server has no picture provider configured, so there is nothing to draw with.")
