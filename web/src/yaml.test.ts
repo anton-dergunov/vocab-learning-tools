@@ -103,6 +103,50 @@ describe("reading YAML back", () => {
       .toContain("is not a field Acervo knows");
   });
 
+  it("quotes a gloss term that a stricter reader would read as something else", () => {
+    /* The gloss line is flow style because it reads better on one line, and a flow collection is
+       where plain scalars are most constrained. How constrained depends on the reader: this package
+       writes YAML 1.2, where `?` is an indicator only at the start of a token, while PyYAML
+       implements 1.1 and refuses it anywhere in a flow scalar. Five of 1,481 real word files were
+       unreadable by any Python tool as a result, and half of this repository is Python. */
+    const draft = parseArticle(yamlFor(articleFor(testGraph(), "lexemepicar0001")!));
+    draft.senses[0].glosses = [{
+      lang: "en",
+      terms: ["who is calling?", "plain term", "a: b", "trailing space ", "-leading dash", "#hash"]
+    }];
+
+    const document = yamlForDraft(draft);
+    expect(document).toContain('"who is calling?"');
+    expect(document).toContain('"a: b"');
+    expect(document).toContain('"trailing space "');
+    expect(document).toContain('"-leading dash"');
+    expect(document).toContain('"#hash"');
+    // Left alone, because nothing reads it as anything else and quotes would only add noise.
+    expect(document).toContain("plain term");
+    expect(document).not.toContain('"plain term"');
+
+    // And it still means the same thing when read back.
+    expect(parseArticle(document).senses[0].glosses[0].terms).toEqual([
+      "who is calling?", "plain term", "a: b", "trailing space ", "-leading dash", "#hash"
+    ]);
+  });
+
+  it("leaves accented and non-Latin terms unquoted, which are the common case", () => {
+    const draft = parseArticle(yamlFor(articleFor(testGraph(), "lexemepicar0001")!));
+    draft.senses[0].glosses = [{ lang: "en", terms: ["comezón", "l'appétit", "picar (algo)"] }];
+    const document = yamlForDraft(draft);
+    expect(document).toContain("comezón");
+    expect(document).not.toContain('"comezón"');
+    expect(parseArticle(document).senses[0].glosses[0].terms)
+      .toEqual(["comezón", "l'appétit", "picar (algo)"]);
+  });
+
+  it("quotes a topic name the same way, since topics are a flow list too", () => {
+    const draft = parseArticle(yamlFor(articleFor(testGraph(), "lexemepicar0001")!));
+    draft.topics = ["Food", "What? Where?"];
+    expect(yamlForDraft(draft)).toContain('"What? Where?"');
+  });
+
   it("refuses an id that is not an Acervo id", () => {
     const document = yamlFor(articleFor(testGraph(), "lexemepicar0001")!)
       .replace("id: sensepicaritch0", "id: sense-2");

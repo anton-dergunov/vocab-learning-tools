@@ -10,6 +10,7 @@ import { useRef, useState } from "react";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { languageOf } from "./languages";
 import { repository, type ReplicaSnapshot } from "./repository";
+import { syncEngine } from "./sync";
 import { languageOptions } from "./selectors";
 import { backendSession } from "./api";
 import { bytesFor } from "./media";
@@ -57,6 +58,9 @@ async function filesIn(file: File): Promise<{ files: BundleFile[]; pictures: Map
 
 /** ~110 KiB a picture, which is what makes the size worth warning about before it is asked for. */
 const PICTURE_BYTES = 110 * 1024;
+/** Pictures restored between pulls. Small enough that a long import fills in visibly, large enough
+ *  that two thousand pictures do not cost two thousand extra round trips. */
+const RESTORED_PER_PULL = 20;
 
 export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
   const [language, setLanguage] = useState<string>("all");
@@ -174,6 +178,8 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
     cancel.current = { cancelled: false };
     setStage({ at: "running", done: 0, total: 0 });
     const deviceId = repository.snapshot().deviceId;
+    let restored = 0;
+
     const report = await importBundle(
       repository, plan,
       (done, total) => setStage({ at: "running", done, total }),
@@ -184,8 +190,18 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
       async (senseId, bytes, drawnBy) => {
         const blob = new Blob([bytes as unknown as BlobPart], { type: "image/webp" });
         await backendSession.attachImage(senseId, deviceId, blob, drawnBy);
+        restored += 1;
+        /* A word arrives in the replica by itself, because `saveArticle` merges what the server
+           answers. A *picture* does not: it is written by the image route, so the replica learns of
+           it only on a pull — which is why an imported article showed empty frames and a "waiting"
+           count until the next sync came round a minute later. Pulling in batches keeps a long
+           import filling in as it goes rather than all at the end. */
+        if (restored % RESTORED_PER_PULL === 0) await syncEngine.syncNow();
       }
     );
+
+    // And once at the end, so "import finished" means every picture is here, not merely uploaded.
+    if (restored > 0) await syncEngine.syncNow();
     onChanged();
     setStage({ at: "done", report });
   }

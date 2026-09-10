@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { strToU8, zipSync } from "fflate";
+import { backendSession } from "./api";
 import { MemoryDatabase } from "./localDatabase";
 import { LocalAcervoRepository, repository, type ReplicaSnapshot } from "./repository";
 import { testGraph, TEST_OWNER } from "./testGraph";
 import { fakeRemote } from "./testRemote";
+import { syncEngine } from "./sync";
 import { exportBundle } from "./transfer";
 import { ExportPanel, ImportPanel } from "./TransferPanel";
 
@@ -29,6 +31,15 @@ function bundleFile(name = "acervo-all-2026-09-01.zip"): File {
   exportBundle(testGraph(), { language: "all", markdown: false, images: false }, AT)
     .forEach((file) => { archive[file.path] = strToU8(file.text); });
   return fileOf(zipSync(archive), name);
+}
+
+/** The same bundle with a picture beside a word file, the way an export with pictures writes it. */
+function bundleWithPicture(): File {
+  const archive: Record<string, Uint8Array> = {};
+  exportBundle(testGraph(), { language: "all", markdown: false, images: false }, AT)
+    .forEach((file) => { archive[file.path] = strToU8(file.text); });
+  archive["media/es/picar-1.webp"] = new Uint8Array([1, 2, 3]);
+  return fileOf(zipSync(archive), "acervo-all-2026-09-01.zip");
 }
 
 /* jsdom has neither of these, and the export path is exactly the code that needs them. */
@@ -95,6 +106,35 @@ describe("the import panel", () => {
     expect(screen.getByText("4 added, 2 new topics, 2 new languages")).toBeInTheDocument();
     expect(repository.snapshot().lexemes.filter((lexeme) => !lexeme.deleted)).toHaveLength(4);
     expect(changed).toHaveBeenCalled();
+  });
+
+  it("pulls after restoring pictures, so a finished import has them", async () => {
+    /* A word arrives in the replica by itself: `saveArticle` merges what the server answers. A
+       picture does not — it is written by the image route — so without this the article showed
+       empty frames and a "waiting" count until the next scheduled sync came round a minute later. */
+    const attach = vi.spyOn(backendSession, "attachImage")
+      .mockResolvedValue({} as never);
+    const pull = vi.spyOn(syncEngine, "syncNow")
+      .mockResolvedValue(syncEngine.getStatus());
+
+    render(<ImportPanel onChanged={() => {}} />);
+    await choose(bundleWithPicture());
+    fireEvent.click(screen.getByRole("button", { name: "Import 4 entries" }));
+
+    expect(await screen.findByText("Import finished")).toBeInTheDocument();
+    expect(attach).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/1 pictures put back/)).toBeInTheDocument();
+    expect(pull).toHaveBeenCalled();
+  });
+
+  it("does not pull when the bundle carried no pictures", async () => {
+    const pull = vi.spyOn(syncEngine, "syncNow").mockResolvedValue(syncEngine.getStatus());
+    render(<ImportPanel onChanged={() => {}} />);
+    await choose(bundleFile());
+    fireEvent.click(screen.getByRole("button", { name: "Import 4 entries" }));
+
+    expect(await screen.findByText("Import finished")).toBeInTheDocument();
+    expect(pull).not.toHaveBeenCalled();
   });
 
   it("lists the words it left alone on a second import", async () => {

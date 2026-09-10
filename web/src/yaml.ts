@@ -12,7 +12,7 @@
  * same footing as YAML someone typed.
  */
 
-import { Document, isMap, isNode, isSeq, LineCounter, parseDocument, Scalar } from "yaml";
+import { Document, isMap, isNode, isScalar, isSeq, LineCounter, parseDocument, Scalar } from "yaml";
 import {
   EXAMPLE_ORIGINS, GENDERS, LEXEME_STATUSES, PARTS_OF_SPEECH, REGISTERS, SOURCE_KINDS,
   type Example, type ExampleOrigin, type Gender, type Gloss, type ImagePrompt,
@@ -172,6 +172,37 @@ function promptFields(image: ImagePromptDraft): Plain {
     promptVersion: image.promptVersion,
     imageRef: image.imageRef,
     imageModelId: image.imageModelId
+  });
+}
+
+/**
+ * A scalar that is safe unquoted inside a flow collection, by the strictest reader rather than the
+ * most permissive one.
+ *
+ * The gloss line is written in flow style — `{lang: en, terms: [to itch]}` — because it reads far
+ * better on one line. But a flow collection is where plain scalars are most constrained, and how
+ * constrained depends on the reader: the `yaml` package writes and reads YAML 1.2, where `?` is an
+ * indicator only at the start of a token, while PyYAML implements 1.1 and refuses it anywhere in a
+ * flow scalar. So `terms: [who is calling?, on the line]` round-tripped perfectly through Acervo
+ * and could not be read by any Python tool at all — and half of this repository is Python.
+ *
+ * The rule here is deliberately conservative rather than a transcription of either spec: a term is
+ * left plain only when it is letters, digits, spaces and a few marks that no reader treats
+ * specially, and quoted otherwise. Over-quoting costs two characters; under-quoting costs a file
+ * one reader cannot open, which is the failure that actually happened.
+ */
+const PLAIN_IN_FLOW = /^[\p{L}\p{N}][\p{L}\p{N} ().'\u2019/–-]*$/u;
+
+function plainInFlow(text: string): boolean {
+  return PLAIN_IN_FLOW.test(text) && !text.endsWith(" ");
+}
+
+/** Quotes every scalar in a flow sequence that any reader might read as something else. */
+function quoteInFlow(node: unknown): void {
+  if (!isSeq(node)) return;
+  node.items.forEach((item) => {
+    if (!isScalar(item) || typeof item.value !== "string") return;
+    if (!plainInFlow(item.value)) item.type = Scalar.QUOTE_DOUBLE;
   });
 }
 
@@ -338,11 +369,18 @@ export function yamlForDraft(draft: ArticleDraft, study: StudyState | null = nul
     senses.items.forEach((sense) => {
       if (!isMap(sense)) return;
       const glosses = sense.get("glosses", true);
-      if (isSeq(glosses)) glosses.items.forEach((gloss) => { if (isMap(gloss)) gloss.flow = true; });
+      if (isSeq(glosses)) glosses.items.forEach((gloss) => {
+        if (!isMap(gloss)) return;
+        gloss.flow = true;
+        quoteInFlow(gloss.get("terms", true));
+      });
     });
   }
   const topicsNode = document.get("topics", true);
-  if (isSeq(topicsNode)) topicsNode.flow = true;
+  if (isSeq(topicsNode)) {
+    topicsNode.flow = true;
+    quoteInFlow(topicsNode);
+  }
 
   return document.toString({ lineWidth: 0, singleQuote: false, flowCollectionPadding: false });
 }

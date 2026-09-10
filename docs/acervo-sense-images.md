@@ -482,6 +482,12 @@ file, so `imageModelId` is empty — the way an example the learner wrote carrie
 the row is `suppressed`, because choosing a picture is choosing it. Without that distinction every
 restored picture would read as hand-chosen, and nothing would ever redraw two thousand of them.
 
+The import **pulls** after restoring — in batches, and once at the end — and that is not an
+optimisation. A word reaches the replica by itself, because `saveArticle` merges what the server
+answers; a picture does not, because the image route wrote it. Without the pull an imported article
+showed empty frames and a "waiting" count until the next scheduled sync came round up to a minute
+later, which reads as a failed import rather than a lagging one.
+
 A picture that cannot be put back is reported and its word is kept: the words are the part that
 cannot be regenerated. And a word the import skips as already held keeps its own picture, for the
 same reason it keeps its own text — an import must never cost you what you did after the export.
