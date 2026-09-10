@@ -305,6 +305,27 @@ const byAge = <T extends SyncFields & { id: string }>(records: T[]): T[] =>
   [...records].sort((left, right) =>
     left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
 
+/**
+ * At most one picture per sense, which is what §02 decided and what the article should show.
+ *
+ * Belt and braces rather than the mechanism: an image prompt's id is *derived* from its sense, so a
+ * second row for one sense cannot be created any more. It could be before — `saveArticle` minted a
+ * random id while the server derived one, so importing a bundle left a sense with an empty frame
+ * carrying the brief and a picture carrying none. This keeps such a pair from being *shown* while
+ * it exists in a replica written by the older code.
+ *
+ * The one kept is the drawn one, then the most recently edited: a picture beats a bare brief, and
+ * "the newest thing that happened to this sense" is the only other honest tie-break.
+ */
+function onePicture(images: ImagePrompt[]): ImagePrompt[] {
+  if (images.length < 2) return images;
+  const ranked = images.slice().sort((left, right) =>
+    Number(Boolean(right.imageRef)) - Number(Boolean(left.imageRef))
+    || right.editedAt.localeCompare(left.editedAt)
+  );
+  return [ranked[0]];
+}
+
 export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | null {
   const lexeme = live(graph.lexemes).find((candidate) => candidate.id === lexemeId);
   if (!lexeme) return null;
@@ -318,7 +339,7 @@ export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | 
     senses: sensesOf(graph, lexemeId).map((sense) => ({
       sense,
       examples: byAge(examples.filter((example) => example.senseId === sense.id)),
-      images: byAge(images.filter((image) => image.senseId === sense.id))
+      images: onePicture(byAge(images.filter((image) => image.senseId === sense.id)))
     })),
     attestations: byAge(live(graph.attestations).filter((attestation) => attestation.lexemeId === lexemeId)),
     // Without these the card image is invisible in the projection, so saving would orphan it.

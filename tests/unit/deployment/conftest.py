@@ -21,4 +21,11 @@ import pytest
 def package_into_the_tests_own_directory(tmp_path_factory, monkeypatch):
     archive = tmp_path_factory.mktemp("release") / "acervo-server.tar.gz"
     monkeypatch.setenv("ACERVO_PACKAGE_ARCHIVE", str(archive))
+    # And without the compiled dictionaries, which are the owner's own 800-odd MB and have nothing
+    # to do with whether a stream reaches a server or a summary names the right address. Every test
+    # here used to drag them in — harmless while they all overwrote one archive in `build/`, and
+    # 24 GB of temporary directories once each test got its own. The two tests that *are* about
+    # dictionary publishing point `ACERVO_DICTIONARY_ARTIFACTS` at a handful of fixture files, and
+    # their own environment overrides this.
+    monkeypatch.setenv("ACERVO_INCLUDE_DICTIONARIES", "false")
     return archive

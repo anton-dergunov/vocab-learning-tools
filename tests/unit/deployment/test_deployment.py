@@ -207,6 +207,10 @@ def test_compiled_dictionaries_travel_with_the_release_and_are_merged(tmp_path: 
     for suffix, content in ((".json", b'{"id": "moedict-zh"}'), (".dict", b"old"), (".idx", b"old")):
         (served / f"moedict-zh{suffix}").write_bytes(content)
 
+    # This is the one test that is about dictionaries travelling, so it says so: `conftest.py`
+    # leaves them out everywhere else, where they are 800-odd MB of the owner's own data and
+    # nothing to do with what is being checked.
+    env["ACERVO_INCLUDE_DICTIONARIES"] = "true"
     env["ACERVO_DICTIONARY_ARTIFACTS"] = str(artifacts)
     result = run_local(env)
 

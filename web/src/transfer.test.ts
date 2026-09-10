@@ -11,6 +11,7 @@ import {
   BUNDLE_FORMAT, bundleName, exportBundle, importBundle, MANIFEST_FILE, picturesIn, readBundle, remintIds,
   slugFor, TOPICS_FILE, VOCABULARIES_FILE, type BundleFile, type ExportOptions
 } from "./transfer";
+import { imagePromptId } from "./ids";
 import { parseArticle } from "./yaml";
 
 const AT = "2026-09-01T12:00:00.000Z";
@@ -290,6 +291,31 @@ describe("putting pictures back", () => {
     expect(restored.map((one) => one.bytes)).toEqual([1, 4]);
     // Provenance, so a restored picture is not mistaken for one the owner attached.
     expect(restored.map((one) => one.drawnBy)).toEqual(["demo-painter", null]);
+  });
+
+  it("writes one row per sense, not one for the document and one for the picture", async () => {
+    /* The bug this closes. `saveArticle` minted a random id for an image prompt while everything
+       server-side derived one from the sense, so an import produced two rows: an empty frame
+       carrying the brief, and a picture carrying none. */
+    const repository = await emptyReplica();
+    const restored: string[] = [];
+    await importBundle(
+      repository, readBundle(bundle()), undefined, undefined, media(),
+      async (senseId) => { restored.push(senseId); }
+    );
+
+    const graph = repository.snapshot() as VocabularyGraph;
+    const picar = lexemesIn(graph, "es").find((lexeme) => lexeme.headword === "picar")!;
+    const senses = articleFor(graph, picar.id)!.senses;
+
+    // The document's own row is at the id the restore would also compute, so the picture lands on
+    // the row that already holds the brief.
+    expect(senses[0].images.map((image) => image.id)).toEqual([imagePromptId(senses[0].sense.id)]);
+    const forThisWord = graph.imagePrompts.filter(
+      (row) => !row.deleted && row.lexemeId === picar.id
+    );
+    expect(forThisWord).toHaveLength(1);
+    expect(restored).toEqual([senses[0].sense.id, senses[1].sense.id]);
   });
 
   it("keeps the word when a picture cannot be put back", async () => {

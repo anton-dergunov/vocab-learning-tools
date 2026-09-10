@@ -64,6 +64,20 @@ def changes() -> dict:
     }
 
 
+def test_the_derived_id_is_the_one_the_interface_derives_too():
+    """The other half of the check is `web/src/ids.test.ts`, which pins these same values.
+
+    Two engines converge on one row only because both compute the same id from the sense. When the
+    interface minted a random one instead, importing a bundle produced *two* rows for one sense —
+    the document's and the restored picture's — which reads as a duplicate picture rather than as an
+    error, so nothing catches it but this.
+    """
+    assert image_prompt_id("sensepicaritch0") == "otxot3jm55or06a"
+    assert image_prompt_id("oj3y4cakuelbgrd") == "0088hcytqci2gl0"
+    assert image_prompt_id("a") == "rtggsgprao8u2o3"
+    assert image_prompt_id("") == "5el2yfarsw7agle"
+
+
 def test_ids_are_acervo_shaped_and_stable():
     minted = image_prompt_id("s00000000000001")
     assert len(minted) == ID_LENGTH

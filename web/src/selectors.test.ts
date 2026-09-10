@@ -149,6 +149,34 @@ describe("vocabulary selectors", () => {
 });
 
 
+describe("how many pictures a sense shows", () => {
+  it("shows one, keeping the drawn one over a bare brief", () => {
+    // What an import used to leave behind: the document's row under a random id and the restored
+    // picture's under the derived one, so the sense had an empty frame *and* a picture.
+    const graph = testGraph();
+    const [drawn] = graph.imagePrompts;
+    graph.imagePrompts.push({
+      ...drawn, id: "imagepicar00099", imageRef: null, imageModelId: null,
+      editedAt: "2030-01-01T00:00:00.000Z"
+    });
+
+    const [sense] = articleFor(graph, "lexemepicar0001")!.senses;
+    expect(sense.images.map((image) => image.id)).toEqual(["imagepicar00010"]);
+  });
+
+  it("falls back to the most recently edited when neither has a picture", () => {
+    const graph = testGraph();
+    const [first] = graph.imagePrompts;
+    Object.assign(first, { imageRef: null, imageModelId: null, editedAt: "2026-01-01T00:00:00.000Z" });
+    graph.imagePrompts.push({
+      ...first, id: "imagepicar00099", editedAt: "2026-06-01T00:00:00.000Z"
+    });
+
+    const [sense] = articleFor(graph, "lexemepicar0001")!.senses;
+    expect(sense.images.map((image) => image.id)).toEqual(["imagepicar00099"]);
+  });
+});
+
 describe("what still needs a picture", () => {
   /* A query against the replica, never a stored queue — which is also how the interface reports
      work the *server's* sweep is doing, with no job store to poll and deliberately none to build. */

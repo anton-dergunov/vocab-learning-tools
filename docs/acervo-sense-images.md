@@ -183,6 +183,22 @@ record. That split is what keeps `attempts` a count: the row says what happened,
 what to do about it, and only the first of those is data.
 
 > ### DECISION
+> **An image prompt's id is derived from its `senseId`, in *every* writer.**
+>
+> `image_prompt_id(senseId)` — base-36 of a namespaced SHA-256 — exists in
+> `src/acervo/images/ids.py` and in `web/src/ids.ts`, and the two are pinned against the same
+> vectors from both sides. It is what makes two engines converge on one row with no coordination,
+> what makes `suppressed` possible instead of a tombstone, and what limits a sense to one picture
+> without a database constraint.
+>
+> It cost a bug to learn that "every writer" means the interface too. `saveArticle` minted a random
+> id, so importing a bundle wrote the document's row under one id and the restored picture's under
+> the derived one: the sense showed an empty frame carrying the brief *and* a picture carrying none,
+> and clicking either gave the wrong half. Nothing failed — it just looked like a duplicate. Hence
+> the derivation on both sides, and `articleFor` keeping one picture per sense as well, for replicas
+> the older code already wrote.
+
+> ### DECISION
 > **`suppressed` is not a tombstone, and could not be.**
 >
 > An image prompt's id is *derived* from its `senseId`. A tombstoned row is invisible to the sweep,

@@ -6,7 +6,7 @@ import {
   type Vocabulary, type VocabularyInput, type VocabularyGraph
 } from "./domain";
 import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase, type ReplicaMeta } from "./localDatabase";
-import { newDeviceId, newId, nowInstant } from "./ids";
+import { imagePromptId, newDeviceId, newId, nowInstant } from "./ids";
 import type { ArticleDraft, ImagePromptDraft } from "./yaml";
 
 export const LOCAL_SCHEMA_VERSION = 7;
@@ -370,7 +370,13 @@ export class LocalAcervoRepository implements AcervoRepository {
      */
     const prompt = (image: ImagePromptDraft, senseId: string | null): string => {
       const existing = claim(this.graph.imagePrompts, image.id, (record) => record.lexemeId === lexemeId);
-      const id = image.id ?? newId();
+      /* Derived from the sense, never random, and this is the one id in Acervo that works that way.
+         It is what lets the interface and the server's sweep both draw for a sense without
+         coordinating, and it is why `suppressed` is a field rather than a tombstone.
+         Minting a random one here broke that quietly: importing a bundle wrote the document's row
+         under one id and the restored picture's under the derived one, so a sense ended up with two
+         — an empty frame carrying the brief, and a picture carrying none. */
+      const id = image.id ?? (senseId ? imagePromptId(senseId) : newId());
       change("imagePrompts", {
         attempts: 0,
         failureReason: null,
