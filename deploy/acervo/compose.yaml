@@ -16,6 +16,12 @@ services:
       ACERVO_DICTIONARIES_PATH: /var/lib/acervo/dictionaries
       ACERVO_MEDIA_PATH: /var/lib/acervo/media
       ACERVO_PROMPTS_PATH: /app/prompts
+      # Where the corpus lives, on the compose network. Internal by construction: the service
+      # publishes no port, and the browser reaches it through this server's authenticated proxy.
+      ACERVO_SPEECH_URL: "${ACERVO_SPEECH_URL:-http://speech-retrieval:8000/api/v1}"
+      # Held here and never sent to a client, exactly like a provider key: it authorises channel
+      # mutations, and the proxy attaches it server-side.
+      ACERVO_SPEECH_OPERATOR_TOKEN: "${ACERVO_SPEECH_OPERATOR_TOKEN:-}"
       # Which providers answer, in order, as ids from models/catalogue.json. Unset means every one
       # this deployment has credentials for, in catalogue order — so a server with one key needs
       # nothing here. The keys themselves are named by their catalogue rows, and every value comes
@@ -54,6 +60,49 @@ services:
       # python:3.12-slim does not, and a container whose healthcheck binary is missing reports
       # unhealthy forever while serving perfectly.
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/acervo/v1/health', timeout=3).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  # The spoken-usage-retrieval corpus: a foreign service deployed beside Acervo, like the Anki sync
+  # server, and reached over HTTP only. Acervo's server never imports it and never opens its SQLite
+  # file — the core and the corpus deliberately share no database, container or backup policy
+  # (acervo-design.md §02). The version it runs is deploy/acervo/speech/pin.json.
+  speech-retrieval:
+    build:
+      context: ../..
+      dockerfile: deploy/acervo/speech/Dockerfile
+    restart: unless-stopped
+    user: "${ACERVO_UID:-1000}:${ACERVO_GID:-1000}"
+    environment:
+      # Channel management is offered in Settings ▸ Clips through Acervo's proxy, so mutations are
+      # on — and binding a non-loopback host with mutations enabled and no token makes the service
+      # refuse to start, which is why the token is not optional here.
+      SPEECH_RETRIEVAL_ENABLE_CHANNEL_MUTATIONS: "true"
+      SPEECH_RETRIEVAL_OPERATOR_TOKEN: "${ACERVO_SPEECH_OPERATOR_TOKEN:?Set ACERVO_SPEECH_OPERATOR_TOKEN}"
+      # Acervo's own interface is the only browser client and it reaches this through the server's
+      # proxy, so the service needs no CORS origins of its own.
+      SPEECH_RETRIEVAL_CORS_ORIGINS: ""
+    # Deliberately no `ports`. Nothing outside the compose network talks to it: the browser goes
+    # through Acervo's authenticated proxy, which is what keeps an unauthenticated read API off the
+    # network and the operator token off the client.
+    volumes:
+      # Two mounts, not one, because only one half is disposable. `raw/` is downloaded captions —
+      # bandwidth spent, not politely re-fetchable, and the only store in this deployment that is
+      # neither disposable nor rebuildable from something Acervo holds. Nothing deletes it.
+      - "${ACERVO_SPEECH_CACHE:-acervo-speech-cache}:/var/lib/speech/data/raw"
+      # The index and the derived artifacts, rebuilt from the cache by `update --once` at the cost
+      # of CPU and no traffic. Mounted at the parent, with the cache mounted inside it.
+      - "${ACERVO_SPEECH_INDEX:-acervo-speech-index}:/var/lib/speech/data"
+      # The owner's channel list, seeded from the wheel on first start and never overwritten.
+      - "${ACERVO_SPEECH_CATALOGUES:-acervo-speech-catalogues}:/var/lib/speech/catalogues"
+    healthcheck:
+      # Liveness, **not** readiness. Readiness answers 503 until an index has been built, which is
+      # honest and correct on a fresh deployment — and a healthcheck pointed at it would report a
+      # perfectly good service as failed and fail the install. Whether the corpus is ready is a
+      # question for Settings ▸ Clips, which reads /status.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=3).status == 200 else 1)"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -156,3 +205,6 @@ volumes:
   acervo-downloads:
   acervo-dictionaries:
   acervo-media:
+  acervo-speech-cache:
+  acervo-speech-index:
+  acervo-speech-catalogues:

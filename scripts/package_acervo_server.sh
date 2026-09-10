@@ -69,7 +69,24 @@ if [ "${ACERVO_INCLUDE_DICTIONARIES:-true}" = true ] && [ -d "$dictionary_artifa
   echo "Bundling $bundled compiled dictionaries ($size). Set ACERVO_INCLUDE_DICTIONARIES=false to skip." >&2
 fi
 
-archive_entries="config deploy dictionaries docs models prompts requirements scripts src templates package.json pyproject.toml README.md version.json"
+# The pinned spoken-usage-retrieval wheel. It is not in the repository — deploy/acervo/speech/pin.json
+# names it and scripts/fetch_speech.sh downloads it — but compose builds the speech image with the
+# repository root as its context, and on the server that root is this extracted archive. A release
+# without the wheel produces a deployment that cannot build, so this is required rather than
+# optional, unlike the compiled dictionaries above.
+#
+# Only the wheel: the npm tarball is consumed by `npm --prefix web run build` on the machine cutting
+# the release, and what ships from that is the staged interface under deploy/acervo/server/web.
+speech_wheel=$(find "$repo_root/vendor/speech" -maxdepth 1 -name '*.whl' -print -quit 2>/dev/null || true)
+if [ -z "$speech_wheel" ]; then
+  echo "Missing the pinned spoken-usage-retrieval wheel in vendor/speech/." >&2
+  echo "Run scripts/fetch_speech.sh first; the speech service cannot be built without it." >&2
+  exit 1
+fi
+mkdir -p "$bundle/vendor/speech"
+cp "$speech_wheel" "$bundle/vendor/speech/"
+
+archive_entries="config deploy dictionaries docs models prompts requirements scripts src templates package.json pyproject.toml README.md version.json vendor"
 [ ! -d "$bundle/downloads" ] || archive_entries="$archive_entries downloads"
 [ ! -d "$bundle/dictionary-artifacts" ] || archive_entries="$archive_entries dictionary-artifacts"
 

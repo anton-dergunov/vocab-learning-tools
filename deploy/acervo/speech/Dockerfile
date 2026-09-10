@@ -1,0 +1,50 @@
+# The spoken-usage-retrieval service, from the wheel pinned in pin.json beside this file.
+#
+# The image is Acervo's rather than that repository's, which is what its own contract asks for: the
+# package never self-daemonizes, and process supervision, volumes, the URL and credentials are the
+# host's. That also keeps the base image, the user and the healthcheck under the rules this
+# deployment already lives by. See docs/plans/spoken-clips.md §2.1–§2.3.
+#
+# The wheel reaches the build context through vendor/speech/, which scripts/fetch_speech.sh fills
+# and scripts/package_acervo_server.sh carries into the release archive — the server builds from
+# the extracted release, so an artifact that is not in the archive is not in the build context.
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    # Both defaults in the package are *relative* paths, which in a container means "wherever the
+    # working directory happens to be". They must be set explicitly or the service quietly builds
+    # its corpus somewhere that is not a mount.
+    SPEECH_RETRIEVAL_DATA_DIR=/var/lib/speech/data \
+    SPEECH_RETRIEVAL_CATALOGUE_DIR=/var/lib/speech/catalogues \
+    SPEECH_RETRIEVAL_HOST=0.0.0.0 \
+    SPEECH_RETRIEVAL_PORT=8000
+
+WORKDIR /app
+
+# No ffmpeg and no ffprobe: they are needed only by the optional audio path, which is off by
+# default, and yt-dlp is reached as a Python module rather than as a system binary. No Stanza
+# either — `analyzer=auto` falls back to simplemma and never downloads a model implicitly.
+COPY vendor/speech/*.whl /tmp/wheels/
+RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
+
+# `data` holds two very different things and they are mounted separately: `raw/` is acquired
+# captions, which cost bandwidth and are the one thing here nothing may delete, while `index/` and
+# `derived/` are rebuilt from it. `catalogues/` is the operator's channel list.
+RUN mkdir -p /var/lib/speech/data/raw /var/lib/speech/data/index \
+             /var/lib/speech/data/derived /var/lib/speech/data/reports \
+             /var/lib/speech/catalogues \
+    && chmod -R a+rX /app \
+    && chmod -R a+rwX /var/lib/speech
+
+# Seeding is not a convenience. An empty catalogue directory cannot be filled through the API —
+# the repository only rewrites a `<language>.json` that already exists, and the schema rejects a
+# catalogue with no sections — so a fresh mount would leave channel management with nothing to
+# edit. `channels seed` never overwrites, which is why this can run unconditionally on every start
+# rather than behind a test the entrypoint would have to get right.
+COPY deploy/acervo/speech/entrypoint.sh /usr/local/bin/speech-entrypoint
+RUN chmod +x /usr/local/bin/speech-entrypoint
+
+EXPOSE 8000
+ENTRYPOINT ["/usr/local/bin/speech-entrypoint"]
+CMD ["speech-retrieval", "serve"]

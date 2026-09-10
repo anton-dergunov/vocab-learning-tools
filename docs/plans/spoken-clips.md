@@ -41,9 +41,14 @@ Read `docs/design.md` and `docs/plans/README.md` there before starting. In short
   with its own transport, progressive source text, a direct-source fallback, keyboard control and a
   reduced-motion mode. **It deliberately owns no modal**: the host does.
 
-What it does **not** give, and what this integration therefore does not use: translation of a clip,
-audio, forced alignment, and any ranking model. All of those are additive there and change nothing
-here.
+- **Optional clip translation**, as an asynchronous job with its own cache, producing a target
+  sentence *and* a word-alignment graph the player renders interactively. Acervo stores none of it
+  and switches it on last, in step 7 — §13 says why both halves of that are deliberate.
+
+What it does **not** give, and what this integration therefore does not use: audio, forced alignment
+of audio to text, and any ranking model. All three are additive there and change nothing here. Note
+that its `Clip.alignment_status` (audio timing) and its `TranslationResult.alignment_status` (the
+word graph) are different things that happen to share a word.
 
 ---
 
@@ -61,9 +66,10 @@ rather than structurally true.
 > names one version in one tracked file.**
 >
 > A release is a git tag plus a Python wheel and an `npm pack` tarball attached to it. Acervo tracks
-> `speech/pin.json` — the version, the tag, and a SHA-256 for each artifact — and
-> `scripts/fetch_speech.sh` downloads them into an untracked `vendor/speech/`, verifying the digests.
-> Registry publication to PyPI and npm is a later choice that changes nothing here.
+> `deploy/acervo/speech/pin.json` — the version, the tag, and a SHA-256 for each artifact, beside the
+> Dockerfile that consumes it — and `scripts/fetch_speech.sh` downloads them into an untracked
+> `vendor/speech/`, verifying the digests. Registry publication to PyPI and npm is a later choice
+> that changes nothing here.
 
 Upgrading is then one command and one edited file, and a build that cannot reach the pinned version
 fails loudly instead of silently taking a newer one. This answers `acervo-design.md`'s standing open
@@ -91,26 +97,40 @@ client from it.
 Indexing is `docker compose exec speech-retrieval speech-retrieval update --once`, called from a
 cron line through `run-worker.sh`. It is deliberately **not** a subcommand of `acervo_worker.py`:
 that entry point is for *Acervo's own* work, and this is a foreign CLI shipped by a foreign image.
-The service is designed to rebuild its index atomically from the cache while serving, so an update
-adds videos without a restart.
+The service is designed for this — it builds into a temporary file and swaps it in with an atomic
+rename, while readers open a fresh read-only connection per query — so an update adds videos without
+a restart, and a query that straddles the swap still sees a consistent snapshot.
+
+`exec` rather than a second `profiles: ["tools"]` container, for a reason beyond simplicity: the
+index records which analyzer built it and readiness *refuses* an index built by a different analyzer
+version. One image that both builds and serves cannot drift; two images can, and the symptom would
+be a service that reports itself unready after a routine rebuild.
 
 ### 3 · The cache is not the index, and only one of them is disposable
 
 The captions downloaded from YouTube are the one thing here that cost bandwidth and cannot be
 politely re-fetched at will. The index built from them is derived and rebuildable by design.
 
-> **DECISION: two named volumes, mounted at two subpaths of one data directory.**
+> **DECISION: two directories, mounted at two subpaths of the service's one data directory.**
 >
-> - `acervo-speech-cache` → `…/data/raw` — immutable acquired input. **Nothing in either repository
->   deletes this.** Not `deploy.sh --reset-database`, not `--reset-data`, not `reindex`, not a
->   version bump, not an image rebuild.
-> - `acervo-speech-index` → `…/data/index` and `…/data/derived` — rebuildable. Throwing it away
->   costs CPU and no traffic.
+> - `$acervo_root/data/speech-cache` → `…/data/raw` — immutable acquired input. **Nothing in either
+>   repository deletes this.** Not `deploy.sh --reset-database`, not `--reset-data`, not `reindex`,
+>   not a version bump, not an image rebuild.
+> - `$acervo_root/data/speech-index` → `…/data/index` and `…/data/derived` — rebuildable. Throwing
+>   it away costs CPU and no traffic.
 
-The greenfield rule that development databases are disposable stops at the cache volume. It is the
-only store in this deployment that is neither disposable nor reconstructible from something Acervo
-holds, and the backup note should say so. Detecting videos deleted at the source, and pruning what
-they left behind, is the other repository's problem and is not in scope.
+Host paths under `$acervo_root`, not named Docker volumes. Every existing mount takes its path from
+the installer through a `"${HOST_PATH:-fallback}"` default, so a genuinely named volume would be the
+first of its kind, would sit outside `$acervo_root`, and would be invisible to whoever is looking
+after the machine. Both resets are then safe by construction rather than by care: `deploy.sh`
+deletes nothing at all, and `install.sh` deletes three specific paths by name, none of them these.
+
+The greenfield rule that development databases are disposable stops at the cache. It is the only
+store in this deployment that is neither disposable nor reconstructible from something Acervo holds,
+and the backup note should say so — the deploy-time backup sweep copies named Anki files from two
+directories and will not touch it, which is correct for something this size but means the operator
+owns it. Detecting videos deleted at the source, and pruning what they left behind, is the other
+repository's problem and is not in scope.
 
 ### 4 · A clip is an `Example`, not a new record
 
@@ -121,6 +141,10 @@ remaining work is three fields.
 
 > **DECISION: a clip is an example with `origin: "subtitle"`.** It gains `videoEnd`, `videoChannel`
 > and `clipRef` — the corpus's stable `segment_id` — and nothing else. No ninth table.
+
+It arrives `approved: false`, like every other example a model produced. That is the smaller change —
+the badge already renders — and it keeps clips out of the way of the approved/unapproved surface,
+which is due a redesign of its own and should not have to inherit a special case from here.
 
 Provenance stays modelled rather than flagged, exactly as with attestations: the origin says where
 the sentence came from and `clipRef` says which segment it is, so the stored text can be audited
@@ -190,9 +214,16 @@ text that no longer matches the segment it names.
 > **DECISION: one corpus search and one text call per lexeme.**
 
 The search is the lexeme's `lemma`, falling back to its `headword`, in the lexeme's `language`, with
-`match_mode=auto` and `order=ranked`, bounded to a small candidate set (start at 20; the API caps at
-50). The candidates go to the model with the article's senses, and the model returns for each sense
-either one candidate id or nothing.
+`match_mode=auto` and `order=ranked`, bounded to **20 candidates** (the API caps at 50). The
+candidates go to the model with the article's senses, and the model returns for each sense either one
+candidate id or nothing — with the translation of the clip it chose, which is §13.
+
+The senses are described to the model the way `prompts/acervo_image_brief.txt` describes them, and
+for the reason that prompt learned the hard way: **the definition in the language being learned is
+the authority, and the glosses are hints that can mislead.** A gloss is a rough handle chosen for
+closeness, and judging a fragment against the gloss rather than the definition finds instances of
+the English word instead of the Spanish one. Reuse that prompt's wording rather than inventing a
+second phrasing of the same rule.
 
 The model is the **last and best quality gate**, not the retrieval mechanism. The other repository
 improves ranking with traditional IR because it has millions of segments and cannot afford a model
@@ -268,10 +299,17 @@ into Acervo would create a second thing to keep in step and a second place to cu
 > **DECISION: Acervo ships no channel list. Settings ▸ Clips reads and writes the retrieval
 > service's catalogue through the proxy.**
 
-The catalogue directory is a **volume seeded from the image on first run and never overwritten**, so
-a channel the owner added survives a version bump. The cost is honest and worth stating: a channel
-newly shipped by a later retrieval version does not appear on its own. The owner's list is the
-owner's.
+The catalogue directory is a **mount seeded from the installed package when it is empty, and never
+overwritten**, so a channel the owner added survives a version bump. Seeding is mandatory rather
+than a convenience: the repository can only edit a `<language>.json` that already exists, and the
+schema forbids a catalogue with no sections, so an empty directory cannot be bootstrapped through
+the API at all. That is also why the wheel must carry the default catalogue as package data — today
+it ships no JSON, and the file is found only because it happens to sit in that repository's working
+tree.
+
+Two costs, both honest. A channel newly shipped by a later retrieval version does not appear on its
+own — the owner's list is the owner's. And a language the seed does not cover cannot be added from
+Settings; that is a limitation to fix in the retrieval repository rather than to work around here.
 
 ### 11 · A third enrichment kind, not a second engine
 
@@ -293,8 +331,6 @@ permanent empty frame on every sense of every word would be noise.
 
 ### 12 · What is deliberately not built
 
-- **No translation of a clip.** The example stores `translation: null`. The other repository's
-  translation capability is additive and can be adopted later without a schema change here.
 - **No manual corpus search surface.** The owner does not browse the corpus and pick clips by hand.
   If that turns out to be wanted, it is a separate feature with a separate design.
 - **No rescan.** Neither adding a channel nor a completed index update touches words already held.
@@ -302,7 +338,77 @@ permanent empty frame on every sense of every word would be noise.
   would have to add first.
 - **No cross-service health dashboard.** Settings ▸ Clips shows whether the service answers and what
   its corpus contains, which is what a person actually needs. A dashboard is not that.
-- **No audio, no alignment, no ranking model.** All additive on the other side.
+- **No audio, no ranking model.** Additive on the other side.
+
+### 13 · Target-language text: two surfaces, and only one of them is Acervo's
+
+The retrieval service can translate a clip. It should not translate *Acervo's*, and separating the
+two surfaces is what makes the question easy.
+
+**The article's line is Acervo's, and it is free.** `Example.translation`, `translationLang` and
+`matchedTranslationForm` already exist with the `translation ⇔ translationLang` XOR invariant, and
+`prompts/acervo_compose.txt` already produces exactly that shape — a translation into
+`glossLangs[0]` plus a verbatim matched form — in the *same call* that produces an example.
+
+> **DECISION: the clip-selection call of §7 also returns the translation of the clip it chose**, in
+> `glossLangs[0]`, with `matchedTranslationForm`, exactly as capture does for a generated example.
+
+No second call, no second provider configuration. It goes into the graph, so it replicates to the
+phone and reads offline like every other example — which a per-clip fetch from the retrieval service
+could never do, since `GET /clips/{segment_id}` never populates `target_text` and translation there
+is always a job.
+
+**The player's target text is the service's, and it is more than a sentence.** Two provider calls —
+translate, then align — yield a validated many-to-many word-alignment graph that the packaged player
+renders as an interactive relation: click a word and its counterparts light up, and during playback
+the translation illuminates in step with the audio. There is also an authored-track fallback, which
+serves the creator's own subtitle where one exists and feeds it to the model as a reference where a
+model is configured. Acervo should use none of that for anything it stores, and should not
+reimplement any of it.
+
+> **DECISION: Acervo stores nothing the retrieval service translated.** The article line is
+> Acervo's; the player's target text and alignment are the service's, fetched when the modal opens,
+> online-only, exactly like the clip.
+
+**When the player's text is switched on, it runs on the owner's chain.** `TranslationProvider` and
+`WordAlignmentProvider` are Protocols there, and `create_app` takes both — a public entry point. So
+Acervo writes the adapter against `acervo.models` and the speech container calls `create_app` with
+it injected, in place of the console script. The other repository changes nothing at all: no LiteLLM
+dependency, no schema-dialect port, no error-taxonomy mapping.
+
+`acervo.models` stands alone by design, so that image carries it and `models/catalogue.json` and
+nothing else of Acervo's; Acervo's *server* image still never imports `speech_retrieval`. The chain
+is **given** as `ACERVO_TEXT_CHAIN` rather than looked up, since that container has no business
+reaching the database — the rule already stated for work that cannot import `repository/`. And
+Vertex needs only the credentials directory two containers already mount.
+
+One rule for that adapter: the cache is keyed on the `provider` and `model` it reports, so it
+reports **the chain**, never the row that happened to answer. Otherwise fall-through thrashes the
+cache. Translation and alignment are separate stages with separate keys, so they need not be served
+by the same model.
+
+### 14 · A clip never anchors a picture
+
+`src/acervo/images/article.py` ranks example origins for the image brief writer, and `subtitle`
+currently sits third — above `llm`, which is last. Left alone, the first real clip would become the
+preferred thing to illustrate.
+
+> **DECISION: `subtitle` is excluded from the anchor set outright, and `llm` is promoted above
+> `tatoeba` and `wiktionary`.** New order: `attestation`, `manual`, `llm`, `tatoeba`, `wiktionary`.
+> A sense whose only example is a clip anchors on the sense text.
+
+Excluded rather than ranked last, because ranking last still picks a clip when it is the only
+example, and falling back to the sense is the wanted outcome rather than a worse one.
+
+- **A picture of what the clip already shows is drawn for nothing.** The clip is real footage of the
+  situation; illustrating it re-renders what the learner is about to watch. A picture earns its
+  place on a sense or a written example that has no footage.
+- **They are heading for separate surfaces** — pictures full-screen, then clips full-screen,
+  scrolled independently. Two surfaces built from one sentence would show the same thing twice.
+
+And `llm` above `tatoeba` and `wiktionary` because a generated example is written for *this* sense,
+in the vocabulary's own languages, carrying a translation and both matched forms. The other two are
+chosen for neither, and read worse.
 
 ---
 
@@ -329,21 +435,32 @@ Roughly one session each. Each one leaves the application working.
 
 The version contract and nothing about words yet.
 
-- In the retrieval repository: cut a tagged release with the wheel and the `npm pack` tarball
-  attached. This is its Plan 07, items 1–3.
-- `speech/pin.json` — version, tag, and a SHA-256 per artifact. `scripts/fetch_speech.sh` fetches
-  into an untracked `vendor/speech/` and verifies the digests.
-- A `speech-retrieval` compose service built from the wheel: internal-network only, no published
-  port, a healthcheck asserting HTTP 200 on `/api/v1/health/ready` using a binary the image
-  **actually has**, `restart: unless-stopped`, and the two volumes of §2.3 mounted at their subpaths.
-  The catalogue volume, seeded if empty.
-- `install.sh` creates the volumes and never clears the cache one. `run-worker.sh index-clips` runs
-  `update --once` through `exec`, for a cron line.
-- The web build installs the pinned tarball.
+- In the retrieval repository: one version rather than three drifting literals, the default channel
+  catalogue carried as package data in the wheel, a release workflow on tag push, and the first
+  tagged release with the wheel and the `npm pack` tarball attached. This is its Plan 07, items 1–3.
+- `deploy/acervo/speech/pin.json` — version, tag, and a SHA-256 per artifact, beside the Dockerfile
+  that consumes it. `scripts/fetch_speech.sh` fetches into an untracked `vendor/speech/` and
+  verifies the digests.
+- **The Dockerfile is Acervo's**, not that repository's: its own locked contract says the package
+  never self-daemonizes and that process, volumes and credentials are the host's. No ffmpeg, which
+  only the audio path needs, and no Stanza, which `analyzer=auto` degrades away from without ever
+  downloading a model.
+- A `speech-retrieval` compose service: internal-network only, no published port,
+  `restart: unless-stopped`, the two directories of §2.3, and a catalogue directory seeded from the
+  installed package when empty and never overwritten.
+- **The healthcheck asserts `/api/v1/health/live`, not `/health/ready`.** Readiness is 503 until an
+  index exists, so a readiness gate would fail the very first deployment of a perfectly good
+  service. Readiness is a corpus fact and belongs in Settings ▸ Clips.
+- `install.sh` creates the directories and starts the third service; neither reset path can reach
+  the cache. `run-worker.sh index-clips` runs `update --once` through `exec`, for a cron line — the
+  same image that serves, so the analyzer recorded in the index always matches the one serving it.
+- `vendor/speech/` ships in the release archive the way compiled dictionaries do, because
+  `compose.yaml` builds from the extracted release root.
+- The web build installs the pinned tarball, imported through `lazy()`.
 
-**Done when:** the Acervo server can reach `/api/v1/status` on the internal network and it reports an
-indexed language; `update --once` adds a video without restarting the service; the cache volume
-survives `deploy.sh --reset-database`.
+**Done when:** the Acervo server can reach the corpus on the internal network and `/status` reports
+an indexed language; a second `update --once` re-downloads nothing and swaps the index without a
+restart; the caption cache survives `deploy.sh --reset-database`.
 
 ### Step 2 · The data model
 
@@ -359,9 +476,15 @@ No behaviour, only the shape, so that everything after it has somewhere to write
   records exactly one derived id.
 - `upgradeBundle` gives the three new fields their absent defaults — the one sanctioned place for
   that, because an exported bundle outlives the schema it was written under.
+- **§14's anchor set**, here rather than in step 3, so there is never a window in which the image
+  sweep can anchor a picture to a clip. `SenseView.anchor` filters `subtitle` out before its `min()`
+  and already returns `None` when nothing is left, which is the supported "the picture belongs to
+  the sense" state. It is independently live today — `seed_data.py` already writes `subtitle`
+  examples.
 
 **Done when:** a word with a hand-written clip example round-trips through YAML, export and import
-unchanged, and `./deploy.sh --reset-database` deploys the new schema.
+unchanged; a sense whose only example is a clip briefs against the sense rather than the clip; and
+`./deploy.sh --reset-database` deploys the new schema.
 
 ### Step 3 · The pipeline
 
@@ -417,6 +540,23 @@ the activity panel.
 **Done when:** `find-clips plan` prints what it would do and spends nothing; `sweep --limit 20`
 walks twenty words; running it twice does the second half.
 
+### Step 7 · The player's target text
+
+Optional, additive, and last because nothing above it needs it. Acervo-only work: the other
+repository already exposes the seam and changes nothing.
+
+- An adapter implementing its `TranslationProvider` and `WordAlignmentProvider` Protocols against
+  `acervo.models`, reporting the **chain's** identity as `provider`/`model` so fall-through does not
+  thrash the translation cache.
+- A small Acervo entrypoint that calls `create_app` with the adapter injected, replacing the console
+  script as the container's command. The image gains `acervo.models` and `models/catalogue.json`,
+  and `ACERVO_TEXT_CHAIN` plus the credentials mount that makes Vertex work.
+- The player's translation props wired through the modal of step 4.
+
+**Done when:** opening a clip shows the translation and its word alignment; an exhausted provider
+falls through to the next without re-translating what is already cached; and a deployment with no
+chain configured shows the authored caption where one exists and no target text where none does.
+
 ---
 
 ## §5 · Verification
@@ -435,19 +575,3 @@ Beyond each step's own criterion:
 - A test asserting the retrieval operator token never appears in a proxied response body, in the
   shape of `test_it_never_returns_a_key_or_how_a_provider_is_reached`.
 - Reading a word's article with the retrieval service stopped, on a device with no network.
-
----
-
-## §6 · Open questions
-
-- **Does a clip arrive `approved: false`?** Capture's generated examples do, so consistency says
-  yes, and the article shows an *unapproved* badge until the owner rules. The counter-argument is
-  that the owner rules by watching and by pressing remove, which makes the badge noise. Decide in
-  step 5 with the article in front of you.
-- **How many candidates?** 20 is a starting point. Too few and the good clip is never offered; too
-  many and the prompt drowns. The experiment document measures it.
-- **Do glosses go into the selection prompt?** The image brief writer was burned by exactly this —
-  glosses carry metaphors the word does not have. The definition should probably rule here too.
-- **What does the owner's chain mean for a word saved offline?** Nothing is written, nothing is
-  searched, and `clipsSearchedAt` stays null. That is correct today and is worth re-checking once
-  the sweep exists.

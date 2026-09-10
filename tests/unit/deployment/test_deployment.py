@@ -121,7 +121,11 @@ def deployment_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
     secrets = root / "secrets.env"
     secrets.write_text(
         "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n"
-        "ACERVO_JWT_SECRET='a-durable-signing-secret'\n",
+        "ACERVO_JWT_SECRET='a-durable-signing-secret'\n"
+        # An already-deployed root, so the minted-once secrets are present. Both are appended on a
+        # first deployment and kept thereafter; a fixture without them would make every later run
+        # look like it had rewritten credentials it merely completed.
+        "ACERVO_SPEECH_OPERATOR_TOKEN='a-durable-corpus-token'\n",
         encoding="utf-8",
     )
     secrets.chmod(0o600)
@@ -1556,3 +1560,72 @@ def test_the_credentials_directory_exists_even_when_no_key_is_configured(tmp_pat
     assert result.returncode == 0, result.stderr
     assert (root / "credentials").is_dir()
     assert "ACERVO_CREDENTIALS=" in (root / "deployment.env").read_text(encoding="utf-8")
+
+
+def test_the_corpus_operator_token_is_minted_once_and_kept(tmp_path: Path) -> None:
+    """Nobody types this one, so the installer mints it.
+
+    The retrieval service refuses to start when channel mutations are enabled on a non-loopback
+    bind with no operator token, and it is bound to `0.0.0.0` inside the compose network. Re-minting
+    on every deploy would leave the running service holding a token the proxy no longer sends, so it
+    is kept exactly as the signing secret is.
+    """
+    env, root = deployment_env(tmp_path)
+    secrets = root / "secrets.env"
+    # A root that predates the corpus service: the token is absent and has to be appended.
+    secrets.write_text(
+        "ACERVO_ANKI_SYNC_USERNAME=test\nACERVO_ANKI_SYNC_PASSWORD=password\n"
+        "ACERVO_JWT_SECRET='a-durable-signing-secret'\n",
+        encoding="utf-8",
+    )
+    secrets.chmod(0o600)
+
+    def deploy() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                str(REPO_ROOT / "deploy/acervo/install.sh"),
+                "--root", str(root),
+                "--bind-address", "127.0.0.1", "--port", "27701",
+                "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+            ],
+            cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+        )
+
+    assert deploy().returncode == 0
+    written = secrets.read_text(encoding="utf-8")
+    minted = re.search(
+        r"^ACERVO_SPEECH_OPERATOR_TOKEN='([A-Za-z0-9]{16,})'$", written, flags=re.MULTILINE
+    )
+    assert minted, written
+    # It is a credential, so it belongs beside the others rather than in llm.env — whose writer only
+    # accepts names a provider row in models/catalogue.json reads, and would reject this one.
+    assert "ACERVO_SPEECH_OPERATOR_TOKEN" not in (root / "llm.env").read_text(encoding="utf-8")
+
+    assert deploy().returncode == 0
+    again = secrets.read_text(encoding="utf-8")
+    assert again.count("ACERVO_SPEECH_OPERATOR_TOKEN") == 1
+    assert minted.group(1) in again
+
+
+def test_neither_reset_can_reach_the_caption_cache(tmp_path: Path) -> None:
+    """The one store here that is neither disposable nor rebuildable from anything Acervo holds.
+
+    Downloaded captions cost bandwidth and cannot politely be re-fetched, so the greenfield rule
+    that development data is disposable stops at this directory. The index beside it is derived and
+    may be thrown away freely. Asserted rather than trusted, because both resets delete by literal
+    path and a fourth path added to either list would be silent.
+    """
+    installer = (REPO_ROOT / "deploy/acervo/install.sh").read_text(encoding="utf-8")
+    deletions = re.findall(r"^\s*rm -rf -- (.+)$", installer, flags=re.MULTILINE)
+    assert deletions, "expected the installer to delete something on the reset paths"
+
+    for deletion in deletions:
+        assert "speech-cache" not in deletion, deletion
+        assert "speech-index" not in deletion, deletion
+        assert "speech-catalogues" not in deletion, deletion
+
+    # deploy.sh forwards the reset flags and deletes nothing itself; a volume removal there would
+    # bypass the check above entirely.
+    launcher = (REPO_ROOT / "deploy.sh").read_text(encoding="utf-8")
+    assert "docker volume rm" not in launcher
+    assert "down -v" not in launcher and "down --volumes" not in launcher

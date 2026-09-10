@@ -1415,13 +1415,17 @@ actually miss.
 
 ### Still open
 
-**Meilisearch or SQLite FTS5?**
-Genuinely a preference at your scale (§07) — but now leaning FTS5, because Prefect and the corpus
-service are competing for the same Synology memory (§09). Measure the box first.
+**Meilisearch or SQLite FTS5?** — *Answered elsewhere: SQLite.*
+The corpus became its own project and made the choice there, with compact token positions rather
+than an FTS index. Nothing in Acervo depends on it either way.
 
-**Does the corpus service live in the same repo?**
-Argument for: one deploy script, as with Calorie Logger. Argument against: it has a wholly different
-lifecycle, and separating it makes "regenerable" structurally true rather than merely intended.
+**Does the corpus service live in the same repo?** — *Answered: no.*
+It is [`spoken-usage-retrieval`](https://github.com/anton-dergunov/spoken-usage-retrieval), its own
+public repository with its own release cadence, and Acervo runs one pinned version of it as a
+container beside the server. The argument against won: a research project whose index is
+regenerable by definition should not share a release cycle with the thing holding irreplaceable
+data, and separating them makes "regenerable" structurally true rather than merely intended. See
+[`docs/plans/spoken-clips.md`](plans/spoken-clips.md).
 
 **Is the review UI in Acervo or in Anki?**
 Anki is a better scheduler; a web UI is a better place for LLM grading and clip playback. Likely both

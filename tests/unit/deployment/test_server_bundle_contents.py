@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parents[3]
 DOCKERFILES = (
     ROOT / "deploy" / "acervo" / "server" / "Dockerfile",
     ROOT / "deploy" / "acervo" / "Dockerfile",
+    # The corpus service, built from the pinned wheel in `vendor/speech/`. A Dockerfile absent from
+    # this tuple is simply not checked, so the COPY-path guarantee stops applying without failing.
+    ROOT / "deploy" / "acervo" / "speech" / "Dockerfile",
 )
 PACKAGER = ROOT / "scripts" / "package_acervo_server.sh"
 

@@ -10,7 +10,7 @@ Acervo is and what the sync protocol guarantees; this says where the code that k
 lives.
 
 > **Status.** The port is complete and §3's tree is now true in full: `models/` landed and
-> `services/llm.py` is deleted. `corpus/` is still a rule rather than a directory. Section §7 tracks
+> `services/llm.py` is deleted. `corpus/` is gone from the tree entirely — see §7. Section §7 tracks
 > what was built.
 
 ---
@@ -100,7 +100,6 @@ src/acervo/
   dictionaries/      the external-dictionary artifact compiler
   jobs/              one-shot batch work, run by acervo-worker
   consumers/anki/    the headless Anki robot
-  corpus/            a separate store with a separate database
   client.py          the one HTTP client against the service
   admin.py           the management CLI
 research/            benchmark tooling; never imported by the service
@@ -137,9 +136,12 @@ same validation, same revision allocation as a phone. One writer process, one pi
 already applied to capture transports: *adding a transport must not add a second pipeline.* It also
 retires the four hand-rolled PocketBase clients that grew independently.
 
-The exception that proves it: the corpus is not the graph. It has no revisions, no replication and
-millions of rows, so corpus jobs write `corpus/`'s own store directly (§02: *the core and the corpus
-do not share a database, a container, or a backup policy*).
+This once carried an exception for the corpus, which had its own store and wrote to it directly.
+That exception is retired: the corpus is not in this repository. It is
+[`spoken-usage-retrieval`](https://github.com/anton-dergunov/spoken-usage-retrieval), deployed
+beside the server as its own container from a pinned release, and nothing here writes to it —
+§02's *the core and the corpus do not share a database, a container, or a backup policy* is now
+true by construction rather than by discipline.
 
 **6 · `models/` stands alone; `services/models.py` is where it meets Acervo.** The package decides
 *what kind of thing* went wrong — a closed seven-value `Reason` — and the binding layer decides what
@@ -343,9 +345,11 @@ with nothing restarted. `/health` stays owner-independent — it is the liveness
 pre-sign-in readout, so an unauthenticated body that varied by caller would be wrong behind a
 cache — and `GET /models` is where an owner sees their own.
 
-`corpus/` still has no code to put a boundary around — the separation is stated here and in
-AGENTS.md, which is where a reader looks; an empty package nothing imports would be a directory,
-not a rule.
+`corpus/` will never exist. The reservation assumed the corpus would be built here; it was built as
+its own repository instead, with its own release cadence, and Acervo consumes one pinned version of
+it over HTTP. What lands in `src/acervo/` is `clips/` — about *choosing* which recorded utterance
+illustrates a sense, holding no corpus at all. The design is
+[`docs/plans/spoken-clips.md`](plans/spoken-clips.md).
 
 Phase 0 deleted the superseded provider abstraction (`provider/`, `llm/`, `tts/`, `vision/`,
 `config.py` — 392 source lines with no non-test importer, and 798 lines of tests for them), the

@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     media_path: Path = Field(default=Path("/var/lib/acervo/media"), alias="ACERVO_MEDIA_PATH")
     prompts_path: Path = Field(default=Path("/app/prompts"), alias="ACERVO_PROMPTS_PATH")
 
+    # Where the spoken-usage corpus answers, on the internal network. Empty means this deployment
+    # runs without one: reads still work and the interface says the corpus is unavailable rather
+    # than failing, exactly as it does for an unreachable external dictionary.
+    speech_url: str = Field(default="", alias="ACERVO_SPEECH_URL")
+    # Authorises channel management on that service. It never leaves this process — the proxy
+    # attaches it, and no route returns it — for the reason a provider key never leaves it either.
+    speech_operator_token: str = Field(default="", alias="ACERVO_SPEECH_OPERATOR_TOKEN")
+
     # Which providers answer, in order, as ids from `models/catalogue.json`. Empty means every row
     # this deployment is credentialed for, in catalogue order — so a server with one provider
     # configured needs nothing set here at all.

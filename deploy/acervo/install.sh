@@ -108,6 +108,9 @@ mkdir -p \
   "$acervo_root/data/server" \
   "$acervo_root/data/dictionaries" \
   "$acervo_root/data/media" \
+  "$acervo_root/data/speech-cache" \
+  "$acervo_root/data/speech-index" \
+  "$acervo_root/data/speech-catalogues" \
   "$acervo_root/downloads" \
   "$acervo_root/input" \
   "$acervo_root/backups" \
@@ -169,6 +172,17 @@ fi
 # The token signing secret. Minted once and kept, because regenerating it signs out every device.
 if ! grep -q '^ACERVO_JWT_SECRET=' "$acervo_root/secrets.env"; then
   printf "ACERVO_JWT_SECRET='%s'\n" "$(head -c 48 /dev/urandom | base64 | tr -d '=+/\n')" \
+    >>"$acervo_root/secrets.env"
+fi
+
+# What authorises channel management on the corpus service. Minted here rather than asked for,
+# because nobody types it: the retrieval service refuses to start without one when mutations are
+# enabled on a non-loopback bind, and Acervo's proxy attaches it server-side so it never reaches a
+# browser. Kept once minted, so a redeploy does not lock the running service out of its own
+# catalogue. Not llm.env, whose writer only accepts names a provider row in models/catalogue.json
+# actually reads.
+if ! grep -q '^ACERVO_SPEECH_OPERATOR_TOKEN=' "$acervo_root/secrets.env"; then
+  printf "ACERVO_SPEECH_OPERATOR_TOKEN='%s'\n" "$(head -c 48 /dev/urandom | base64 | tr -d '=+/\n')" \
     >>"$acervo_root/secrets.env"
 fi
 chmod 600 "$acervo_root/secrets.env"
@@ -323,6 +337,9 @@ ACERVO_WORKER_DATA=$acervo_root/data/acervo-worker
 ACERVO_DICTIONARIES=$acervo_root/data/dictionaries
 ACERVO_SERVER_DATA=$acervo_root/data/server
 ACERVO_MEDIA=$acervo_root/data/media
+ACERVO_SPEECH_CACHE=$acervo_root/data/speech-cache
+ACERVO_SPEECH_INDEX=$acervo_root/data/speech-index
+ACERVO_SPEECH_CATALOGUES=$acervo_root/data/speech-catalogues
 ACERVO_DOWNLOADS=$acervo_root/downloads
 ACERVO_INPUT_PATH=$acervo_root/input
 ACERVO_CREDENTIALS=$acervo_root/credentials
@@ -408,7 +425,7 @@ run_quietly "Building and starting containers" compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
   --env-file "$acervo_root/secrets.env" \
   --env-file "$acervo_root/llm.env" \
-  -f "$compose_file" up -d --build anki-sync-server server
+  -f "$compose_file" up -d --build anki-sync-server speech-retrieval server
 
 echo "Waiting for anki-sync-server to become healthy..."
 attempt=0
@@ -416,6 +433,20 @@ until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
     compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" logs anki-sync-server >&2
+    exit 1
+  fi
+  sleep 2
+done
+
+# Liveness, not readiness: the corpus service answers 503 on /health/ready until an index has been
+# built, which is the correct state on a first deployment. Its healthcheck therefore asks whether it
+# is serving, and Settings ▸ Clips is where "does it have a corpus yet" is answered.
+echo "Waiting for speech-retrieval to become healthy..."
+attempt=0
+until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" ps --format json speech-retrieval 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" logs speech-retrieval >&2
     exit 1
   fi
   sleep 2

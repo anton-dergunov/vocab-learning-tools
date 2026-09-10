@@ -13,6 +13,7 @@ usage() {
   echo "       run-worker.sh [--root PATH] draw-pictures <sweep arguments...>" >&2
   echo "         e.g. draw-pictures sweep --limit 50" >&2
   echo "              draw-pictures plan --language es" >&2
+  echo "       run-worker.sh [--root PATH] index-clips" >&2
   exit 2
 }
 
@@ -22,7 +23,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
     --input-archive) [ "$#" -ge 2 ] || usage; input_archive=$2; shift 2 ;;
-    bootstrap-upload|push|export-state|pull-state|adopt-server|build-dictionary|draw-pictures) operation=$1; shift; break ;;
+    bootstrap-upload|push|export-state|pull-state|adopt-server|build-dictionary|draw-pictures|index-clips) operation=$1; shift; break ;;
     *) usage ;;
   esac
 done
@@ -115,5 +116,18 @@ case "$operation" in
     # is one subcommand rather than a new container — the whole reason `acervo-worker` exists.
     # shellcheck disable=SC2086
     compose $common_args --profile tools run --rm --build acervo-worker images "$@"
+    ;;
+  index-clips)
+    # Keep the spoken-usage corpus fresh. Deliberately not a subcommand of acervo_worker.py: that
+    # entry point is Acervo's own batch work, and this is a foreign CLI shipped inside a foreign
+    # image. `exec` rather than a `run --rm` sibling so that the analyzer recorded in the index is
+    # by construction the one serving it — readiness refuses an index built by a different analyzer
+    # version, and two images could drift where one cannot.
+    #
+    # Safe against the live service: it builds into a temporary file and swaps it in with an atomic
+    # rename, and readers open a fresh read-only connection per query. Cached captions are not
+    # re-downloaded, so running this often costs a channel scan and nothing else.
+    # shellcheck disable=SC2086
+    compose $common_args exec -T speech-retrieval speech-retrieval update --once
     ;;
 esac
