@@ -133,6 +133,33 @@ untrimmed and un-normalised. The corpus hands over `match.text` with code-point 
 same sentence, so this holds by construction — and a candidate where it does not hold loses its
 `matchedForm` rather than being stored with a lie.
 
+### 4a · A clip example's id is derived, for the reason an image prompt's is
+
+There are two writers here and they do not coordinate: the interface's enrichment engine, which
+searches the word you just saved, and the sweep, which walks the backlog. That is the same pair that
+draws pictures, and it is exactly why an `imagePrompt`'s id is a namespaced hash of its sense rather
+than a random 15 characters — the lesson written into the data rules after a client that minted a
+random one gave an imported sense two rows and *nothing failed*.
+
+> **DECISION: a clip example's id is derived from `(senseId, clipRef)`**, by the same namespaced
+> SHA-256 in base 36, implemented in both `src/acervo/clips/ids.py` and `web/src/ids.ts` and pinned
+> against shared vectors from both sides — the shape `image_prompt_id` already has.
+
+Two writers that pick the same segment for the same sense then converge on one row, and whichever
+arrives second finds the work already done or is refused as stale. It also holds a sense to one
+example per segment without a uniqueness constraint, which the replicated collections may not have.
+A sense may still accumulate clips from *different* segments, which is correct: the pair is the
+identity, not the sense alone.
+
+This makes two derived-id cases where `AGENTS.md` currently records one, so its wording changes with
+step 2 rather than after it.
+
+Removal stays an ordinary tombstone — deliberately not `imagePrompt`'s `suppressed` field — and it
+is safe only because §2.5 makes the search one-shot. A derived id means a later re-search that
+re-selected the same segment would write at the tombstone's id and resurrect it. Nothing in this
+work re-searches, so nothing can; a rescan must add a suppression field before it ships, exactly as
+the image pipeline had to.
+
 ### 5 · The search happens after the save, never during the capture
 
 > **DECISION: capture never consults the corpus.**
@@ -146,7 +173,7 @@ matches the senses it already has.** The senses are the query's context, not its
 whose corpus turns up nothing is a normal word with a normal article.
 
 That also means the clip search is one-shot at save. Adding a channel does **not** re-scan the words
-already held, and no rescan button ships in this work — see §3 of *What is deliberately not built*.
+already held, and no rescan button ships in this work — see §2.12.
 
 ### 6 · The corpus segments; the model only selects
 
@@ -155,7 +182,7 @@ already held, and no rescan button ships in this work — see §3 of *What is de
 
 Where a shown passage starts and ends is an open research question in the other repository (its
 Plan 17 exists to answer it by blind human comparison). A model that quietly re-cut the passage here
-would make every one of those measurements meaningless, and would break the audit in §4 — stored
+would make every one of those measurements meaningless, and would break the audit in §2.4 — stored
 text that no longer matches the segment it names.
 
 ### 7 · One text call per lexeme, at most one clip per sense, and none is a good answer
@@ -271,7 +298,8 @@ permanent empty frame on every sense of every word would be noise.
 - **No manual corpus search surface.** The owner does not browse the corpus and pick clips by hand.
   If that turns out to be wanted, it is a separate feature with a separate design.
 - **No rescan.** Neither adding a channel nor a completed index update touches words already held.
-  §8 leaves the predicate available; the button is not part of this work.
+  §2.8 leaves the predicate available; the button is not part of this work, and §2.4a says what it
+  would have to add first.
 - **No cross-service health dashboard.** Settings ▸ Clips shows whether the service answers and what
   its corpus contains, which is what a person actually needs. A dashboard is not that.
 - **No audio, no alignment, no ranking model.** All additive on the other side.
@@ -307,7 +335,7 @@ The version contract and nothing about words yet.
   into an untracked `vendor/speech/` and verifies the digests.
 - A `speech-retrieval` compose service built from the wheel: internal-network only, no published
   port, a healthcheck asserting HTTP 200 on `/api/v1/health/ready` using a binary the image
-  **actually has**, `restart: unless-stopped`, and the two volumes of §3 mounted at their subpaths.
+  **actually has**, `restart: unless-stopped`, and the two volumes of §2.3 mounted at their subpaths.
   The catalogue volume, seeded if empty.
 - `install.sh` creates the volumes and never clears the cache one. `run-worker.sh index-clips` runs
   `update --once` through `exec`, for a cron line.
@@ -326,6 +354,9 @@ No behaviour, only the shape, so that everything after it has somewhere to write
   migration), `yaml.ts` both directions, and the export bundle.
 - Validation in both copies: the clip fields all require `videoRef`, and the projection hides them
   all without one. `matchedForm` verbatim, unchanged.
+- The derived id of §2.4a in both `src/acervo/clips/ids.py` and `web/src/ids.ts`, pinned against
+  shared vectors, alongside `image_prompt_id`. Update the data rule in `AGENTS.md`, which today
+  records exactly one derived id.
 - `upgradeBundle` gives the three new fields their absent defaults — the one sanctioned place for
   that, because an exported bundle outlives the schema it was written under.
 
@@ -366,7 +397,7 @@ the retrieval service stopped.
 - A third `EnrichmentKind`, ordered ahead of picture work for the same word, with the rest timer
   keyed by kind.
 - The article shows a sense's search in flight and shows nothing when it finished empty.
-- A remove button on a clip example — a tombstone, and nothing re-adds it, because §5 makes the
+- A remove button on a clip example — a tombstone, and nothing re-adds it, because §2.5 makes the
   search one-shot.
 
 **Done when:** saving a word shows the article immediately, the clips appear under their senses
@@ -398,6 +429,9 @@ Beyond each step's own criterion:
   `openapi-v1.json`, so a version bump that changes them fails a test rather than a save.
 - `test_layering.py` extended: `acervo.clips` imports no settings, graph or database; `api/` does
   not import `jobs/`.
+- Shared vectors for the derived clip id, asserted from both `tests/unit/` and `web/src/ids.test.ts`,
+  the way `image_prompt_id` already is — and a test that the enrichment engine and the sweep, run
+  over one lexeme against one fake corpus, produce one row and not two.
 - A test asserting the retrieval operator token never appears in a proxied response body, in the
   shape of `test_it_never_returns_a_key_or_how_a_provider_is_reached`.
 - Reading a word's article with the retrieval service stopped, on a device with no network.
