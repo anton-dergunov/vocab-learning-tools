@@ -43,6 +43,18 @@ def main() -> None:
         "native downloads must not be staged into the PWA"
     )
 
+    # One stylesheet, because a *second* one can only arrive by being dynamically imported — and a
+    # dynamically imported stylesheet is broken in the native host. Vite preloads it through a helper
+    # that resolves the path relative to the importing chunk, and with `base: "./"` that chunk lives
+    # in `assets/`, so `assets/styles-x.css` is fetched as `acervo://app/assets/assets/styles-x.css`.
+    # The app then dies on "Unable to preload CSS" and stays dead until the web view is reloaded by
+    # hand. Import stylesheets statically; the entry's own CSS file is the right place for them.
+    stylesheets = sorted(path.name for path in (DIST / "assets").glob("*.css"))
+    assert len(stylesheets) == 1, (
+        f"expected one stylesheet, found {stylesheets}. A dynamically imported stylesheet is "
+        "preloaded from the wrong path under the acervo:// scheme; import it statically instead."
+    )
+
     print("Acervo PWA verification passed")
 
 

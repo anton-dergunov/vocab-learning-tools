@@ -24,13 +24,21 @@ import {
 import { formatClock } from "./format";
 import { PlayIcon } from "./icons";
 
-const SpeechClipPlayer = lazy(async () => {
-  const [player] = await Promise.all([
-    import("@spoken-usage-retrieval/react/player"),
-    import("@spoken-usage-retrieval/react/styles.css")
-  ]);
-  return { default: player.SpeechClipPlayer };
-});
+/* The player's stylesheet is imported **statically**, so it lands in the one CSS file the entry
+   already produces, while the component itself stays lazy.
+
+   Importing it inside `lazy()` looked tidier and broke the macOS app outright. Vite splits a
+   dynamically imported stylesheet into its own chunk and preloads it through a helper that resolves
+   the path *relative to the importing chunk* — and `base: "./"` means that is `assets/`, so
+   `assets/styles-….css` became `acervo://app/assets/assets/styles-….css` and the app died on
+   "Unable to preload CSS" the first time anyone pressed a clip. It costs 12 KB in the main
+   stylesheet to have no dynamically loaded CSS at all, and `verify_pwa.py` now holds the build to
+   that. */
+import "@spoken-usage-retrieval/react/styles.css";
+
+const SpeechClipPlayer = lazy(async () =>
+  ({ default: (await import("@spoken-usage-retrieval/react/player")).SpeechClipPlayer })
+);
 
 export function ClipDialog({ stored, headword, glossLang, onClose }: {
   stored: StoredClip;
