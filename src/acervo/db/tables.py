@@ -141,6 +141,19 @@ image_settings = Table(
     Index("idx_image_settings_owner", "owner", unique=True),
 )
 
+clip_settings = Table(
+    "clip_settings",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    # Whether the spoken-usage corpus is consulted on its own at all — by the sweep, and by a client
+    # enriching a word that was just saved. Like `image_settings.draw_enabled` it deliberately does
+    # not gate the route: you pressed that, so you meant it.
+    Column("search_enabled", Boolean, nullable=False, default=True),
+    Column("edited_at", String(24), nullable=False),
+    Index("idx_clip_settings_owner", "owner", unique=True),
+)
+
 # The languages this owner studies, and how they want each presented. Replicated like any other
 # record and deliberately without a unique index on `language`: uniqueness is forbidden on a
 # replicated collection, because it is exactly the constraint two offline devices can each satisfy on

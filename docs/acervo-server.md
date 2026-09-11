@@ -97,6 +97,9 @@ src/acervo/
   api/               FastAPI: routers, the error envelope, auth, the static surfaces
   services/          request-path work with no database concern of its own
   models/            the provider catalogue, and text() / image() / speech()
+  article.py         one word and its senses, the view every enrichment reads
+  images/            the sense-image pipeline: a brief per lexeme, a picture per sense
+  clips/             the clip pipeline: a corpus search and one selection per lexeme
   dictionaries/      the external-dictionary artifact compiler
   jobs/              one-shot batch work, run by acervo-worker
   consumers/anki/    the headless Anki robot
@@ -347,9 +350,18 @@ cache — and `GET /models` is where an owner sees their own.
 
 `corpus/` will never exist. The reservation assumed the corpus would be built here; it was built as
 its own repository instead, with its own release cadence, and Acervo consumes one pinned version of
-it over HTTP. What lands in `src/acervo/` is `clips/` — about *choosing* which recorded utterance
-illustrates a sense, holding no corpus at all. The design is
+it over HTTP. What landed in `src/acervo/` is `clips/` — about *choosing* which recorded utterance
+illustrates a sense, holding no corpus at all: a narrow HTTP client, the selection call, and the
+derived id that keeps two writers on one row. The design is
 [`docs/plans/spoken-clips.md`](plans/spoken-clips.md).
+
+`article.py` arrived with it, and is the seventh rule in all but name: **an enrichment pipeline may
+import the provider package and the article view, and nothing else of Acervo's.** `images/` and
+`clips/` both want one word, its senses and their examples; what differs is the judgement each makes
+afterwards, so the assembling is shared and the judgement is not — `images.article.anchor_for`
+decides which example a picture illustrates and no other package has an opinion about that.
+`acervo.article` itself imports nothing of Acervo's at all, which is what makes it safe to be the
+thing they share, and `test_layering.py` enforces both halves.
 
 Phase 0 deleted the superseded provider abstraction (`provider/`, `llm/`, `tts/`, `vision/`,
 `config.py` — 392 source lines with no non-test importer, and 798 lines of tests for them), the

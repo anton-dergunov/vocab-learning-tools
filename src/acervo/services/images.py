@@ -28,9 +28,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+from acervo.article import ArticleView, article_for
 from acervo.domain.ids import now_instant
 from acervo.errors import ApiError
-from acervo.images import article as article_view
 from acervo.images.brief import BriefWriter, SenseBrief
 from acervo.images.compose import compose, prompt_version
 from acervo.images.ids import image_prompt_id, seed_for
@@ -207,7 +207,7 @@ def brief_lexeme(settings: Settings, owner: str, device: str, lexeme_id: str) ->
     return {"lexemeId": lexeme_id, "imagePrompts": [_readable(row, table) for row in written]}
 
 
-def _brief_row(brief: SenseBrief, view: article_view.ArticleView, held: dict[str, dict],
+def _brief_row(brief: SenseBrief, view: ArticleView, held: dict[str, dict],
                version: str, model: str, at: str, device: str) -> dict[str, Any]:
     prompt_id = image_prompt_id(brief.sense_id)
     existing = held.get(prompt_id)
@@ -451,7 +451,7 @@ def suppress_prompt(settings: Settings, owner: str, device: str, prompt_id: str)
 # ── shared ──────────────────────────────────────────────────────────────────
 
 
-def _article(owner: str, lexeme_id: str) -> tuple[article_view.ArticleView, dict[str, list[dict]]]:
+def _article(owner: str, lexeme_id: str) -> tuple[ArticleView, dict[str, list[dict]]]:
     """The article the writer is given, and the records it was built from.
 
     Both, because they answer different questions. The view drops tombstones, which is what the
@@ -459,8 +459,7 @@ def _article(owner: str, lexeme_id: str) -> tuple[article_view.ArticleView, dict
     comment at the `held` map above.
     """
     records = graph.article_records(owner, lexeme_id)
-    views = article_view.build_articles(records)
-    found = next((view for view in views if view.id == lexeme_id), None)
+    found = article_for(records, lexeme_id)
     if found is None:
         # One message for "no such word", "somebody else's word" and "a word you deleted": telling
         # them apart would answer whether an id exists in another account.

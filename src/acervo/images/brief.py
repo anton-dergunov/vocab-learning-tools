@@ -16,7 +16,9 @@ from typing import Any, Callable, Sequence
 from acervo.models import ChainExhausted, TextResult, call, chain
 from acervo.models.catalogue import Catalogue
 
-from .article import ArticleView
+from acervo.article import ArticleView
+
+from .article import anchor_for
 from .styles import StyleTable
 
 # What the writer must return. Sent as `response_format` where the row understands one and written
@@ -83,7 +85,7 @@ def build_request(article: ArticleView, styles: StyleTable, weights: dict[str, f
     vocabulary = article.vocabulary or {}
     senses = []
     for sense in article.senses:
-        anchor = sense.anchor
+        anchor = anchor_for(sense)
         senses.append(
             {
                 "senseId": sense.id,

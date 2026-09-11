@@ -1,0 +1,348 @@
+{
+  "query": "picar",
+  "normalized_query": "picar",
+  "source_language": "es",
+  "match_mode": "auto",
+  "order": "ranked",
+  "seed": null,
+  "morphology_available": true,
+  "morphology_unavailable_reason": null,
+  "query_analyses": [
+    {
+      "position": 0,
+      "token": {
+        "surface": "picar",
+        "normalized": "picar",
+        "start": 0,
+        "end": 5,
+        "lemma": "picar",
+        "upos": null,
+        "features": null,
+        "word": null,
+        "shared_span": false
+      },
+      "candidates": [
+        {
+          "lemma": "picar",
+          "upos": null,
+          "sources": [
+            "query_analyzer",
+            "corpus",
+            "indexed_lemma"
+          ],
+          "frequency": 3,
+          "analyzer": {
+            "name": "simplemma",
+            "language": "es",
+            "package_version": "1.2.0",
+            "model_version": null,
+            "settings": {
+              "adapter_version": 1,
+              "greedy": false,
+              "tokenizer": "unicode-regex-v1"
+            },
+            "identity": "simplemma:3b8b85daf82084ba468b"
+          }
+        }
+      ],
+      "ambiguous": false
+    }
+  ],
+  "query_analyzer": {
+    "name": "simplemma",
+    "language": "es",
+    "package_version": "1.2.0",
+    "model_version": null,
+    "settings": {
+      "tokenizer": "unicode-regex-v1",
+      "greedy": false,
+      "adapter_version": 1
+    },
+    "identity": "simplemma:3b8b85daf82084ba468b"
+  },
+  "totals_by_mode": {
+    "exact": 3,
+    "lemma": 18,
+    "auto": 18
+  },
+  "total_occurrences": 18,
+  "returned": 3,
+  "results": [
+    {
+      "occurrence_id": "seg_fafe38592cc31df5c430:28:33",
+      "segment_id": "seg_fafe38592cc31df5c430",
+      "source_language": "es",
+      "sentence": "Y ella ya le va a empezar a picar porque es raro, chicos.",
+      "match_type": "exact",
+      "matched_surface": "picar",
+      "matched_lemma": "picar",
+      "token_analysis": [
+        {
+          "surface": "picar",
+          "normalized": "picar",
+          "start": 28,
+          "end": 33,
+          "lemma": "picar",
+          "upos": null,
+          "features": null,
+          "word": null,
+          "shared_span": false
+        }
+      ],
+      "analyzer": {
+        "name": "simplemma",
+        "language": "es",
+        "package_version": "1.2.0",
+        "model_version": null,
+        "settings": {
+          "tokenizer": "unicode-regex-v1",
+          "greedy": false,
+          "adapter_version": 1
+        },
+        "identity": "simplemma:3b8b85daf82084ba468b"
+      },
+      "match": {
+        "text": "picar",
+        "char_start": 28,
+        "char_end": 33,
+        "accent_exact": true
+      },
+      "sentence_start": 878.519,
+      "sentence_end": 881.28,
+      "clip_start": 878.169,
+      "clip_end": 881.93,
+      "segments": [
+        {
+          "text": "Y",
+          "start": 878.519,
+          "end": 878.759,
+          "char_start": 0,
+          "char_end": 1
+        },
+        {
+          "text": "ella",
+          "start": 878.759,
+          "end": 878.839,
+          "char_start": 2,
+          "char_end": 6
+        }
+      ],
+      "boundary": {
+        "reason": "punctuation",
+        "confidence": 1.0
+      },
+      "quality_score": 0.9135,
+      "score": 0.9135,
+      "rank": 1,
+      "video": {
+        "video_key": "vid_57d8337f48a09531e780",
+        "provider": "youtube",
+        "id": "ebJDiXbeHTY",
+        "url": "https://www.youtube.com/watch?v=ebJDiXbeHTY",
+        "title": "#NADIEDICENADA | TENSIÓN EN EL PROGRAMA: \"MI AMIGA ESTÁ CON MI NOVIO\"",
+        "channel_id": "UCTHaNTsP7hsVgBxARZTuajw",
+        "channel": "LUZU TV",
+        "source_language": "es",
+        "varieties": [
+          "Argentina",
+          "Rioplatense"
+        ],
+        "speech_style": [
+          "streaming",
+          "conversation",
+          "entertainment"
+        ],
+        "duration": 1555.0,
+        "thumbnail": "https://i.ytimg.com/vi_webp/ebJDiXbeHTY/maxresdefault.webp",
+        "track_id": "trk_76e9457594bd14ac1e56",
+        "caption_kind": "automatic",
+        "caption_language": "es-orig",
+        "caption_track_kind": "automatic",
+        "caption_provider_track_id": "es-orig",
+        "caption_is_source": true
+      }
+    },
+    {
+      "occurrence_id": "seg_9f7fdafc6b0056a5a545:163:168",
+      "segment_id": "seg_9f7fdafc6b0056a5a545",
+      "source_language": "es",
+      "sentence": "Que tengas al final una un poco de empatía, que si necesitas cualquier cosa, aunque sea azúcar, que es algo que parece una tontería, pero es muy real y que puedas picar",
+      "match_type": "exact",
+      "matched_surface": "picar",
+      "matched_lemma": "picar",
+      "token_analysis": [
+        {
+          "surface": "picar",
+          "normalized": "picar",
+          "start": 163,
+          "end": 168,
+          "lemma": "picar",
+          "upos": null,
+          "features": null,
+          "word": null,
+          "shared_span": false
+        }
+      ],
+      "analyzer": {
+        "name": "simplemma",
+        "language": "es",
+        "package_version": "1.2.0",
+        "model_version": null,
+        "settings": {
+          "tokenizer": "unicode-regex-v1",
+          "greedy": false,
+          "adapter_version": 1
+        },
+        "identity": "simplemma:3b8b85daf82084ba468b"
+      },
+      "match": {
+        "text": "picar",
+        "char_start": 163,
+        "char_end": 168,
+        "accent_exact": true
+      },
+      "sentence_start": 504.919,
+      "sentence_end": 515.8,
+      "clip_start": 504.569,
+      "clip_end": 516.45,
+      "segments": [
+        {
+          "text": "Que",
+          "start": 504.919,
+          "end": 505.0,
+          "char_start": 0,
+          "char_end": 3
+        },
+        {
+          "text": "tengas",
+          "start": 505.0,
+          "end": 505.319,
+          "char_start": 4,
+          "char_end": 10
+        }
+      ],
+      "boundary": {
+        "reason": "forced",
+        "confidence": 0.38
+      },
+      "quality_score": 0.543,
+      "score": 0.543,
+      "rank": 2,
+      "video": {
+        "video_key": "vid_479193b7873659b05757",
+        "provider": "youtube",
+        "id": "f7Xo3abyf60",
+        "url": "https://www.youtube.com/watch?v=f7Xo3abyf60",
+        "title": "Do Barcelona Locals Get On With their Neighbors? | Easy Spanish 385",
+        "channel_id": "UCAL4AMMMXKxHDu3FqZV6CbQ",
+        "channel": "Easy Spanish",
+        "source_language": "es",
+        "varieties": [
+          "Spain",
+          "Mexico",
+          "Latin America"
+        ],
+        "speech_style": [
+          "street interviews",
+          "conversation",
+          "language learning"
+        ],
+        "duration": 634.0,
+        "thumbnail": "https://i.ytimg.com/vi_webp/f7Xo3abyf60/maxresdefault.webp",
+        "track_id": "trk_f41279ba405fa9e71c80",
+        "caption_kind": "automatic",
+        "caption_language": "es-orig",
+        "caption_track_kind": "automatic",
+        "caption_provider_track_id": "es-orig",
+        "caption_is_source": true
+      }
+    },
+    {
+      "occurrence_id": "seg_4270b0b102db1a08454c:115:120",
+      "segment_id": "seg_4270b0b102db1a08454c",
+      "source_language": "es",
+      "sentence": "Tengo mucha sed. Quiero beber agua. A ver. Necesito mi botella. Aquí mi botella de agua. Me voy a llevar algo para picar, algo para comer. ¿Qué me puedo llevar? Tengo unos pistachos. Los voy a meter",
+      "match_type": "exact",
+      "matched_surface": "picar",
+      "matched_lemma": "picar",
+      "token_analysis": [
+        {
+          "surface": "picar",
+          "normalized": "picar",
+          "start": 115,
+          "end": 120,
+          "lemma": "picar",
+          "upos": null,
+          "features": null,
+          "word": null,
+          "shared_span": false
+        }
+      ],
+      "analyzer": {
+        "name": "simplemma",
+        "language": "es",
+        "package_version": "1.2.0",
+        "model_version": null,
+        "settings": {
+          "tokenizer": "unicode-regex-v1",
+          "greedy": false,
+          "adapter_version": 1
+        },
+        "identity": "simplemma:3b8b85daf82084ba468b"
+      },
+      "match": {
+        "text": "picar",
+        "char_start": 115,
+        "char_end": 120,
+        "accent_exact": true
+      },
+      "sentence_start": 351.762,
+      "sentence_end": 374.071,
+      "clip_start": 351.412,
+      "clip_end": 374.721,
+      "segments": [
+        {
+          "text": "Tengo mucha sed. Quiero beber agua. A ver. Necesito mi botella. Aquí mi botella de agua. Me voy a llevar algo para picar, algo para comer. ¿Qué me puedo llevar? Tengo unos pistachos. Los voy a meter",
+          "start": 351.762,
+          "end": 374.071,
+          "char_start": 0,
+          "char_end": 198
+        }
+      ],
+      "boundary": {
+        "reason": "forced",
+        "confidence": 0.38
+      },
+      "quality_score": 0.3503,
+      "score": 0.3503,
+      "rank": 3,
+      "video": {
+        "video_key": "vid_a68024d6721df63a8666",
+        "provider": "youtube",
+        "id": "lZXrGDXsD-4",
+        "url": "https://www.youtube.com/watch?v=lZXrGDXsD-4",
+        "title": "LEARN SPANISH with REPETITION // EASY Comprehensible Input",
+        "channel_id": "UCfG2VhlQgy5bHGmkpeKcjVA",
+        "channel": "Spanish After Hours",
+        "source_language": "es",
+        "varieties": [
+          "Spain"
+        ],
+        "speech_style": [
+          "stories",
+          "explanations",
+          "conversation",
+          "language learning"
+        ],
+        "duration": 606.0,
+        "thumbnail": "https://i.ytimg.com/vi/lZXrGDXsD-4/hqdefault.jpg",
+        "track_id": "trk_3124df1c9deb1a6d5220",
+        "caption_kind": "manual",
+        "caption_language": "es-ES",
+        "caption_track_kind": "authored",
+        "caption_provider_track_id": "es-ES",
+        "caption_is_source": true
+      }
+    }
+  ]
+}

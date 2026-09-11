@@ -29,9 +29,9 @@ from typing import Any
 
 from acervo.client import AcervoClient, AcervoError
 # The one thing shared with the pipeline: which statuses are worth spending a picture on. Cheap to
-# import — `acervo.images.article` pulls in no provider library, which is why this job needs neither
-# LiteLLM nor Pillow in the worker image. It draws nothing itself; the server does.
-from acervo.images.article import GENERATED_STATUSES
+# import — `acervo.article` is pure, which is why this job needs neither LiteLLM nor Pillow in the
+# worker image. It draws nothing itself; the server does.
+from acervo.article import GENERATED_STATUSES
 
 DEVICE_ID = "imagesweep0001"
 # The three the file ingestion retries on, and for the same reason: a provider that is busy says

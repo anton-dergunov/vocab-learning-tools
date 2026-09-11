@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from acervo.images.article import build_articles
+from acervo.article import build_articles
+from acervo.images.article import anchor_for, drawn_senses
 from acervo.images.brief import build_request, parse_reply
 from acervo.images.compose import FRAME, compose, prompt_version
 from acervo.images.ids import ID_LENGTH, image_prompt_id, seed_for
@@ -138,7 +139,7 @@ def test_only_the_senses_worth_drawing_are_in_scope():
 
 def test_the_learners_own_sentence_is_the_anchor():
     articles = build_articles(changes(), "es")
-    anchor = articles[0].senses[0].anchor
+    anchor = anchor_for(articles[0].senses[0])
     assert anchor["id"] == "e00000000000002"                                 # attestation beats llm
 
 
@@ -152,7 +153,7 @@ def test_a_clip_never_anchors_a_picture():
     """
     sense = build_articles(changes(), "es")[0].senses[1]
     assert [example["origin"] for example in sense.examples] == ["subtitle"]
-    assert sense.anchor is None
+    assert anchor_for(sense) is None
 
 
 def test_a_generated_sentence_outranks_a_borrowed_one():
@@ -272,14 +273,14 @@ def test_the_prompt_version_moves_when_the_styles_do(tmp_path: Path):
 def test_a_drawn_sense_is_not_planned_again(tmp_path: Path):
     articles = build_articles(changes(), "es")
     store = Store(tmp_path)
-    assert len(plan(articles, store)) == 2
+    assert len(plan(articles, store, drawn=set())) == 2
 
     store.image_path(image_prompt_id("s00000000000001")).write_bytes(b"webp")
-    assert [job.sense_id for job in plan(articles, store)] == ["s00000000000002"]
+    assert [job.sense_id for job in plan(articles, store, drawn=set())] == ["s00000000000002"]
 
     # Deleting the picture is how a rejection is expressed, and it comes back into the plan.
     store.image_path(image_prompt_id("s00000000000001")).unlink()
-    assert len(plan(articles, store)) == 2
+    assert len(plan(articles, store, drawn=set())) == 2
 
 
 def test_a_sense_the_graph_already_holds_an_image_for_is_skipped(tmp_path: Path):
@@ -290,7 +291,7 @@ def test_a_sense_the_graph_already_holds_an_image_for_is_skipped(tmp_path: Path)
         "promptVersion": "v", "imageRef": "images/l1/p1.webp", "imageModelId": "m",
         **sync_fields(),
     }]
-    assert len(plan(build_articles(payload, "es"), Store(tmp_path))) == 1
+    assert len(plan(build_articles(payload, "es"), Store(tmp_path), drawn=drawn_senses(payload))) == 1
 
 
 LITE = ("vertex", "lite")
@@ -338,12 +339,12 @@ def test_a_refusal_is_not_planned_again(tmp_path: Path):
     """§06: declining a sense is a finished outcome. Re-planning it spends a call to rediscover it."""
     articles = build_articles(changes(), "es")
     store = Store(tmp_path)
-    assert len(plan(articles, store)) == 2
+    assert len(plan(articles, store, drawn=set())) == 2
 
     store.write(store.refusal_path(image_prompt_id("s00000000000001")),
                 {"refusalReason": "sexualised imagery"})
-    assert [job.sense_id for job in plan(articles, store)] == ["s00000000000002"]
-    assert len(plan(articles, store, redo=True)) == 2        # unless asked
+    assert [job.sense_id for job in plan(articles, store, drawn=set())] == ["s00000000000002"]
+    assert len(plan(articles, store, drawn=set(), redo=True)) == 2        # unless asked
 
 
 def test_a_provider_block_is_not_planned_again(tmp_path: Path):
@@ -357,8 +358,8 @@ def test_a_provider_block_is_not_planned_again(tmp_path: Path):
     store.write(store.record_path(transient),
                 {"id": transient, "imageRef": None, "failureReason": "429 RESOURCE_EXHAUSTED"})
 
-    assert [job.sense_id for job in plan(articles, store)] == ["s00000000000002"]
-    assert len(plan(articles, store, redo=True)) == 2
+    assert [job.sense_id for job in plan(articles, store, drawn=set())] == ["s00000000000002"]
+    assert len(plan(articles, store, drawn=set(), redo=True)) == 2
 
 
 def test_the_brief_writer_waits_out_a_chain_that_is_entirely_over_quota():
@@ -528,7 +529,7 @@ def test_an_image_chain_falls_through_and_the_record_names_the_pair_that_drew(tm
     })
     runner, _ = _runner(tmp_path, renderer, candidates, _one_brief)
     articles = build_articles(changes(), "es")
-    jobs = plan(articles, runner.store)[:1]
+    jobs = plan(articles, runner.store, drawn=set())[:1]
     result = runner.run(jobs)
 
     assert result["drawn"] == 1
@@ -546,7 +547,7 @@ def test_a_brief_kept_from_an_earlier_run_keeps_the_model_that_wrote_it(tmp_path
     renderer = _drawing({("cloudflare", "klein"): _answer("cloudflare", "klein")})
     runner, styles = _runner(tmp_path, renderer, candidates, _one_brief)
     articles = build_articles(changes(), "es")
-    jobs = plan(articles, runner.store)[:1]
+    jobs = plan(articles, runner.store, drawn=set())[:1]
 
     # A brief on disk, written by a model that is no longer in the chain.
     runner.store.write(runner.store.brief_path(jobs[0].article.id), {
@@ -570,7 +571,7 @@ def test_a_provider_that_declines_is_recorded_and_the_sweep_continues(tmp_path):
         ("cloudflare", "klein"): ProviderRefused("refused", "the prompt was blocked"),
     })
     runner, _ = _runner(tmp_path, renderer, candidates, _one_brief)
-    jobs = plan(build_articles(changes(), "es"), runner.store)[:1]
+    jobs = plan(build_articles(changes(), "es"), runner.store, drawn=set())[:1]
     result = runner.run(jobs)
 
     assert result["refused"] == 1 and result["stopped"] is None
@@ -587,7 +588,7 @@ def test_a_bad_credential_stops_the_run_rather_than_blocking_every_sense(tmp_pat
         ("cloudflare", "klein"): ProviderRefused("authentication", "that token is not valid"),
     })
     runner, _ = _runner(tmp_path, renderer, candidates, _one_brief)
-    jobs = plan(build_articles(changes(), "es"), runner.store)
+    jobs = plan(build_articles(changes(), "es"), runner.store, drawn=set())
     result = runner.run(jobs)
 
     assert result["stopped"] and "not valid" in result["stopped"]

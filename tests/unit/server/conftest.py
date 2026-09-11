@@ -48,6 +48,9 @@ class ModelStub:
     # The image brief writer, which is told apart by carrying no system message at all: capture
     # puts its instructions there and the brief writer puts the whole template in the user turn.
     brief: dict[str, Any] = field(default_factory=dict)
+    # The clip selector, which also puts its template in the user turn — so these two are told apart
+    # by the opening line of the template itself, the way the two capture calls already are.
+    selection: dict[str, Any] = field(default_factory=dict)
     calls: list[dict[str, Any]] = field(default_factory=list)
     error: BaseException | None = None
     errors: list[BaseException | None] = field(default_factory=list)
@@ -77,7 +80,12 @@ class ModelStub:
                 (m["content"] for m in kwargs["messages"] if m["role"] == "system"), None
             )
             if system is None:
-                body = _dumped(self.brief)
+                asked = next(
+                    (m["content"] for m in kwargs["messages"] if m["role"] == "user"), ""
+                )
+                body = _dumped(
+                    self.selection if "You choose recorded speech" in asked else self.brief
+                )
             else:
                 body = _dumped(self.resolution if "You decide what a learner" in system else self.article)
         answered = ModelResponse(

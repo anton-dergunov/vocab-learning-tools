@@ -10,8 +10,11 @@ Four rules, each of which stops being true silently:
   same validation and same revision allocation as a phone. One writer, one pipeline.
 - Nothing that ships imports `research/`.
 - `models/` stands alone: it is a provider package, not an Acervo one.
-- `images/` and `clips/` stand alone too, on `models/` and nothing else, which is what lets a route
-  and a batch sweep share one pipeline instead of writing it twice.
+- An enrichment pipeline — `images/`, `clips/` — may import the provider package and the article
+  view, and nothing else of Acervo's, which is what lets a route and a batch sweep share one
+  pipeline instead of writing it twice.
+- `article.py` itself imports nothing of Acervo's at all, which is what makes it safe to be the one
+  thing every enrichment shares.
 - `repository/` stores; it does not know the catalogue.
 """
 
@@ -94,6 +97,7 @@ def test_the_rules_below_are_not_vacuous():
     assert modules_under("models"), "no models/ modules: the stands-alone rule would be vacuous"
     assert modules_under("images"), "no images/ modules: the stands-alone rule would be vacuous"
     assert modules_under("clips"), "no clips/ modules: the stands-alone rule would be vacuous"
+    assert (PACKAGE / "article.py").exists(), "no article.py: the shared-view rule would be vacuous"
     assert modules_under("repository"), "no repository/ modules"
 
 
@@ -167,8 +171,9 @@ def test_the_image_pipeline_stands_on_the_provider_package_and_nothing_else(path
     what a picture is, `services/images.py` decides what Acervo's wire calls a failure to draw one,
     and a single `ApiError` import here would merge them in code that still worked.
     """
-    # `STANDS_ALONE` deliberately does not list `acervo.models`, which is the one Acervo package
-    # both of these may import.
+    # `STANDS_ALONE` deliberately does not list `acervo.models` or `acervo.article`, which are the
+    # two Acervo modules an enrichment pipeline may import: the provider package and the view of the
+    # word being enriched. Both are pure, and neither knows whose word it is.
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the image pipeline stands alone"
 
@@ -184,6 +189,17 @@ def test_the_clip_pipeline_stands_on_the_provider_package_and_nothing_else(path)
     """
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the clip pipeline stands alone"
+
+
+def test_the_article_view_imports_nothing_of_acervos():
+    """The one module both enrichment packages import, so it may depend on nothing at all.
+
+    A single `from acervo.settings import Settings` here would reach every pipeline that shares it,
+    and the sharing is the whole point — this is what keeps `acervo.article` a view of wire-shaped
+    records rather than a second way into the graph.
+    """
+    offenders = {name for name in imports_of(PACKAGE / "article.py") if name.startswith("acervo")}
+    assert not offenders, f"acervo/article.py imports {sorted(offenders)}; it must stay pure"
 
 
 @pytest.mark.parametrize("path", modules_under("repository"), ids=identify)

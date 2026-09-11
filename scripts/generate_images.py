@@ -35,7 +35,8 @@ import webbrowser
 from pathlib import Path
 
 from acervo.client import AcervoClient, AcervoError
-from acervo.images.article import build_articles
+from acervo.article import build_articles
+from acervo.images.article import anchor_for, drawn_senses
 from acervo.images.brief import BriefWriter
 from acervo.images.compose import prompt_version
 from acervo.images.render import Renderer
@@ -131,11 +132,13 @@ def confirm_unnamed_credentials(candidates, assume_yes: bool) -> None:
 
 
 def load_graph(args: argparse.Namespace):
+    """The articles in scope, and the senses that already hold a picture."""
     password = os.environ.get("ACERVO_PASSWORD") or getpass.getpass("Acervo password: ")
     with AcervoClient(args.server_url) as client:
         client.sign_in(args.owner_email, password)
         # One pull, and nothing else: this stage reads the graph and writes only to the filesystem.
-        return build_articles(client.pull_graph()["changes"], args.language)
+        changes = client.pull_graph()["changes"]
+    return build_articles(changes, args.language), drawn_senses(changes)
 
 
 def command_check(args: argparse.Namespace) -> int:
@@ -161,15 +164,15 @@ def command_check(args: argparse.Namespace) -> int:
 
 
 def command_plan(args: argparse.Namespace) -> int:
-    articles = load_graph(args)
+    articles, drawn = load_graph(args)
     store = Store(args.output)
-    jobs = plan(articles, store, redo=args.redo, only=args.only.split(','))
+    jobs = plan(articles, store, drawn=drawn, redo=args.redo, only=args.only.split(','))
     senses = sum(len(article.senses) for article in articles)
     print(f"{len(articles)} words, {senses} senses in scope"
           + (f" (language {args.language})" if args.language else ""))
     print(f"{len(jobs)} senses have no picture yet")
     for job in jobs[: args.limit or 20]:
-        anchor = job.sense.anchor
+        anchor = anchor_for(job.sense)
         line = anchor.get("text") if anchor else job.sense.definition
         print(f"  {job.article.headword:<28} {(line or '')[:70]}")
     if args.limit and len(jobs) > args.limit:
@@ -182,9 +185,9 @@ def command_run(args: argparse.Namespace) -> int:
     image_chain = resolve_chain(args, "image", args.image_chain)
     confirm_unnamed_credentials([*brief_chain, *image_chain], args.yes)
 
-    articles = load_graph(args)
+    articles, drawn = load_graph(args)
     store = Store(args.output)
-    jobs = plan(articles, store, redo=args.redo, only=args.only.split(','))
+    jobs = plan(articles, store, drawn=drawn, redo=args.redo, only=args.only.split(','))
     if args.limit:
         jobs = jobs[: args.limit]
     if not jobs:

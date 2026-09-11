@@ -348,7 +348,7 @@ def duplicate_lexemes(owner: str, language: str, headword: str, lemma: str) -> l
 def article_records(owner: str, lexeme_id: str) -> dict[str, list[dict[str, Any]]]:
     """One word and everything hanging off it, in the wire shape `build_articles` reads.
 
-    The second feeder for `acervo.images.article`. The worker sweep builds its `ArticleView`s from a
+    The second feeder for `acervo.article`. The worker sweep builds its `ArticleView`s from a
     `client.pull_graph()` payload; the request path has the database right here and a pull of the
     whole graph to draw one picture would be absurd — so both produce the same `changes` mapping and
     neither knows which it was given. One view model, two feeders, exactly as `articleFor` and

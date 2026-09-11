@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from acervo.api import auth, errors, static
 from acervo.api.routes import (
     capture,
+    clips,
     dictionaries,
     graph,
     health,
@@ -47,7 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     errors.install(app)
 
     api = APIRouter(prefix=API_ROOT)
-    for module in (health, session, graph, capture, dictionaries, images, mac_release, models):
+    for module in (health, session, graph, capture, clips, dictionaries, images, mac_release, models):
         api.include_router(module.router)
     app.include_router(api)
 

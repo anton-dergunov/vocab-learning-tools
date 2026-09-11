@@ -565,8 +565,19 @@ Beyond each step's own criterion:
 
 - `.venv/bin/python -m pytest`, `npm --prefix web run test`, `npm --prefix web run build`,
   `npm run test:pwa`, `npm run test:mac`.
-- A contract test in Acervo pinning the retrieval routes it depends on against the vendored
-  `openapi-v1.json`, so a version bump that changes them fails a test rather than a save.
+- The retrieval contract pinned in two pieces rather than against a copy of `openapi-v1.json`.
+  A **recorded response** — `tests/unit/clips/fixtures/search-es-picar.json`, a real `/search` answer
+  trimmed to three results — is both Acervo's statement of the contract in the shape Acervo actually
+  consumes and the data every fake corpus serves; re-record it when the pin moves. Beside it, a
+  **gated live check** (`RUN_SPEECH_CONTRACT_TESTS=true`) asserts against a service that is running
+  that the routes still exist and the fields the client reads are still named what they were named.
+
+  This replaces the vendored-spec check this section first asked for, and the reason is worth
+  keeping. The spec belongs where it is generated: in the retrieval repository, snapshotted with one
+  test that turns a renamed field into a failing pull request. A 117 KB copy here would have to be
+  re-committed in full on every pin bump, would produce a diff nobody reads in a repository that
+  otherwise ships lists and never data, and would still only assert — one level removed — what the
+  live check asserts against the thing actually serving.
 - `test_layering.py` extended: `acervo.clips` imports no settings, graph or database; `api/` does
   not import `jobs/`.
 - Shared vectors for the derived clip id, asserted from both `tests/unit/` and `web/src/ids.test.ts`,

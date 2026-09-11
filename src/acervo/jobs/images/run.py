@@ -16,9 +16,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import AbstractSet, Any, Callable, Iterable, Sequence
 
-from acervo.images.article import ArticleView, SenseView
+from acervo.article import ArticleView, SenseView
 from acervo.images.brief import BriefWriter, SenseBrief
 from acervo.images.compose import compose, prompt_version
 from acervo.images.ids import image_prompt_id, seed_for
@@ -99,14 +99,17 @@ class Store:
         return int((record or {}).get("attempts", 0))
 
 
-def plan(articles: Iterable[ArticleView], store: Store, *, redo: bool = False,
-         only: Iterable[str] | None = None) -> list[Job]:
+def plan(articles: Iterable[ArticleView], store: Store, *, drawn: AbstractSet[str],
+         redo: bool = False, only: Iterable[str] | None = None) -> list[Job]:
     """Every sense that has no picture yet, in a stable order.
 
     Re-reading the graph on every run is what makes this pick up words ingested since last time:
     the work is derived from the data, never from a queue. That is also why `--limit` alone cannot
     name a set of senses — the graph grows underneath it and the alphabet shifts. `only` names them:
     a headword, a sense id, or an image id.
+
+    `drawn` is `images.article.drawn_senses(changes)` — required rather than defaulted, because an
+    empty default reads as "nothing has a picture" and would redraw every sense in the account.
     """
     wanted = {item.strip().lower() for item in (only or ()) if item.strip()}
     jobs: list[Job] = []
@@ -117,7 +120,7 @@ def plan(articles: Iterable[ArticleView], store: Store, *, redo: bool = False,
                 {article.headword.lower(), sense.id.lower(), prompt_id.lower()} & wanted
             ):
                 continue
-            if sense.has_image and not redo:
+            if sense.id in drawn and not redo:
                 continue          # the graph already holds a drawn image for this sense
             if store.is_drawn(prompt_id) and not redo:
                 continue          # this run directory already holds one
