@@ -6,10 +6,12 @@
 # §2.1). This script is what turns that pin into files on disk: the wheel the speech image installs
 # and the npm tarball web/ imports.
 #
-# Both artifacts are byte-reproducible, so a digest recorded from a local build stays valid once the
-# tag is cut. That is also why an artifact already present and matching is left alone rather than
-# re-downloaded: dropping a locally built wheel in here is a supported way to try a version before
-# it is released, exactly as compiled dictionaries are built locally and shipped.
+# The digests in the pin are the *release's*, copied from its SHA256SUMS asset. Take them from a
+# local build and the wheel will match but the npm tarball will not: hatchling's zip is
+# deterministic, while `npm pack` gzips with whatever zlib the building Node version carries, so a
+# Node 24 laptop and a Node 22 runner disagree. An artifact already present and matching is left
+# alone rather than re-downloaded, so dropping a locally built wheel in here still works for trying
+# a version before it is released.
 #
 #   scripts/fetch_speech.sh              # fetch what is missing, verify what is there
 #   scripts/fetch_speech.sh --check      # verify only; never touch the network
