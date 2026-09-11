@@ -52,6 +52,7 @@ struct AcervoApplication {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var interfaceServer: InterfaceServer?
     private let sessionBridge = SessionBridge()
     private var menuBar: MenuBarController!
     private let updates = UpdateService()
@@ -99,7 +100,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        // Loopback HTTP rather than the custom scheme, so the page has a real web origin. The
+        // scheme handler is kept as the fallback: it cannot embed anyone else's player, but an app
+        // that opens without clips beats one that does not open. See `InterfaceServer`.
         if let interfaceRoot = WebInterface.bundledInterfaceDirectory() {
+            let server = InterfaceServer(root: interfaceRoot)
+            do {
+                try server.start()
+                interfaceServer = server
+            } catch {
+                NSLog("Acervo: serving the interface over loopback failed (\(error)); falling back to \(WebInterface.scheme)://")
+            }
             configuration.setURLSchemeHandler(WebInterfaceSchemeHandler(root: interfaceRoot), forURLScheme: WebInterface.scheme)
         }
         webView = WKWebView(frame: .zero, configuration: configuration)
@@ -121,7 +132,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         window.setFrameAutosaveName("AcervoMainWindow")
         window.center()
 
-        if WebInterface.bundledInterfaceDirectory() != nil {
+        if let served = interfaceServer?.startURL {
+            webView.load(URLRequest(url: served))
+        } else if WebInterface.bundledInterfaceDirectory() != nil {
             webView.load(URLRequest(url: WebInterface.startURL))
         } else {
             showLoadError("The bundled web interface is missing. Rebuild the application.")

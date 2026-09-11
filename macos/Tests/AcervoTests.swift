@@ -261,3 +261,126 @@ final class AcervoTests: XCTestCase {
         withExtendedLifetime((probe, bridge)) {}
     }
 }
+
+final class InterfaceServerTests: XCTestCase {
+    /// A fresh preferences suite per case, so a remembered port never leaks between tests.
+    /// Named rather than torn down in a `@Sendable` block: the server is not `Sendable`, and every
+    /// case below stops it with `defer` instead.
+    private func suite(_ name: String) throws -> UserDefaults {
+        let domain = "AcervoTests.InterfaceServer.\(name)"
+        UserDefaults.standard.removePersistentDomain(forName: domain)
+        return try XCTUnwrap(UserDefaults(suiteName: domain))
+    }
+
+    private func bundled() throws -> URL {
+        guard let root = WebInterface.bundledInterfaceDirectory() else {
+            throw XCTSkip("The test host did not bundle web/dist")
+        }
+        return root
+    }
+
+    func testItServesTheInterfaceFromALoopbackOrigin() async throws {
+        // The whole reason this exists: `acervo://app` is not a web origin, so an embedded YouTube
+        // player answers with error 153 and nothing the page does can satisfy it.
+        let server = InterfaceServer(root: try bundled(), defaults: try suite(#function))
+        try server.start()
+        defer { server.stop() }
+
+        let start = try XCTUnwrap(server.startURL)
+        XCTAssertEqual(start.scheme, "http")
+        XCTAssertEqual(start.host, "127.0.0.1", "must be loopback: it is a secure context, a LAN address is not")
+
+        let (data, response) = try await URLSession.shared.data(from: start)
+        let http = try XCTUnwrap(response as? HTTPURLResponse)
+        XCTAssertEqual(http.statusCode, 200)
+        XCTAssertEqual(http.value(forHTTPHeaderField: "Content-Type"), "text/html; charset=utf-8")
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("<title>Acervo</title>"))
+    }
+
+    func testTheRememberedPortSurvivesARestart() throws {
+        // Storage is keyed by origin and the origin contains the port, so a port that moved between
+        // launches would throw the replica away every time the app opened.
+        let root = try bundled()
+        let defaults = try suite(#function)
+
+        let first = InterfaceServer(root: root, defaults: defaults)
+        try first.start()
+        let chosen = first.port
+        XCTAssertNotEqual(chosen, 0)
+        XCTAssertEqual(defaults.integer(forKey: InterfaceServer.portDefaultsKey), Int(chosen))
+        first.stop()
+
+        let second = InterfaceServer(root: root, defaults: defaults)
+        try second.start()
+        defer { second.stop() }
+        XCTAssertEqual(second.port, chosen, "the origin must not move between launches")
+    }
+
+    func testAPortSomebodyElseHoldsCostsAReplicaRatherThanAFailureToOpen() throws {
+        let root = try bundled()
+        let defaults = try suite(#function)
+
+        let holder = InterfaceServer(root: root, defaults: defaults)
+        try holder.start()
+        defer { holder.stop() }
+        let taken = holder.port
+
+        // A second instance wanting the same remembered port must still open, on another one.
+        let second = InterfaceServer(root: root, defaults: defaults)
+        try second.start()
+        defer { second.stop() }
+        XCTAssertNotEqual(second.port, 0)
+        XCTAssertNotEqual(second.port, taken)
+        XCTAssertEqual(defaults.integer(forKey: InterfaceServer.portDefaultsKey), Int(second.port))
+    }
+
+    func testItServesNothingOutsideTheBundledRoot() throws {
+        let root = try bundled()
+        for escape in ["/../../../../etc/passwd", "/..%2f..%2fetc%2fpasswd", "/does-not-exist.js"] {
+            XCTAssertNil(InterfaceServer.resolve(escape, root: root), "\(escape) must not resolve")
+        }
+        XCTAssertNotNil(InterfaceServer.resolve("/index.html", root: root))
+        XCTAssertNotNil(InterfaceServer.resolve("/", root: root), "the root is the entry point")
+    }
+
+    func testOnlyGetIsAnswered() {
+        XCTAssertEqual(InterfaceServer.requestedPath(Data("GET /index.html HTTP/1.1\r\n\r\n".utf8)), "/index.html")
+        XCTAssertEqual(InterfaceServer.requestedPath(Data("GET /a.js?v=1 HTTP/1.1\r\n\r\n".utf8)), "/a.js")
+        // The interface is static; anything that writes is the Acervo server's business, not this one's.
+        XCTAssertNil(InterfaceServer.requestedPath(Data("POST /index.html HTTP/1.1\r\n\r\n".utf8)))
+        XCTAssertNil(InterfaceServer.requestedPath(Data("garbage".utf8)))
+    }
+
+    @MainActor
+    func testTheInterfaceRunsFromTheServedOriginWithASecureContext() async throws {
+        // `crypto.getRandomValues` mints every record id, and it is only available in a secure
+        // context. `http://127.0.0.1` is one by specification; a LAN address would not be.
+        let server = InterfaceServer(root: try bundled(), defaults: try suite(#function))
+        try server.start()
+        defer { server.stop() }
+
+        let webView = WKWebView(frame: .init(x: 0, y: 0, width: 800, height: 600))
+        let window = NSWindow(contentRect: webView.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = webView
+        window.orderFront(nil)
+        defer { window.close() }
+
+        let loaded = expectation(description: "interface loaded over loopback")
+        let probe = NavigationProbe(loaded)
+        webView.navigationDelegate = probe
+        let port = server.port
+        webView.load(URLRequest(url: try XCTUnwrap(server.startURL)))
+        await fulfillment(of: [loaded], timeout: 15)
+        try await Task.sleep(for: .milliseconds(500))
+
+        let origin = try await webView.evaluateJavaScript("window.location.origin") as? String
+        XCTAssertEqual(origin, "http://127.0.0.1:\(port)")
+        let secure = try await webView.evaluateJavaScript("window.isSecureContext") as? Bool
+        XCTAssertEqual(secure, true, "without this, crypto.getRandomValues is unavailable and no id can be minted")
+        let minted = try await webView.evaluateJavaScript(
+            "(() => { const b = new Uint8Array(4); crypto.getRandomValues(b); return b.length; })()"
+        ) as? Int
+        XCTAssertEqual(minted, 4)
+    }
+}

@@ -117,9 +117,15 @@ export async function translationFor(segmentId: string, targetLanguage: string,
       job = await client.translation(job.job_id, { signal });
     }
     return job;
-  } catch {
-    // Not configured, not credentialed, or not reachable. The player has a defined state for
-    // having no target text, and it is the same one a deployment with no chain always shows.
+  } catch (error) {
+    /* Not configured, not credentialed, or not reachable. The player has a defined state for having
+       no target text, and it is the same one a deployment with no chain always shows — so this is
+       not an error to put in front of the reader.
+
+       It is said out loud, though. Swallowed in silence, "the speech container has no chain" and
+       "the corpus is down" and "this segment has no translation yet" are one blank space, and there
+       is nothing to look at while working out which. */
+    console.warn("Acervo: no target text for this clip", error);
     return null;
   }
 }
