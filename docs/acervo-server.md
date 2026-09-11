@@ -100,6 +100,7 @@ src/acervo/
   article.py         one word and its senses, the view every enrichment reads
   images/            the sense-image pipeline: a brief per lexeme, a picture per sense
   clips/             the clip pipeline: a corpus search and one selection per lexeme
+  speech/            the corpus's translation seam, running on the owner's chain
   dictionaries/      the external-dictionary artifact compiler
   jobs/              one-shot batch work, run by acervo-worker
   consumers/anki/    the headless Anki robot

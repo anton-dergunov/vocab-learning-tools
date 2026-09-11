@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CaptureHealth } from "./api";
 import { TopicEditor, VocabularyEditor } from "./Configuration";
 import DictionaryPanel from "./DictionaryPanel";
+import ClipPanel from "./ClipPanel";
 import ImagePanel from "./ImagePanel";
 import ModelPanel from "./ModelPanel";
 import { fetchMacRelease, type MacRelease } from "./macRelease";
@@ -17,7 +18,7 @@ import { editorPreferences, setEditorPreference, type EditorPreferences } from "
 const CONFIRMATION = "DELETE";
 
 export type Page =
-  | "general" | "vocabularies" | "topics" | "models" | "images" | "dictionaries" | "editor"
+  | "general" | "vocabularies" | "topics" | "models" | "images" | "clips" | "dictionaries" | "editor"
   | "sync" | "data";
 
 export default function Settings({ update, email, status, snapshot, language, captureHealth, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
@@ -110,6 +111,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
     { id: "topics", label: "Topics" },
     { id: "models", label: "Providers" },
     { id: "images", label: "Pictures" },
+    { id: "clips", label: "Clips" },
     { id: "dictionaries", label: "Dictionaries" },
     { id: "editor", label: "Editor" },
     { id: "sync", label: "Sync" },
@@ -192,6 +194,8 @@ export default function Settings({ update, email, status, snapshot, language, ca
         {page === "models" && <ModelPanel onNotify={onNotify} />}
 
         {page === "images" && <ImagePanel onNotify={onNotify} />}
+
+        {page === "clips" && <ClipPanel onNotify={onNotify} />}
 
         {page === "dictionaries" && <DictionaryPanel onNotify={onNotify} />}
 

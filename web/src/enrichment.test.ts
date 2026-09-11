@@ -56,6 +56,10 @@ describe("enriching a word that was just saved", () => {
       drawEnabled: true, stylesOff: [], boostVariety: true, chosen: false,
       maxAttempts: 4, styles: [], available: true
     });
+    vi.spyOn(backendSession, "clipSettings").mockResolvedValue({
+      searchEnabled: true, chosen: false,
+      corpus: { configured: true, reachable: true, ready: true, indexedLanguages: ["es"] }
+    });
   });
 
   afterEach(() => { enrichment.stop(); enrichment.resume(); vi.restoreAllMocks(); });
@@ -256,5 +260,122 @@ describe("enriching a word that was just saved", () => {
     enrichment.enqueue("lexemepicar0001", "picar");
     await settled();
     expect(brief).not.toHaveBeenCalled();
+  });
+});
+
+
+/**
+ * The third kind. Clips go through the same queue, in the same word unit, ahead of the picture
+ * work — `docs/plans/spoken-clips.md` §2.11: it is a third `kind`, not a second engine.
+ */
+describe("finding clips for a word that was just saved", () => {
+  beforeEach(async () => {
+    await repository.clear();
+    await repository.load(TEST_OWNER);
+    await repository.applyRemote(testGraph(), 1, "dataset00000001");
+    enrichment.resume();
+    vi.spyOn(syncEngine, "syncNow").mockResolvedValue(syncEngine.getStatus());
+    vi.spyOn(backendSession, "imageSettings").mockResolvedValue({
+      drawEnabled: false, stylesOff: [], boostVariety: true, chosen: true,
+      maxAttempts: 4, styles: [], available: true
+    });
+    vi.spyOn(backendSession, "clipSettings").mockResolvedValue({
+      searchEnabled: true, chosen: false,
+      corpus: { configured: true, reachable: true, ready: true, indexedLanguages: ["es"] }
+    });
+  });
+
+  afterEach(() => { enrichment.stop(); enrichment.resume(); vi.restoreAllMocks(); });
+
+  const found = (overrides = {}) => ({
+    lexemeId: "lexemebalsa0001", searched: true, skipped: null, examples: [], dropped: 0,
+    usage: null, ...overrides
+  });
+
+  it("searches a word that has never been through one", async () => {
+    // `lexemebalsa0001` carries a null `clipsSearchedAt`, which is what "never consulted" looks
+    // like — and is what an imported word looks like too.
+    const find = vi.spyOn(backendSession, "findClips").mockResolvedValue(found());
+
+    enrichment.enqueue("lexemebalsa0001", "la balsa");
+    await settled();
+
+    expect(find).toHaveBeenCalledWith(DEVICE(), "lexemebalsa0001");
+    expect(find).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a word alone once it has been consulted, however thin the answer was", async () => {
+    // The fixture's `picar` was searched on 24 August and holds one clip; a word searched and found
+    // empty looks the same to this query, and must not be re-asked. The search is one-shot at save.
+    const find = vi.spyOn(backendSession, "findClips");
+
+    enrichment.enqueue("lexemepicar0001", "picar");
+    await settled();
+
+    expect(find).not.toHaveBeenCalled();
+  });
+
+  it("does not search when the owner has switched save-time searching off", async () => {
+    vi.spyOn(backendSession, "clipSettings").mockResolvedValue({
+      searchEnabled: false, chosen: true, corpus: { configured: true, reachable: true }
+    });
+    const find = vi.spyOn(backendSession, "findClips");
+
+    enrichment.enqueue("lexemebalsa0001", "la balsa");
+    await settled();
+
+    expect(find).not.toHaveBeenCalled();
+  });
+
+  it("searches before it draws, because the owner is looking at the page", async () => {
+    const order: string[] = [];
+    vi.spyOn(backendSession, "imageSettings").mockResolvedValue({
+      drawEnabled: true, stylesOff: [], boostVariety: true, chosen: true,
+      maxAttempts: 4, styles: [], available: true
+    });
+    vi.spyOn(backendSession, "findClips").mockImplementation(async () => {
+      order.push("clips");
+      return found();
+    });
+    vi.spyOn(backendSession, "briefLexeme").mockImplementation(async () => {
+      order.push("brief");
+      return { lexemeId: "lexemebalsa0001", imagePrompts: [] };
+    });
+
+    enrichment.enqueue("lexemebalsa0001", "la balsa");
+    await settled();
+
+    expect(order).toEqual(["clips", "brief"]);
+  });
+
+  it("carries on to the pictures when the corpus is down", async () => {
+    // A corpus that cannot be reached says nothing about whether the word can be drawn, and the
+    // server's sweep will find it again — the mark is written only on a successful consultation.
+    vi.spyOn(backendSession, "imageSettings").mockResolvedValue({
+      drawEnabled: true, stylesOff: [], boostVariety: true, chosen: true,
+      maxAttempts: 4, styles: [], available: true
+    });
+    vi.spyOn(backendSession, "findClips")
+      .mockRejectedValue(new AcervoApiError("no corpus", 502, "corpus_unreachable"));
+    const brief = vi.spyOn(backendSession, "briefLexeme")
+      .mockResolvedValue({ lexemeId: "lexemebalsa0001", imagePrompts: [] });
+
+    enrichment.enqueue("lexemebalsa0001", "la balsa");
+    await settled();
+
+    expect(brief).toHaveBeenCalled();
+    expect(enrichment.getStatus().recent.some((job) => job.kind === "clip" && job.error)).toBe(true);
+  });
+
+  it("shows the search as its own kind of work", async () => {
+    vi.spyOn(backendSession, "findClips").mockResolvedValue(found());
+
+    enrichment.enqueue("lexemebalsa0001", "la balsa");
+    await settled();
+
+    const job = enrichment.getStatus().recent.find((one) => one.phase === "clips");
+    expect(job?.kind).toBe("clip");
+    expect(job?.senseId).toBeNull();      // one search covers every sense of the word
+    expect(job?.error).toBeUndefined();
   });
 });

@@ -47,6 +47,14 @@ export interface Article {
   /** Lexeme-level prompts — the card image, as opposed to a per-sense one. */
   images: ImagePrompt[];
   study: StudyState | null;
+  /**
+   * The languages this vocabulary is translated into, most preferred first.
+   *
+   * On the article because the reader needs it: a clip's player asks the corpus for its target text
+   * in `glossLangs[0]`, which is the same language the stored translation line is written in, so
+   * the two say the same thing in the same tongue rather than disagreeing on screen.
+   */
+  glossLangs: string[];
 }
 
 /**
@@ -344,7 +352,8 @@ export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | 
     attestations: byAge(live(graph.attestations).filter((attestation) => attestation.lexemeId === lexemeId)),
     // Without these the card image is invisible in the projection, so saving would orphan it.
     images: byAge(images.filter((image) => image.senseId === null)),
-    study: studyStateOf(graph, lexemeId)
+    study: studyStateOf(graph, lexemeId),
+    glossLangs: glossLanguagesFor(lexeme.language, graph.vocabularies)
   };
 }
 
@@ -479,6 +488,7 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
     })),
     images: promptsOf(draft.images, null, "image"),
     // A document cannot carry study state, so a proposal never has any to show.
-    study: null
+    study: null,
+    glossLangs: glossLanguagesFor(draft.language, graph.vocabularies)
   };
 }

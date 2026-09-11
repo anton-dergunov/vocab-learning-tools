@@ -181,6 +181,22 @@ class AcervoClient:
             timeout=timeout,
         )
 
+    def clip_settings(self) -> dict[str, Any]:
+        """How this owner wants the corpus consulted, plus what it currently holds.
+
+        A job cannot read the owner's settings any other way: `jobs/` may not import `repository/`,
+        so the sweep asks the service, exactly as the picture sweep does.
+        """
+        return self.call("GET", f"{API_PATH}/clips/settings")
+
+    def find_clips(self, lexeme_id: str, *, device_id: str, timeout: float = CAPTURE_TIMEOUT) -> dict[str, Any]:
+        return self.call(
+            "POST",
+            f"{API_PATH}/clips/lexemes/{lexeme_id}/find",
+            body={"deviceId": device_id},
+            timeout=timeout,
+        )
+
     def pull_graph(self, since: int = 0) -> dict[str, Any]:
         return self.call(
             "GET", f"{API_PATH}/graph", params={"since": since, "schemaVersion": SCHEMA_VERSION}

@@ -1199,6 +1199,61 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .transfer-report li span { color: var(--ink-3); }
 
 
+/* ══════════════════════════ clips ══════════════════════════ */
+/* The dialog is a `.settings` dialog, like the picture one: it inherits the bound, the scroll
+   region and the full-screen-on-a-phone rule rather than restating any of them. Wider, because the
+   player carries a video frame and the sentence under it wants a readable measure beside it. */
+.clip-dialog { width: min(760px, 100%); }
+
+/* The packaged player's own tokens, mapped onto Acervo's.
+   The retrieval package documents these and its light defaults are already Acervo's palette — the
+   work here is the dark theme, which it has no way to know about. Mapping rather than overriding
+   its selectors is what keeps a version bump from breaking the theming: its class names are its
+   business, these variable names are the contract. */
+.clip-dialog .sur-player,
+.clip-dialog [class^="sur-player"] {
+  --sur-player-surface:       var(--surface);
+  --sur-player-surface-muted: var(--surface-2);
+  --sur-player-text:          var(--ink);
+  --sur-player-text-muted:    var(--ink-2);
+  --sur-player-text-subtle:   var(--ink-3);
+  --sur-player-border:        var(--rule);
+  --sur-player-accent:        var(--core);
+  --sur-player-accent-hover:  var(--core);
+  --sur-player-mark-bg:       var(--corpus-soft);
+  --sur-player-mark-text:     var(--corpus);
+  --sur-player-unspoken:      var(--ink-3);
+  --sur-player-serif:         var(--serif);
+  --sur-player-sans:          var(--sans);
+  --sur-player-mono:          var(--mono);
+  --sur-player-shadow:        var(--shadow);
+}
+
+/* What a clip is when the corpus cannot be asked: the sentence and a link that opens at the moment.
+   Deliberately not an error panel — the record holds a real citation, which is why the video, its
+   title, its channel and the start are stored rather than only the segment id. */
+.clip-stored .t { margin: 0 0 6px; font-family: var(--serif); font-size: 17px; line-height: 1.55; }
+.clip-stored .tr { margin: 0 0 12px; color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+.clip-stored .foot { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.clip-stored .hint { margin: 0 0 12px; }
+.clip-stored .clip { display: flex; text-decoration: none; }
+.clip-waiting {
+  margin: 10px 0 0; color: var(--ink-3); font-size: 13px; font-style: italic;
+}
+.clip-remove {
+  margin-top: 6px; font-size: 12px; color: var(--ink-3);
+}
+.clip-remove:hover { color: var(--warn); }
+
+/* Settings ▸ Clips. The corpus is a separate service, so this pane mostly *reports* rather than
+   switching: what it holds, and which channels it harvests — a list Acervo does not own. */
+.config-subhead {
+  margin: 22px 0 4px; font-family: var(--sans); font-size: 12px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
+}
+.corpus-readout { margin-bottom: 4px; }
+.channel-list { display: grid; gap: 2px; margin-top: 8px; }
+
 /* ══════════════════════════ pictures ══════════════════════════ */
 /* The dialog is a `.settings` dialog with a different body, so it inherits the bound, the scroll
    region and the full-screen-on-a-phone rule rather than restating any of them. */

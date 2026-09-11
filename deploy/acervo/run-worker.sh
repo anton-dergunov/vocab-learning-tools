@@ -13,6 +13,9 @@ usage() {
   echo "       run-worker.sh [--root PATH] draw-pictures <sweep arguments...>" >&2
   echo "         e.g. draw-pictures sweep --limit 50" >&2
   echo "              draw-pictures plan --language es" >&2
+  echo "       run-worker.sh [--root PATH] find-clips <sweep arguments...>" >&2
+  echo "         e.g. find-clips sweep --limit 50" >&2
+  echo "              find-clips plan --language es" >&2
   echo "       run-worker.sh [--root PATH] index-clips [update arguments...]" >&2
   echo "         e.g. index-clips" >&2
   echo "              index-clips --limit 40 --json" >&2
@@ -25,14 +28,15 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
     --input-archive) [ "$#" -ge 2 ] || usage; input_archive=$2; shift 2 ;;
-    bootstrap-upload|push|export-state|pull-state|adopt-server|build-dictionary|draw-pictures|index-clips) operation=$1; shift; break ;;
+    bootstrap-upload|push|export-state|pull-state|adopt-server|build-dictionary|draw-pictures|find-clips|index-clips) operation=$1; shift; break ;;
     *) usage ;;
   esac
 done
 [ "${operation:-}" ] || usage
 # The compiler's own flags are passed straight through, so building one dictionary and building
 # every Spanish one are the same command with different arguments rather than two wrappers.
-if [ "$operation" = build-dictionary ] || [ "$operation" = draw-pictures ]; then
+if [ "$operation" = build-dictionary ] || [ "$operation" = draw-pictures ] \
+   || [ "$operation" = find-clips ]; then
   [ "$#" -ge 1 ] || usage
 elif [ "$operation" = index-clips ]; then
   # Optional pass-through. Bare `index-clips` is the routine cron call; a first harvest usually
@@ -123,6 +127,14 @@ case "$operation" in
     # is one subcommand rather than a new container — the whole reason `acervo-worker` exists.
     # shellcheck disable=SC2086
     compose $common_args --profile tools run --rm --build acervo-worker images "$@"
+    ;;
+  find-clips)
+    # The unattended half of clips: which words have never been searched is a query, so running it
+    # late, twice or never costs latency and nothing else. Distinct from `index-clips` on purpose —
+    # that grows the corpus and is the retrieval service's own CLI, while this asks Acervo's graph
+    # what to look up and writes through Acervo's own route.
+    # shellcheck disable=SC2086
+    compose $common_args --profile tools run --rm --build acervo-worker clips "$@"
     ;;
   index-clips)
     # Keep the spoken-usage corpus fresh. Deliberately not a subcommand of acervo_worker.py: that

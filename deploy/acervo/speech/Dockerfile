@@ -28,6 +28,26 @@ WORKDIR /app
 COPY vendor/speech/*.whl /tmp/wheels/
 RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
 
+# The player's target text runs on the *owner's* chain rather than on a key this service holds, so
+# this image carries `acervo.models` and the catalogue that names the providers — and nothing else
+# of Acervo's. `create_app` takes both providers as arguments, which is a public entry point of that
+# package, so the retrieval repository changes nothing: no LiteLLM dependency, no schema-dialect
+# port, no error-taxonomy mapping. See docs/plans/spoken-clips.md §2.13.
+#
+# Acervo's *server* image still never imports `speech_retrieval`, and this one never imports
+# Acervo's graph, settings or database.
+# Laid out as `/app/src/acervo/...` beside `/app/models`, which is exactly the server image's
+# shape — and it has to be, because `CATALOGUE_PATH` is resolved relative to the module's own file
+# (`parents[3] / "models" / "catalogue.json"`). Installing the package into site-packages instead
+# put the catalogue somewhere that does not exist, and the only symptom was no provider being
+# injected, silently.
+COPY src/acervo/__init__.py /app/src/acervo/__init__.py
+COPY src/acervo/models /app/src/acervo/models
+COPY src/acervo/speech /app/src/acervo/speech
+COPY models /app/models
+ENV PYTHONPATH=/app/src
+RUN pip install --no-cache-dir "litellm>=1.100"
+
 # `data` holds two very different things and they are mounted separately: `raw/` is acquired
 # captions, which cost bandwidth and are the one thing here nothing may delete, while `index/` and
 # `derived/` are rebuilt from it. `catalogues/` is the operator's channel list.
@@ -43,8 +63,12 @@ RUN mkdir -p /var/lib/speech/data/raw /var/lib/speech/data/index \
 # edit. `channels seed` never overwrites, which is why this can run unconditionally on every start
 # rather than behind a test the entrypoint would have to get right.
 COPY deploy/acervo/speech/entrypoint.sh /usr/local/bin/speech-entrypoint
-RUN chmod +x /usr/local/bin/speech-entrypoint
+COPY deploy/acervo/speech/serve.py /app/serve.py
+RUN chmod +x /usr/local/bin/speech-entrypoint && chmod -R a+rX /app
 
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/speech-entrypoint"]
-CMD ["speech-retrieval", "serve"]
+# Acervo's own entry point rather than the console script, so `create_app` is called with the
+# owner's chain behind both provider stages. With no chain and no credential it injects neither and
+# the service behaves exactly as `speech-retrieval serve` would.
+CMD ["python", "/app/serve.py"]

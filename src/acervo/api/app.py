@@ -16,6 +16,7 @@ from acervo.api.routes import (
     mac_release,
     models,
     session,
+    speech,
 )
 from acervo.repository.session import open_database
 from acervo.settings import Settings
@@ -48,7 +49,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     errors.install(app)
 
     api = APIRouter(prefix=API_ROOT)
-    for module in (health, session, graph, capture, clips, dictionaries, images, mac_release, models):
+    for module in (health, session, graph, capture, clips, dictionaries, images, mac_release,
+                   models, speech):
         api.include_router(module.router)
     app.include_router(api)
 

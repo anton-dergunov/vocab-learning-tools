@@ -24,9 +24,9 @@ import { forget } from "./media";
 import { repository } from "./repository";
 import { syncEngine } from "./sync";
 
-/** Typed for what comes next. Audio is a second `kind`, not a second engine. */
-export type EnrichmentKind = "image" | "audio";
-export type EnrichmentPhase = "brief" | "render";
+/** Audio is the next `kind`, not the next engine — clips were the third and went in here. */
+export type EnrichmentKind = "image" | "clip" | "audio";
+export type EnrichmentPhase = "brief" | "render" | "clips";
 
 export interface EnrichmentJob {
   id: string;
@@ -109,7 +109,16 @@ class EnrichmentEngine {
    */
   private current: Unit | null = null;
   private working: Promise<void> | null = null;
-  private rest = FIRST_REST;
+  /**
+   * Per kind, not one shared timer.
+   *
+   * A picture is an image call metered by an image provider at roughly one a minute; a clip search
+   * is a text call metered somewhere else entirely. Sharing one backoff means an image 429 silences
+   * clip search for ten minutes for no reason — exactly the wrong shape when the owner is watching
+   * the article they just saved. The brief rides with the pictures despite being a text call,
+   * because a word whose brief is rate-limited has nothing to draw either way.
+   */
+  private rest: Record<EnrichmentKind, number> = { image: FIRST_REST, clip: FIRST_REST, audio: FIRST_REST };
   private stopped = false;
 
   subscribe = (listener: () => void): (() => void) => {
@@ -214,7 +223,10 @@ class EnrichmentEngine {
       this.update({ waiting: this.waits() });
       try {
         if (next.kind === "word") {
-          if (await this.drawingIsOn()) await this.word(next.lexemeId, next.label);
+          // Each kind asks its own switch, inside. Gating the whole unit on `drawEnabled` meant
+          // turning pictures off also turned clip search off, which is two decisions wearing one
+          // control — and the settings screens are deliberately separate.
+          await this.word(next.lexemeId, next.label);
         } else {
           // A redraw is deliberately not gated. You pressed the button; switching automatic
           // drawing off is how you get a word with no pictures and then add the one you want.
@@ -245,6 +257,32 @@ class EnrichmentEngine {
     }
   }
 
+  /**
+   * Whether the owner wants the corpus consulted on its own, asked of the server each time.
+   *
+   * The same argument as `drawingIsOn`, and unreachable means no for the same reason: nothing can
+   * be searched without the server anyway, so a failure here costs only the decision.
+   */
+  private async searchIsOn(): Promise<boolean> {
+    try {
+      return (await backendSession.clipSettings()).searchEnabled;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Whether this word has ever been through a clip search, read from the replica.
+   *
+   * `clipsSearchedAt` answers it on its own: null is never consulted, and set means consulted —
+   * including consulted and nothing was good enough, which is the common answer and must not send
+   * anyone back for a second look. The search is one-shot at save; nothing re-searches.
+   */
+  private needsClips(lexemeId: string): boolean {
+    const lexeme = repository.snapshot().lexemes.find((record) => record.id === lexemeId);
+    return Boolean(lexeme) && !lexeme!.deleted && lexeme!.clipsSearchedAt === null;
+  }
+
   /** One picture the owner asked for, drawn with whatever they typed. */
   private async picture(unit: Extract<Unit, { kind: "picture" }>): Promise<void> {
     const device = repository.snapshot().deviceId;
@@ -261,22 +299,45 @@ class EnrichmentEngine {
       // the picture is deliberately left visible under the "redrawing" mark while this runs.
       if (replacing) await forget(replacing);
       await syncEngine.syncNow();
-      this.rest = FIRST_REST;
+      this.rest.image = FIRST_REST;
       this.finish(job);
     } catch (error) {
       this.finish(job, message(error));
-      await this.rested(error);
+      await this.rested(error, "image");
     }
   }
 
   /**
-   * One word: brief the senses that have none, then draw them one at a time.
+   * One word: find its clips, then brief the senses that have none and draw them one at a time.
    *
-   * Sequential on purpose. Providers meter roughly one image a minute, so two at once buys a 429
-   * rather than a second picture — and one at a time is what makes the status legible.
+   * Clips first, and that ordering is the point rather than an accident: one search and one text
+   * call is the faster half by a wide margin, and the owner is looking at the page. Pictures take
+   * thirty to sixty seconds each and a provider allows roughly one a minute.
+   *
+   * Sequential throughout, for the same reason: two at once buys a 429 rather than a second answer,
+   * and one at a time is what makes the status legible.
    */
   private async word(lexemeId: string, label: string): Promise<void> {
     const device = repository.snapshot().deviceId;
+
+    if (this.needsClips(lexemeId) && await this.searchIsOn()) {
+      const job = this.begin(lexemeId, label, "clips", null, "clip");
+      try {
+        await backendSession.findClips(device, lexemeId);
+        await syncEngine.syncNow();
+        this.rest.clip = FIRST_REST;
+        this.finish(job);
+      } catch (error) {
+        this.finish(job, message(error));
+        // Not fatal to the word: a corpus that is down or a chain that is busy says nothing about
+        // whether this word can be *drawn*, and the server's own sweep will find it again — the
+        // mark is written only on a successful consultation, which is what makes that safe.
+        await this.rested(error, "clip");
+      }
+    }
+    if (this.stopped) return;
+
+    if (!(await this.drawingIsOn())) return;
 
     if (this.pending(lexemeId).unbriefed) {
       const job = this.begin(lexemeId, label, "brief");
@@ -288,7 +349,7 @@ class EnrichmentEngine {
         this.finish(job, message(error));
         // Nothing to draw without a brief, so this word is over either way; resting still matters,
         // because the next word in the queue faces the same allowance.
-        await this.rested(error);
+        await this.rested(error, "image");
         return;
       }
     }
@@ -299,13 +360,13 @@ class EnrichmentEngine {
       try {
         await backendSession.renderImage(row.id, device);
         await syncEngine.syncNow();
-        this.rest = FIRST_REST;
+        this.rest.image = FIRST_REST;
         this.finish(job);
       } catch (error) {
         this.finish(job, message(error));
         // A rate limit is about the provider, not this sense: rest, then carry on. Giving up on the
         // word would leave its remaining senses to the sweep for no reason.
-        if (!(await this.rested(error))) return;
+        if (!(await this.rested(error, "image"))) return;
       }
     }
   }
@@ -334,10 +395,10 @@ class EnrichmentEngine {
   }
 
   private begin(lexemeId: string, label: string, phase: EnrichmentPhase,
-                senseId: string | null = null): EnrichmentJob {
+                senseId: string | null = null, kind: EnrichmentKind = "image"): EnrichmentJob {
     const job: EnrichmentJob = {
       id: `${lexemeId}:${phase}:${senseId ?? ""}:${Date.now()}`,
-      kind: "image", lexemeId, senseId, label, phase, startedAt: Date.now()
+      kind, lexemeId, senseId, label, phase, startedAt: Date.now()
     };
     this.update({ active: job });
     return job;
@@ -351,12 +412,12 @@ class EnrichmentEngine {
    * fall-through plus this backoff *is* the pacing, and building a cross-process limiter would be
    * inventing a problem.
    */
-  private async rested(error: unknown): Promise<boolean> {
+  private async rested(error: unknown, kind: EnrichmentKind): Promise<boolean> {
     if (!(error instanceof AcervoApiError) || !RETRY_CODES.has(error.code)) return false;
-    const until = Date.now() + this.rest;
-    this.update({ restingUntil: until });
-    await new Promise((resolve) => setTimeout(resolve, this.rest));
-    this.rest = Math.min(this.rest * 2, LONGEST_REST);
+    const wait = this.rest[kind];
+    this.update({ restingUntil: Date.now() + wait });
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    this.rest[kind] = Math.min(wait * 2, LONGEST_REST);
     this.update({ restingUntil: null });
     return !this.stopped;
   }

@@ -10,13 +10,15 @@ job is a new subcommand and never a new container.
     acervo_worker.py anki push /input/runs/<id>/manifest.json
     acervo_worker.py anki pull-state
     acervo_worker.py dictionary build --id cc-cedict
+    acervo_worker.py images sweep --limit 50
+    acervo_worker.py clips sweep --limit 50
 """
 
 from __future__ import annotations
 
 import sys
 
-USAGE = "usage: acervo_worker.py {anki|dictionary|images} ...\n"
+USAGE = "usage: acervo_worker.py {anki|dictionary|images|clips} ...\n"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,6 +39,10 @@ def main(argv: list[str] | None = None) -> int:
         from acervo.jobs.images.sweep import main as images_main
 
         return images_main(rest)
+    if job == "clips":
+        from acervo.jobs.clips.sweep import main as clips_main
+
+        return clips_main(rest)
     sys.stderr.write(f"unknown job {job!r}\n{USAGE}")
     return 2
 

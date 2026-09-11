@@ -15,6 +15,8 @@ Four rules, each of which stops being true silently:
   pipeline instead of writing it twice.
 - `article.py` itself imports nothing of Acervo's at all, which is what makes it safe to be the one
   thing every enrichment shares.
+- `speech/` is the translation seam the corpus calls back through: the provider package and nothing
+  else of Acervo's, and nothing at all of the retrieval service's.
 - `repository/` stores; it does not know the catalogue.
 """
 
@@ -98,6 +100,7 @@ def test_the_rules_below_are_not_vacuous():
     assert modules_under("images"), "no images/ modules: the stands-alone rule would be vacuous"
     assert modules_under("clips"), "no clips/ modules: the stands-alone rule would be vacuous"
     assert (PACKAGE / "article.py").exists(), "no article.py: the shared-view rule would be vacuous"
+    assert modules_under("speech"), "no speech/ modules: the stands-alone rule would be vacuous"
     assert modules_under("repository"), "no repository/ modules"
 
 
@@ -200,6 +203,24 @@ def test_the_article_view_imports_nothing_of_acervos():
     """
     offenders = {name for name in imports_of(PACKAGE / "article.py") if name.startswith("acervo")}
     assert not offenders, f"acervo/article.py imports {sorted(offenders)}; it must stay pure"
+
+
+@pytest.mark.parametrize("path", modules_under("speech"), ids=identify)
+def test_the_translation_seam_stands_on_the_provider_package_and_nothing_else(path):
+    """One structured call on the owner's chain, and no idea whose clip it is.
+
+    This one runs in the *speech* container, which has no business reaching Acervo's database at
+    all — so the chain arrives as `ACERVO_TEXT_CHAIN` rather than being looked up, the rule already
+    stated for any work that cannot import `repository/`. It also imports nothing of the retrieval
+    service's: the wiring that knows that package's prompts, schemas and exception types is
+    `deploy/acervo/speech/serve.py`, which is what lets this be tested from a virtualenv that does
+    not, and must not, carry FastAPI, uvicorn, yt-dlp and Stanza.
+    """
+    imported = imports_of(path)
+    offenders = {name for name in imported if name.startswith(STANDS_ALONE)}
+    assert not offenders, f"{path} imports {sorted(offenders)}; the translation seam stands alone"
+    foreign = {name for name in imported if name.startswith("speech_retrieval")}
+    assert not foreign, f"{path} imports {sorted(foreign)}; that belongs in the container's entry point"
 
 
 @pytest.mark.parametrize("path", modules_under("repository"), ids=identify)

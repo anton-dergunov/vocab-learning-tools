@@ -1,4 +1,6 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
+import { ClipDialog } from "./ClipDialog";
+import { storedClipOf, type StoredClip } from "./clips";
 import type { Example, Gloss, ImagePrompt } from "./domain";
 import { formatClock, formatDay } from "./format";
 import { DictionaryFold } from "./ExternalArticle";
@@ -40,8 +42,12 @@ function GlossLine({ gloss }: { gloss: Gloss }) {
   </div>;
 }
 
-function ExampleBlock({ example, onUnsupported }: { example: Example; onUnsupported(message: string): void }) {
+function ExampleBlock({ example, onUnsupported, onPlayClip, clips }: {
+  example: Example; onUnsupported(message: string): void; onPlayClip(clip: StoredClip): void;
+  clips: ClipSlot | null;
+}) {
   const own = OWN_ORIGINS.has(example.origin);
+  const clip = storedClipOf(example);
   return <div className={`ex ${own ? "own" : ""}`}>
     <p className="t"><Marked text={example.text} form={example.matchedForm} /></p>
     {example.translation &&
@@ -55,11 +61,23 @@ function ExampleBlock({ example, onUnsupported }: { example: Example; onUnsuppor
       </button>}
     </div>
     {example.note && <p className="tr">✎ {example.note}</p>}
-    {example.videoRef && <button className="clip" style={{ marginTop: 10 }} onClick={() => onUnsupported("Clip playback is not wired up yet")}>
+    {clip && <button className="clip" style={{ marginTop: 10 }} onClick={() => onPlayClip(clip)}>
       <span className="pl"><PlayIcon /></span>
-      <span className="ti">{example.videoTitle ?? "Clip"}
-        <span>clip · starts at {formatClock(example.videoStart)}</span></span>
+      <span className="ti">{clip.videoTitle ?? "Clip"}
+        <span>
+          {clip.videoChannel ? `${clip.videoChannel} · ` : "clip · "}
+          starts at {formatClock(clip.videoStart)}
+        </span></span>
     </button>}
+    {/* Removal is an ordinary tombstone, deliberately not a picture's `suppressed` field — and it
+        is safe only because the clip search is one-shot at save. The id is derived from the sense
+        and the segment, so a later re-search that chose the same segment would write at the
+        tombstone's id and bring it back; nothing re-searches, so nothing can. A rescan has to add
+        a suppression field before it ships, exactly as the image pipeline had to. */}
+    {clip && example.origin === "subtitle" && clips && <button
+      className="link-btn clip-remove"
+      onClick={() => clips.remove(example.id)}
+    >Remove this clip</button>}
   </div>;
 }
 
@@ -71,10 +89,12 @@ function ExampleBlock({ example, onUnsupported }: { example: Example; onUnsuppor
  * prompt row at all still shows a frame, so the article has one shape whether or not a word has been
  * through the pipeline.
  */
-function SenseSection({ entry, index, headword, pictures, onUnsupported }: {
+function SenseSection({ entry, index, headword, pictures, clips, onUnsupported, onPlayClip }: {
   entry: ArticleSense; index: number; headword: string;
   pictures: PictureSlot | null;
+  clips: ClipSlot | null;
   onUnsupported(message: string): void;
+  onPlayClip(clip: StoredClip): void;
 }) {
   const { sense, examples, images } = entry;
   const anchored = new Map(images.filter((image) => image.exampleId).map((image) => [image.exampleId!, image]));
@@ -96,7 +116,8 @@ function SenseSection({ entry, index, headword, pictures, onUnsupported }: {
       <p className="sense-def">{sense.definition}</p>
       <div className="glosses">{sense.glosses.map((gloss) => <GlossLine key={gloss.lang} gloss={gloss} />)}</div>
       {examples.map((example) => <Fragment key={example.id}>
-        <ExampleBlock example={example} onUnsupported={onUnsupported} />
+        <ExampleBlock example={example} onUnsupported={onUnsupported} onPlayClip={onPlayClip}
+          clips={clips} />
         {anchored.has(example.id) && frame(anchored.get(example.id)!)}
       </Fragment>)}
       {loose.map((image) => <Fragment key={image.id}>{frame(image)}</Fragment>)}
@@ -104,6 +125,11 @@ function SenseSection({ entry, index, headword, pictures, onUnsupported }: {
         busy={pictures.busy(sense.id)}
         onOpen={() => pictures.open(sense.id, null)}
       />}
+      {/* A search in flight says so; a search that finished empty shows **nothing at all**. The
+          asymmetry with pictures is deliberate: a missing picture is a gap to fill, so it gets a
+          frame, while a missing clip is the expected outcome for most words and a permanent empty
+          frame on every sense of every word would be noise. */}
+      {clips?.searching && <p className="clip-waiting">Looking for a recorded example…</p>}
     </div>
   </section>;
 }
@@ -120,6 +146,18 @@ function SenseSection({ entry, index, headword, pictures, onUnsupported }: {
  * record ids, so there is nothing a control could act on. The frames disappear rather than
  * offering buttons that cannot work.
  */
+/**
+ * Whether a clip search is in flight, and how a clip is taken off the page.
+ *
+ * Absent for an unsaved proposal, like `PictureSlot` and for the same reason: the placeholder ids
+ * `articleFromDraft` mints are deliberately not valid record ids, so there is nothing to act on.
+ */
+export interface ClipSlot {
+  /** One search covers every sense of the word, so this is per word rather than per sense. */
+  searching: boolean;
+  remove(exampleId: string): void;
+}
+
 export interface PictureSlot {
   /**
    * `senseId` is always the sense that was clicked, and `prompt` is null for one that has no row
@@ -130,11 +168,17 @@ export interface PictureSlot {
   busy(senseId: string): boolean;
 }
 
-export default function LexemeArticle({ article, onUnsupported, meta = true, pictures = null }: {
+export default function LexemeArticle({ article, onUnsupported, meta = true, pictures = null,
+                                       clips = null }: {
   article: Article; onUnsupported(message: string): void; meta?: boolean;
   pictures?: PictureSlot | null;
+  clips?: ClipSlot | null;
 }) {
   const { lexeme, topics, senses, attestations, study } = article;
+  /* The dialog lives here rather than being handed down from `App`, unlike the picture slot: a
+     picture is drawn through a queue somebody else owns, while a clip is only fetched and played.
+     That also gives the Add view's preview a working clip button for nothing. */
+  const [playing, setPlaying] = useState<StoredClip | null>(null);
   return <>
     <div className="masthead">
       <div className="head-row">
@@ -162,7 +206,9 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, pic
         index={index}
         headword={lexeme.headword}
         pictures={pictures}
+        clips={clips}
         onUnsupported={onUnsupported}
+        onPlayClip={setPlaying}
       />)}
 
     {attestations.length > 0 && <section className="sec">
@@ -211,5 +257,12 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, pic
       <span>edited <b>{formatDay(lexeme.editedAt)}</b></span>
       <span>rev <b>{lexeme.revision}</b></span>
     </div>}
+
+    {playing && <ClipDialog
+      stored={playing}
+      headword={lexeme.headword}
+      glossLang={article.glossLangs[0] ?? null}
+      onClose={() => setPlaying(null)}
+    />}
   </>;
 }

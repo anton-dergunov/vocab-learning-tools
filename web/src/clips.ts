@@ -1,0 +1,155 @@
+/**
+ * Every call to the spoken-usage corpus, and nothing else makes one.
+ *
+ * The rule `sync.ts` lives by for the graph and `dictionaries.ts` for dictionaries. A clip example
+ * renders from its stored fields, so the article reads offline like every other read; pressing one
+ * needs the network, because YouTube is on the other side of it regardless.
+ *
+ * The corpus is reached through Acervo's own allow-listed proxy, never directly: that is what keeps
+ * the retrieval service on the internal network with no second hostname, no second CORS
+ * configuration, and its operator token nowhere near a browser (`docs/plans/spoken-clips.md` §2.9).
+ *
+ * **The packaged client is used unchanged.** `createSpeechRetrievalClient` is given Acervo's proxy
+ * as its base URL and a `fetch` that carries the session token, so the client the retrieval
+ * repository ships and tests is the one that runs — no second implementation of its fifteen routes
+ * and no second copy of its response types.
+ */
+
+import { createSpeechRetrievalClient, SpeechRetrievalApiError, type SpeechRetrievalClient }
+  from "@spoken-usage-retrieval/react/client";
+import type { SpeechClip, TranslationJob } from "@spoken-usage-retrieval/react/types";
+import { backendSession } from "./api";
+import type { Example } from "./domain";
+
+export type { SpeechClip, TranslationJob };
+export { SpeechRetrievalApiError };
+
+/** Built per call rather than held, because signing out must not leave a client with a stale token. */
+function corpus(): SpeechRetrievalClient {
+  const headers = backendSession.speechHeaders();
+  return createSpeechRetrievalClient({
+    baseUrl: backendSession.speechBaseUrl(),
+    fetch: (input, init) => {
+      const merged = new Headers(init?.headers);
+      Object.entries(headers).forEach(([name, value]) => merged.set(name, value));
+      return fetch(input, { ...init, headers: merged, cache: "no-store" });
+    }
+  });
+}
+
+/**
+ * What the player is opened with: the corpus's current clip, or the stored example alone.
+ *
+ * Asked for by `clipRef` rather than rebuilt from the stored fields, because the corpus is the
+ * authority on where a passage starts and ends and may have re-cut it since. When it cannot be
+ * reached the stored reference, start and end are still a playable citation — which is the whole
+ * reason those fields are on the record rather than fetched.
+ */
+export interface ClipView {
+  clip: SpeechClip | null;
+  /** The stored fallback, always present. `null` clip plus this is the offline case. */
+  stored: StoredClip;
+  unreachable: boolean;
+}
+
+export interface StoredClip {
+  videoRef: string;
+  videoTitle: string | null;
+  videoChannel: string | null;
+  videoStart: number;
+  videoEnd: number | null;
+  clipRef: string | null;
+  text: string;
+  translation: string | null;
+  matchedForm: string | null;
+}
+
+export function storedClipOf(example: Example): StoredClip | null {
+  if (!example.videoRef) return null;
+  return {
+    videoRef: example.videoRef,
+    videoTitle: example.videoTitle,
+    videoChannel: example.videoChannel,
+    videoStart: example.videoStart ?? 0,
+    videoEnd: example.videoEnd,
+    clipRef: example.clipRef,
+    text: example.text,
+    translation: example.translation,
+    matchedForm: example.matchedForm
+  };
+}
+
+export async function clipFor(stored: StoredClip, signal?: AbortSignal): Promise<ClipView> {
+  if (!stored.clipRef) return { clip: null, stored, unreachable: false };
+  try {
+    return { clip: await corpus().clip(stored.clipRef, { signal }), stored, unreachable: false };
+  } catch (error) {
+    if (error instanceof SpeechRetrievalApiError && error.status === 404) {
+      // The segment is gone from the corpus — an index rebuilt from a video that was deleted at the
+      // source. The stored citation still names a real moment, so this is the fallback, not an error.
+      return { clip: null, stored, unreachable: false };
+    }
+    return { clip: null, stored, unreachable: true };
+  }
+}
+
+/**
+ * Ask the corpus to translate this clip, and poll until it settles.
+ *
+ * **Acervo stores none of this.** The article's own translation line came from the clip-selection
+ * call and lives in the graph, so it replicates to the phone and reads offline; what the *player*
+ * shows is richer — a validated word-alignment graph it renders as an interactive relation — and it
+ * is the service's, fetched when the modal opens and gone when it closes (§2.13).
+ *
+ * A job rather than a value, because translation is two provider calls and the service caches the
+ * result: the second viewer of a clip gets it immediately, and the first waits once.
+ */
+export async function translationFor(segmentId: string, targetLanguage: string,
+                                     signal?: AbortSignal): Promise<TranslationJob | null> {
+  const client = corpus();
+  try {
+    let job = await client.requestTranslation(segmentId, { targetLanguage, signal });
+    // Bounded on purpose: the modal is open and somebody is waiting. Giving up leaves the source
+    // text and the article's own line, which is the state the player is designed to render anyway.
+    for (let turn = 0; turn < 30 && (job.status === "queued" || job.status === "running"); turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      if (signal?.aborted) return null;
+      job = await client.translation(job.job_id, { signal });
+    }
+    return job;
+  } catch {
+    // Not configured, not credentialed, or not reachable. The player has a defined state for
+    // having no target text, and it is the same one a deployment with no chain always shows.
+    return null;
+  }
+}
+
+/** The corpus's own reading, for Settings. */
+export function corpusStatus(signal?: AbortSignal) {
+  return corpus().status({ signal });
+}
+
+export function corpusStatistics(signal?: AbortSignal) {
+  return corpus().statistics({ signal });
+}
+
+/** The channel catalogue is the retrieval service's; Acervo ships no copy and edits it through here. */
+export function channels(language?: string, signal?: AbortSignal) {
+  return corpus().channels(language, { signal });
+}
+
+export function setChannelEnabled(language: string, channelId: string, enabled: boolean) {
+  return corpus().setChannelEnabled(language, channelId, enabled);
+}
+
+export function addChannel(channel: Parameters<SpeechRetrievalClient["addChannel"]>[0]) {
+  return corpus().addChannel(channel);
+}
+
+/** A direct link, for when the service is unreachable and the player cannot be built. */
+export function directLink(stored: StoredClip): string {
+  const start = Math.max(0, Math.floor(stored.videoStart));
+  if (!/youtube\.com|youtu\.be/.test(stored.videoRef)) return stored.videoRef;
+  const separator = stored.videoRef.includes("?") ? "&" : "?";
+  return `${stored.videoRef}${separator}t=${start}`;
+}

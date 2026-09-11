@@ -1,7 +1,13 @@
 # Spoken clips · integrating the retrieval corpus
 
-**Status:** Planned. Nothing blocks it. The other repository's Plan 07 is the mirror of this
-document and moves to *In progress* when step 1 lands.
+**Status:** Steps 1–7 are built. Step 1 is deployed and verified on the NAS; steps 2–7 are landed in
+the repository and **not yet deployed** — steps 2 and 3 each rotate the Alembic head, and one
+`./deploy.sh --reset-database` covers both. The other repository's Plan 07 is the mirror of this
+document and needed nothing beyond its step 1.
+
+What is built is not the same as what is tuned: the selection prompt has had one reading, recorded
+in [`../clip-selection-round-1.md`](../clip-selection-round-1.md), and the experiment in
+[`clip-selection-experiment.md`](clip-selection-experiment.md) is still unrun.
 
 A word's article can already show what a word means, how it is used, and a picture of it. What it
 cannot show is a native speaker saying it. That gap is what

@@ -1,7 +1,10 @@
 # Experiment · the clip-selection prompt
 
-**Status:** Planned. Depends on step 3 of [`spoken-clips.md`](spoken-clips.md), which ships the
-first version of the prompt this experiment tunes.
+**Status:** Unstarted. Step 3 of [`spoken-clips.md`](spoken-clips.md) has shipped the first version
+of the prompt this experiment tunes, and a first reading of it — three runs over eight words, read
+by eye — is [`clip-selection-round-1.md`](../clip-selection-round-1.md). That was enough to find one
+real failure and fix it; it is **not** this experiment, which nobody has run. Its starting point is
+the prompt as that round left it.
 
 ## The question
 

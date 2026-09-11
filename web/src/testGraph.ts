@@ -104,7 +104,9 @@ export function testGraph(): VocabularyGraph {
         id: "osd6ieh00s2hxql", senseId: "sensepicarchop0", text: "Pica la cebolla bien fina.",
         textLang: "es", translation: "Chop the onion very finely.", translationLang: "en",
         origin: "subtitle", modelId: null, sourceAttestationId: null,
-        videoRef: "corpus/mercado.mp4", videoTitle: "Comiendo en un mercado",
+        // A real video URL, because that is what the clip pipeline writes: `videoRef` is the
+        // corpus's `video.url`, and a fallback link opens it at `videoStart`.
+        videoRef: "https://www.youtube.com/watch?v=ebJDiXbeHTY", videoTitle: "Comiendo en un mercado",
         videoChannel: "Easy Spanish", videoStart: 461, videoEnd: 468,
         clipRef: "seg_7c3d18e5b04a92f6de27",
         imageRef: null, audioRef: null, note: null, matchedForm: "Pica",

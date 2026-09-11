@@ -74,18 +74,37 @@ sentence. Pick nothing rather than the near miss.
 You can see every sense at once. Never give the same segment to two senses — if one sentence seems
 to fit two, it is showing one of them and you should decide which.
 
-## What makes a clip good
+## First: is the passage cut cleanly?
+
+**Judge the whole text you are given, not the best clause inside it.** This is the single most
+common way a bad clip gets through, so check it before anything else.
+
+These passages were cut out of automatic captions by pause and punctuation, and the cut often lands
+badly. The learner is shown the **entire** passage, exactly as you see it — not the part that caught
+your eye. So read the first three words and the last three words and ask:
+
+- Does it **begin** where a sentence begins? A passage starting mid-clause — *"enfermedades
+  posibles, literal, la puertita, estaba así el flaco y me dice…"*, *"era un castillo un poco pijo,
+  pero sí…"* — is unusable, however good the clause in the middle is.
+- Does it **end** where a sentence ends? A passage trailing off — *"…y era de color gris con"* — is
+  unusable for the same reason.
+- Is it **one** thing? Two unrelated sentences run together by a missed boundary read as confusion,
+  not as an example.
+
+A passage that fails any of these is not a candidate, no matter how well the word is used inside it.
+Do not mentally trim it to the good part: you are choosing the passage, not editing it, and the
+learner gets what you chose. Pick nothing rather than a clean clause inside a ragged passage.
+
+Short and complete beats long and ragged, every time.
+
+## What else makes a clip good
 
 **It is understandable on its own.** A learner will read this sentence with no surrounding context
-and no idea what the video was about. A fragment that only makes sense as a reply to something you
+and no idea what the video was about. A passage that only makes sense as a reply to something you
 cannot hear is not usable, however natural it is.
 
 **The word is doing real work in it.** The sentence should be one where the word carries meaning,
 not a filler use, not a false start, not the word appearing inside a list or a repetition.
-
-**It is a complete thought.** Automatic captions are cut by pause and punctuation, and sometimes the
-cut lands badly: half a clause, a sentence that begins mid-word, two unrelated sentences run
-together. Reject those.
 
 **It is ordinary speech.** Prefer a sentence a learner could imagine saying or hearing. A heavily
 in-joke, heavily local or heavily technical line teaches the word in a place the learner will never

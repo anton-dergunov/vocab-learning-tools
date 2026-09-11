@@ -84,6 +84,20 @@ services:
       # Acervo's own interface is the only browser client and it reaches this through the server's
       # proxy, so the service needs no CORS origins of its own.
       SPEECH_RETRIEVAL_CORS_ORIGINS: ""
+      # The player's target text runs on the *owner's* chain rather than on a key this service
+      # holds (spoken-clips §2.13). The chain is **given** rather than looked up: this container has
+      # no business reaching Acervo's database, which is the rule for any work that cannot import
+      # `repository/`. With none of these set, no provider is injected and the service falls back to
+      # the authored caption where one exists and no target text where none does.
+      ACERVO_TEXT_CHAIN: "${ACERVO_TEXT_CHAIN:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      ACERVO_OLLAMA_URL: "${ACERVO_OLLAMA_URL:-}"
+      # Vertex needs the credentials *file*, which is the one provider whose secret is not a value.
+      ACERVO_VERTEX_PROJECT: "${ACERVO_VERTEX_PROJECT:-}"
+      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-}"
+      ACERVO_VERTEX_ACCOUNT: "${ACERVO_VERTEX_ACCOUNT:-}"
     # Deliberately no `ports`. Nothing outside the compose network talks to it: the browser goes
     # through Acervo's authenticated proxy, which is what keeps an unauthenticated read API off the
     # network and the operator token off the client.
@@ -97,6 +111,9 @@ services:
       - "${ACERVO_SPEECH_INDEX:-acervo-speech-index}:/var/lib/speech/data"
       # The owner's channel list, seeded from the wheel on first start and never overwritten.
       - "${ACERVO_SPEECH_CATALOGUES:-acervo-speech-catalogues}:/var/lib/speech/catalogues"
+      # The same credentials directory the server and the worker already mount, and for the same
+      # reason: Vertex authenticates from a file that Google will not accept as a value.
+      - "${ACERVO_CREDENTIALS:-acervo-credentials}:/run/acervo/credentials:ro"
     healthcheck:
       # Liveness, **not** readiness. Readiness answers 503 until an index has been built, which is
       # honest and correct on a fresh deployment — and a healthcheck pointed at it would report a

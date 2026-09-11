@@ -152,6 +152,9 @@ export type PushResponse = SyncEnvelope & { records: Partial<VocabularyGraph> };
 export type ResetResponse = SyncEnvelope & { deleted: number };
 
 const API_PATH = "/api/acervo/v1";
+// The corpus's own `/api/v1` surface, allow-listed behind Acervo's auth. The packaged typed client
+// is pointed here, so this is a *base URL* rather than a route.
+const SPEECH_PATH = "/speech";
 /** Compiled dictionaries are served as plain files, outside the JSON API and outside `pb_public`. */
 const DICTIONARY_PATH = "/api/acervo/dictionaries";
 const MEDIA_PATH = "/api/acervo/media";
@@ -268,6 +271,40 @@ export interface OnlineArticle {
   posLabel?: string;
   ipa?: string;
   senses: { definition: string; examples?: { text: string; translation?: string | null }[] }[];
+}
+
+/* ── clips ────────────────────────────────────────────────────────────────
+   Server state read through a route, like the model chain and the picture settings: owner-scoped,
+   never replicated, and about what the words are *made of* rather than what they are. */
+
+/** What this deployment's corpus holds, so Settings can say more than "on" or "off". */
+export interface CorpusReadout {
+  configured: boolean;
+  reachable: boolean;
+  ready?: boolean;
+  builtAt?: string | null;
+  indexedLanguages?: string[];
+  videos?: number;
+  segments?: number;
+  error?: string;
+}
+
+export interface ClipSettings {
+  searchEnabled: boolean;
+  /** False means "following the deployment default", which is a real answer and not a gap. */
+  chosen: boolean;
+  corpus: CorpusReadout;
+}
+
+export interface ClipSearchResult {
+  lexemeId: string;
+  /** False when nothing was asked: the corpus does not index this language yet. */
+  searched: boolean;
+  skipped: string | null;
+  examples: unknown[];
+  /** Ids the model named that the request never offered. A prompt bug, surfaced rather than hidden. */
+  dropped: number;
+  usage: { provider?: string; model?: string; seconds?: number } | null;
 }
 
 export class AcervoApiError extends Error {
@@ -523,6 +560,39 @@ export const backendSession = {
   },
   mediaHeaders(): Record<string, string> {
     return client.authHeaders();
+  },
+
+  /**
+   * Where the corpus answers, through Acervo's own allow-listed proxy.
+   *
+   * A base URL and a header set rather than a method per route, because `clips.ts` hands both to
+   * the *packaged* typed client — the one the retrieval repository ships and tests. Reimplementing
+   * its fifteen methods here to gain Acervo's envelope would mean keeping a second copy of its
+   * response types in two languages, and the proxy forwards the body verbatim so that it does not
+   * have to.
+   */
+  speechBaseUrl(): string {
+    return client.fileUrl(API_PATH, SPEECH_PATH);
+  },
+  speechHeaders(): Record<string, string> {
+    return client.authHeaders();
+  },
+
+  findClips(deviceId: string, lexemeId: string): Promise<ClipSearchResult> {
+    return client.call<ClipSearchResult>(
+      `/clips/lexemes/${encodeURIComponent(lexemeId)}/find`,
+      { method: "POST", body: JSON.stringify({ deviceId }) },
+      false,
+      CAPTURE_TIMEOUT
+    );
+  },
+  clipSettings(): Promise<ClipSettings> {
+    return client.call<ClipSettings>("/clips/settings");
+  },
+  saveClipSettings(changes: Partial<Pick<ClipSettings, "searchEnabled">>): Promise<ClipSettings> {
+    return client.call<ClipSettings>("/clips/settings", {
+      method: "PUT", body: JSON.stringify(changes)
+    });
   },
 
   resetGraph(deviceId: string): Promise<ResetResponse> {

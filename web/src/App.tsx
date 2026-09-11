@@ -12,7 +12,7 @@ import {
   type ExternalEntry, type ExternalRow, type RawHit
 } from "./externalEntries";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
-import LexemeArticle, { type PictureSlot } from "./LexemeArticle";
+import LexemeArticle, { type ClipSlot, type PictureSlot } from "./LexemeArticle";
 import LexemeList, { type ExternalSearch } from "./LexemeList";
 import { languageOf } from "./languages";
 import {
@@ -344,6 +344,24 @@ export default function App() {
       }
     };
   }, [article, mode, enrichmentStatus.active, enrichmentStatus.waiting, replacing]);
+
+  const clips = useMemo<ClipSlot | null>(() => {
+    if (!article || mode !== "read") return null;
+    const lexemeId = article.lexeme.id;
+    const active = enrichmentStatus.active;
+    return {
+      // Only what this device is doing. Work the server's sweep is doing shows up as clips
+      // appearing on the next pull — there is no job store to ask, and deliberately none to build.
+      searching:
+        (active?.kind === "clip" && active.lexemeId === lexemeId)
+        || enrichmentStatus.waiting.some((item) => item.lexemeId === lexemeId),
+      remove: (exampleId) => {
+        void repository.delete("examples", exampleId)
+          .then(() => setSnapshot(repository.snapshot()))
+          .catch((error) => notify(error instanceof Error ? error.message : "That clip could not be removed."));
+      }
+    };
+  }, [article, mode, enrichmentStatus.active, enrichmentStatus.waiting, notify]);
 
   /* ── searching the dictionaries ───────────────────────────────────────
      Three speeds, and the difference between them is what each one costs. A dictionary stored on
@@ -771,7 +789,7 @@ export default function App() {
                   onSort={setSort} onOpen={openLexeme}
                   external={externalSearch}
                 />
-              : mode === "read" ? <LexemeArticle article={article} onUnsupported={notify} pictures={pictures} />
+              : mode === "read" ? <LexemeArticle article={article} onUnsupported={notify} pictures={pictures} clips={clips} />
               // Editing is a composer above, so only reading and the read-only projection get here.
               : <Suspense fallback={<p className="empty">Loading the editor…</p>}>
                   <YamlView name={article.lexeme.headword} yaml={yamlFor(article)} />
