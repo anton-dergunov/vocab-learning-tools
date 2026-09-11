@@ -10,8 +10,8 @@ Four rules, each of which stops being true silently:
   same validation and same revision allocation as a phone. One writer, one pipeline.
 - Nothing that ships imports `research/`.
 - `models/` stands alone: it is a provider package, not an Acervo one.
-- `images/` stands alone too, on `models/` and nothing else, which is what lets a route and a
-  batch sweep share one pipeline instead of writing it twice.
+- `images/` and `clips/` stand alone too, on `models/` and nothing else, which is what lets a route
+  and a batch sweep share one pipeline instead of writing it twice.
 - `repository/` stores; it does not know the catalogue.
 """
 
@@ -93,6 +93,7 @@ def test_the_rules_below_are_not_vacuous():
     ), "no batch module goes through acervo.client, so nothing exercises the write-path rule"
     assert modules_under("models"), "no models/ modules: the stands-alone rule would be vacuous"
     assert modules_under("images"), "no images/ modules: the stands-alone rule would be vacuous"
+    assert modules_under("clips"), "no clips/ modules: the stands-alone rule would be vacuous"
     assert modules_under("repository"), "no repository/ modules"
 
 
@@ -170,6 +171,19 @@ def test_the_image_pipeline_stands_on_the_provider_package_and_nothing_else(path
     # both of these may import.
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the image pipeline stands alone"
+
+
+@pytest.mark.parametrize("path", modules_under("clips"), ids=identify)
+def test_the_clip_pipeline_stands_on_the_provider_package_and_nothing_else(path):
+    """Candidates in, a selection out — and no idea whose word it is, or where the corpus lives.
+
+    The same argument as `images/`: `api/` may not import `acervo.jobs`, so a clip searched from a
+    route and a clip searched by the sweep have to be two callers of one thing rather than two
+    pipelines. `services/clips.py` is the binding layer that reads `Settings`, the owner's chain and
+    the graph, and turns this package's answers into Acervo's wire vocabulary.
+    """
+    offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
+    assert not offenders, f"{path} imports {sorted(offenders)}; the clip pipeline stands alone"
 
 
 @pytest.mark.parametrize("path", modules_under("repository"), ids=identify)

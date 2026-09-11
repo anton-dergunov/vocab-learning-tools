@@ -33,7 +33,7 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
     "lexemes": {
         "language": (True, 35), "headword": (True, 240), "lemma": (True, 240),
         "reading": (False, 240), "ipa": (False, 240), "dialect": (False, 35),
-        "emoji": (False, 32), "short_gloss": (False, 500),
+        "emoji": (False, 32), "short_gloss": (False, 500), "clips_searched_at": (False, 24),
     },
     "senses": {
         "definition": (True, 2000), "definition_lang": (True, 35), "domain": (False, 120),
@@ -44,7 +44,8 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
     "examples": {
         "text": (True, 5000), "text_lang": (True, 35), "translation": (False, 5000),
         "translation_lang": (False, 35), "model_id": (False, 240), "video_ref": (False, 500),
-        "video_title": (False, 500), "image_ref": (False, 500), "audio_ref": (False, 500),
+        "video_title": (False, 500), "video_channel": (False, 500), "clip_ref": (False, 120),
+        "image_ref": (False, 500), "audio_ref": (False, 500),
         "note": (False, 2000), "matched_form": (False, 240),
         "matched_translation_form": (False, 240),
     },
@@ -75,7 +76,7 @@ NUMBER_RULES: dict[str, dict[str, tuple[float, float | None]]] = {
     "vocabularies": {"vocab_order": (0, None)},
     "topics": {"topic_order": (0, None)},
     "senses": {"sense_order": (0, None)},
-    "examples": {"video_start": (0, None)},
+    "examples": {"video_start": (0, None), "video_end": (0, None)},
     "image_prompts": {"seed": (0, 2147483647), "attempts": (0, None)},
     "study_states": {
         "note_id": (0, None), "reps": (0, None), "lapses": (0, None),
@@ -201,6 +202,9 @@ def validate(name: str, row: Mapping[str, Any], lookup: Lookup) -> None:
         for topic_id in row.get("topics") or []:
             _same_owner(row, _related(lookup, "topics", topic_id, "Topic"), "Lexeme topic")
         string_array(row.get("notes"), "Notes")
+        searched = _text(row, "clips_searched_at")
+        if searched and not is_instant(searched):
+            refuse("Clip search timestamp must be an ISO-8601 UTC instant with milliseconds.")
         return
 
     if name == "senses":
@@ -225,9 +229,22 @@ def validate(name: str, row: Mapping[str, Any], lookup: Lookup) -> None:
             refuse("Example translation and language must be provided together.")
         if translation_language:
             valid_language(translation_language, "Translation language")
+        # `video_ref` is what every clip field hangs on: a title, a channel, a timing or the
+        # corpus's own segment id without one describes a clip that names no video, and the
+        # projection hides them all when there is none.
         video_ref = _text(row, "video_ref")
-        if not video_ref and (_text(row, "video_title") or (row.get("video_start") or 0) > 0):
-            refuse("An example clip title or start time requires a video reference.")
+        start = row.get("video_start") or 0
+        end = row.get("video_end") or 0
+        if not video_ref and (
+            _text(row, "video_title")
+            or _text(row, "video_channel")
+            or _text(row, "clip_ref")
+            or start > 0
+            or end > 0
+        ):
+            refuse("An example clip title, channel, segment or timing requires a video reference.")
+        if end and end <= start:
+            refuse("An example clip must end after it starts.")
         # Verbatim: untrimmed, uncased, un-normalised. Capture silently drops a form that fails this
         # exact test, so loosening it breaks the drop and tightening it turns a good capture into a
         # refusal.

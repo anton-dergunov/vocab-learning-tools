@@ -18,6 +18,10 @@ old_prototypes/
 # Selected, app-ready assets belong under assets/ and remain tracked.
 /design/generated/
 /build/
+# Working notes handed from one session to the next. Deliberately untracked: the design lives in
+# docs/plans/, and a scratch file that got committed would become a second, staler copy of it.
+/HANDOFF.md
+
 # Pinned third-party artifacts fetched by scripts/fetch_speech.sh. Named and checksummed by
 # deploy/acervo/speech/pin.json, which is tracked; the files themselves are not ours to commit.
 /vendor/

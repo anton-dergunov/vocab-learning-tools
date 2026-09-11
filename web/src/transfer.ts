@@ -327,15 +327,22 @@ export interface BundlePlan {
  *
  * Version 6 is readable as it stands. Version 7 added optional keys to a picture — the example it
  * anchors on, and the state the server keeps about drawing it — and a version 6 word file simply
- * does not carry them, which `readPrompt` already reads as "none" and "nothing attempted". Nothing
- * was renamed and nothing was removed, so there is no text to rewrite: this is a version being
- * *accepted*, which is the cheapest form the exception takes and the one to prefer.
+ * does not carry them, which `readPrompt` already reads as "none" and "nothing attempted". Version
+ * 8 added optional keys to an example — a clip's channel, its end, and the corpus segment it names
+ * — and neither an older word file carries them, which `readExample` already reads as absent.
+ * Nothing was renamed and nothing was removed in either step, so there is no text to rewrite: these
+ * are versions being *accepted*, which is the cheapest form the exception takes and the one to
+ * prefer.
+ *
+ * `clipsSearchedAt` is deliberately not in the format at all. It is state the server keeps, like a
+ * picture's attempt counter, so an imported word arrives never-consulted and the sweep finds it —
+ * which is the right answer for a word that has just changed accounts.
  *
  * Note what is not here. A version 6 bundle carries no example ids, so a picture in one cannot name
  * the sentence it illustrates and does not get an anchor invented for it — matching by position or
  * by text would be a guess, and a wrong anchor puts the picture under the wrong sentence.
  */
-const READABLE = new Set([SCHEMA_VERSION, 6]);
+const READABLE = new Set([SCHEMA_VERSION, 7, 6]);
 
 function upgradeBundle(files: BundleFile[], from: number): BundleFile[] {
   if (READABLE.has(from)) return files;
@@ -504,7 +511,13 @@ export function remintIds(draft: ArticleDraft): ArticleDraft {
     if (id) minted.set(id, newId());
   };
   draft.attestations.forEach((attestation) => mint(attestation.id));
-  draft.senses.forEach((sense) => sense.examples.forEach((example) => mint(example.id)));
+  // A clip is the exception: its id is derived from its sense and the segment it quotes, so minting
+  // a random one here would hand the destination account a row the clip search then writes again
+  // under the derived id — one sense, one segment, two examples, and nothing failing. Leaving it
+  // null lets `saveArticle` derive it against the sense this account just created.
+  draft.senses.forEach((sense) => sense.examples.forEach((example) => {
+    if (!example.clipRef) mint(example.id);
+  }));
   // A reference to an id this file never stated cannot be honoured, so it becomes none rather than
   // pointing at whatever happens to hold that id in the destination account.
   const remap = (id: string | null) => (id ? minted.get(id) ?? null : null);

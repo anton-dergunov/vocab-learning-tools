@@ -33,23 +33,26 @@ export function testGraph(): VocabularyGraph {
         id: "lexemepicar0001", language: "es", headword: "picar", lemma: "picar", reading: null,
         ipa: "/piˈkaɾ/", pos: "verb", gender: null, register: "neutral", dialect: null, emoji: "🌶️",
         topicIds: ["topicfood000001"], status: "active", shortGloss: "to itch; to chop",
-        notes: ["The sense is carried by the object, not the verb."], ...sync("02-11", "08-24")
+        notes: ["The sense is carried by the object, not the verb."],
+        clipsSearchedAt: stamp("08-24"), ...sync("02-11", "08-24")
       },
       {
         id: "lexemebalsa0001", language: "es", headword: "la balsa", lemma: "balsa", reading: null,
         ipa: null, pos: "noun", gender: "feminine", register: "neutral", dialect: null, emoji: "🛶",
-        topicIds: ["topictravel0001"], status: "active", shortGloss: null, notes: [], ...sync("01-22")
+        topicIds: ["topictravel0001"], status: "active", shortGloss: null, notes: [],
+        clipsSearchedAt: null, ...sync("01-22")
       },
       {
         id: "lexemeespolv001", language: "es", headword: "espolvorear", lemma: "espolvorear",
         reading: null, ipa: null, pos: "verb", gender: null, register: "neutral", dialect: null,
         emoji: "🧀", topicIds: ["topicfood000001"], status: "inbox", shortGloss: "to sprinkle",
-        notes: [], ...sync("08-27")
+        notes: [], clipsSearchedAt: null, ...sync("08-27")
       },
       {
         id: "lexemeturmoil01", language: "en", headword: "turmoil", lemma: "turmoil", reading: null,
         ipa: "/ˈtɜːmɔɪl/", pos: "noun", gender: null, register: "formal", dialect: null, emoji: "🌪️",
-        topicIds: [], status: "active", shortGloss: null, notes: [], ...sync("02-25")
+        topicIds: [], status: "active", shortGloss: null, notes: [], clipsSearchedAt: null,
+        ...sync("02-25")
       }
     ],
     senses: [
@@ -91,14 +94,19 @@ export function testGraph(): VocabularyGraph {
         id: "examplepicar010", senseId: "sensepicaritch0", text: "Me pica la nariz.",
         textLang: "es", translation: "My nose itches.", translationLang: "en", origin: "attestation",
         sourceAttestationId: "attestpicar0010", modelId: null, videoRef: null, videoTitle: null,
-        videoStart: null, imageRef: null, audioRef: "audio/picar.mp3", note: null,
+        videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
+        imageRef: null, audioRef: "audio/picar.mp3", note: null,
         matchedForm: "pica", matchedTranslationForm: "itches", approved: true, ...sync("02-11")
       },
       {
-        id: "examplepicar020", senseId: "sensepicarchop0", text: "Pica la cebolla bien fina.",
+        // A clip, so its id is derived from its sense and the segment it quotes rather than drawn
+        // at random — `clipExampleId("sensepicarchop0", "seg_7c3d18e5b04a92f6de27")`.
+        id: "osd6ieh00s2hxql", senseId: "sensepicarchop0", text: "Pica la cebolla bien fina.",
         textLang: "es", translation: "Chop the onion very finely.", translationLang: "en",
         origin: "subtitle", modelId: null, sourceAttestationId: null,
-        videoRef: "corpus/mercado.mp4", videoTitle: "Comiendo en un mercado", videoStart: 461,
+        videoRef: "corpus/mercado.mp4", videoTitle: "Comiendo en un mercado",
+        videoChannel: "Easy Spanish", videoStart: 461, videoEnd: 468,
+        clipRef: "seg_7c3d18e5b04a92f6de27",
         imageRef: null, audioRef: null, note: null, matchedForm: "Pica",
         matchedTranslationForm: "Chop", approved: false, ...sync("02-11")
       },
@@ -106,7 +114,8 @@ export function testGraph(): VocabularyGraph {
         id: "examplebalsa010", senseId: "sensebalsaraft0", text: "Cruzaron el río en una balsa.",
         textLang: "es", translation: "They crossed the river on a raft.", translationLang: "en",
         origin: "llm", sourceAttestationId: null, modelId: "demo-model", videoRef: null,
-        videoTitle: null, videoStart: null, imageRef: null, audioRef: null, note: null,
+        videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
+        imageRef: null, audioRef: null, note: null,
         matchedForm: null, matchedTranslationForm: null, approved: true, ...sync("01-22")
       }
     ],

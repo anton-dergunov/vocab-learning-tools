@@ -119,9 +119,14 @@ def draft_from(
                     "origin": "attestation" if attestation else "llm",
                     "sourceAttestationId": attestation["id"] if attestation else None,
                     "modelId": None if attestation else model_id,
+                    # Capture never consults the spoken-usage corpus (spoken-clips §2.5): the
+                    # article is written first and real speech is looked for afterwards.
                     "videoRef": None,
                     "videoTitle": None,
+                    "videoChannel": None,
                     "videoStart": None,
+                    "videoEnd": None,
+                    "clipRef": None,
                     "imageRef": None,
                     "audioRef": None,
                     "note": trimmed(example.get("note")) or None,

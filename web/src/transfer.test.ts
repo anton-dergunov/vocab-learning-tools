@@ -12,7 +12,7 @@ import {
   slugFor, TOPICS_FILE, VOCABULARIES_FILE, type BundleFile, type ExportOptions
 } from "./transfer";
 import { imagePromptId } from "./ids";
-import { parseArticle } from "./yaml";
+import { draftFor, parseArticle } from "./yaml";
 
 const AT = "2026-09-01T12:00:00.000Z";
 const everything: ExportOptions = { language: "all", markdown: true, images: false };
@@ -239,6 +239,68 @@ describe("reading a bundle", () => {
     // by position or by text would be a guess — and a wrong anchor puts the picture under the
     // wrong sentence, which is worse than putting it under none.
     expect(image.exampleId).toBeNull();
+  });
+
+  it("gives an imported clip the derived id, so the clip search cannot write it twice", () => {
+    // Every other id is re-minted at random, which is what stops a bundle depending on the account
+    // it came from. A clip's cannot be: it is a function of the sense and the segment, and a random
+    // one here would let the sweep add a second row for the same pair with nothing failing.
+    const word = draftFor(articleFor(testGraph(), "lexemepicar0001")!);
+    const reminted = remintIds(word);
+    const clip = reminted.senses.flatMap((sense) => sense.examples)
+      .find((example) => example.origin === "subtitle")!;
+    expect(clip.clipRef).toBe("seg_7c3d18e5b04a92f6de27");
+    expect(clip.id).toBeNull();
+    // Its neighbours are re-minted as usual.
+    const written = reminted.senses.flatMap((sense) => sense.examples)
+      .filter((example) => example.origin !== "subtitle");
+    expect(written.every((example) => example.id && example.id.length === 15)).toBe(true);
+  });
+
+  it("reads a version 7 bundle, whose examples carry none of the clip keys", () => {
+    // Version 8 added a clip's channel, its end and the corpus segment it names. A version 7 word
+    // file simply does not carry them and `readExample` reads them as absent, so this is another
+    // version being *accepted* rather than rewritten — the cheapest form the exception takes.
+    const older = [
+      "language: es",
+      "headword: picar",
+      "lemma: picar",
+      "pos: verb",
+      "status: active",
+      "shortGloss: to itch",
+      "senses:",
+      "  - order: 0",
+      "    definition: Producir comezón.",
+      "    definitionLang: es",
+      "    glosses:",
+      "      - {lang: en, terms: [to itch]}",
+      "    examples:",
+      "      - text: Me pica la nariz.",
+      "        textLang: es",
+      "        origin: subtitle",
+      "        videoRef: https://youtu.be/od_YtGbRC48",
+      "        videoTitle: Comiendo en un mercado",
+      "        videoStart: 461",
+      ""
+    ].join("\n");
+
+    const files = bundle()
+      .filter((file) => !file.path.endsWith(".yaml") || file.path === MANIFEST_FILE
+        || file.path === VOCABULARIES_FILE || file.path === TOPICS_FILE)
+      .map((file) => file.path === MANIFEST_FILE
+        ? { ...file, text: file.text.replace(`schemaVersion: ${SCHEMA_VERSION}`, "schemaVersion: 7") }
+        : file)
+      .concat([{ path: "es/picar.yaml", text: older }]);
+
+    const plan = readBundle(files);
+    expect(plan.problems).toEqual([]);
+    const clip = plan.articles.find((article) => article.path === "es/picar.yaml")!
+      .draft.senses[0].examples[0];
+    expect(clip.videoTitle).toBe("Comiendo en un mercado");
+    expect(clip.videoStart).toBe(461);
+    expect(clip.videoChannel).toBeNull();
+    expect(clip.videoEnd).toBeNull();
+    expect(clip.clipRef).toBeNull();
   });
 
   it("refuses a bundle from another schema version, naming both", () => {

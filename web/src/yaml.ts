@@ -37,7 +37,10 @@ export interface ExampleDraft {
   modelId: string | null;
   videoRef: string | null;
   videoTitle: string | null;
+  videoChannel: string | null;
   videoStart: number | null;
+  videoEnd: number | null;
+  clipRef: string | null;
   imageRef: string | null;
   audioRef: string | null;
   note: string | null;
@@ -151,7 +154,10 @@ function exampleFields(example: ExampleDraft): Plain {
     modelId: example.modelId,
     videoRef: example.videoRef,
     videoTitle: example.videoTitle,
+    videoChannel: example.videoChannel,
     videoStart: example.videoStart,
+    videoEnd: example.videoEnd,
+    clipRef: example.clipRef,
     imageRef: example.imageRef,
     audioRef: example.audioRef,
     note: example.note,
@@ -228,7 +234,10 @@ function exampleDraft(example: Example): ExampleDraft {
     modelId: example.modelId,
     videoRef: example.videoRef,
     videoTitle: example.videoTitle,
+    videoChannel: example.videoChannel,
     videoStart: example.videoStart,
+    videoEnd: example.videoEnd,
+    clipRef: example.clipRef,
     imageRef: example.imageRef,
     audioRef: example.audioRef,
     note: example.note,
@@ -532,8 +541,8 @@ class Reader {
 
 const EXAMPLE_KEYS = [
   "id", "text", "textLang", "translation", "translationLang", "origin", "sourceAttestationId",
-  "modelId", "videoRef", "videoTitle", "videoStart", "imageRef", "audioRef", "note",
-  "matchedForm", "matchedTranslationForm", "approved"
+  "modelId", "videoRef", "videoTitle", "videoChannel", "videoStart", "videoEnd", "clipRef",
+  "imageRef", "audioRef", "note", "matchedForm", "matchedTranslationForm", "approved"
 ];
 const PROMPT_KEYS = [
   "id", "exampleId", "prompt", "styleId", "seed", "modelId", "promptVersion", "imageRef",
@@ -567,7 +576,10 @@ function readExample(reader: Reader, raw: unknown, path: string, textLang: strin
     modelId: reader.optional(fields.modelId, `${path}.modelId`),
     videoRef: reader.optional(fields.videoRef, `${path}.videoRef`),
     videoTitle: reader.optional(fields.videoTitle, `${path}.videoTitle`),
+    videoChannel: reader.optional(fields.videoChannel, `${path}.videoChannel`),
     videoStart: reader.optionalNumber(fields.videoStart, `${path}.videoStart`),
+    videoEnd: reader.optionalNumber(fields.videoEnd, `${path}.videoEnd`),
+    clipRef: reader.optional(fields.clipRef, `${path}.clipRef`),
     imageRef: reader.optional(fields.imageRef, `${path}.imageRef`),
     audioRef: reader.optional(fields.audioRef, `${path}.audioRef`),
     note: reader.optional(fields.note, `${path}.note`),

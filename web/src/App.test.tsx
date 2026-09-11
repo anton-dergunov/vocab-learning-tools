@@ -125,7 +125,8 @@ function mockGarfioCapture() {
           translation: "The pirate costume comes with a hook.", translationLang: "en",
           // The learner's own sentence, linked to the attestation created by the same save.
           origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
-          videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+          videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
+          clipRef: null, imageRef: null, audioRef: null,
           note: null, matchedForm: "un garfio", matchedTranslationForm: "hook",
           approved: false
         }]

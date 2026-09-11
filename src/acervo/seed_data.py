@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import hashlib
 
+from acervo.clips.ids import clip_example_id
+
 STAMP = "2026-08-28T12:00:00.000Z"
 EDITOR = "acervoseed"
 
@@ -88,7 +90,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
                   "translation": "Is the sauce very spicy for you?",
                   "origin": "attestation", "attestation": "salsa", "matched": "pica",
                   "matched_translation": "spicy", "audio": True,
-                  "video": ("Easy Spanish — Comiendo en un mercado", 461)},
+                  "video": ("Easy Spanish — Comiendo en un mercado", "Easy Spanish", 461, 468)},
              ],
              "images": [{"key": "spicy", "prompt": "A chilli pepper glowing on a spoon of red sauce, soft storybook gouache, warm light, no text",
                          "style_id": "storybook", "seed": 771402}]},
@@ -142,7 +144,8 @@ DEMO_LEXEMES: tuple[dict, ...] = (
                  {"key": "directo", "text": "Se desmayó en pleno directo, delante de las cámaras.",
                   "translation": "She passed out live on air, in front of the cameras.",
                   "origin": "subtitle", "matched": "desmayó", "matched_translation": "passed out",
-                  "audio": True, "video": ("DW Español — Informe semanal", 252)},
+                  "audio": True, "clip": "seg_4b1c7d2e9a350f68cd41",
+                  "video": ("DW Español — Informe semanal", "DW Español", 252, 258)},
              ],
              "images": [{"key": "swoon", "prompt": "A figure swooning backwards, stars circling, 1970s sci-fi paperback, muted print palette, no text",
                          "style_id": "retro-futurist", "seed": 991204}]},
@@ -237,7 +240,8 @@ DEMO_LEXEMES: tuple[dict, ...] = (
                  {"key": "siete", "text": "Lleva currando desde las siete de la mañana.",
                   "translation": "He’s been working since seven in the morning.",
                   "origin": "subtitle", "matched": "currando", "matched_translation": "working",
-                  "audio": True, "video": ("RTVE — Aquí la tierra", 723)},
+                  "audio": True, "clip": "seg_9e02fa47b6d15c83a7b0",
+                  "video": ("RTVE — Aquí la tierra", "RTVE", 723, 729)},
              ]},
         ],
         "study": {"reps": 3, "lapses": 2, "stability": 4.2, "difficulty": 9.1,
@@ -474,6 +478,7 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
             "dialect": entry.get("dialect", ""), "emoji": entry["emoji"],
             "topics": [topics[topic] for topic in entry["topics"]], "status": entry["status"],
             "short_gloss": entry.get("short_gloss", ""), "notes": entry.get("notes", []),
+            "clips_searched_at": entry.get("clips_searched_at", ""),
         }))
 
         attestations: dict[str, str] = {}
@@ -496,17 +501,22 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
                 "glosses": sense["glosses"], "domain": sense.get("domain", ""), "sense_order": order,
             }))
             for example in sense["examples"]:
-                title, start = example.get("video", ("", 0))
+                title, channel, start, end = example.get("video", ("", "", 0, 0))
+                clip_ref = example.get("clip", "")
+                video_ref = f"corpus/{key}-{example['key']}.mp4" if title else ""
                 records.append(("examples", {
-                    "id": rid("examples", f"{key}-{sense['key']}-{example['key']}"), **base,
+                    # A clip example's id is derived from its sense and the segment it quotes, so
+                    # the seed writes what every other writer of one would write.
+                    "id": clip_example_id(sense_id, clip_ref) if clip_ref
+                    else rid("examples", f"{key}-{sense['key']}-{example['key']}"), **base,
                     "sense": sense_id, "text": example["text"], "text_lang": entry["language"],
                     "translation": example.get("translation", ""),
                     "translation_lang": example.get("translation_lang", "en") if example.get("translation") else "",
                     "origin": example["origin"],
                     "source_attestation": attestations.get(example.get("attestation", ""), ""),
                     "model_id": example.get("model_id", ""),
-                    "video_ref": f"corpus/{key}-{example['key']}.mp4" if title else "",
-                    "video_title": title, "video_start": start,
+                    "video_ref": video_ref, "video_title": title, "video_channel": channel,
+                    "video_start": start, "video_end": end, "clip_ref": clip_ref,
                     "image_ref": "", "audio_ref": f"audio/{key}-{example['key']}.mp3" if example.get("audio") else "",
                     "note": example.get("note", ""), "matched_form": example.get("matched", ""),
                     "matched_translation_form": example.get("matched_translation", ""),

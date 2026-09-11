@@ -12,7 +12,7 @@ function graph(): VocabularyGraph {
   const lexeme: Lexeme = {
     id: "lexeme000000001", language: "es", headword: "la balsa", lemma: "balsa", reading: null, ipa: "/ˈbalsa/",
     pos: "noun", gender: "feminine", register: "neutral", dialect: null, emoji: "🛶",
-    topicIds: [topic.id], status: "active", shortGloss: null, notes: [], ...sync
+    topicIds: [topic.id], status: "active", shortGloss: null, notes: [], clipsSearchedAt: null, ...sync
   };
   const sense: Sense = {
     id: "sense0000000001", lexemeId: lexeme.id, definition: "Una embarcación sencilla.", definitionLang: "es",
@@ -48,7 +48,8 @@ describe("Acervo domain", () => {
     value.examples.push({
       id: "example00000001", senseId: value.senses[0].id, text: "Tuvo un mareo.", textLang: "es",
       translation: null, translationLang: null, origin: "attestation", sourceAttestationId: "attest000000001",
-      modelId: null, videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+      modelId: null, videoRef: null, videoTitle: null, videoChannel: null, videoStart: null,
+      videoEnd: null, clipRef: null, imageRef: null, audioRef: null,
       note: null, matchedForm: null, matchedTranslationForm: null, approved: true, ...sync
     });
     expect(() => validateGraph(value)).toThrow("one lexeme");

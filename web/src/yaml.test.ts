@@ -55,6 +55,27 @@ describe("reading YAML back", () => {
     });
   });
 
+  it("carries every clip field through the document, so export and import keep them", () => {
+    // The fixture's `picar` holds one clip. A word file is what `yamlForDraft` writes with its ids
+    // stripped, so anything the format drops here is lost on the way through a bundle.
+    const document = yamlFor(articleFor(testGraph(), "lexemepicar0001")!);
+    expect(document).toContain("clipRef: seg_7c3d18e5b04a92f6de27");
+    const clip = parseArticle(document).senses
+      .flatMap((sense) => sense.examples)
+      .find((example) => example.origin === "subtitle")!;
+    expect(clip.videoChannel).toBe("Easy Spanish");
+    expect(clip.videoStart).toBe(461);
+    expect(clip.videoEnd).toBe(468);
+    expect(clip.clipRef).toBe("seg_7c3d18e5b04a92f6de27");
+  });
+
+  it("refuses a clip field the format does not know, rather than dropping it", () => {
+    // `EXAMPLE_KEYS` is a closed allow-list, which is what makes a forgotten field an error.
+    const document = yamlFor(articleFor(testGraph(), "lexemepicar0001")!)
+      .replace("clipRef: seg_", "clipSegment: seg_");
+    expect(() => parseArticle(document)).toThrow("clipSegment");
+  });
+
   it("treats a record with no id as new and keeps the ids of the rest", () => {
     const article = articleFor(testGraph(), "lexemepicar0001")!;
     const document = yamlFor(article)
@@ -203,7 +224,8 @@ describe("the new-entry template", () => {
           id: "example00000091", text: "El disfraz de pirata viene con un garfio.", textLang: "es",
           translation: "The pirate costume comes with a hook.", translationLang: "en",
           origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
-          videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+          videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
+          clipRef: null, imageRef: null, audioRef: null,
           note: null, matchedForm: "un garfio", matchedTranslationForm: "hook", approved: false
         }]
       }],

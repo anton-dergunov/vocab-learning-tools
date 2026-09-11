@@ -3,12 +3,13 @@ import { MemoryDatabase } from "./localDatabase";
 import { LOCAL_SCHEMA_VERSION, LocalAcervoRepository } from "./repository";
 import { fakeRemote } from "./testRemote";
 import { articleFor } from "./selectors";
+import { clipExampleId } from "./ids";
 import { parseArticle, YAML_TEMPLATE, yamlFor } from "./yaml";
 
 const lexemeInput = {
   language: "es", headword: "desmayarse", lemma: "desmayarse", reading: null, ipa: null, pos: "verb" as const,
   gender: null, register: "neutral" as const, dialect: null, emoji: "😵‍💫", topicIds: [],
-  status: "active" as const, shortGloss: null, notes: []
+  status: "active" as const, shortGloss: null, notes: [], clipsSearchedAt: null
 };
 
 describe("the Acervo repository", () => {
@@ -68,7 +69,8 @@ describe("the Acervo repository", () => {
     await repository.saveExample({
       senseId: sense.id, text: "Se desmayó durante la clase.", textLang: "es", translation: "They fainted during class.",
       translationLang: "en", origin: "attestation", sourceAttestationId: attestation.id, modelId: null,
-      videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null, note: null,
+      videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
+      clipRef: null, imageRef: null, audioRef: null, note: null,
       matchedForm: null, matchedTranslationForm: null, approved: true
     }, "example00000001");
     expect(repository.snapshot()).toMatchObject({ ready: true, ownerId: "owner0000000001" });
@@ -224,7 +226,8 @@ describe("saving an article edited as YAML", () => {
     await repository.saveExample({
       senseId: "sense0000000001", text: "Me desmayé.", textLang: "es", translation: "I fainted.",
       translationLang: "en", origin: "manual", sourceAttestationId: null, modelId: null,
-      videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+      videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
+      clipRef: null, imageRef: null, audioRef: null,
       note: null, matchedForm: null, matchedTranslationForm: null, approved: true
     }, "example00000001");
     const draft = () => parseArticle(yamlFor(articleFor(repository.snapshot(), "lexeme000000001")!));
@@ -269,6 +272,33 @@ describe("saving an article edited as YAML", () => {
     expect(snapshot.lexemes[0].headword).toBe("desvanecerse");
   });
 
+  it("derives a clip example's id from its sense and its segment, never at random", async () => {
+    /* The one example id that is not random, for the reason a picture's is not: the interface's
+       enrichment engine and the server's sweep do not coordinate, so a shared derivation is what
+       makes two writers that chose the same segment converge on one row. An import that minted a
+       random one instead would hand the sweep a sense it could clip a second time. */
+    const { repository, draft } = await seeded();
+    const clipped = draft();
+    clipped.senses[0].examples.push({
+      id: null, text: "Se desmayó en pleno directo.", textLang: "es",
+      translation: "She passed out live on air.", translationLang: "en", origin: "subtitle",
+      sourceAttestationId: null, modelId: null, videoRef: "https://youtu.be/od_YtGbRC48",
+      videoTitle: "Informe semanal", videoChannel: "DW Español", videoStart: 252, videoEnd: 258,
+      clipRef: "seg_4b1c7d2e9a350f68cd41", imageRef: null, audioRef: null, note: null,
+      matchedForm: null, matchedTranslationForm: null, approved: false
+    });
+    await repository.saveArticle(clipped);
+
+    const senseId = clipped.senses[0].id!;
+    const written = repository.snapshot().examples.find((example) => example.origin === "subtitle")!;
+    expect(written.id).toBe(clipExampleId(senseId, "seg_4b1c7d2e9a350f68cd41"));
+
+    // Saving the same document again is the second writer: it finds the row, it does not add one.
+    await repository.saveArticle(clipped);
+    expect(repository.snapshot().examples.filter((example) => !example.deleted && example.origin === "subtitle"))
+      .toHaveLength(1);
+  });
+
   it("carries the examples of a removed sense away with it", async () => {
     const { repository, draft } = await seeded();
     const added = draft();
@@ -278,7 +308,8 @@ describe("saving an article edited as YAML", () => {
       examples: [{
         id: null, text: "Casi me desmayo de la emoción.", textLang: "es", translation: null,
         translationLang: null, origin: "manual", sourceAttestationId: null, modelId: null,
-        videoRef: null, videoTitle: null, videoStart: null, imageRef: null, audioRef: null,
+        videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
+        clipRef: null, imageRef: null, audioRef: null,
         note: null, matchedForm: null, matchedTranslationForm: null, approved: true
       }]
     });
@@ -330,7 +361,8 @@ describe("saving an article edited as YAML", () => {
           id: "example00000091", text: "Viene con un garfio.", textLang: "es",
           translation: "It comes with a hook.", translationLang: "en", origin: "attestation",
           sourceAttestationId: "attest000000091", modelId: null, videoRef: null, videoTitle: null,
-          videoStart: null, imageRef: null, audioRef: null, note: null, matchedForm: null,
+          videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
+          imageRef: null, audioRef: null, note: null, matchedForm: null,
           matchedTranslationForm: null, approved: false
         }]
       }],

@@ -6,10 +6,10 @@ import {
   type Vocabulary, type VocabularyInput, type VocabularyGraph
 } from "./domain";
 import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase, type ReplicaMeta } from "./localDatabase";
-import { imagePromptId, newDeviceId, newId, nowInstant } from "./ids";
+import { clipExampleId, imagePromptId, newDeviceId, newId, nowInstant } from "./ids";
 import type { ArticleDraft, ImagePromptDraft } from "./yaml";
 
-export const LOCAL_SCHEMA_VERSION = 7;
+export const LOCAL_SCHEMA_VERSION = 8;
 
 const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
@@ -333,6 +333,9 @@ export class LocalAcervoRepository implements AcervoRepository {
       status: draft.status,
       shortGloss: draft.shortGloss,
       notes: draft.notes,
+      // Server-written state, like an image prompt's attempt counter: a document cannot assert it,
+      // so a save carries whatever is stored and a new lexeme starts never-consulted.
+      clipsSearchedAt: existingLexeme?.clipsSearchedAt ?? null,
       ...this.stamp(existingLexeme)
     } as Lexeme);
 
@@ -443,7 +446,10 @@ export class LocalAcervoRepository implements AcervoRepository {
         // allows moving one between senses of the same entry: the id is kept, the parent changes.
         const current = claim(this.graph.examples, example.id, (record) =>
           this.graph.senses.some((candidate) => candidate.id === record.senseId && candidate.lexemeId === lexemeId));
-        const id = example.id ?? newId();
+        /* A clip's id is derived from its sense and the segment it quotes, for the reason a
+           picture's is derived from its sense: two writers that pick the same segment converge on
+           one row instead of giving the sense the same clip twice. Everything else is random. */
+        const id = example.id ?? (example.clipRef ? clipExampleId(senseId, example.clipRef) : newId());
         keptExamples.add(id);
         change("examples", {
           ...current,
@@ -458,7 +464,10 @@ export class LocalAcervoRepository implements AcervoRepository {
           modelId: example.modelId,
           videoRef: example.videoRef,
           videoTitle: example.videoTitle,
+          videoChannel: example.videoChannel,
           videoStart: example.videoStart,
+          videoEnd: example.videoEnd,
+          clipRef: example.clipRef,
           imageRef: example.imageRef,
           audioRef: example.audioRef,
           note: example.note,

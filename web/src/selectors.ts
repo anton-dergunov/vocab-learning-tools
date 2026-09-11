@@ -395,7 +395,9 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
     topicIds: topics.map((topic) => topic.id),
     status: draft.status,
     shortGloss: draft.shortGloss,
-    notes: draft.notes
+    notes: draft.notes,
+    // An unsaved proposal has never been through a clip search: capture never consults the corpus.
+    clipsSearchedAt: null
   };
 
   const promptsOf = (drafts: ArticleDraft["images"], senseId: string | null, path: string): ImagePrompt[] =>
@@ -450,7 +452,10 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
           modelId: example.modelId,
           videoRef: example.videoRef,
           videoTitle: example.videoTitle,
+          videoChannel: example.videoChannel,
           videoStart: example.videoStart,
+          videoEnd: example.videoEnd,
+          clipRef: example.clipRef,
           imageRef: example.imageRef,
           audioRef: example.audioRef,
           note: example.note,

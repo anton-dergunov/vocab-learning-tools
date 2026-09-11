@@ -38,7 +38,7 @@ def lexeme(**overrides: Any) -> dict[str, Any]:
         "id": new_record_id(), "language": "es", "headword": "picar", "lemma": "picar",
         "reading": None, "ipa": None, "pos": "verb", "gender": None, "register": "neutral",
         "dialect": None, "emoji": None, "topicIds": [], "status": "inbox",
-        "shortGloss": "to chop", "notes": [], **stamp(), **overrides,
+        "shortGloss": "to chop", "notes": [], "clipsSearchedAt": None, **stamp(), **overrides,
     }
 
 
@@ -63,7 +63,8 @@ def example(sense_id: str, **overrides: Any) -> dict[str, Any]:
         "id": new_record_id(), "senseId": sense_id, "text": "Pica la cebolla.", "textLang": "es",
         "translation": None, "translationLang": None, "origin": "llm",
         "sourceAttestationId": None, "modelId": "stub-model", "videoRef": None, "videoTitle": None,
-        "videoStart": None, "imageRef": None, "audioRef": None, "note": None, "matchedForm": None,
+        "videoChannel": None, "videoStart": None, "videoEnd": None, "clipRef": None,
+        "imageRef": None, "audioRef": None, "note": None, "matchedForm": None,
         "matchedTranslationForm": None, "approved": False, **stamp(), **overrides,
     }
 

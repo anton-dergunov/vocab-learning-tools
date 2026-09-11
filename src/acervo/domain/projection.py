@@ -125,6 +125,7 @@ def _project_lexeme(row: Mapping[str, Any]) -> dict[str, Any]:
         "status": row["status"],
         "shortGloss": text_or_none(row["short_gloss"]),
         "notes": to_list(row["notes"]),
+        "clipsSearchedAt": text_or_none(row["clips_searched_at"]),
     }
 
 
@@ -144,6 +145,7 @@ def _assign_lexeme(value: Mapping[str, Any]) -> dict[str, Any]:
         "status": trimmed(value.get("status")),
         "short_gloss": trimmed(value.get("shortGloss")),
         "notes": to_list(value.get("notes")),
+        "clips_searched_at": trimmed(value.get("clipsSearchedAt")),
     }
 
 
@@ -194,9 +196,9 @@ def _assign_attestation(value: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _project_example(row: Mapping[str, Any]) -> dict[str, Any]:
-    # A clip title and a start time are hidden when there is no reference. That invariant is asserted
-    # twice on purpose — the validator refuses the combination on the way in, and this refuses to
-    # show it on the way out.
+    # Every clip field is hidden when there is no reference. That invariant is asserted twice on
+    # purpose — the validator refuses the combination on the way in, and this refuses to show it on
+    # the way out.
     video_ref = text_or_none(row["video_ref"])
     return {
         "senseId": row["sense"],
@@ -209,7 +211,10 @@ def _project_example(row: Mapping[str, Any]) -> dict[str, Any]:
         "modelId": text_or_none(row["model_id"]),
         "videoRef": video_ref,
         "videoTitle": text_or_none(row["video_title"]) if video_ref else None,
+        "videoChannel": text_or_none(row["video_channel"]) if video_ref else None,
         "videoStart": to_int(row["video_start"]) if video_ref else None,
+        "videoEnd": to_int(row["video_end"]) if video_ref else None,
+        "clipRef": text_or_none(row["clip_ref"]) if video_ref else None,
         "imageRef": text_or_none(row["image_ref"]),
         "audioRef": text_or_none(row["audio_ref"]),
         "note": text_or_none(row["note"]),
@@ -233,7 +238,10 @@ def _assign_example(value: Mapping[str, Any]) -> dict[str, Any]:
         "model_id": trimmed(value.get("modelId")),
         "video_ref": trimmed(value.get("videoRef")),
         "video_title": trimmed(value.get("videoTitle")),
+        "video_channel": trimmed(value.get("videoChannel")),
         "video_start": to_int(value.get("videoStart")),
+        "video_end": to_int(value.get("videoEnd")),
+        "clip_ref": trimmed(value.get("clipRef")),
         "image_ref": trimmed(value.get("imageRef")),
         "audio_ref": trimmed(value.get("audioRef")),
         "note": trimmed(value.get("note")),

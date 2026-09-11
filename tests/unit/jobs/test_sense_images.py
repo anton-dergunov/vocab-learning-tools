@@ -57,6 +57,10 @@ def changes() -> dict:
              "translation": "A snake injects venom.", "origin": "llm", **sync_fields()},
             {"id": "e00000000000002", "senseId": "s00000000000001", "text": "El veneno me quemó.",
              "translation": "The venom burned me.", "origin": "attestation", **sync_fields()},
+            {"id": "e00000000000003", "senseId": "s00000000000002", "text": "Habla con veneno.",
+             "translation": "She speaks with venom.", "origin": "subtitle",
+             "videoRef": "https://youtu.be/od_YtGbRC48", "clipRef": "seg_1f4c9a2b7e6d5c3a0b91",
+             **sync_fields()},
         ],
         "attestations": [],
         "imagePrompts": [],
@@ -136,7 +140,28 @@ def test_the_learners_own_sentence_is_the_anchor():
     articles = build_articles(changes(), "es")
     anchor = articles[0].senses[0].anchor
     assert anchor["id"] == "e00000000000002"                                 # attestation beats llm
-    assert articles[0].senses[1].anchor is None
+
+
+def test_a_clip_never_anchors_a_picture():
+    """Sense two has one example and it is a clip, so the picture belongs to the sense instead.
+
+    Excluded rather than ranked last: ranking last still picks a clip when it is the only example,
+    and falling back to the sense is the wanted outcome rather than a worse one. A clip is real
+    footage of the situation, so drawing it re-renders what the learner is about to watch, and the
+    two are heading for separate full-screen surfaces where that would show the same thing twice.
+    """
+    sense = build_articles(changes(), "es")[0].senses[1]
+    assert [example["origin"] for example in sense.examples] == ["subtitle"]
+    assert sense.anchor is None
+
+
+def test_a_generated_sentence_outranks_a_borrowed_one():
+    """It is written for *this* sense, in the vocabulary's own languages, carrying a translation and
+    both matched forms. Tatoeba and Wiktionary are chosen for neither and read worse."""
+    from acervo.images.article import EXAMPLE_PREFERENCE
+
+    assert EXAMPLE_PREFERENCE["llm"] < EXAMPLE_PREFERENCE["tatoeba"] < EXAMPLE_PREFERENCE["wiktionary"]
+    assert "subtitle" not in EXAMPLE_PREFERENCE
 
 
 def test_the_owners_topics_do_not_steer_the_picture():

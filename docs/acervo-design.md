@@ -196,12 +196,16 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
 
 - `example` — `senseId · text · textLang · translation · translationLang ·
   origin(attestation|llm|tatoeba|subtitle|wiktionary|manual) · sourceAttestationId · modelId ·
-  videoRef · videoTitle · videoStart · imageRef · audioRef · note · matchedForm ·
-  matchedTranslationForm · approved`. `origin` plus `modelId` on every row is what makes
-  bulk regeneration safe; **`sourceAttestationId`** is what lets an example be cleaned up and still
-  point at the messy original you actually captured. `videoTitle` and `videoStart` (seconds) are
-  what turn a bare `videoRef` into the citable clip the specimen above shows —
-  `[clip · DW Español · 4:12]`.
+  videoRef · videoTitle · videoChannel · videoStart · videoEnd · clipRef · imageRef · audioRef ·
+  note · matchedForm · matchedTranslationForm · approved`. `origin` plus `modelId` on every row is
+  what makes bulk regeneration safe; **`sourceAttestationId`** is what lets an example be cleaned up
+  and still point at the messy original you actually captured. `videoTitle`, `videoChannel`,
+  `videoStart` and `videoEnd` (seconds) are what turn a bare `videoRef` into the citable clip the
+  specimen above shows — `[clip · DW Español · 4:12]` — and **`clipRef`** is the spoken-usage
+  corpus's own stable `segment_id`, so the stored sentence can be audited against the segment it
+  names at any time. **`videoRef` is what they all hang on**: any of them without it is refused on
+  the way in and hidden on the way out. A clip is an example with `origin: "subtitle"` and no ninth
+  table; `docs/plans/spoken-clips.md` is the whole design.
 
   **`matchedForm` and `matchedTranslationForm`** hold the inflected surface form the corpus or the
   generator actually matched — `pica` for the lexeme `picar`, `itches` in the translation. The

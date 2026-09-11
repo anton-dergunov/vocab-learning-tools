@@ -18,7 +18,17 @@ from typing import Iterable
 # An entry the learner has put away is not worth spending an image on.
 GENERATED_STATUSES = ("inbox", "active", "learned")
 
-EXAMPLE_PREFERENCE = {"attestation": 0, "manual": 1, "tatoeba": 2, "subtitle": 3, "wiktionary": 4, "llm": 5}
+# Which example a picture is drawn from, best first. A generated example outranks Tatoeba and
+# Wiktionary because it was written for *this* sense, in the vocabulary's own languages, carrying a
+# translation and both matched forms; the other two are chosen for neither and read worse.
+EXAMPLE_PREFERENCE = {"attestation": 0, "manual": 1, "llm": 2, "tatoeba": 3, "wiktionary": 4}
+
+# A clip never anchors a picture, and it is excluded rather than ranked last. Ranking it last would
+# still pick it when it is the only example, and falling back to the sense is the wanted outcome
+# rather than a worse one: the clip is real footage of the situation, so illustrating it re-renders
+# what the learner is about to watch, and the two are heading for separate full-screen surfaces
+# where one sentence drawn twice would show the same thing twice.
+UNANCHORABLE_ORIGINS = frozenset({"subtitle"})
 
 
 def live(records: Iterable[dict]) -> list[dict]:
@@ -38,10 +48,15 @@ class SenseView:
 
     @property
     def anchor(self) -> dict | None:
-        if not self.examples:
+        candidates = [
+            example
+            for example in self.examples
+            if example.get("origin", "llm") not in UNANCHORABLE_ORIGINS
+        ]
+        if not candidates:
             return None
         return min(
-            self.examples,
+            candidates,
             key=lambda example: (
                 EXAMPLE_PREFERENCE.get(example.get("origin", "llm"), 9),
                 example.get("createdAt", ""),

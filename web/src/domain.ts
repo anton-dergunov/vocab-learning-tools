@@ -79,6 +79,18 @@ export interface Lexeme extends SyncFields, OwnedFields {
   status: LexemeStatus;
   shortGloss: string | null;
   notes: string[];
+  /**
+   * When the spoken-usage corpus was last successfully consulted for this lexeme, or null.
+   *
+   * One field answers two questions. Null means never consulted, which is what the sweep looks
+   * for and what an imported word looks like. Set with no `subtitle` examples means consulted and
+   * nothing was good enough — a normal answer for most words, not a gap to fill again. Set and
+   * older than the corpus's own `built_at` means the corpus has moved on since.
+   *
+   * Written only on a *successful* consultation, so a retrieval service that was down leaves the
+   * word looking untouched and the sweep finds it later.
+   */
+  clipsSearchedAt: string | null;
 }
 
 export interface Sense extends SyncFields, OwnedFields {
@@ -114,7 +126,11 @@ export interface Example extends SyncFields, OwnedFields {
   modelId: string | null;
   videoRef: string | null;
   videoTitle: string | null;
+  videoChannel: string | null;
   videoStart: number | null;
+  videoEnd: number | null;
+  /** The corpus's own stable `segment_id`, so the stored text can be audited against the segment. */
+  clipRef: string | null;
   imageRef: string | null;
   audioRef: string | null;
   note: string | null;
@@ -294,6 +310,7 @@ export function validateGraph(graph: VocabularyGraph): void {
     oneOf(record.status, LEXEME_STATUSES, "Lexeme status");
     optionalString(record.shortGloss, "Short gloss");
     stringArray(record.notes, "Notes");
+    if (record.clipsSearchedAt !== null) validateInstant(record.clipsSearchedAt, "Clip search time");
     lexemes.set(record.id, record);
   });
 
@@ -354,9 +371,16 @@ export function validateGraph(graph: VocabularyGraph): void {
       invariant(record.ownerId === attestation.ownerId, "Example and attestation must have the same owner.");
       invariant(attestation.lexemeId === sense.lexemeId, "Example sense and attestation must belong to one lexeme.");
     }
-    [record.modelId, record.videoRef, record.videoTitle, record.imageRef, record.audioRef, record.note].forEach((value) => optionalString(value, "Example optional field"));
-    invariant(record.videoStart === null || (Number.isSafeInteger(record.videoStart) && record.videoStart >= 0), "Example video start is invalid.");
-    if (record.videoTitle || record.videoStart !== null) invariant(record.videoRef, "An example clip title or start time requires a video reference.");
+    [record.modelId, record.videoRef, record.videoTitle, record.videoChannel, record.clipRef, record.imageRef, record.audioRef, record.note].forEach((value) => optionalString(value, "Example optional field"));
+    [record.videoStart, record.videoEnd].forEach((value) => invariant(value === null || (Number.isSafeInteger(value) && value >= 0), "Example video timing is invalid."));
+    // `videoRef` is what every clip field hangs on: a title, a channel, a timing or the corpus's
+    // own segment id without one describes a clip that names no video.
+    if (record.videoTitle || record.videoChannel || record.clipRef || record.videoStart !== null || record.videoEnd !== null) {
+      invariant(record.videoRef, "An example clip title, channel, segment or timing requires a video reference.");
+    }
+    // Zero reads as "no end", matching the server: the projection emits the stored integer and a
+    // clip example without an end carries 0, exactly as one without a start does.
+    if (record.videoEnd) invariant(record.videoEnd > (record.videoStart ?? 0), "An example clip must end after it starts.");
     optionalString(record.matchedForm, "Matched form");
     optionalString(record.matchedTranslationForm, "Matched translation form");
     if (record.matchedForm) invariant(record.text.includes(record.matchedForm), "The matched form must occur in the example text.");

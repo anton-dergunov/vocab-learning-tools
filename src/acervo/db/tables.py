@@ -196,6 +196,10 @@ lexemes = Table(
     Column("status", String(32), nullable=False),
     Column("short_gloss", String(500), nullable=False, default=""),
     Column("notes", JSON, nullable=False, default=list),
+    # The instant the spoken-usage corpus was last successfully consulted for this lexeme, or "".
+    # Empty means never, which is what the sweep looks for; set with no `subtitle` examples means
+    # consulted and nothing was good enough, which is a normal answer and not a gap.
+    Column("clips_searched_at", String(24), nullable=False, default=""),
     *_sync_fields(),
     Index("idx_lexemes_owner_revision", "owner", "revision"),
     Index("idx_lexemes_owner_language_headword", "owner", "language", "headword"),
@@ -251,7 +255,12 @@ examples = Table(
     Column("model_id", String(240), nullable=False, default=""),
     Column("video_ref", String(500), nullable=False, default=""),
     Column("video_title", String(500), nullable=False, default=""),
+    Column("video_channel", String(500), nullable=False, default=""),
     Column("video_start", Integer, nullable=False, default=0),
+    Column("video_end", Integer, nullable=False, default=0),
+    # The corpus's own stable `segment_id`, so the stored sentence can be audited against the
+    # segment it names at any time. Not a foreign key: the corpus is a separate service.
+    Column("clip_ref", String(120), nullable=False, default=""),
     Column("image_ref", String(500), nullable=False, default=""),
     Column("audio_ref", String(500), nullable=False, default=""),
     Column("note", String(2000), nullable=False, default=""),

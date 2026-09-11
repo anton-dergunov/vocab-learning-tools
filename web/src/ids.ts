@@ -18,12 +18,17 @@ export const newDeviceId = newId;
 export const nowInstant = () => new Date().toISOString();
 
 /* ── derived ids ────────────────────────────────────────────────────────
-   One id in Acervo is not random: an image prompt's is a function of the sense it belongs to.
+   Two ids in Acervo are not random. An image prompt's is a function of the sense it belongs to, and
+   a clip example's is a function of the sense *and* the corpus segment it quotes.
 
    That is load-bearing rather than tidy. It is what lets the interface and the server's sweep both
-   draw for a sense with no coordination at all — they compute the same id, so the second to arrive
-   finds the work done or is refused as stale — and it is why `suppressed` is a field rather than a
-   tombstone, since a tombstoned row would be re-created at the same id.
+   work on a sense with no coordination at all — they compute the same id, so the second to arrive
+   finds the work done or is refused as stale — and it is why a picture's `suppressed` is a field
+   rather than a tombstone, since a tombstoned row would be re-created at the same id.
+
+   A removed clip is an ordinary tombstone instead, and that is safe only because the clip search is
+   one-shot at save: nothing re-searches, so nothing can write at the tombstone's id and resurrect
+   it. A rescan must add a suppression field before it ships, exactly as the image pipeline had to.
 
    This function used to exist only in Python (`acervo.images.ids.image_prompt_id`), and
    `saveArticle` minted a random id instead. Importing a bundle then produced *two* rows for one
@@ -32,6 +37,7 @@ export const nowInstant = () => new Date().toISOString();
 
 const DERIVED_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 const IMAGE_PROMPT_NAMESPACE = "acervo/imagePrompt/v1";
+const CLIP_EXAMPLE_NAMESPACE = "acervo/clipExample/v1";
 
 /**
  * SHA-256, synchronously.
@@ -98,15 +104,29 @@ function sha256(text: string): Uint8Array {
   return digest;
 }
 
+/** The id an image prompt for this sense must have, wherever it is created. */
+export function imagePromptId(senseId: string): string {
+  return derivedId(`${IMAGE_PROMPT_NAMESPACE}:${senseId}`);
+}
+
 /**
- * The id an image prompt for this sense must have, wherever it is created.
+ * The id a clip example quoting this segment under this sense must have, wherever it is created.
  *
+ * The pair is the identity rather than the sense alone, so a sense may hold clips from several
+ * segments while two writers that chose the same segment converge on one row. Twinned with
+ * `acervo.clips.ids.clip_example_id`.
+ */
+export function clipExampleId(senseId: string, clipRef: string): string {
+  return derivedId(`${CLIP_EXAMPLE_NAMESPACE}:${senseId}:${clipRef}`);
+}
+
+/**
  * Base-36 of the digest, least significant digit first, which is what `divmod` in a loop produces
  * on the Python side. Done with BigInt because the digest is 256 bits.
  */
-export function imagePromptId(senseId: string): string {
+function derivedId(input: string): string {
   let value = 0n;
-  for (const byte of sha256(`${IMAGE_PROMPT_NAMESPACE}:${senseId}`)) value = (value << 8n) | BigInt(byte);
+  for (const byte of sha256(input)) value = (value << 8n) | BigInt(byte);
   const base = BigInt(DERIVED_ALPHABET.length);
   let id = "";
   for (let index = 0; index < ID_LENGTH; index += 1) {

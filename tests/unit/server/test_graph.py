@@ -280,38 +280,77 @@ def test_half_a_brief_is_refused_because_it_reproduces_nothing(server):
     )]}).status_code == 400
 
 
-def test_a_clip_title_or_start_needs_a_video_reference_and_neither_is_shown_without_one(server):
+CLIP_FIELDS = ("videoTitle", "videoChannel", "videoStart", "videoEnd", "clipRef")
+
+
+def test_every_clip_field_needs_a_video_reference_and_none_is_shown_without_one(server):
     """Two mechanisms for one invariant: the validator refuses it in, the projection refuses it out."""
     changes, word, meaning, *_ = article()
     server.push(changes)
-    assert server.push(
-        {"examples": [example(meaning["id"], videoTitle="A cooking show", videoRef=None)]}
-    ).status_code == 400
-    assert server.push(
-        {"examples": [example(meaning["id"], videoStart=42, videoRef=None)]}
-    ).status_code == 400
+    for field, value in [
+        ("videoTitle", "A cooking show"),
+        ("videoChannel", "Easy Spanish"),
+        ("videoStart", 42),
+        ("videoEnd", 48),
+        ("clipRef", "seg_1f4c9a2b7e6d5c3a0b91"),
+    ]:
+        refused = server.push({"examples": [example(meaning["id"], videoRef=None, **{field: value})]})
+        assert refused.status_code == 400, field
 
-    with_clip = example(meaning["id"], videoRef="corpus/show.mp4", videoTitle="A cooking show", videoStart=42)
+    with_clip = example(
+        meaning["id"], videoRef="corpus/show.mp4", videoTitle="A cooking show",
+        videoChannel="Easy Spanish", videoStart=42, videoEnd=48, clipRef="seg_1f4c9a2b7e6d5c3a0b91",
+    )
     written = server.push({"examples": [with_clip]}).json()["data"]["records"]["examples"][0]
-    assert (written["videoTitle"], written["videoStart"]) == ("A cooking show", 42)
+    assert [written[field] for field in CLIP_FIELDS] == [
+        "A cooking show", "Easy Spanish", 42, 48, "seg_1f4c9a2b7e6d5c3a0b91"
+    ]
 
     # Clearing the reference means clearing what depended on it; the validator says so.
     orphaned = server.push({"examples": [{**with_clip, "revision": written["revision"], "videoRef": None}]})
     assert orphaned.status_code == 400
     cleared = server.push(
-        {
-            "examples": [
-                {
-                    **with_clip,
-                    "revision": written["revision"],
-                    "videoRef": None,
-                    "videoTitle": None,
-                    "videoStart": None,
-                }
-            ]
-        }
+        {"examples": [{
+            **with_clip, "revision": written["revision"],
+            **{field: None for field in ("videoRef", *CLIP_FIELDS)},
+        }]}
     ).json()["data"]["records"]["examples"][0]
-    assert cleared["videoTitle"] is None and cleared["videoStart"] is None
+    assert all(cleared[field] is None for field in CLIP_FIELDS)
+
+
+def test_a_clip_must_end_after_it_starts(server):
+    """An end at or before the start describes no passage at all, and the corpus never produces one."""
+    changes, word, meaning, *_ = article()
+    server.push(changes)
+    for start, end in [(42, 42), (48, 42)]:
+        refused = server.push({"examples": [
+            example(meaning["id"], videoRef="corpus/show.mp4", videoStart=start, videoEnd=end)
+        ]})
+        assert refused.status_code == 400, (start, end)
+
+    # An absent end is written as zero, which is "no end" rather than an end at the beginning.
+    written = server.push({"examples": [
+        example(meaning["id"], videoRef="corpus/show.mp4", videoStart=42)
+    ]}).json()["data"]["records"]["examples"][0]
+    assert written["videoEnd"] == 0
+
+
+def test_a_clip_search_is_marked_with_an_instant_and_nothing_else(server):
+    """`clipsSearchedAt` answers both "never consulted" and "consulted before the corpus grew", so it
+    is a date rather than a flag — and a lexeme starts without one, which is what the sweep finds."""
+    changes, word, *_ = article()
+    written = server.push(changes).json()["data"]["records"]["lexemes"][0]
+    assert written["clipsSearchedAt"] is None
+
+    refused = server.push({"lexemes": [
+        {**word, "revision": written["revision"], "clipsSearchedAt": "yesterday"}
+    ]})
+    assert refused.status_code == 400
+
+    marked = server.push({"lexemes": [
+        {**word, "revision": written["revision"], "clipsSearchedAt": "2026-09-11T00:22:14.069Z"}
+    ]}).json()["data"]["records"]["lexemes"][0]
+    assert marked["clipsSearchedAt"] == "2026-09-11T00:22:14.069Z"
 
 
 def test_a_clip_title_left_behind_by_another_writer_is_still_not_shown():
@@ -323,15 +362,15 @@ def test_a_clip_title_left_behind_by_another_writer_is_still_not_shown():
         "id": "aaaaaaaaaaaaaaa", "owner": "bbbbbbbbbbbbbbb", "sense": "ccccccccccccccc",
         "text": "Pica la cebolla.", "text_lang": "es", "translation": "", "translation_lang": "",
         "origin": "llm", "source_attestation": None, "model_id": "", "video_ref": "",
-        "video_title": "A cooking show", "video_start": 42, "image_ref": "", "audio_ref": "",
+        "video_title": "A cooking show", "video_channel": "Easy Spanish", "video_start": 42,
+        "video_end": 48, "clip_ref": "seg_1f4c9a2b7e6d5c3a0b91", "image_ref": "", "audio_ref": "",
         "note": "", "matched_form": "", "matched_translation_form": "", "approved": False,
         "deleted": False, "created_at": "2026-01-01T00:00:00.000Z",
         "edited_at": "2026-01-01T00:00:00.000Z", "edited_by": "job00000000001", "revision": 1,
     }
     shown = projected(COLLECTION_BY_KEY["examples"], row)
     assert shown["videoRef"] is None
-    assert shown["videoTitle"] is None
-    assert shown["videoStart"] is None
+    assert all(shown[field] is None for field in CLIP_FIELDS)
 
 
 def test_an_attestation_example_needs_a_source_that_shares_the_owner_and_the_lexeme(server, other):
