@@ -54,12 +54,12 @@ export default function ClipPanel({ onNotify }: { onNotify(message: string): voi
     return () => { live = false; };
   }, [settings?.corpus.reachable]);
 
-  const apply = async (searchEnabled: boolean) => {
+  const apply = async (changes: Partial<Pick<ClipSettings, "searchEnabled" | "selfContainedOnly">>) => {
     const before = settings;
     if (!before) return;
-    setSettings({ ...before, searchEnabled, chosen: true });
+    setSettings({ ...before, ...changes, chosen: true });
     try {
-      setSettings(await backendSession.saveClipSettings({ searchEnabled }));
+      setSettings(await backendSession.saveClipSettings(changes));
     } catch (error) {
       setSettings(before);
       onNotify(reason(error, "That change was not saved."));
@@ -122,7 +122,7 @@ export default function ClipPanel({ onNotify }: { onNotify(message: string): voi
     <label className="config-switch">
       <input
         type="checkbox" checked={settings.searchEnabled}
-        onChange={(event) => void apply(event.target.checked)}
+        onChange={(event) => void apply({ searchEnabled: event.target.checked })}
       />
       <span>
         <strong>Look for clips</strong>
@@ -130,6 +130,22 @@ export default function ClipPanel({ onNotify }: { onNotify(message: string): voi
           A word you save is searched once, behind the article, and the server works through
           anything never searched. Off, nothing is searched on its own. A word is only ever searched
           once either way — adding a channel does not go back over words you already have.
+        </span>
+      </span>
+    </label>
+
+    <label className="config-switch">
+      <input
+        type="checkbox" checked={settings.selfContainedOnly}
+        onChange={(event) => void apply({ selfContainedOnly: event.target.checked })}
+      />
+      <span>
+        <strong>Only passages that stand on their own</strong>
+        <span>
+          Off, a clip may begin mid-thought — which is how you meet a language in the first place,
+          walking into a room where somebody is already talking, and it is much of what makes these
+          worth watching. On, a passage whose subject you would have to guess at is rejected, which
+          is steadier to read and finds fewer clips.
         </span>
       </span>
     </label>

@@ -291,6 +291,13 @@ export interface CorpusReadout {
 
 export interface ClipSettings {
   searchEnabled: boolean;
+  /**
+   * Whether the selector rejects a passage whose subject cannot be recovered from the passage.
+   *
+   * Off by default, deliberately: real speech is messy, and a learner meets it by walking into a
+   * conversation already under way. Preserving that is what a clip is for.
+   */
+  selfContainedOnly: boolean;
   /** False means "following the deployment default", which is a real answer and not a gap. */
   chosen: boolean;
   corpus: CorpusReadout;
@@ -589,7 +596,9 @@ export const backendSession = {
   clipSettings(): Promise<ClipSettings> {
     return client.call<ClipSettings>("/clips/settings");
   },
-  saveClipSettings(changes: Partial<Pick<ClipSettings, "searchEnabled">>): Promise<ClipSettings> {
+  saveClipSettings(
+    changes: Partial<Pick<ClipSettings, "searchEnabled" | "selfContainedOnly">>
+  ): Promise<ClipSettings> {
     return client.call<ClipSettings>("/clips/settings", {
       method: "PUT", body: JSON.stringify(changes)
     });

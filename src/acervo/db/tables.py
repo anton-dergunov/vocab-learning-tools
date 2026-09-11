@@ -150,6 +150,11 @@ clip_settings = Table(
     # enriching a word that was just saved. Like `image_settings.draw_enabled` it deliberately does
     # not gate the route: you pressed that, so you meant it.
     Column("search_enabled", Boolean, nullable=False, default=True),
+    # Whether the selector is told to reject a passage whose subject cannot be recovered from the
+    # passage itself. **Off by default**, which is the deliberate half: real speech is messy, a
+    # learner meets it by walking into a conversation already under way, and preserving that is what
+    # a clip is for. The switch is for someone who wants the tidier version.
+    Column("self_contained_only", Boolean, nullable=False, default=False),
     Column("edited_at", String(24), nullable=False),
     Index("idx_clip_settings_owner", "owner", unique=True),
 )

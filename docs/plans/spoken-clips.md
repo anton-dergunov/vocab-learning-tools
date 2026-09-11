@@ -5,9 +5,16 @@ the repository and **not yet deployed** — steps 2 and 3 each rotate the Alembi
 `./deploy.sh --reset-database` covers both. The other repository's Plan 07 is the mirror of this
 document and needed nothing beyond its step 1.
 
-What is built is not the same as what is tuned: the selection prompt has had one reading, recorded
-in [`../clip-selection-round-1.md`](../clip-selection-round-1.md), and the experiment in
+What is built is not the same as what is tuned: the selection prompt has had five readings, recorded
+in [`../clip-selection-rounds.md`](../clip-selection-rounds.md), and the experiment in
 [`clip-selection-experiment.md`](clip-selection-experiment.md) is still unrun.
+[`clip-curation.md`](clip-curation.md) records what those readings showed is wanted next.
+
+The Spanish corpus on the NAS holds **250 videos / 60,001 segments** as of 11 Sep 2026, from three
+of four enabled channels: `luisito-comunica` yields nothing because yt-dlp cannot resolve
+`@luisitocomunica`, 15 `spanish-after-hours` videos are members-only, and a handful hit HTTP 429.
+Those are upstream facts, and they are why `update-state.json` reports the *earlier* run as the last
+successful one — `service.py` stamps that only when a language completes with no failures.
 
 A word's article can already show what a word means, how it is used, and a picture of it. What it
 cannot show is a native speaker saying it. That gap is what
@@ -224,7 +231,7 @@ The search is the lexeme's `lemma`, falling back to its `headword`, in the lexem
 candidates go to the model with the article's senses, and the model returns for each sense either one
 candidate id or nothing — with the translation of the clip it chose, which is §13.
 
-The senses are described to the model the way `prompts/acervo_image_brief.txt` describes them, and
+The senses are described to the model the way `prompts/acervo_image_brief.md` describes them, and
 for the reason that prompt learned the hard way: **the definition in the language being learned is
 the authority, and the glosses are hints that can mislead.** A gloss is a rough handle chosen for
 closeness, and judging a fragment against the gloss rather than the definition finds instances of
@@ -246,7 +253,7 @@ Three things follow, and all three are the point:
   word is deliberate: a hallucinated id is a prompt bug to fix, and refusing the batch would throw
   away the good selections with it.
 - **It runs on the owner's text chain**, through `acervo.models`, with the prompt as tracked text in
-  `prompts/acervo_clip_select.txt`. No new catalogue kind: this is a text call, and a separate kind
+  `prompts/acervo_clip_select.md`. No new catalogue kind: this is a text call, and a separate kind
   would be a knob invented before a need.
 
 The prompt itself is a research question of its own, and it has its own document:
@@ -353,7 +360,7 @@ two surfaces is what makes the question easy.
 
 **The article's line is Acervo's, and it is free.** `Example.translation`, `translationLang` and
 `matchedTranslationForm` already exist with the `translation ⇔ translationLang` XOR invariant, and
-`prompts/acervo_compose.txt` already produces exactly that shape — a translation into
+`prompts/acervo_compose.md` already produces exactly that shape — a translation into
 `glossLangs[0]` plus a verbatim matched form — in the *same call* that produces an example.
 
 > **DECISION: the clip-selection call of §7 also returns the translation of the clip it chose**, in
@@ -496,7 +503,7 @@ unchanged; a sense whose only example is a clip briefs against the sense rather 
 
 - `src/acervo/clips/` stands alone the way `acervo.images` does — it imports `acervo.models` and the
   narrow retrieval client and nothing else of Acervo's, and `test_layering.py` says so.
-- `prompts/acervo_clip_select.txt`, tracked text, read at request time.
+- `prompts/acervo_clip_select.md`, tracked text, read at request time.
 - `services/clips.py` binds it: settings, the owner's chain, the graph, and the `llm_*` codes.
   Read (transaction) → search → model call (**no** transaction) → write (transaction), through
   `repository.graph.merge_graph` like every other writer.

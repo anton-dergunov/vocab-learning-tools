@@ -231,7 +231,19 @@ if grep -q '^GEMINI_API_KEY=' "$acervo_root/secrets.env"; then
   mv "$secrets_tmp" "$acervo_root/secrets.env"
   trap - EXIT HUP INT TERM
 fi
-timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+# One timestamp names both this deployment's backup and its release tree, so the two can be read
+# together. Deduped because it is to the second: two deployments inside one second would otherwise
+# share both directories — the second backup overwriting the first, and the second release extracted
+# *over* the first's tree, leaving a mixture of two archives. Rare and silent, which is the
+# combination worth four lines. Suffixing keeps lexicographic order, so the pruning below still
+# removes the oldest.
+stamp_base=$(date -u +%Y%m%dT%H%M%SZ)
+timestamp=$stamp_base
+stamp_suffix=1
+while [ -e "$acervo_root/backups/$timestamp" ] || [ -e "$acervo_root/releases/$timestamp" ]; do
+  stamp_suffix=$((stamp_suffix + 1))
+  timestamp="$stamp_base-$stamp_suffix"
+done
 backup_dir="$acervo_root/backups/$timestamp"
 mkdir -p "$backup_dir/anki-server" "$backup_dir/acervo-worker"
 for service in anki-server acervo-worker; do

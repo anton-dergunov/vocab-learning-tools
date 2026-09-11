@@ -5,10 +5,14 @@ fails on the server with `"/prompts": not found` — after the upload, at the le
 Keeping the two lists in step is what this checks.
 """
 
+import base64
+import hashlib
 import json
 import os
 import re
 from pathlib import Path, PurePosixPath
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 # Both images are built from the packaged archive, so both have to be checked. The worker one was
@@ -79,10 +83,13 @@ def test_the_capture_prompts_are_packaged_and_named_as_the_service_reads_them():
     assert "prompts" in bundled_directories()
     named = set()
     for source in (ROOT / "src" / "acervo").rglob("*.py"):
-        named.update(re.findall(r'prompt_text\([^,]+,\s*"([a-z_]+)"\)', source.read_text()))
+        # Up to the name and no further: a call may pass options after it, and a pattern that
+        # demanded the closing paren would stop matching — silently, which is the failure this
+        # whole test exists to prevent.
+        named.update(re.findall(r'prompt_text\([^,]+,\s*"([a-z_]+)"', source.read_text()))
     assert named, "expected the capture service to read prompts by name"
     for name in named:
-        assert (ROOT / "prompts" / f"{name}.txt").is_file(), f"prompts/{name}.txt is missing"
+        assert (ROOT / "prompts" / f"{name}.md").is_file(), f"prompts/{name}.md is missing"
 
 
 def test_both_images_leave_their_own_files_readable_by_the_user_they_run_as():
@@ -115,3 +122,34 @@ def test_the_suite_never_writes_the_archive_a_deployment_streams():
     redirected = os.environ.get("ACERVO_PACKAGE_ARCHIVE", "")
     assert redirected, "conftest must redirect packaging away from build/"
     assert not Path(redirected).is_relative_to(ROOT / "build")
+
+
+def test_the_lockfile_pins_the_released_tarball_rather_than_a_local_build():
+    """The npm lockfile and `pin.json` have to name the same bytes, and they can drift silently.
+
+    `npm pack` gzips with the building Node's zlib, so a tarball built on a laptop and the one
+    attached to the release differ byte for byte while carrying identical contents. `pin.json`
+    learned that once and switched to the release's digests; the lockfile was left behind, holding
+    the integrity of a local build.
+
+    Nothing caught it locally, because npm resolves a `file:` dependency from its cache when the
+    integrity matches something already there. CI has no cache, hashed the file on disk, and failed
+    the install with `EINTEGRITY` — after the push, at the least convenient moment.
+    """
+    pin = json.loads((ROOT / "deploy" / "acervo" / "speech" / "pin.json").read_text(encoding="utf-8"))
+    tarball = ROOT / "vendor" / "speech" / pin["artifacts"]["react"]["file"]
+    if not tarball.exists():
+        pytest.skip("run scripts/fetch_speech.sh first; vendor/ is untracked on purpose")
+
+    raw = tarball.read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == pin["artifacts"]["react"]["sha256"], (
+        "vendor/ holds a tarball the pin does not name; re-run scripts/fetch_speech.sh --force"
+    )
+
+    lock = json.loads((ROOT / "web" / "package-lock.json").read_text(encoding="utf-8"))
+    entry = lock["packages"]["node_modules/@spoken-usage-retrieval/react"]
+    expected = "sha512-" + base64.b64encode(hashlib.sha512(raw).digest()).decode()
+    assert entry["integrity"] == expected, (
+        "web/package-lock.json pins a different build of the player than pin.json does. "
+        "Fetch the release's tarball and re-lock; do not take the digest from a local `npm pack`."
+    )

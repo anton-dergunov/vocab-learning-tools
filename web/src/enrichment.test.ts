@@ -57,7 +57,7 @@ describe("enriching a word that was just saved", () => {
       maxAttempts: 4, styles: [], available: true
     });
     vi.spyOn(backendSession, "clipSettings").mockResolvedValue({
-      searchEnabled: true, chosen: false,
+      searchEnabled: true, selfContainedOnly: false, chosen: false,
       corpus: { configured: true, reachable: true, ready: true, indexedLanguages: ["es"] }
     });
   });
@@ -280,7 +280,7 @@ describe("finding clips for a word that was just saved", () => {
       maxAttempts: 4, styles: [], available: true
     });
     vi.spyOn(backendSession, "clipSettings").mockResolvedValue({
-      searchEnabled: true, chosen: false,
+      searchEnabled: true, selfContainedOnly: false, chosen: false,
       corpus: { configured: true, reachable: true, ready: true, indexedLanguages: ["es"] }
     });
   });
@@ -317,7 +317,7 @@ describe("finding clips for a word that was just saved", () => {
 
   it("does not search when the owner has switched save-time searching off", async () => {
     vi.spyOn(backendSession, "clipSettings").mockResolvedValue({
-      searchEnabled: false, chosen: true, corpus: { configured: true, reachable: true }
+      searchEnabled: false, selfContainedOnly: false, chosen: true, corpus: { configured: true, reachable: true }
     });
     const find = vi.spyOn(backendSession, "findClips");
 

@@ -51,7 +51,7 @@ from acervo.models.catalogue import identity, reason
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = REPO_ROOT / "output" / "images"
 DEFAULT_STYLES = REPO_ROOT / "config" / "image-styles.yaml"
-DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "acervo_image_brief.txt"
+DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "acervo_image_brief.md"
 def parse_chain(text: str) -> list[chain.Choice] | None:
     """`--image-chain cloudflare,vertex` or `--image-chain cloudflare:@cf/…`, or nothing.
 

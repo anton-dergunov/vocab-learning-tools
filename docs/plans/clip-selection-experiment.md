@@ -2,9 +2,13 @@
 
 **Status:** Unstarted. Step 3 of [`spoken-clips.md`](spoken-clips.md) has shipped the first version
 of the prompt this experiment tunes, and a first reading of it — three runs over eight words, read
-by eye — is [`clip-selection-round-1.md`](../clip-selection-round-1.md). That was enough to find one
-real failure and fix it; it is **not** this experiment, which nobody has run. Its starting point is
-the prompt as that round left it.
+by eye — is [`clip-selection-rounds.md`](../clip-selection-rounds.md). That was enough to find one
+real failure, fix it, and discover that the first fix was aimed at the wrong thing; it is **not**
+this experiment, which nobody has run. Its starting point is the prompt as round 4 left it.
+
+Two knobs it has already surfaced, both to be varied deliberately rather than inherited:
+`selfContainedOnly`, which ships off; and the model's own preference for cleanly captioned, more
+scripted channels, which showed up in every run independent of any prompt wording.
 
 ## The question
 

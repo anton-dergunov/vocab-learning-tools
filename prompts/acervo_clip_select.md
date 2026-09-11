@@ -74,34 +74,45 @@ sentence. Pick nothing rather than the near miss.
 You can see every sense at once. Never give the same segment to two senses — if one sentence seems
 to fit two, it is showing one of them and you should decide which.
 
-## First: is the passage cut cleanly?
+<!-- if: selfContainedOnly -->
+## Can it be followed on its own?
 
-**Judge the whole text you are given, not the best clause inside it.** This is the single most
-common way a bad clip gets through, so check it before anything else.
+These passages were cut out of captions by pause and punctuation, and the cut sometimes lands in the
+middle of a thought. **Judge the whole text you are given, and ask whether a person could follow it
+without guessing what came before.**
 
-These passages were cut out of automatic captions by pause and punctuation, and the cut often lands
-badly. The learner is shown the **entire** passage, exactly as you see it — not the part that caught
-your eye. So read the first three words and the last three words and ask:
+This is not a question about punctuation. A passage can start with a lower-case word, run over two
+sentences, or wander, and still be perfectly followable. What disqualifies it is *missing
+information you have to invent*.
 
-- Does it **begin** where a sentence begins? A passage starting mid-clause — *"enfermedades
-  posibles, literal, la puertita, estaba así el flaco y me dice…"*, *"era un castillo un poco pijo,
-  pero sí…"* — is unusable, however good the clause in the middle is.
-- Does it **end** where a sentence ends? A passage trailing off — *"…y era de color gris con"* — is
-  unusable for the same reason.
-- Is it **one** thing? Two unrelated sentences run together by a missed boundary read as confusion,
-  not as an example.
+**This one fails:**
 
-A passage that fails any of these is not a candidate, no matter how well the word is used inside it.
-Do not mentally trim it to the good part: you are choosing the passage, not editing it, and the
-learner gets what you chose. Pick nothing rather than a clean clause inside a ragged passage.
+> *"enfermedades posibles, literal, la puertita, estaba así el flaco y me dice, «Usted, este tipo se
+> tiene que quedar acá 48 horas mínimo en reposo.»"*
 
-Short and complete beats long and ragged, every time.
+It opens on possible illnesses and a little door. Who is ill, whose door, where any of this is
+happening — you can invent a hospital and a doorway, and the fact that you have to invent them is
+exactly the problem. The quoted line at the end is clear; the passage around it is not.
 
-## What else makes a clip good
+**This one passes:**
 
-**It is understandable on its own.** A learner will read this sentence with no surrounding context
-and no idea what the video was about. A passage that only makes sense as a reply to something you
-cannot hear is not usable, however natural it is.
+> *"era un castillo un poco pijo, pero sí, trabajaba de camarera en un castillo que celebraba bodas.
+> Y en el castillo nos daban un traje que picaba mucho, picaba mucho y era de color gris con"*
+
+It begins mid-sentence and trails off, and it is longer than it needs to be — but nothing is
+missing. Someone worked as a waitress at a castle; the uniform itched. You can follow all of it
+without inventing anything, so it is usable.
+
+So: reject a passage whose **subject you cannot recover**, not one that is merely untidy. When two
+candidates are equally clear, prefer the shorter one.
+<!-- end -->
+
+## What makes a clip good
+
+**Real speech is messy, and that is not a defect.** People interrupt each other, trail off, and
+start mid-thought — and a learner meets the language that way, walking into a room where somebody is
+already talking. Do not hold these passages to the standard of a textbook sentence. A little
+untidiness is what makes them worth showing.
 
 **The word is doing real work in it.** The sentence should be one where the word carries meaning,
 not a filler use, not a false start, not the word appearing inside a list or a repetition.

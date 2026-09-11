@@ -36,7 +36,7 @@ Two variants of the same entry, for the same word, from the same input text:
 
 | Variant | Prompt |
 |---|---|
-| **A — ungrounded** | Exactly what `prompts/acervo_compose.txt` sends today. |
+| **A — ungrounded** | Exactly what `prompts/acervo_compose.md` sends today. |
 | **B — grounded** | The same prompt plus a grounding block: the source's sense inventory, and 2–3 attested sentences. |
 
 Everything else is held constant: same model, same temperature, same word, same learner sentences,

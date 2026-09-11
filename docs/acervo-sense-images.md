@@ -141,7 +141,7 @@ Existing fields, used as follows:
 | `styleId` | the style the writer chose from the menu |
 | `seed` | derived from `senseId`, so a regeneration keeps the look — on a row whose `capabilities.image.seed` is `native`; see below |
 | `modelId` | the model that *answered* the brief call, not the one asked first |
-| `promptVersion` | checksum of `prompts/acervo_image_brief.txt` + the style table |
+| `promptVersion` | checksum of `prompts/acervo_image_brief.md` + the style table |
 | `imageRef` | relative path to the master, once drawn; null until then |
 | `imageModelId` | the model that *drew* it, which under a chain need not be the first tried |
 
@@ -351,8 +351,8 @@ owner-scoped table that is never replicated — the same shape and the same thre
 
 ## §06 · The prompt template
 
-`prompts/acervo_image_brief.txt`, tracked text, read at request time — content, not code, the same
-rule as `acervo_compose.txt`. Sketch of what it must say:
+`prompts/acervo_image_brief.md`, tracked text, read at request time — content, not code, the same
+rule as `acervo_compose.md`. Sketch of what it must say:
 
 **The job.** You are writing a scene brief for an image model. The picture is a memory hook for one
 word in one meaning. A learner who does not know the word should be able to look at the picture and
@@ -664,7 +664,7 @@ New code, all in new files, so nothing the running ingestion imports is touched:
 
 ```
 config/image-styles.yaml              the style table
-prompts/acervo_image_brief.txt        the brief-writing template
+prompts/acervo_image_brief.md        the brief-writing template
 src/acervo/images/styles.py           load the table, offer every style the owner left on
 src/acervo/images/article.py          the article view the brief writer is given
 src/acervo/images/brief.py            build the LLM request, parse and validate the reply

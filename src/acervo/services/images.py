@@ -52,7 +52,7 @@ MAX_ATTEMPTS = 4
 # switching automatic drawing off is precisely how you get a word with no pictures and then add the
 # one you want by hand. Gating the routes would take that away.
 
-BRIEF_TEMPLATE = "acervo_image_brief.txt"
+BRIEF_TEMPLATE = "acervo_image_brief.md"
 
 
 def _template(settings: Settings) -> Path:

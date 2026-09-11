@@ -305,6 +305,26 @@ def test_no_row_means_following_the_deployment_default(server, corpus):
     assert answer["corpus"]["configured"] is True and answer["corpus"]["indexedLanguages"] == ["es"]
 
 
+def test_the_passage_rule_is_off_by_default_and_reaches_the_prompt_when_on(server, corpus):
+    """Off is the deliberate half: real speech is messy, and preserving that is what a clip is for.
+
+    Asserted against the prompt the model was actually sent, because the two halves of this are a
+    marked section in a tracked file and a keyword at a call site — far enough apart to drift.
+    """
+    entry, itch, chop = word(server)
+    chooses(server, (itch, segments()[0]), (chop, None))
+
+    assert server.get("/clips/settings").json()["data"]["selfContainedOnly"] is False
+    find(server, entry)
+    sent = server.model.calls[-1]["messages"][-1]["content"]
+    assert "followed on its own" not in sent
+    assert "<!--" not in sent, "the markers are not sent to the model either"
+
+    server.put("/clips/settings", {"selfContainedOnly": True})
+    find(server, entry)
+    assert "followed on its own" in server.model.calls[-1]["messages"][-1]["content"]
+
+
 def test_switching_save_time_searching_off_is_recorded(server, corpus):
     stored = server.put("/clips/settings", {"searchEnabled": False}).json()["data"]
     assert stored["searchEnabled"] is False and stored["chosen"] is True

@@ -13,8 +13,10 @@ rather than reimplemented against a rewrapped shape. Rewrapping would mean maint
 copy of its response types in two languages, forever, to gain nothing.
 
 **The operator token never leaves this process.** Acervo holds it as deployment configuration and
-attaches it to the mutating channel calls, exactly as a provider key is held — a test asserts it is
-absent from every proxied response body.
+attaches it to the mutating channel calls, exactly as a provider key is held. Because the body is
+forwarded rather than built here, that is enforced rather than merely intended: a forwarded body
+containing the token is refused instead of passed on, so the test can assert the whole value is
+absent from the whole response — the same assertion `GET /models` makes about a provider key.
 """
 
 from __future__ import annotations
@@ -82,6 +84,17 @@ def forward(settings: Settings, method: str, path: str, *,
         raise ApiError(
             502, "corpus_unreachable", "The spoken-usage corpus could not be reached."
         ) from None
+
+    # The corpus has no reason to say its own bearer token back, so this can only fire on a bug in
+    # that service — and a credential on its way to a browser is worth refusing loudly rather than
+    # forwarding. It also lets the proxy assert the strong form the models route asserts: the whole
+    # value is absent from the whole body, whatever the corpus said.
+    if settings.speech_operator_token and settings.speech_operator_token.encode() in response.content:
+        raise ApiError(
+            502, "corpus_leaked_credential",
+            "The spoken-usage corpus returned something that looks like its own operator token, "
+            "so the response was not passed on.",
+        )
 
     # Status and body as they stand, including the corpus's own error envelope: the packaged client
     # reads `{"error": {"code", "message"}, "request_id"}` and raises its own typed error from it.

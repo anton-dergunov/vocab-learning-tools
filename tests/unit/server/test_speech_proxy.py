@@ -109,14 +109,9 @@ def test_changing_a_channel_carries_the_token_server_side(server, upstream):
 
 
 def test_it_never_returns_the_operator_token(server, upstream):
-    """The token goes out in one header and appears in nothing Acervo writes.
-
-    In the shape of `test_it_never_returns_a_key_or_how_a_provider_is_reached`, with one honest
-    difference: these bodies are the corpus's, forwarded verbatim, so this asserts that *Acervo*
-    never puts the token in one rather than that no byte of it could ever come back. A corpus that
-    echoed its own bearer token would be a bug in that service, and scanning every proxied body for
-    a secret would be expensive and would only buy false confidence about it.
-    """
+    """The token goes out in one header and comes back in nothing, in the shape of
+    `test_it_never_returns_a_key_or_how_a_provider_is_reached`: the whole value is absent from the
+    whole response body."""
     upstream.answer = {"channels": [{"id": "luzu-tv", "enabled": False}]}
     for answer in (
         server.get("/speech/status"),
@@ -134,6 +129,17 @@ def test_it_never_returns_the_operator_token(server, upstream):
     assert len(carried) == 2
     for sent in upstream.seen:
         assert OPERATOR_TOKEN not in str(sent.url)
+
+
+def test_a_corpus_that_echoes_the_token_is_refused_rather_than_forwarded(server, upstream):
+    """It should never happen — which is the reason to fail loudly if it does, rather than hand a
+    deployment credential to a browser because the body was somebody else's to write."""
+    upstream.answer = {"echoed": OPERATOR_TOKEN, "note": "a corpus with a bug in it"}
+    answer = server.get("/speech/channels")
+
+    assert answer.status_code == 502
+    assert answer.json()["error"]["code"] == "corpus_leaked_credential"
+    assert OPERATOR_TOKEN not in answer.text
 
 
 def test_a_deployment_with_no_token_refuses_to_change_the_catalogue(server, upstream, monkeypatch):

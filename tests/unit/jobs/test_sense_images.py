@@ -17,7 +17,7 @@ from acervo.jobs.images.run import Store, plan
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STYLES = REPO_ROOT / "config" / "image-styles.yaml"
-TEMPLATE = REPO_ROOT / "prompts" / "acervo_image_brief.txt"
+TEMPLATE = REPO_ROOT / "prompts" / "acervo_image_brief.md"
 
 
 def sync_fields(revision: int = 1) -> dict:

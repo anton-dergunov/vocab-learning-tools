@@ -100,11 +100,13 @@ def settings_view(settings: Settings, owner: str) -> dict[str, Any]:
 
 def apply_settings(settings: Settings, owner: str, body: dict[str, Any]) -> dict[str, Any]:
     changes: dict[str, Any] = {}
-    if "searchEnabled" in body:
-        value = body["searchEnabled"]
-        if not isinstance(value, bool):
-            raise ApiError(400, "invalid_input", "searchEnabled must be true or false.")
-        changes["search_enabled"] = value
+    for field, column in (("searchEnabled", "search_enabled"),
+                          ("selfContainedOnly", "self_contained_only")):
+        if field in body:
+            value = body[field]
+            if not isinstance(value, bool):
+                raise ApiError(400, "invalid_input", f"{field} must be true or false.")
+            changes[column] = value
     clip_settings.save(owner, **changes)
     return settings_view(settings, owner)
 
@@ -121,6 +123,7 @@ def find_clips(settings: Settings, owner: str, device: str, lexeme_id: str) -> d
     condition the whole entry on the messiest input in the system, and the failure mode is invisible
     — a slightly worse definition, in every word, forever.
     """
+    chosen = clip_settings.settings(owner)
     resolved = _candidates(settings, owner)
     records = graph.article_records(owner, lexeme_id)
     article = article_for(records, lexeme_id)
@@ -158,7 +161,10 @@ def find_clips(settings: Settings, owner: str, device: str, lexeme_id: str) -> d
 
     # The name inlined rather than held in a constant: `test_server_bundle_contents.py` scrapes
     # this exact call shape to prove the prompt ships in the release image, and a constant escapes it.
-    template = prompt_text(settings.prompts_path, "acervo_clip_select")
+    template = prompt_text(
+        settings.prompts_path, "acervo_clip_select",
+        {"selfContainedOnly": chosen.self_contained_only},
+    )
     selector = ClipSelector(load_catalogue(), resolved, template)
     gloss_lang = (article.gloss_langs or ["en"])[0]
     try:

@@ -33,7 +33,7 @@ class ModelStub:
     """Stands in for LiteLLM, and records what it was asked.
 
     It tells the two capture calls apart the way the real prompts do — by the opening line of
-    `prompts/acervo_resolve.txt` — so a test that changes one call's answer cannot silently change
+    `prompts/acervo_resolve.md` — so a test that changes one call's answer cannot silently change
     the other's. That line now arrives as the system message rather than inside Google's
     `systemInstruction`, which is the only thing about this that moved.
 

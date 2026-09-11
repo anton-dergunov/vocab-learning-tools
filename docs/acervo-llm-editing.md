@@ -748,9 +748,9 @@ Two new tracked files in `prompts/`, copied into the image and read at request t
 existing pair. They are content, not code — changing what the chat says must not mean changing the
 hook.
 
-- `prompts/acervo_chat.txt` — the article conversation: the hierarchy (`§4`), the operation
+- `prompts/acervo_chat.md` — the article conversation: the hierarchy (`§4`), the operation
   language (`§5.1`), the provenance rules (`§5.2`), and "small, or nothing" (`§5.3`).
-- `prompts/acervo_chat_reference.txt` — the external-entry conversation: read-only throughout, no
+- `prompts/acervo_chat_reference.md` — the external-entry conversation: read-only throughout, no
   operation language at all, and the one action it may offer is a capture.
 
 Two files rather than one with a mode switch: they are genuinely different jobs with different

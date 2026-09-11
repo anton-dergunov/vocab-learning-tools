@@ -1022,7 +1022,7 @@ fixture.
 
 Three treatments — keep it close to the source, fill in the gaps, or say what you want — and all
 three go through the existing capture route. The request gained `reference` and `referenceMode`;
-the two canned treatments are wordings in `prompts/acervo_compose.txt`, because prompts are content
+the two canned treatments are wordings in `prompts/acervo_compose.md`, because prompts are content
 and a treatment is a thing to say, not a branch to write.
 
 > ### DECISION

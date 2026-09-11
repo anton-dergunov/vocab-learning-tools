@@ -69,7 +69,7 @@ class Selection:
     """One sense's clip, and the article line that goes under it.
 
     The translation comes from this same call (§2.13), in `glossLangs[0]`, exactly as
-    `acervo_compose.txt` produces one beside every generated example. No second call and no second
+    `acervo_compose.md` produces one beside every generated example. No second call and no second
     provider configuration: the retrieval service can translate too, but what *it* produces is the
     player's interactive alignment, which Acervo stores none of.
     """
@@ -113,7 +113,7 @@ def build_request(article: ArticleView, candidates: Sequence[Candidate],
                   gloss_lang: str) -> dict[str, Any]:
     """Everything the selector sees: one word, its senses, and the segments retrieved for it.
 
-    The senses are described the way `prompts/acervo_image_brief.txt` describes them, and for the
+    The senses are described the way `prompts/acervo_image_brief.md` describes them, and for the
     reason that prompt learned the hard way — the definition in the language being learned is the
     authority and the glosses are hints that can mislead. Judging a fragment against an English
     gloss finds instances of the English word instead of the Spanish one.
