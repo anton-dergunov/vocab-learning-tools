@@ -29,6 +29,13 @@ jobs:
         cache: 'npm'
         cache-dependency-path: web/package-lock.json
 
+    - name: Fetch the pinned spoken-usage-retrieval artifacts
+      # web/package.json depends on the retrieval player by its versioned tarball path, so a clean
+      # checkout cannot `npm install` until the artifacts are on disk. vendor/ is gitignored on
+      # purpose — the pin is what is tracked, not the bytes. Digests are verified against
+      # deploy/acervo/speech/pin.json.
+      run: ./scripts/fetch_speech.sh
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -61,6 +68,13 @@ jobs:
         cache: 'npm'
         cache-dependency-path: web/package-lock.json
 
+    - name: Fetch the pinned spoken-usage-retrieval artifacts
+      # web/package.json depends on the retrieval player by its versioned tarball path, so a clean
+      # checkout cannot `npm install` until the artifacts are on disk. vendor/ is gitignored on
+      # purpose — the pin is what is tracked, not the bytes. Digests are verified against
+      # deploy/acervo/speech/pin.json.
+      run: ./scripts/fetch_speech.sh
+
     - name: Install web dependencies
       run: npm install --prefix web
 
@@ -89,9 +103,15 @@ jobs:
         image:
           - deploy/acervo/server/Dockerfile
           - deploy/acervo/Dockerfile
+          - deploy/acervo/speech/Dockerfile
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Fetch the pinned spoken-usage-retrieval artifacts
+      # The speech image COPYs the wheel out of vendor/, and compose builds from the extracted
+      # release root where it is present. Cheap for the other two images and keeps one step list.
+      run: ./scripts/fetch_speech.sh
 
     - name: Enable emulated ARM64 builds
       uses: docker/setup-qemu-action@v3
