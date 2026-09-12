@@ -623,3 +623,58 @@ def test_the_configured_size_reaches_the_call(tmp_path):
         Renderer(size=(512, 512)).draw("a scene", 17, tmp_path / "one.webp", candidates[0])
     assert asked["size"] == (512, 512)
     assert asked["seed"] == 17
+
+
+# ── the retry loop: what is worth waiting for ───────────────────────────────
+
+
+def _writer():
+    from acervo.images.brief import BriefWriter
+    from acervo.models.catalogue import load_catalogue
+
+    return BriefWriter(load_catalogue(), (), TEMPLATE, load_styles(STYLES))
+
+
+def _exhausted(*reasons: str):
+    from acervo.models.errors import ChainExhausted, ProviderUnavailable
+
+    last = ProviderUnavailable(reasons[-1], "no", provider_id="p", model="m")
+    return ChainExhausted((("p", "m"),), last, reasons)
+
+
+def test_a_chain_that_only_answered_badly_is_retried_at_once_and_then_reported(monkeypatch):
+    """No sleep, and only one extra walk.
+
+    The ladder in `write` exists to outlast a quota, and `3424a95` let `unusable` inherit it. But a
+    malformed answer is not waiting for anything — the same prompt and the same models produce the
+    same malformed answer four minutes later — so the 465 seconds bought nothing and turned one bad
+    schema into what read as a hung request. Re-sampling once is worth it; a third draw says what
+    the second did.
+    """
+    from acervo.models.errors import ChainExhausted
+
+    slept: list[float] = []
+    walks = []
+    def once(article):
+        walks.append(1)
+        raise _exhausted("unusable", "unusable")
+    monkeypatch.setattr(_writer().__class__, "_write_once", staticmethod(once))
+
+    with pytest.raises(ChainExhausted):
+        _writer().write(object(), wait=slept.append)
+    assert slept == []
+    assert len(walks) == 2
+
+
+def test_a_chain_that_ran_out_of_quota_still_climbs_the_ladder(monkeypatch):
+    """Untouched, because that is what the ladder was written for: a 429 passes with time."""
+    from acervo.models.errors import ChainExhausted
+
+    slept: list[float] = []
+    def once(article):
+        raise _exhausted("rate_limited")
+    monkeypatch.setattr(_writer().__class__, "_write_once", staticmethod(once))
+
+    with pytest.raises(ChainExhausted):
+        _writer().write(object(), attempts=4, wait=slept.append)
+    assert slept == [15.0, 30.0, 60.0]

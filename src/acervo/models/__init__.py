@@ -37,10 +37,12 @@ from acervo.models.errors import (
     RETRYABLE,
     TERMINAL,
 )
+from acervo.models import journal
 from acervo.models.results import Answer, AudioResult, ImageResult, TextResult
 
 __all__ = [
     "Answer",
+    "journal",
     "AudioResult",
     "CATALOGUE_PATH",
     "Catalogue",

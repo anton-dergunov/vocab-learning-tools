@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from acervo.models import ChainExhausted, TextResult, call, chain
-from acervo.models.errors import ProviderUnavailable
+from acervo.models import ChainExhausted, TextResult, call, chain, journal
+from acervo.models.errors import SHAPE_TRIES, ProviderUnavailable
 from acervo.models.catalogue import Catalogue
 
 from acervo.article import ArticleView
@@ -26,11 +26,23 @@ from .styles import StyleTable
 # into the prompt where it does not — the row decides, and `parse_reply` checks the answer either
 # way against this article's own sense ids and the styles this call actually offered, neither of
 # which a schema can name.
+#
+# **`required` lists everything `parse_reply` needs, and that is not tidiness.** Where a schema is
+# sent natively it reaches Google as `responseJsonSchema` and becomes the definition of a legal
+# answer — so an optional field is one the model is free to leave out, and constrained decoding
+# takes the cheapest legal path. This once listed `senseId` alone: `{"senses":[{"senseId":"…"}]}`
+# satisfied it completely, `parse_reply` rejected it, and every model in the chain was walked in
+# turn producing the same legal nothing. The prompt spelled out all eight fields the whole time and
+# was simply outranked. A schema that says less than the prompt is worse than no schema at all.
+#
+# `anchorExampleId` and `refusalReason` stay optional because they are genuinely conditional: an
+# unknown anchor is blanked rather than refused below, and a reason only exists on a refusal.
 BRIEF_SCHEMA = {
     "type": "object",
     "properties": {
         "senses": {
             "type": "array",
+            "minItems": 1,
             "items": {
                 "type": "object",
                 "properties": {
@@ -43,11 +55,13 @@ BRIEF_SCHEMA = {
                     "refused": {"type": "boolean"},
                     "refusalReason": {"type": "string"},
                 },
-                "required": ["senseId"],
+                "required": ["senseId", "styleId", "situation", "subject", "brief", "refused"],
+                "additionalProperties": False,
             },
         }
     },
     "required": ["senses"],
+    "additionalProperties": False,
 }
 
 
@@ -196,14 +210,21 @@ class BriefWriter:
         runs when *every* pair has refused — which is the single-provider case, and the long sweep
         that eventually meets a daily allowance. Without it a 429 loses every sense of that lexeme,
         which is how ten English senses went missing from an otherwise clean 13-hour run.
+
+        **The ladder is for quota, and only quota.** A chain that failed because no model would hold
+        the shape is not waiting for anything: the same prompt and the same models produce the same
+        malformed answer in four minutes' time. Such a chain is retried **once, immediately** — a
+        second sample is worth one try and no more — and then reported. Sleeping there was pure
+        latency, and it is what made a single bad schema read as a hung request.
         """
         for attempt in range(1, attempts + 1):
             try:
                 return self._write_once(article)
-            except ChainExhausted:
-                if attempt == attempts:
+            except ChainExhausted as exhausted:
+                if attempt == attempts or (exhausted.waited_on_nothing and attempt >= SHAPE_TRIES):
                     raise
-                wait(min(15.0 * 2 ** (attempt - 1), 240.0))
+                if not exhausted.waited_on_nothing:
+                    wait(min(15.0 * 2 ** (attempt - 1), 240.0))
         raise AssertionError("unreachable")
 
     def _write_once(self, article: ArticleView) -> tuple[list[SenseBrief], dict[str, Any]]:
@@ -222,8 +243,11 @@ class BriefWriter:
             try:
                 parse_reply(answered.parsed, article, offered)
             except ValueError as unusable:
+                # The reply travels with the complaint. "Unusable" on its own sent a real debugging
+                # session into the code to guess; `it returned only senseId` ends it in one line.
+                # Safe to carry because `ProviderError` redacts its detail at construction.
                 raise ProviderUnavailable(
-                    "unusable", str(unusable),
+                    "unusable", f"{unusable} — got {journal.excerpt(answered.text)}",
                     provider_id=candidate.row.id, model=candidate.model,
                 ) from None
             return answered
@@ -234,6 +258,7 @@ class BriefWriter:
             self.catalogue,
             ask,
             chain.stamped,
+            caller="brief",
         )
         briefs = parse_reply(result.parsed, article, offered)
         answer = result.answer

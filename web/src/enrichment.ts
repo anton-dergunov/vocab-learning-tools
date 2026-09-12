@@ -180,6 +180,23 @@ class EnrichmentEngine {
     }));
   }
 
+  /**
+   * Drop everything waiting, and leave the one in flight alone.
+   *
+   * The queue is strictly sequential, so a single slow unit holds up every word behind it — and
+   * until now there was no way to say "stop bothering with the rest" short of signing out. The call
+   * in flight is deliberately not cancelled: it is the server's, it finishes and writes either way,
+   * and abandoning it would throw away work already paid for.
+   *
+   * Nothing is lost by clearing. A word whose picture is still missing is missing in the *graph*,
+   * which is what the sweep reads and what the counts below are drawn from — the queue is only this
+   * device's intention to get to it sooner.
+   */
+  clearWaiting(): void {
+    this.queue = [];
+    this.update({ waiting: [] });
+  }
+
   /** Stop after the unit in flight. Used when signing out — never mid-call, which would waste it. */
   stop(): void {
     this.stopped = true;

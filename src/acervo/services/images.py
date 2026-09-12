@@ -46,6 +46,12 @@ from acervo.settings import Settings
 # says what happened, the threshold says what to do about it, and only one of those is data.
 MAX_ATTEMPTS = 4
 
+# How many whole-chain walks a *request* is worth before it says so. `BriefWriter.write` defaults to
+# six with a ladder climbing to four minutes between them, which is the right shape for the
+# unattended sweep and the wrong one here: a person is looking at the word they just saved, and a
+# chain walk has already asked every credentialed pair before this counter moves at all.
+REQUEST_ATTEMPTS = 2
+
 # `drawEnabled` is checked by the two things that draw *on their own* — `jobs/images/sweep.py` and
 # the interface's enrichment engine — and deliberately not by the routes below. A route draws what
 # it is asked, because every caller of it other than those two is a person pressing a button, and
@@ -175,7 +181,11 @@ def brief_lexeme(settings: Settings, owner: str, device: str, lexeme_id: str) ->
     )
 
     try:
-        briefs, usage = writer.write(view)
+        # Two attempts, not the sweep's six. Somebody is watching the article they just saved, and
+        # the ladder behind that default climbs to four minutes between whole-chain walks — right
+        # for an unattended run that must survive a daily allowance, wrong for a request. The
+        # parameters were always here; nothing had ever passed them.
+        briefs, usage = writer.write(view, attempts=REQUEST_ATTEMPTS)
     except ChainExhausted as exhausted:
         # Every pair was asked and none could hold the shape. Said as a picture problem rather than
         # in the generic words, because that is what the reader was trying to do.

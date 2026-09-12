@@ -17,6 +17,7 @@
 
 import { PictureIcon } from "./icons";
 import { relativeTime } from "./format";
+import { enrichment } from "./enrichment";
 import type { EnrichmentStatus, EnrichmentWait } from "./enrichment";
 import type { ImageWork, ImageWorkEntry } from "./selectors";
 
@@ -96,6 +97,14 @@ export function ActivityPanel({ status, work, onClose }: {
               : <p className="config-help">Nothing is being drawn on this device.</p>}
           {status.waiting.length > 0 && <p className="config-help">
             {status.waiting.length} queued behind it: {waitingLabels(status.waiting)}.
+            {/* The queue is sequential, so one slow word holds up every one behind it, and until
+                now the only way out was to sign out. The call in flight is left alone — it is the
+                server's and finishes either way — and nothing is lost by dropping the rest: a word
+                without its picture is missing in the graph, which is where the counts below come
+                from and what the server's own sweep reads. */}
+            <button className="link-btn" onClick={() => enrichment.clearWaiting()}>
+              Clear the queue
+            </button>
           </p>}
         </section>
 

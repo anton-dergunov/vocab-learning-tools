@@ -446,3 +446,40 @@ def test_the_envelope_is_the_one_litellm_understands():
     assert VertexGeminiConfig().map_openai_params(
         {"response_format": schema}, {}, "gemini-2.0-flash", False
     ) == {}
+
+
+def test_a_schema_requires_every_field_its_parser_demands():
+    """The check that would have caught the regression b8dd6ec caused, and the reason it exists.
+
+    A schema is only guidance while nobody reads it. Once it is sent natively it reaches Google as
+    `responseJsonSchema` and becomes the *definition* of a legal answer, so an optional field is one
+    the model is free to omit — and constrained decoding takes the cheapest legal path. Both of
+    Acervo's schemas listed `senseId` alone, so `{"senses":[{"senseId":"…"}]}` was fully legal,
+    every parser rejected it, and every model in the chain was walked producing the same legal
+    nothing. The prompts had spelled out every field the whole time and were simply outranked.
+
+    So: anything a parser treats as mandatory belongs in `required`. A schema that asks for less
+    than the prompt does is worse than sending no schema at all.
+    """
+    from acervo.clips.select import SELECTION_SCHEMA
+    from acervo.images.brief import BRIEF_SCHEMA
+
+    brief = BRIEF_SCHEMA["properties"]["senses"]["items"]
+    # `parse_reply` refuses a sense whose style is not one it offered and one whose brief is empty,
+    # and reads `refused` to decide whether to demand either.
+    assert {"senseId", "styleId", "situation", "subject", "brief", "refused"} <= set(brief["required"])
+    # Genuinely conditional, and deliberately not required: an unknown anchor is blanked rather than
+    # refused, and a reason exists only on a refusal.
+    assert "anchorExampleId" not in brief["required"]
+    assert "refusalReason" not in brief["required"]
+
+    selection = SELECTION_SCHEMA["properties"]["senses"]["items"]
+    # `segmentId` required *and* nullable: declining stays expressible and cheap, which is the whole
+    # design, while silence stops looking like a decision.
+    assert {"senseId", "segmentId"} <= set(selection["required"])
+    assert selection["properties"]["segmentId"]["type"] == ["string", "null"]
+
+    for schema in (BRIEF_SCHEMA, SELECTION_SCHEMA):
+        items = schema["properties"]["senses"]["items"]
+        assert items["additionalProperties"] is False
+        assert schema["properties"]["senses"]["minItems"] == 1

@@ -41,10 +41,19 @@ Pair = tuple[str, str]
 # Starting long would have been the worse mistake in both directions. It leaves a working model
 # unused for an hour after a momentary burst, and it costs nothing to be wrong the other way: an
 # early probe is one 429, which comes back in about a tenth of a second.
+#
+# `unusable` and `empty` are in the table for a different reason, and it is worth saying which.
+# Nothing here ever sleeps — `ready` only reorders — so a rest is a *demotion*, not a wait. A model
+# that answered with the wrong shape will answer with the wrong shape again in thirty seconds, so
+# there is nothing to wait out; what there is, is a reason to try somebody else first. Leaving them
+# out meant `note` returned zero, the pair was never demoted, and every later call re-probed the one
+# model that could not do the job, from the head of the chain, forever.
 REST: dict[str, float] = {
     "rate_limited": 30.0,
     "unavailable": 20.0,
     "unreachable": 20.0,
+    "unusable": 30.0,
+    "empty": 30.0,
 }
 LONGEST = 3600.0
 

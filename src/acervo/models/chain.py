@@ -23,9 +23,11 @@ assembled by the caller from what it asked for.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from typing import Callable, Sequence, TypeVar
 
+from acervo.models import journal
 from acervo.models.catalogue import Catalogue, Row, available, reason
 from acervo.models.cooldown import rests, retry_after_of
 from acervo.models.errors import ChainExhausted, ProviderRefused, ProviderUnavailable
@@ -152,11 +154,17 @@ def walk(
     catalogue: Catalogue,
     ask: Callable[[Candidate], Result],
     stamp: Callable[[Result, tuple[tuple[str, str], ...], tuple[tuple[str, str, str], ...]], Result],
+    caller: str = "text",
 ) -> Result:
     """Ask each pair in turn until one answers.
 
     `stamp` writes the attempt list into whatever `ask` returned, because only this function knows
     how many pairs were tried and only the caller knows the shape of its own result.
+
+    `caller` names the job for the journal — "brief", "clips", "capture". This is the one place that
+    sees every attempt and its outcome, so it is the one place worth writing them down from; without
+    it a chain that walked nine pairs left no trace but a `passedOver` array in a reply that may
+    never have come.
     """
     candidates = resolve(kind, chosen, catalogue)
     if not candidates:
@@ -172,17 +180,22 @@ def walk(
     last: ProviderUnavailable | None = None
     for candidate in order:
         attempts.append(candidate.named)
+        started = time.monotonic()
         try:
             answer = stamp(ask(candidate), tuple(attempts), tuple(passed_over))
         except ProviderUnavailable as error:
             rests.note(candidate.named, error.reason, retry_after=retry_after_of(error))
             passed_over.append((*candidate.named, error.reason))
+            journal.passed(caller, *candidate.named, error.reason, str(error))
             last = error
         else:
             rests.succeeded(candidate.named)
+            journal.answered(caller, *candidate.named, time.monotonic() - started)
             return answer
     assert last is not None
-    raise ChainExhausted(tuple(attempts), last)
+    reasons = tuple(reason for _, _, reason in passed_over)
+    journal.exhausted(caller, len(attempts), reasons)
+    raise ChainExhausted(tuple(attempts), last, reasons)
 
 
 def stamped(

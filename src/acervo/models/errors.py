@@ -40,6 +40,38 @@ TERMINAL: frozenset[str] = frozenset({"unconfigured", "authentication", "configu
 RETRYABLE: frozenset[str] = frozenset({
     "rate_limited", "unavailable", "unreachable", "unusable", "empty"
 })
+# Retryable at the next *pair*, but never worth waiting for: the two reasons that say something
+# about a model rather than about a moment. `TRANSIENT` is the rest of `RETRYABLE` — a quota that
+# refills, a service that comes back, a connection that can be made again — and only those are
+# worth sleeping on.
+SHAPE: frozenset[str] = frozenset({"unusable", "empty"})
+TRANSIENT: frozenset[str] = RETRYABLE - SHAPE
+
+# How many times a whole chain of malformed answers is worth asking again. Two, because the only
+# thing a retry can change here is the sample: the prompt, the schema and the models are identical,
+# so a second draw is worth having and a third says the same thing as the second. Kept beside the
+# taxonomy because both callers that retry want the same number for the same reason.
+SHAPE_TRIES = 2
+
+
+def _clean(detail: str) -> str:
+    """`detail`, with every credential the catalogue names taken out of it.
+
+    Imported inside the function: `errors.py` is the bottom of this package and importing the
+    catalogue at module scope would invert that. A catalogue that cannot be read must not turn a
+    provider error into a different exception, so the unredacted text is never the fallback —
+    nothing is.
+    """
+    if not detail:
+        return detail
+    try:
+        from acervo.models.catalogue import load_catalogue
+        from acervo.models.redact import redactor
+
+        names = {name for row in load_catalogue().rows for name in row.secret_names}
+        return redactor(names)(detail)
+    except Exception:   # noqa: BLE001 — see above: no catalogue means no claim about this text
+        return ""
 
 
 class ProviderError(Exception):
@@ -48,6 +80,14 @@ class ProviderError(Exception):
     `detail` is redacted at construction rather than at logging: a message that is only cleaned on
     its way to a log has a path that skips the cleaning, and provider errors routinely echo the
     request — including the key — back at you. This repository is public.
+
+    It is redacted **here**, and that is a correction rather than a restatement. This is what the
+    docstring always claimed, but the cleaning actually lived in `call.py` on the way in — so it
+    covered errors classified from a provider's response and nothing else. Every error a *caller*
+    raises by hand went through unwashed, which was harmless while nobody wrote them down and stopped
+    being harmless the moment `journal.py` did. Against every name in the catalogue rather than one
+    row's, because the error does not reliably know whose row it belongs to, and read fresh each
+    time, because a rotated key must not leave the old value unredacted.
     """
 
     reason: Reason
@@ -61,6 +101,7 @@ class ProviderError(Exception):
         model: str | None = None,
         status: int | None = None,
     ) -> None:
+        detail = _clean(detail)
         super().__init__(detail)
         self.reason = reason
         self.detail = detail
@@ -86,10 +127,26 @@ class ChainExhausted(Exception):
     Carries the last error because that is the actionable one, and because it is what preserves the
     retry contract: a chain whose final row was rate limited must still be reported as rate
     limiting, or the file ingestion stops retrying something it should retry.
+
+    It also carries **why each pair failed**, which the last error alone cannot say. A caller
+    deciding whether to try again needs to know whether it is waiting for anything: a rate limit or
+    a 5xx passes with time, and a malformed answer does not, so backing off from one is a strategy
+    and backing off from the other is only delay. `walk` has always had these reasons to hand.
     """
 
-    def __init__(self, attempts: tuple[tuple[str, str], ...], last: ProviderUnavailable) -> None:
+    def __init__(self, attempts: tuple[tuple[str, str], ...], last: ProviderUnavailable,
+                 reasons: tuple[str, ...] = ()) -> None:
         listed = ", ".join(f"{provider} {model}" for provider, model in attempts)
         super().__init__(f"every provider was unavailable: {listed}")
         self.attempts = attempts
         self.last = last
+        self.reasons = reasons or (last.reason,)
+
+    @property
+    def waited_on_nothing(self) -> bool:
+        """True when no failure here is one that time can cure.
+
+        The question a retry loop actually has. Every pair answering with the wrong shape is a fact
+        about those models; sleeping four minutes and asking them again changes nothing.
+        """
+        return bool(self.reasons) and all(reason in SHAPE for reason in self.reasons)

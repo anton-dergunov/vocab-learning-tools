@@ -19,7 +19,8 @@
 
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
-  clipFor, directLink, translationFor, type ClipView, type StoredClip, type TranslationJob
+  clipFor, directLink, matchIn, translationFor,
+  type ClipView, type StoredClip, type TranslationJob
 } from "./clips";
 import { formatClock } from "./format";
 import { PlayIcon } from "./icons";
@@ -72,19 +73,28 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
     return () => { live = false; cancel.abort(); };
   }, [stored.clipRef, stored.videoRef]);
 
-  /* The player's target text is the *service's*, fetched when the modal opens and stored nowhere
-     (§2.13). The article's own line came from the clip-selection call and is already in the graph;
-     this is the richer thing — a validated word alignment the player renders as an interactive
-     relation — and it is online-only exactly like the clip it belongs to. */
+  /* The sentence is Acervo's; the *alignment* of it is the service's.
+
+     The article already carries a translation of this clip — the clip-selection call wrote it into
+     the graph — so it is shown at once, offline, with no round trip, and it is the same wording the
+     article shows. What the corpus is asked for is the word graph **for that sentence**: one
+     provider call instead of two, and nothing that can disagree with the page behind it. Asking it
+     to translate afresh gave a second wording for the same passage and no way to say which was
+     right (§2.13, amended). */
+  const stored_text = stored.translation;
+  const target_lang = stored.translationLang ?? glossLang;
+
   useEffect(() => {
-    if (!view?.clip || !glossLang) return;
+    // Nothing to align, so nothing is outstanding — otherwise the line below would say it was
+    // still working forever, on a clip it was never going to ask about.
+    if (!view?.clip || !target_lang || !stored_text) { setAsking(false); return; }
     const cancel = new AbortController();
     let live = true;
     setAsking(true);
-    translationFor(view.clip.segment_id, glossLang, cancel.signal)
+    translationFor(view.clip.segment_id, target_lang, cancel.signal, false, stored_text)
       .then((job) => { if (live) { setTranslation(job); setAsking(false); } });
     return () => { live = false; cancel.abort(); };
-  }, [view?.clip?.segment_id, glossLang]);
+  }, [view?.clip?.segment_id, target_lang, stored_text]);
 
   /* The player already draws a retry beside a failed translation; this is the callback it needs to
      render one. It matters more than a convenience: the corpus remembers a stage that produced
@@ -97,7 +107,8 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
     const cancel = new AbortController();
     retryCancel.current = cancel;
     setRetrying(true);
-    void translationFor(segmentId, glossLang, cancel.signal, true).then((job) => {
+    void translationFor(segmentId, glossLang, cancel.signal, true, stored_text ?? undefined)
+      .then((job) => {
       if (cancel.signal.aborted) return;
       setTranslation(job);
       setRetrying(false);
@@ -130,13 +141,25 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
             clip={view.clip}
             sourceLanguage={view.clip.source_language}
             accessibleName={`Clip for ${headword}`}
-            targetText={translation?.result?.target_text ?? null}
-            targetLanguage={translation?.result?.target_language ?? glossLang}
-            translationStatus={retrying ? "running" : translation?.status ?? "not_requested"}
+            /* The article's own sentence, on screen before anything is asked. The corpus only
+               ever returns this same text back (it is what was sent), so the fallback here is not
+               a placeholder that gets replaced — it is the final wording from the first frame. */
+            targetText={translation?.result?.target_text ?? stored_text}
+            targetLanguage={target_lang}
+            /* Complete the moment there is a sentence, which there is immediately. What is still
+               outstanding is the word graph, and `alignmentStatus` is the field that says so. */
+            translationStatus={
+              retrying ? "running" : translation?.status ?? (stored_text ? "complete" : "not_requested")
+            }
             translationProvenance={translation?.result?.provenance ?? null}
             alignmentStatus={translation?.result?.alignment_status ?? "unavailable"}
             alignmentGroups={translation?.result?.alignment_groups ?? null}
             alignmentGraph={translation?.result?.alignment_graph ?? null}
+            /* Where the headword sits in the Spanish. The corpus cannot say — a clip fetched by id
+               carries no match span, because a segment id does not know what was searched for — but
+               the stored example names the form, so Acervo can. Without it the translation was
+               marked and the sentence it translates was not, which read as a bug because it was. */
+            match={matchIn(stored)}
             onTranslationRetry={retry}
           />
         </Suspense>}
@@ -145,7 +168,7 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
             the corpus never answers — this is the only thing that says so. A translation that
             simply appears one day, with nothing in its place meanwhile, reads as broken. */}
         {view?.clip && <TranslationLine
-          glossLang={glossLang}
+          text={stored_text}
           asking={asking || retrying}
           job={translation}
           onRetry={retry}
@@ -157,25 +180,34 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
   </div>;
 }
 
-/** Where the target text has got to, in one line, for the states the player leaves blank. */
-function TranslationLine({ glossLang, asking, job, onRetry }: {
-  glossLang: string | null;
+/**
+ * What is still outstanding under the sentence, in one line.
+ *
+ * **Its subject changed when the sentence stopped being the thing in doubt.** The translation is
+ * the article's own and is on screen from the first frame, so the only question left is whether the
+ * corpus managed to align it word by word — a nicety, not the content. So a failure here says so
+ * mildly and offers a retry, rather than reporting a missing translation that is plainly visible
+ * above it. A word with no stored translation at all is the one case where the sentence really is
+ * absent, and it says that instead.
+ */
+function TranslationLine({ text, asking, job, onRetry }: {
+  text: string | null;
   asking: boolean;
   job: TranslationJob | null;
   onRetry(): void;
 }) {
-  // It has one and the player is drawing it. Nothing to add.
-  if (job?.status === "complete" && job.result?.target_text) return null;
-  if (!glossLang) {
+  if (!text) {
     return <p className="hint clip-translation">
-      This vocabulary has no translation language set, so a clip is not translated.
+      This clip was saved without a translation, so there is nothing to show under it.
     </p>;
   }
-  if (asking) return <p className="hint clip-translation">Translating…</p>;
+  // Aligned. The player is drawing the interactive version and there is nothing to add.
+  if (job?.status === "complete" && job.result?.alignment_graph) return null;
+  if (asking) return <p className="hint clip-translation">Linking the words…</p>;
   return <p className="hint clip-translation">
     {job === null
-      ? "The spoken-usage corpus could not be reached, so this clip has no translation yet."
-      : "That translation did not finish."}
+      ? "The spoken-usage corpus could not be reached, so the words are not linked."
+      : "The words could not be linked."}
     <button className="link-btn" onClick={onRetry}>Try again</button>
   </p>;
 }

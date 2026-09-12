@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     media_path: Path = Field(default=Path("/var/lib/acervo/media"), alias="ACERVO_MEDIA_PATH")
     prompts_path: Path = Field(default=Path("/app/prompts"), alias="ACERVO_PROMPTS_PATH")
 
+    # Every model call, one line each, rotating. Beside the database rather than on a mount of its
+    # own: it is small, it is bounded, and it belongs to the same deployment the database does.
+    # Empty switches it off — the lines are then simply not written anywhere, which is what a
+    # laptop run wants. Nothing else changes either way.
+    call_log_path: Path = Field(
+        default=Path("/var/lib/acervo/server/model-calls.log"), alias="ACERVO_CALL_LOG_PATH"
+    )
+    call_log_bytes: int = Field(default=5_000_000, alias="ACERVO_CALL_LOG_BYTES")
+    call_log_keep: int = Field(default=3, alias="ACERVO_CALL_LOG_KEEP")
+
     # Where the spoken-usage corpus answers, on the internal network. Empty means this deployment
     # runs without one: reads still work and the interface says the corpus is unavailable rather
     # than failing, exactly as it does for an unreachable external dictionary.

@@ -30,15 +30,17 @@ vi.mock("./clips", async () => {
    grey sentence for every way target text can fail to arrive — so a stub that showed only the
    segment id let a translation that never worked look exactly like one that did. */
 vi.mock("@spoken-usage-retrieval/react/player", () => ({
-  SpeechClipPlayer: ({ clip, targetText, translationStatus, onTranslationRetry }: {
+  SpeechClipPlayer: ({ clip, targetText, translationStatus, match, onTranslationRetry }: {
     clip: { segment_id: string };
     targetText?: string | null;
     translationStatus?: string;
+    match?: { text: string; char_start: number; char_end: number };
     onTranslationRetry?: (language: string) => void;
   }) => <div data-testid="player">
     playing {clip.segment_id}
     <span data-testid="status">{translationStatus}</span>
     <span data-testid="target">{targetText ?? ""}</span>
+    <span data-testid="match">{match ? `${match.text}@${match.char_start}-${match.char_end}` : ""}</span>
     <button onClick={() => onTranslationRetry?.("en")}>retry</button>
   </div>
 }));
@@ -92,6 +94,44 @@ describe("opening a clip", () => {
     await waitFor(() => expect(screen.getByText(/no longer in the corpus/)).toBeTruthy());
   });
 
+  it("shows the article's own translation at once, and asks only for its alignment", async () => {
+    /* The clip-selection call already wrote a translation into the graph. Asking the corpus to
+       translate the passage again produced a second, differently worded sentence for the same clip
+       — two provider calls to end up disagreeing with the page behind the dialog. */
+    const stored = storedClipOf(clipExample())!;
+    clipFor.mockResolvedValue({
+      clip: { segment_id: "seg_7c3d18e5b04a92f6de27", source_language: "es" },
+      stored, unreachable: false
+    });
+    render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
+
+    // On screen before the corpus has answered anything, and it is the article's wording.
+    await waitFor(() => expect(screen.getByTestId("target").textContent).toBe(stored.translation));
+    expect(screen.getByTestId("status").textContent).toBe("complete");
+    // And what was asked for is the alignment *of that sentence*, not a new one.
+    await waitFor(() => expect(translationFor).toHaveBeenCalled());
+    expect(translationFor.mock.calls[0][4]).toBe(stored.translation);
+  });
+
+  it("marks the headword in the source, which the corpus cannot do for it", async () => {
+    /* A clip fetched by id carries no match span and structurally cannot — a segment id does not
+       know which word was searched for. The stored example names the form, so Acervo supplies it;
+       without this the translation was marked and the sentence it translates was not. */
+    const stored = storedClipOf(clipExample())!;
+    clipFor.mockResolvedValue({
+      clip: { segment_id: "seg_7c3d18e5b04a92f6de27", source_language: "es" },
+      stored, unreachable: false
+    });
+    render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
+
+    await waitFor(() => expect(screen.getByTestId("player")).toBeTruthy());
+    const marked = screen.getByTestId("match").textContent!;
+    expect(marked).toContain(stored.matchedForm!);
+    const [, span] = marked.split("@");
+    const [start, end] = span.split("-").map(Number);
+    expect(Array.from(stored.text).slice(start, end).join("")).toBe(stored.matchedForm);
+  });
+
   it("gives the player the target text the corpus produced", async () => {
     const stored = storedClipOf(clipExample())!;
     clipFor.mockResolvedValue({
@@ -129,7 +169,7 @@ describe("opening a clip", () => {
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("failed"));
     // The first ask does not force a re-run: a cached *success* is the whole point of the cache.
-    expect(translationFor.mock.calls[0][3]).toBeUndefined();
+    expect(translationFor.mock.calls[0][3]).toBe(false);
 
     fireEvent.click(screen.getByText("retry"));
     await waitFor(() => expect(translationFor).toHaveBeenCalledTimes(2));
@@ -160,10 +200,11 @@ describe("what the record alone can do", () => {
   });
 });
 
-/* The gap this closes: `translationFor` answers `null` for every way of having no target text, and
-   the player renders nothing at all for that — so the line under the sentence was simply absent,
-   and "still working" and "this will never arrive" were the same empty space. */
-describe("where the translation has got to", () => {
+/* The sentence is the article's own and is on screen from the first frame, so what this line
+   reports is the *alignment* — whether the corpus managed to link the words. A failure there is a
+   nicety lost, not content missing, and it must not claim a translation is absent while one is
+   plainly visible above it. */
+describe("where the word linking has got to", () => {
   const playing = () => {
     const stored = storedClipOf(clipExample())!;
     clipFor.mockResolvedValue({
@@ -178,8 +219,11 @@ describe("where the translation has got to", () => {
     translationFor.mockResolvedValue(null);
     render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
 
-    expect(await screen.findByText(/could not be reached/)).toBeInTheDocument();
+    expect(await screen.findByText(/words are not linked/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    // And the sentence itself is still there: it never depended on the corpus. `find`, not `get`:
+    // the player is lazy and commits after the line above it.
+    expect((await screen.findByTestId("target")).textContent).toBe(stored.translation);
   });
 
   it("says so while it is still asking, rather than showing nothing", async () => {
@@ -187,28 +231,37 @@ describe("where the translation has got to", () => {
     translationFor.mockReturnValue(new Promise(() => { /* never settles */ }));
     render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
 
-    expect(await screen.findByText("Translating…")).toBeInTheDocument();
+    expect(await screen.findByText("Linking the words…")).toBeInTheDocument();
   });
 
-  it("says nothing of its own once the player has a translation to draw", async () => {
+  it("says nothing of its own once the words are linked", async () => {
     const stored = playing();
     translationFor.mockResolvedValue({
       job_id: "j1", status: "complete",
-      result: { target_text: "My nose itches.", target_language: "en" }
+      result: {
+        target_text: stored.translation, target_language: "en",
+        alignment_graph: { source_tokens: [], target_tokens: [], edges: [] }
+      }
     });
     render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
 
-    await waitFor(() => expect(screen.getByTestId("target").textContent).toBe("My nose itches."));
-    expect(screen.queryByText(/could not be reached/)).not.toBeInTheDocument();
-    expect(screen.queryByText("Translating…")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/not linked/)).not.toBeInTheDocument());
+    expect(screen.queryByText("Linking the words…")).not.toBeInTheDocument();
   });
 
-  it("names the missing setting when the vocabulary has no gloss language", async () => {
-    const stored = playing();
-    render(<ClipDialog stored={stored} glossLang={null} headword="picar" onClose={() => undefined} />);
+  it("says so when the clip was saved with no translation, and asks for nothing", async () => {
+    const stored = {
+      ...playing(), clipRef: "seg_untranslated", translation: null, translationLang: null
+    };
+    clipFor.mockResolvedValue({
+      clip: { segment_id: "seg_untranslated", source_language: "es" }, stored, unreachable: false
+    });
+    render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
 
-    expect(await screen.findByText(/no translation language set/)).toBeInTheDocument();
-    // Nothing was asked for, because there is nothing to ask in.
-    expect(translationFor).not.toHaveBeenCalled();
+    expect(await screen.findByText(/saved without a translation/)).toBeInTheDocument();
+    // Nothing to align, so the corpus is never asked about *this* clip. Named rather than counted:
+    // a lazy player mounted by an earlier test can commit after `clearAllMocks` and its effect then
+    // lands in this test's tally, where a bare count would be measuring the wrong component.
+    expect(translationFor.mock.calls.map((call) => call[0])).not.toContain("seg_untranslated");
   });
 });

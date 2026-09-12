@@ -17,14 +17,22 @@ changes the retry behaviour without changing a line of the retry code.
 `refusal()` is public for the same reason: `services/images.py` binds the *same* provider package
 and must speak the *same* codes, so a picture that could not be drawn and an entry that could not be
 written fail alike. A second mapping would be a second contract.
+
+The call journal is bound here for the same reason it is mapped here. `acervo.models.journal` writes
+to a logger and stops, because the package may not read `Settings`; this module knows where the
+deployment keeps its files, so this module is where the handler is attached.
 """
 
 from __future__ import annotations
 
+import logging
+from logging.handlers import RotatingFileHandler
 from typing import Any
 
 from acervo.errors import ApiError
-from acervo.models import Answer, ChainExhausted, ProviderError, TextResult, chain, load_catalogue
+from acervo.models import (
+    Answer, ChainExhausted, ProviderError, TextResult, chain, journal, load_catalogue
+)
 from acervo.models.errors import ProviderUnavailable
 from acervo.models import call as provider
 from acervo.models.catalogue import (
@@ -388,3 +396,40 @@ def apply_selection(settings: Settings, owner: str, body: dict[str, Any]) -> dic
 
     model_selection.save(owner, changes)
     return catalogue_view(settings, owner)
+
+
+def open_call_log(settings: Settings) -> None:
+    """Point the provider package's journal at a file, if this deployment wants one.
+
+    Idempotent, because `create_app` is called more than once in the tests and a second handler
+    would double every line. An empty path means no file: the lines are emitted and nothing listens,
+    which is the right default for a laptop and costs nothing.
+
+    Rotating rather than growing: this writes on every model call, and an unbounded file on the same
+    volume as the database is a way to lose the database. Failing to open it is *not* fatal — a
+    server that cannot write its log should still serve words.
+    """
+    if not settings.call_log_path:
+        return
+    logger = logging.getLogger(journal.LOGGER)
+    if any(getattr(handler, "acervo_call_log", False) for handler in logger.handlers):
+        return
+    try:
+        settings.call_log_path.parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            settings.call_log_path, maxBytes=settings.call_log_bytes,
+            backupCount=settings.call_log_keep, encoding="utf-8",
+        )
+    except OSError as unwritable:   # noqa: BLE001 — a log nobody can write must not stop the server
+        logging.getLogger("acervo.api").warning(
+            "Acervo: the model call log could not be opened (%s); calls will not be recorded",
+            unwritable,
+        )
+        return
+    handler.acervo_call_log = True   # type: ignore[attr-defined]
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    # It has its own file; letting it also climb to the root handler would put every model call in
+    # the container's stdout beside the request log, which is the noise this exists to replace.
+    logger.propagate = False

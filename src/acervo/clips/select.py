@@ -34,8 +34,9 @@ from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from acervo.article import ArticleView
-from acervo.models import ChainExhausted, TextResult, call, chain
+from acervo.models import ChainExhausted, TextResult, call, chain, journal
 from acervo.models.catalogue import Catalogue
+from acervo.models.errors import SHAPE_TRIES, ProviderUnavailable
 
 from .corpus import Candidate
 
@@ -43,11 +44,22 @@ from .corpus import Candidate
 # into the prompt where it does not — the row decides, and `parse_reply` checks the answer either
 # way against *this* article's sense ids and the segments *this* call offered, neither of which a
 # schema can name.
+#
+# **`segmentId` is required, and null is how a sense declines.** Where the schema is sent natively
+# it becomes the definition of a legal answer, so a merely *optional* `segmentId` let a model omit
+# it for every sense — a reply that satisfied the schema, named no clip, and read exactly like the
+# honest "none of these are good enough" this pipeline is built to expect. Requiring the field while
+# allowing null keeps refusing as cheap as §2.7 demands and makes silence impossible to mistake for
+# a decision. `images/brief.py` carries the same note and the same scar.
+#
+# `translation` and `matchedTranslationForm` stay optional: they are absent by definition when
+# nothing was chosen.
 SELECTION_SCHEMA = {
     "type": "object",
     "properties": {
         "senses": {
             "type": "array",
+            "minItems": 1,
             "items": {
                 "type": "object",
                 "properties": {
@@ -56,11 +68,13 @@ SELECTION_SCHEMA = {
                     "translation": {"type": "string"},
                     "matchedTranslationForm": {"type": "string"},
                 },
-                "required": ["senseId"],
+                "required": ["senseId", "segmentId"],
+                "additionalProperties": False,
             },
         }
     },
     "required": ["senses"],
+    "additionalProperties": False,
 }
 
 
@@ -157,6 +171,14 @@ def parse_reply(payload: Any, article: ArticleView,
     entries = payload.get("senses")
     if not isinstance(entries, list):
         raise ValueError("The clip selector returned no `senses` list.")
+    # **Refusing is an answer; saying nothing is not, and the two must not look alike.** A reply of
+    # `segmentId: null` for every sense is the expected outcome for most words and passes straight
+    # through below. An *empty list* is not that: it answers nothing at all, and because the caller
+    # stamps `clipsSearchedAt` on a clean return and §2.12 ships no rescan, letting it through marks
+    # the word consulted-and-empty for good. Deliberately only the empty case — an id this article
+    # does not have stays dropped-and-counted, never a refusal of the whole word.
+    if article.senses and not entries:
+        raise ValueError("The clip selector returned no senses at all.")
 
     by_segment = {candidate.segment_id: candidate for candidate in offered}
     known = {sense.id for sense in article.senses}
@@ -214,24 +236,46 @@ class ClipSelector:
         for attempt in range(1, attempts + 1):
             try:
                 return self._select_once(article, candidates, gloss_lang)
-            except ChainExhausted:
-                if attempt == attempts:
+            except ChainExhausted as exhausted:
+                if attempt == attempts or (exhausted.waited_on_nothing and attempt >= SHAPE_TRIES):
                     raise
-                wait(min(15.0 * 2 ** (attempt - 1), 240.0))
+                # Only a quota or an outage is worth sleeping on; a chain that answered with the
+                # wrong shape will answer the same way after any delay. See `BriefWriter.write`.
+                if not exhausted.waited_on_nothing:
+                    wait(min(15.0 * 2 ** (attempt - 1), 240.0))
         raise AssertionError("unreachable")
 
     def _select_once(self, article: ArticleView, candidates: Sequence[Candidate],
                      gloss_lang: str) -> tuple[list[Selection], int, dict[str, Any]]:
         request = build_request(article, candidates, gloss_lang)
         prompt = f"{self.template}\n\n{json.dumps(request, ensure_ascii=False, indent=2)}\n"
+
+        def ask(candidate: chain.Candidate) -> TextResult:
+            answered = call.text(
+                prompt, row=candidate.row, model=candidate.model, schema=SELECTION_SCHEMA
+            )
+            # Judged inside the chain's callback, exactly as `images/brief.py` judges its own, so a
+            # model that cannot hold the shape is passed over instead of having its answer accepted.
+            # This one matters more than the brief's: an unusable reply here is indistinguishable
+            # from an honest refusal, and the caller stamps `clipsSearchedAt` on a clean return with
+            # nothing ever re-searching. Parsed twice on the happy path, which is microseconds
+            # against a model call.
+            try:
+                parse_reply(answered.parsed, article, candidates)
+            except ValueError as unusable:
+                raise ProviderUnavailable(
+                    "unusable", f"{unusable} — got {journal.excerpt(answered.text)}",
+                    provider_id=candidate.row.id, model=candidate.model,
+                ) from None
+            return answered
+
         result: TextResult = chain.walk(
             "text",
             [candidate.named for candidate in self.candidates],
             self.catalogue,
-            lambda candidate: call.text(
-                prompt, row=candidate.row, model=candidate.model, schema=SELECTION_SCHEMA
-            ),
+            ask,
             chain.stamped,
+            caller="clips",
         )
         selections, dropped = parse_reply(result.parsed, article, candidates)
         answer = result.answer

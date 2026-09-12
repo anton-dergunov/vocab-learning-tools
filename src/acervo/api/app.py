@@ -20,6 +20,7 @@ from acervo.api.routes import (
     speech,
 )
 from acervo.repository.session import open_database
+from acervo.services.models import open_call_log
 from acervo.settings import Settings
 from acervo.settings import settings as read_settings
 
@@ -32,6 +33,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = open_database(settings.database_path)
     app.state.jwt_secret = auth.resolve_secret(settings)
+    # Before the first request, because the first request is the one worth having a record of.
+    open_call_log(settings)
 
     # PocketBase allowed every origin by default; FastAPI sends nothing. The macOS host loads its
     # interface from `acervo://app` and calls the server cross-origin with headers that trigger a

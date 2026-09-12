@@ -35,6 +35,10 @@ from acervo.settings import Settings
 # approved/unapproved surface, which is due a redesign of its own.
 CLIP_ORIGIN = "subtitle"
 
+# How many whole-chain walks a *request* is worth, as in `services/images.py` and for the same
+# reason: the sweep's default exists to outlast a daily allowance, and nobody is waiting on it.
+REQUEST_ATTEMPTS = 2
+
 # `searchEnabled` is checked by the two things that search *on their own* — the sweep and the
 # interface's enrichment engine — and deliberately not by the route below. A route searches what it
 # is asked, because every caller of it other than those two is a person pressing a button.
@@ -168,7 +172,13 @@ def find_clips(settings: Settings, owner: str, device: str, lexeme_id: str) -> d
     selector = ClipSelector(load_catalogue(), resolved, template)
     gloss_lang = (article.gloss_langs or ["en"])[0]
     try:
-        selections, dropped, usage = selector.select(article, candidates, gloss_lang)
+        # Two walks, not four: this is the request path and somebody is watching the article. The
+        # sweep keeps the longer default, where waiting out a daily allowance is the whole point.
+        # Nothing is stamped on any path that raises, so a word refused here stays unconsulted and
+        # the sweep will find it again — which is exactly what must happen when no model answered.
+        selections, dropped, usage = selector.select(
+            article, candidates, gloss_lang, attempts=REQUEST_ATTEMPTS
+        )
     except ChainExhausted as exhausted:
         raise refusal(exhausted.last) from None
     except ProviderError as error:

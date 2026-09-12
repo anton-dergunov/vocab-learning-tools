@@ -330,3 +330,30 @@ def test_unconfigured_reads_the_stated_chain_when_it_is_written_as_pairs(monkeyp
         )
     assert caught.value.detail == "CLOUDFLARE_API_TOKEN is not set"
 
+
+
+def test_the_exhausted_chain_says_why_each_pair_failed():
+    """The last error alone cannot answer the question a retry loop has.
+
+    "Is there anything to wait for?" is not the same question as "what went wrong last?". A chain
+    whose final pair was rate limited but whose first three answered with the wrong shape is mostly
+    a shape problem, and a caller that sleeps four minutes on it is sleeping for nothing.
+    """
+    ask, _ = refusing(
+        unavailable("unusable"),
+        unavailable("unusable"),
+        unavailable("unusable"),
+        unavailable("rate_limited"),
+    )
+    with pytest.raises(ChainExhausted) as caught:
+        chain.walk("text", None, SHIPPED, ask, chain.stamped)
+    assert caught.value.reasons[:3] == ("unusable", "unusable", "unusable")
+    # One pair that time could cure is enough to make waiting worth it.
+    assert caught.value.waited_on_nothing is False
+
+
+def test_a_chain_that_only_ever_answered_badly_is_waiting_for_nothing():
+    ask, _ = refusing(*[unavailable("unusable")] * len(DEFAULT_WALK))
+    with pytest.raises(ChainExhausted) as caught:
+        chain.walk("text", None, SHIPPED, ask, chain.stamped)
+    assert caught.value.waited_on_nothing is True

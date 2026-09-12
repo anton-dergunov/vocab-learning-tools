@@ -17,11 +17,12 @@
 
 import { createSpeechRetrievalClient, SpeechRetrievalApiError, type SpeechRetrievalClient }
   from "@spoken-usage-retrieval/react/client";
-import type { SpeechClip, TranslationJob } from "@spoken-usage-retrieval/react/types";
+import type { MatchSpan, SpeechClip, TranslationJob }
+  from "@spoken-usage-retrieval/react/types";
 import { backendSession } from "./api";
 import type { Example } from "./domain";
 
-export type { SpeechClip, TranslationJob };
+export type { MatchSpan, SpeechClip, TranslationJob };
 export { SpeechRetrievalApiError };
 
 /** Built per call rather than held, because signing out must not leave a client with a stale token. */
@@ -61,7 +62,36 @@ export interface StoredClip {
   clipRef: string | null;
   text: string;
   translation: string | null;
+  /** Carried rather than assumed. `Example` holds it under a XOR with `translation`, and
+      substituting `glossLangs[0]` was right for every record written today and not guaranteed for
+      one written before the vocabulary's languages were last changed. */
+  translationLang: string | null;
   matchedForm: string | null;
+}
+
+/**
+ * Where the headword sits in the stored sentence, for the player to mark.
+ *
+ * The corpus cannot supply this: `GET /clips/{id}` returns a clip, and a clip has no match span
+ * because a segment id does not know which word was being looked for — only a *search* does. Acervo
+ * does know, because the example it stored names the form, and `domain.ts` already refuses to store
+ * a `matchedForm` that does not occur verbatim in the text. So the span is computed here rather
+ * than fetched, and the word the reader opened the passage for is the one that gets marked.
+ *
+ * Offsets are in code points, not UTF-16 units: the player slices by `Array.from`, and a sentence
+ * with an emoji or an astral character before the match would otherwise mark the wrong place.
+ */
+export function matchIn(stored: StoredClip): MatchSpan | undefined {
+  if (!stored.matchedForm) return undefined;
+  const at = stored.text.indexOf(stored.matchedForm);
+  if (at < 0) return undefined;
+  const start = Array.from(stored.text.slice(0, at)).length;
+  return {
+    text: stored.matchedForm,
+    char_start: start,
+    char_end: start + Array.from(stored.matchedForm).length,
+    accent_exact: true,
+  };
 }
 
 export function storedClipOf(example: Example): StoredClip | null {
@@ -75,6 +105,7 @@ export function storedClipOf(example: Example): StoredClip | null {
     clipRef: example.clipRef,
     text: example.text,
     translation: example.translation,
+    translationLang: example.translationLang,
     matchedForm: example.matchedForm
   };
 }
@@ -94,15 +125,18 @@ export async function clipFor(stored: StoredClip, signal?: AbortSignal): Promise
 }
 
 /**
- * Ask the corpus to translate this clip, and poll until it settles.
+ * Ask the corpus to align the article's own translation of this clip, and poll until it settles.
  *
- * **Acervo stores none of this.** The article's own translation line came from the clip-selection
- * call and lives in the graph, so it replicates to the phone and reads offline; what the *player*
- * shows is richer — a validated word-alignment graph it renders as an interactive relation — and it
- * is the service's, fetched when the modal opens and gone when it closes (§2.13).
+ * **Acervo already has the sentence, and hands it over.** The clip-selection call wrote a
+ * translation into the graph beside the example, so it replicates to the phone and reads offline.
+ * Asking the corpus to translate the clip *again* produced a second, differently worded sentence
+ * for the same passage, cost two provider calls and up to two minutes, and left the player and the
+ * article disagreeing in front of the reader with no way to say which was right.
  *
- * A job rather than a value, because translation is two provider calls and the service caches the
- * result: the second viewer of a clip gets it immediately, and the first waits once.
+ * So `targetText` is supplied and only the alignment stage runs: one provider call, the article's
+ * own wording on screen, and the word graph computed for *that* — which is the thing the corpus can
+ * do that Acervo cannot (§2.13, amended). A deployment with no translation provider at all still
+ * gets its own sentence back.
  *
  * **`retryFailed` is the way out of a cached refusal.** The service remembers a stage that produced
  * unusable output and answers from that memory, `cache_hit` and all, on every later request — which
@@ -111,11 +145,13 @@ export async function clipFor(stored: StoredClip, signal?: AbortSignal): Promise
  * it is what the player's retry button is wired to.
  */
 export async function translationFor(segmentId: string, targetLanguage: string,
-                                     signal?: AbortSignal,
-                                     retryFailed = false): Promise<TranslationJob | null> {
+                                     signal?: AbortSignal, retryFailed = false,
+                                     targetText?: string): Promise<TranslationJob | null> {
   const client = corpus();
   try {
-    let job = await client.requestTranslation(segmentId, { targetLanguage, retryFailed, signal });
+    let job = await client.requestTranslation(
+      segmentId, { targetLanguage, retryFailed, targetText, signal }
+    );
     /* Bounded on purpose: the modal is open and somebody is waiting. Giving up leaves the source
        text and the article's own line, which is the state the player is designed to render anyway.
 
