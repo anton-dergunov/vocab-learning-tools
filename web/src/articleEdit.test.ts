@@ -122,9 +122,12 @@ describe("provenance, which the applier derives and the model never sets", () =>
     expect(added.origin).toBe("llm");
     expect(added.modelId).toBe("gemini-3.1-flash-lite");
     expect(added.sourceAttestationId).toBeNull();
-    // `saveArticle` mints the id for an added example, exactly as it does for a hand-written block.
-    expect(added.id).toBeNull();
-    expect(ids.size).toBe(0);
+    /* An added record gets a real id here rather than being left for `saveArticle` to mint on the
+       way out. A record with no id has no name in the document the *next* turn is given, so
+       "add an example" followed by "make that one more concrete" asked the model to address
+       something anonymous — and it invented an id, which is refused. */
+    expect(added.id).toMatch(/^[a-z0-9]{15}$/);
+    expect([...ids]).toContain(added.id);
     // Reviewing the rendered article *is* the approve gesture, so nothing lands wearing a chip
     // saying it has not been looked at.
     expect(added.approved).toBe(true);
@@ -145,8 +148,8 @@ describe("provenance, which the applier derives and the model never sets", () =>
     expect(added.origin).toBe("attestation");
     expect(added.sourceAttestationId).toBe(attestation.id);
     expect(added.modelId).toBeNull();
-    // The one id the applier mints, and the only thing `minted` ever carries.
-    expect([...ids]).toEqual([attestation.id]);
+    // Both are minted here, and both are declared, so `saveArticle` reads them as creations.
+    expect([...ids].sort()).toEqual([attestation.id, added.id].sort());
   });
 
   it("refuses an example that quotes a sentence nothing supplied", () => {
@@ -404,5 +407,39 @@ describe("counting", () => {
       { op: "set", target: "lexeme", field: "notes", value: [...before.notes, "Nueva nota."] }
     ], context);
     expect(diffDrafts(before, after).count).toBe(2);
+  });
+});
+
+describe("a second turn, built on the first", () => {
+  it("can address a record the previous turn added", () => {
+    /* The bug this exists for: "add an example", then "make that example more concrete". The added
+       example used to carry no id, so it had no name in the document the second turn was given —
+       the model invented one and the whole proposal was refused. */
+    const before = draft();
+    const first = applyOps(before,
+      [{ op: "add", target: "example", in: ITCH, value: { text: "Me pica la espalda." } }], context);
+    const added = first.draft.senses[0].examples.at(-1)!;
+    expect(added.id).toMatch(/^[a-z0-9]{15}$/);
+
+    // The document the next turn sees names it, so the next turn can edit it.
+    expect(yamlForDraft(first.draft)).toContain(added.id!);
+    const second = applyOps(first.draft, [
+      { op: "set", target: `example:${added.id}`, field: "text", value: "Me pica mucho la espalda." }
+    ], context);
+    expect(second.draft.senses[0].examples.at(-1)!.text).toBe("Me pica mucho la espalda.");
+  });
+
+  it("shows the reader one change, not two, when a turn edits what the last one added", () => {
+    // The comparison stays against the stored document, so the bar counts what is outstanding.
+    const origin = draft();
+    const first = applyOps(origin,
+      [{ op: "add", target: "example", in: ITCH, value: { text: "Me pica la espalda." } }], context);
+    const added = first.draft.senses[0].examples.at(-1)!;
+    const second = applyOps(first.draft, [
+      { op: "set", target: `example:${added.id}`, field: "text", value: "Me pica mucho." }
+    ], context);
+    const diff = diffDrafts(origin, second.draft);
+    expect(diff.count).toBe(1);
+    expect(diff.records.get(added.id!)!.mark).toBe("added");
   });
 });

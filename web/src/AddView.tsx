@@ -424,6 +424,7 @@ export default function AddView({
               /* No `full` here: this surface is itself a review, and its Composer already owns the
                  height. There is nothing for the sheet to take over. */
               expandable={false}
+              inline
             />}
           </div>
         : <p className="empty">

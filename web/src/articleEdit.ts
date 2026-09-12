@@ -66,6 +66,13 @@ export interface AppliedEdit {
    * Ids minted just now, handed to `saveArticle` so they read as creations rather than as ids
    * naming nothing. An argument, never a field in the document — a document editing a stored entry
    * still may not carry ids its producer minted, and this does not change that.
+   *
+   * **Every added record is minted, not only an attestation.** It used to be only the attestation,
+   * because that is the one an example has to name; everything else was left null for `saveArticle`
+   * to mint on the way out. But a record with no id has no name in the document the *next* turn is
+   * given, so "add an example" followed by "make that example more concrete" asked the model to
+   * address something anonymous — and it did the only thing it could, which was invent an id, which
+   * is refused. Minting here is what makes a conversation able to talk about what it just did.
    */
   minted: ReadonlySet<string>;
 }
@@ -230,20 +237,16 @@ export function applyOps(draft: ArticleDraft, ops: EditOp[], context: EditContex
           const after = op.after ? reference(op.after, "sense") : null;
           const at = after ? next.senses.findIndex((sense) => sense.id === after) : -1;
           if (after && at < 0) refuse(UNKNOWN);
-          // No id: `saveArticle` mints one, exactly as it does for a hand-written block with none.
-          const sense = newSense(op.value, next, context);
+          const sense = newSense(op.value, next, context, minted);
           next.senses.splice(at + 1, 0, sense);
           next.senses.forEach((item, index) => { item.order = index; });
           touched.add(draftKeys.sense(sense, next.senses.indexOf(sense)));
         } else if (op.target === "example") {
           const sense = senseAt(reference(op.in, "sense"));
-          const example = newExample(op.value, next, context, op.fromAttestation ?? null, refs);
+          const example = newExample(op.value, next, context, op.fromAttestation ?? null, refs, minted);
           sense.examples.push(example);
           touched.add(draftKeys.example(example, next.senses.indexOf(sense), sense.examples.length - 1));
         } else if (op.target === "attestation") {
-          // The one record chat mints an id for, and only because the example written in the same
-          // answer has to name it: `origin: "attestation"` must resolve or the save is refused by
-          // `validateGraph` on this side and by the server's validation on the other.
           const id = context.mintId();
           minted.add(id);
           refs.set(op.ref, id);
@@ -354,12 +357,16 @@ function read(raw: Record<string, unknown>, table: Record<string, Coerce>): Reco
   return out;
 }
 
-function newSense(raw: Record<string, unknown>, draft: ArticleDraft, context: EditContext): SenseDraft {
+function newSense(
+  raw: Record<string, unknown>, draft: ArticleDraft, context: EditContext, minted: Set<string>
+): SenseDraft {
   const fields = read(raw, SENSE_FIELDS);
   const definition = required(fields.definition, "A new meaning needs a definition, so nothing was changed.");
   const examples = Array.isArray(raw.examples) ? raw.examples : [];
+  const id = context.mintId();
+  minted.add(id);
   return {
-    id: null,
+    id,
     order: draft.senses.length,
     definition,
     definitionLang: (fields.definitionLang as string | undefined)
@@ -367,14 +374,14 @@ function newSense(raw: Record<string, unknown>, draft: ArticleDraft, context: Ed
     glosses: (fields.glosses as Gloss[] | undefined) ?? [],
     domain: (fields.domain as string | null | undefined) ?? null,
     examples: examples.map((item) =>
-      newExample(item as Record<string, unknown>, draft, context, null, new Map())),
+      newExample(item as Record<string, unknown>, draft, context, null, new Map(), minted)),
     images: []
   };
 }
 
 function newExample(
   raw: Record<string, unknown>, draft: ArticleDraft, context: EditContext,
-  fromAttestation: string | null, refs: Map<string, string>
+  fromAttestation: string | null, refs: Map<string, string>, minted: Set<string>
 ): ExampleDraft {
   const fields = read(raw, EXAMPLE_FIELDS);
   const text = required(fields.text, "A new example needs a sentence, so nothing was changed.");
@@ -396,8 +403,10 @@ function newExample(
   }
 
   const translation = (fields.translation as string | null | undefined) ?? null;
+  const id = context.mintId();
+  minted.add(id);
   const example: ExampleDraft = {
-    id: null,
+    id,
     text,
     textLang: draft.language,
     translation,

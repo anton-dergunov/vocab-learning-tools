@@ -725,7 +725,9 @@ export default function App() {
       subject = {
         kind: "article",
         lexemeId: article.lexeme.id,
-        document: yamlFor(article),
+        // What the proposal would save, when one is live — not `diff.shown`, which carries removed
+        // records back for the reader's sake and would show the model records it just took away.
+        document: proposal ? yamlForDraft(proposal.after) : yamlFor(article),
         focus: askFocus ? `${askFocus.kind}:${askFocus.id}` : null
       };
       // Chosen from the replica before the request leaves, offline and for free — which is most of
@@ -752,7 +754,7 @@ export default function App() {
       neighbours,
       turns
     });
-  }, [article, askFocus, snapshot, external, reference]);
+  }, [article, askFocus, snapshot, external, reference, proposal]);
 
   /** Pressing *Add to my words* on a reference conversation: the existing capture, one field filled. */
   const captureFromChat = useCallback((capture: ChatCapture) => {
@@ -777,16 +779,23 @@ export default function App() {
    */
   const reviewProposal = useCallback((ops: EditOp[], summary: string, modelId: string) => {
     if (!article || !snapshot) return;
-    const before = draftFor(article);
+    /* A second turn builds on what the first one proposed, not on what is being *shown*.
+       `diff.shown` carries removed records back so they can be drawn struck through, so applying
+       to it would quietly resurrect everything the proposal takes away. The comparison stays
+       against the stored document, so the bar counts everything still outstanding and Undo has one
+       thing to put back however many turns it took to get here. */
+    const origin = proposal ? proposal.before : draftFor(article);
+    const base = proposal ? proposal.after : origin;
     try {
-      const applied = applyOps(before, ops, {
+      const applied = applyOps(base, ops, {
         modelId,
         glossLang: article.glossLangs[0] ?? null,
         mintId: newId
       });
       setProposal({
-        before, after: applied.draft, diff: diffDrafts(before, applied.draft),
-        minted: applied.minted, summary
+        before: origin, after: applied.draft, diff: diffDrafts(origin, applied.draft),
+        minted: new Set([...(proposal?.minted ?? []), ...applied.minted]),
+        summary
       });
       /* No scroll to the top: `ReviewBar` brings the *first change* into view instead, which is
          what design §6.2 asked for and what makes an edit to the third sense of a long entry
@@ -795,7 +804,7 @@ export default function App() {
       notify(error instanceof EditRefused ? error.message
         : "That proposal could not be applied, so nothing was changed.");
     }
-  }, [article, snapshot, notify]);
+  }, [article, snapshot, proposal, notify]);
 
   const saveProposal = useCallback(async () => {
     if (!proposal || !openId) return;

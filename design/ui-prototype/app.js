@@ -314,7 +314,7 @@ function exampleBlock(e, at) {
    design, and the application computes the real thing from `diffDrafts`. */
 function reviewMark(kind, index) {
   if (!state.review) return "";
-  if (kind === "example" && index === 0) return " mark mark-add";
+  if (kind === "example" && index === 0) return " mark mark-add mark-current";
   if (kind === "example" && index === 1) return " mark mark-cut";
   if (kind === "example" && index === 2) return " mark mark-change";
   if (kind === "sense" && index === 0) return " mark mark-change";

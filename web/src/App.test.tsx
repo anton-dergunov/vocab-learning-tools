@@ -1252,3 +1252,53 @@ describe("the conversation at its largest", () => {
     expect(document.querySelector(".main.composing")).toBeNull();
   });
 });
+
+describe("a conversation that edits what it just proposed", () => {
+  it("keeps the follow-ups out of the way until the card is answered", async () => {
+    signedIn();
+    acceptWrites();
+    mockChat("Added it.", {
+      summary: "Adds an example.",
+      ops: [{ op: "add", target: "example", in: "sensepicaritch0", value: { text: "Me pica todo." } }]
+    });
+    await openPicar();
+    await ask("add an example");
+
+    // One decision at a time: the card is the thing to answer, and a follow-up beside it is an
+    // invitation to forget the edit.
+    expect(await screen.findByRole("button", { name: "Review" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "One more example" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    /* Review collapses the sheet, because the answer to an editing turn is the article. The
+       follow-ups are waiting when the conversation is reopened — which is the point: they are next
+       steps, and there is no next step until the edit has been looked at. */
+    fireEvent.focus(screen.getByLabelText("Ask about picar"));
+    expect(await screen.findByRole("button", { name: "One more example" })).toBeInTheDocument();
+  });
+
+  it("builds a second turn on the first, and never on the ghosts drawn for the reader", async () => {
+    signedIn();
+    acceptWrites();
+    const chat = mockChat("Removed it.", {
+      summary: "Removes the first example.",
+      ops: [{ op: "remove", target: "example:examplepicar010", reason: "duplicate" }]
+    });
+    await openPicar();
+    await ask("drop the first example");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    await screen.findByText(/1 change/);
+
+    await ask("and tidy the note");
+    await waitFor(() => expect(chat).toHaveBeenCalledTimes(2));
+    /* `diff.shown` puts the removed example back so it can be drawn struck through. Sending that
+       would show the model a record the proposal has already taken away — and applying the next
+       turn to it would quietly resurrect it. */
+    const [, second] = chat.mock.calls[1];
+    const document_ = (second.subject as { document: string }).document;
+    expect(document_).not.toContain("Me pica la nariz");
+    // Its id does survive, as the anchor of the picture that illustrates it — which is a fact about
+    // the picture, not a resurrection of the sentence.
+    expect(document_).toContain("exampleId: examplepicar010");
+  });
+});

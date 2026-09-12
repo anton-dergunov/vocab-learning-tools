@@ -954,6 +954,17 @@ body.tablet .viewport { width: 834px; height: 1000px; }
    application, or wrapped, as in the prototype. */
 .pane.ask-only > *:not(.ask):not(:has(.ask)) { display: none; }
 .ask-full { position: static; flex: 1 1 auto; height: auto; min-height: 0; margin: 0 -26px; }
+/* In the Add view the sheet sits at the end of the preview rather than being pinned to a pane it
+   does not have. Sticky there resolves against the Composer's own scroller, so the sheet floated
+   over the article's notes instead of below them — and the negative margins assumed a padding the
+   composer has none of. */
+.ask-inline {
+  position: static; margin: 26px 0 0; max-height: none; height: auto;
+  border-radius: 10px; border: 1px solid var(--rule);
+}
+.ask-inline .ask-head, .ask-inline .ask-thread, .ask-inline .ask-bar, .ask-inline .ask-chips {
+  padding-left: 16px; padding-right: 16px;
+}
 @media (prefers-reduced-motion: reduce) { .ask { transition: none; } }
 
 .ask-head {
@@ -1052,6 +1063,11 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   padding: 9px 12px; max-height: 30dvh; overflow-y: auto;
 }
 .ask-input:focus { outline: none; border-color: var(--core); }
+/* Android draws a classic scrollbar track inside the rounded box, which reads as a stray grey rule
+   against the right border. The field grows to its content anyway, so the track is only ever
+   visible past the cap — and dragging still scrolls it. */
+.ask-input { scrollbar-width: none; }
+.ask-input::-webkit-scrollbar { display: none; }
 .ask-input:disabled { background: var(--surface-2); color: var(--ink-3); cursor: not-allowed; }
 .ask-send {
   flex: none; display: flex; align-items: center; justify-content: center;
@@ -1105,6 +1121,14 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 .review-bar .spacer { flex: 1 1 auto; }
 
 .mark { position: relative; }
+/* Which change the review bar is pointing at. Stepping scrolls the right block into view, but on a
+   page with three marks that said nothing about *which* one you had landed on. The background goes
+   on saying "this changed"; the bar says "this is the one". Nothing changes size — a mark may not
+   move body text, and that holds for the current one too. */
+.ex.mark:not(.mark-current), .att.mark:not(.mark-current) { border-left-color: var(--rule); }
+.sec.mark:not(.mark-current) > .rail-l::after,
+.notes li.mark:not(.mark-current)::after { opacity: .35; }
+.mark:not(.mark-current) .mark-glyph { opacity: .45; }
 .mark-glyph {
   position: absolute; font-family: var(--mono); font-size: 11px; font-weight: 600; line-height: 1;
   color: var(--core); pointer-events: none;

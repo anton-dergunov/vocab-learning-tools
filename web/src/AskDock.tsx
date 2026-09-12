@@ -75,6 +75,13 @@ export interface AskDockProps {
   onDetent?(detent: Detent): void;
   /** Whether `full` is offered. False on the Add view, whose own composer already owns the height. */
   expandable?: boolean;
+  /**
+   * Sit in the flow rather than pinned to the bottom of a pane.
+   *
+   * The Add view has no `.pane`: its preview scrolls inside a `Composer`, so a sticky bottom edge
+   * resolves against *that* scroller and the sheet floats over the article instead of below it.
+   */
+  inline?: boolean;
 }
 
 const OFFLINE = "Chat needs the server. Your words are all still here.";
@@ -82,7 +89,7 @@ const OFFLINE = "Chat needs the server. Your words are all still here.";
 export default function AskDock({
   headword, emoji = null, turns, onTurns, ask, offline,
   focus = null, onClearFocus, onPropose, onCapture, seeded = null, onSeedUsed,
-  onDetent, expandable = true
+  onDetent, expandable = true, inline = false
 }: AskDockProps) {
   const [detent, setDetent] = useState<Detent>("dock");
   const [draft, setDraft] = useState("");
@@ -173,7 +180,7 @@ export default function AskDock({
   const exchanges = Math.max(1, Math.round(turns.length / 2));
 
   return <section
-    className={`ask ask-${detent} ${offline ? "ask-off" : ""}`}
+    className={`ask ask-${detent} ${inline ? "ask-inline" : ""} ${offline ? "ask-off" : ""}`}
     style={{ "--kb": `${keyboard}px` } as CSSProperties}
     aria-label={`Conversation about ${headword}`}
   >
@@ -239,8 +246,12 @@ export default function AskDock({
       </div>}
 
       {/* Two taps replace two sentences of typing. On a phone that is the difference between a
-          feature used on a train and one used at a desk. */}
-      {followUps.length > 0 && !thinking && <div className="ask-followups">
+          feature used on a train and one used at a desk.
+
+          Held back while a card is waiting: there is one thing to decide at that moment, and
+          "How do I remember it?" beside an un-reviewed edit is an invitation to forget the edit.
+          They come back the moment the card is answered, which is when they read as next steps. */}
+      {followUps.length > 0 && !thinking && !card && <div className="ask-followups">
         {followUps.map((text) => <button key={text} className="ask-followup" onClick={() => void send(text)}>
           {text}
         </button>)}

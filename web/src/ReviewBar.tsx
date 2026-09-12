@@ -9,9 +9,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { ChevronIcon } from "./icons";
 
-/** How tall the bar is, before it has been measured. `.ext-sec` uses the same kind of fallback. */
-const ASSUMED_HEIGHT = 66;
-
+/* The fallback for the bar's height, before it has been measured, is the `66px` in `styles.css`'s
+   `scroll-margin-top` — the same kind of static default `.ext-sec` carries. */
 function elementFor(key: string, scroller: HTMLElement | null): Element | null {
   // A note has no id of its own, so it is addressed by position. Quoted attribute values, so a
   // draft's `draft:sense:0` placeholder needs no escaping.
@@ -59,6 +58,13 @@ export default function ReviewBar({ count, order, saving, scroller, onDiscard, o
     if (!key) return;
     const target = elementFor(key, scroller.current);
     if (!target) return;
+    /* Which mark you are on, set on the element rather than threaded back through `App` and the
+       mark slot: it is a transient pointer owned by this bar, it changes on every press, and the
+       bar already holds the element. Nothing else needs to know. */
+    for (const marked of (scroller.current ?? document).querySelectorAll(".mark-current")) {
+      marked.classList.remove("mark-current");
+    }
+    target.classList.add("mark-current");
     const still = typeof window.matchMedia === "function"
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // One frame, because Safari drops a smooth scroll issued in the same frame as a layout change.
