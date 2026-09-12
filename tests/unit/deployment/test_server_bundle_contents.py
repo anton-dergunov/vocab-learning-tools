@@ -92,6 +92,62 @@ def test_the_capture_prompts_are_packaged_and_named_as_the_service_reads_them():
         assert (ROOT / "prompts" / f"{name}.md").is_file(), f"prompts/{name}.md is missing"
 
 
+def test_no_dockerfile_relies_on_a_bare_chmod_plus_x():
+    """`+x` without a "who" is masked by the umask, and the installer extracts a release under
+    `umask 077` — so the file arrives owner-only, stays owner-only, and the container, which runs as
+    the deploying user against a root-owned copy, cannot open its own entry point. It surfaces as
+    `/bin/sh: 0: cannot open …: Permission denied`, with nothing naming the cause.
+    """
+    for dockerfile in DOCKERFILES:
+        for line in dockerfile.read_text(encoding="utf-8").splitlines():
+            assert not re.search(r"chmod\s+(?:-\w+\s+)*\+x\b", line), (
+                f"{dockerfile}: {line.strip()!r} is umask-dependent; say `a+rx`"
+            )
+
+
+def test_every_required_compose_variable_is_one_the_integration_test_supplies():
+    """`${X:?…}` is checked when the file is *read*, so an absent one fails **every** command in the
+    file — `build` included, and for services that have nothing to do with X.
+
+    Requiring a variable is therefore a promise that every caller sets it, and the Docker
+    integration test is the caller that sets the least: it starts the Anki services and knows
+    nothing about the corpus. Making the corpus's operator token required broke `compose build`
+    there with a message about a token, in a test about Anki.
+
+    A credential that must exist belongs in the service that needs it, refusing to start — which is
+    what the corpus does, because channel mutations are on and its host is not loopback.
+    """
+    compose = (ROOT / "deploy" / "acervo" / "compose.yaml").read_text(encoding="utf-8")
+    required = set(re.findall(r"\$\{([A-Z_]+):\?", compose))
+
+    harness = (ROOT / "tests" / "integration" / "test_anki_sync_docker.py").read_text(encoding="utf-8")
+    supplied = set(re.findall(r"\b(ACERVO_[A-Z_]+)=", harness))
+
+    missing = sorted(required - supplied)
+    assert not missing, (
+        f"{missing} is required by compose but not set by the Docker integration test, so every "
+        "compose command it runs fails. Either supply it there or stop requiring it."
+    )
+
+
+def test_every_fallback_volume_is_declared():
+    """`${X:-some-volume}` names a volume compose must know about, or the whole file is invalid.
+
+    It only bites when the caller leaves the variable unset — the installer always sets them, so
+    this failed nowhere except the Docker integration test, which sets the least of any caller and
+    is the one place a fresh deployment's defaults are actually exercised.
+    """
+    import yaml
+
+    text = (ROOT / "deploy" / "acervo" / "compose.yaml").read_text(encoding="utf-8")
+    # A mount, not a port: the `:` after the closing brace is what tells them apart.
+    used = {name for name in re.findall(r"\$\{[A-Z_]+:-([a-z0-9-]+)\}:", text) if not name.isdigit()}
+    declared = set(yaml.safe_load(text).get("volumes") or {})
+
+    missing = sorted(used - declared)
+    assert not missing, f"{missing} is mounted by name but not declared under `volumes:`"
+
+
 def test_both_images_leave_their_own_files_readable_by_the_user_they_run_as():
     """The installer extracts a release under `umask 077` and `COPY` makes the result root-owned, so
     an image built from a release has owner-only files. Both containers run as the deploying user,

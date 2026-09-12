@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var window: NSWindow!
     private var webView: WKWebView!
     private var interfaceServer: InterfaceServer?
+    private var interfaceFailure: String?
     private let sessionBridge = SessionBridge()
     private var menuBar: MenuBarController!
     private let updates = UpdateService()
@@ -100,16 +101,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
-        // Loopback HTTP rather than the custom scheme, so the page has a real web origin. The
-        // scheme handler is kept as the fallback: it cannot embed anyone else's player, but an app
-        // that opens without clips beats one that does not open. See `InterfaceServer`.
+        // Loopback HTTP rather than the custom scheme, so the page has a real web origin and can
+        // embed somebody else's player. See `InterfaceServer` for why the port never moves.
+        //
+        // The scheme handler stays registered for the tests and for anything still addressing it,
+        // but it is deliberately *not* a fallback: its storage is a different origin, so falling
+        // back would open on an empty replica and call it your vocabulary.
         if let interfaceRoot = WebInterface.bundledInterfaceDirectory() {
             let server = InterfaceServer(root: interfaceRoot)
             do {
                 try server.start()
                 interfaceServer = server
             } catch {
-                NSLog("Acervo: serving the interface over loopback failed (\(error)); falling back to \(WebInterface.scheme)://")
+                if case .message(let said)? = error as? UpdateFailure {
+                    interfaceFailure = said
+                } else {
+                    interfaceFailure = error.localizedDescription
+                }
             }
             configuration.setURLSchemeHandler(WebInterfaceSchemeHandler(root: interfaceRoot), forURLScheme: WebInterface.scheme)
         }
@@ -134,8 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         if let served = interfaceServer?.startURL {
             webView.load(URLRequest(url: served))
-        } else if WebInterface.bundledInterfaceDirectory() != nil {
-            webView.load(URLRequest(url: WebInterface.startURL))
+        } else if let failure = interfaceFailure {
+            showLoadError(failure)
         } else {
             showLoadError("The bundled web interface is missing. Rebuild the application.")
         }

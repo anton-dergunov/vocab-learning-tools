@@ -153,10 +153,30 @@ def test_a_deployment_with_no_token_refuses_to_change_the_catalogue(server, upst
 # ── the allow-list ──────────────────────────────────────────────────────────
 
 
+def test_the_player_can_ask_for_a_translation(server, upstream):
+    """§2.13: the player's target text is the *service's*, fetched when the modal opens. Acervo
+    stores none of it — but it has to be reachable, or the player shows a blank line forever.
+
+    This is the whole surface the packaged client uses for it: request a job, poll it, cancel it.
+    """
+    server.post("/speech/clips/seg_abc/translations", {"target_language": "en"})
+    server.get("/speech/translations/job-1")
+    server.delete("/speech/translations/job-1")
+
+    assert [(sent.method, sent.url.path) for sent in upstream.seen] == [
+        ("POST", "/api/v1/clips/seg_abc/translations"),
+        ("GET", "/api/v1/translations/job-1"),
+        ("DELETE", "/api/v1/translations/job-1"),
+    ]
+    # A translation is not a channel mutation, so it carries no operator token.
+    for sent in upstream.seen:
+        assert "authorization" not in {name.lower() for name in sent.headers}
+
+
 def test_a_retrieval_route_acervo_does_not_list_is_not_an_acervo_route(server, upstream):
     """An allow-list rather than a pass-through, so adding a route there never adds one here.
-    Translation jobs are real routes on that service and deliberately not reachable from here."""
-    for path in ("/speech/suggestions", "/speech/translations/abc", "/speech/health/ready"):
+    Suggestions and translation *batches* are real routes on that service and deliberately out."""
+    for path in ("/speech/suggestions", "/speech/translation-batches/abc", "/speech/health/ready"):
         assert server.get(path).status_code == 404
     assert upstream.seen == []
 

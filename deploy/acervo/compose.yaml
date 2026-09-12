@@ -80,7 +80,12 @@ services:
       # on — and binding a non-loopback host with mutations enabled and no token makes the service
       # refuse to start, which is why the token is not optional here.
       SPEECH_RETRIEVAL_ENABLE_CHANNEL_MUTATIONS: "true"
-      SPEECH_RETRIEVAL_OPERATOR_TOKEN: "${ACERVO_SPEECH_OPERATOR_TOKEN:?Set ACERVO_SPEECH_OPERATOR_TOKEN}"
+      # Not `:?`. A required variable is checked at *interpolation* time, so an absent one failed
+      # every compose command in the file — including `build`, and including invocations that have
+      # nothing to do with this service. The guard that matters is the service's own: channel
+      # mutations are on and the host is not loopback, so it refuses to start without a token rather
+      # than serving an unauthenticated write API. `install.sh` mints one on first deploy.
+      SPEECH_RETRIEVAL_OPERATOR_TOKEN: "${ACERVO_SPEECH_OPERATOR_TOKEN:-}"
       # Acervo's own interface is the only browser client and it reaches this through the server's
       # proxy, so the service needs no CORS origins of its own.
       SPEECH_RETRIEVAL_CORS_ORIGINS: ""
@@ -225,3 +230,7 @@ volumes:
   acervo-speech-cache:
   acervo-speech-index:
   acervo-speech-catalogues:
+  # The fallback for `ACERVO_CREDENTIALS`, which three services mount. Undeclared, it made *every*
+  # compose command fail with "refers to undefined volume" the moment a caller left the variable
+  # unset — which the installer never does and the Docker integration test always does.
+  acervo-credentials:

@@ -297,41 +297,60 @@ final class InterfaceServerTests: XCTestCase {
         XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("<title>Acervo</title>"))
     }
 
-    func testTheRememberedPortSurvivesARestart() throws {
+    func testTheOriginIsTheSameOnEveryLaunch() throws {
         // Storage is keyed by origin and the origin contains the port, so a port that moved between
-        // launches would throw the replica away every time the app opened.
+        // launches would throw the replica away — and a thrown-away replica can only be refilled
+        // from the server, which is precisely what is missing when you are offline.
         let root = try bundled()
         let defaults = try suite(#function)
 
         let first = InterfaceServer(root: root, defaults: defaults)
         try first.start()
-        let chosen = first.port
-        XCTAssertNotEqual(chosen, 0)
-        XCTAssertEqual(defaults.integer(forKey: InterfaceServer.portDefaultsKey), Int(chosen))
+        let origin = first.origin
+        XCTAssertEqual(first.port, InterfaceServer.defaultPort)
         first.stop()
 
         let second = InterfaceServer(root: root, defaults: defaults)
         try second.start()
         defer { second.stop() }
-        XCTAssertEqual(second.port, chosen, "the origin must not move between launches")
+        XCTAssertEqual(second.origin, origin, "the origin must not move between launches")
     }
 
-    func testAPortSomebodyElseHoldsCostsAReplicaRatherThanAFailureToOpen() throws {
+    func testThePortIsOutsideTheRangeTheSystemHandsOut() {
+        // Ephemeral ports are what the system assigns to outbound connections, so a port taken from
+        // there could be held by any program's client socket by the time Acervo next opens.
+        XCTAssertLessThan(InterfaceServer.defaultPort, 49152)
+        XCTAssertGreaterThan(InterfaceServer.defaultPort, 1023, "and not a privileged one")
+    }
+
+    func testAPortSomebodyElseHoldsIsSaidRatherThanWorkedAround() throws {
+        // Moving to another port would open on a different origin, show an empty vocabulary, and
+        // call it yours. Naming the port is something a person can act on.
         let root = try bundled()
         let defaults = try suite(#function)
 
         let holder = InterfaceServer(root: root, defaults: defaults)
         try holder.start()
         defer { holder.stop() }
-        let taken = holder.port
 
-        // A second instance wanting the same remembered port must still open, on another one.
         let second = InterfaceServer(root: root, defaults: defaults)
-        try second.start()
-        defer { second.stop() }
-        XCTAssertNotEqual(second.port, 0)
-        XCTAssertNotEqual(second.port, taken)
-        XCTAssertEqual(defaults.integer(forKey: InterfaceServer.portDefaultsKey), Int(second.port))
+        XCTAssertThrowsError(try second.start()) { error in
+            guard case UpdateFailure.message(let said) = error else {
+                return XCTFail("expected a message naming the port, got \(error)")
+            }
+            XCTAssertTrue(said.contains(String(InterfaceServer.defaultPort)), said)
+            XCTAssertTrue(said.contains("AcervoInterfacePort"), "and how to move it deliberately")
+        }
+        XCTAssertEqual(second.port, 0, "nothing is served, so nothing can be served from elsewhere")
+    }
+
+    func testTheOverrideIsHonoured() throws {
+        let defaults = try suite(#function)
+        defaults.set(28999, forKey: InterfaceServer.portDefaultsKey)
+        let server = InterfaceServer(root: try bundled(), defaults: defaults)
+        try server.start()
+        defer { server.stop() }
+        XCTAssertEqual(server.port, 28999)
     }
 
     func testItServesNothingOutsideTheBundledRoot() throws {
@@ -376,6 +395,7 @@ final class InterfaceServerTests: XCTestCase {
 
         let origin = try await webView.evaluateJavaScript("window.location.origin") as? String
         XCTAssertEqual(origin, "http://127.0.0.1:\(port)")
+        XCTAssertEqual(port, InterfaceServer.defaultPort)
         let secure = try await webView.evaluateJavaScript("window.isSecureContext") as? Bool
         XCTAssertEqual(secure, true, "without this, crypto.getRandomValues is unavailable and no id can be minted")
         let minted = try await webView.evaluateJavaScript(

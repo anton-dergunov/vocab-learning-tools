@@ -8,6 +8,10 @@ ones that carry the operator token, and it is attached here rather than anywhere
 These return the corpus's own body verbatim rather than Acervo's `{"data": …}` envelope — see
 `services/speech.py` for why. It is the one exception in the API and it buys the packaged typed
 client working unchanged.
+
+The allow-list is the *player's* surface, not the whole service: search and a clip for reading, the
+translation job for the modal, and the channel catalogue for Settings. Anything else that service
+grows — batches, suggestions, its own readiness — stays out until something here needs it.
 """
 
 from __future__ import annotations
@@ -71,6 +75,43 @@ def channels(request: Request) -> Response:
     return _answer(
         forward(request.app.state.settings, "GET", "/channels", params=dict(request.query_params))
     )
+
+
+# ── the player's target text, which Acervo stores none of ──────────────────
+
+
+@router.post(f"{PREFIX}/clips/{{segment_id}}/translations")
+async def request_translation(segment_id: str, request: Request) -> Response:
+    """Ask the corpus to translate a clip. A job, because it is two provider calls and it caches.
+
+    Acervo stores nothing this returns (§2.13). The article's own translation line came from the
+    clip-selection call and lives in the graph; this is the richer thing — a validated word
+    alignment the player renders as an interactive relation — and it is the service's, fetched when
+    the modal opens and gone when it closes.
+
+    `POST` and yet no operator token: this is not a channel mutation. It writes only that service's
+    own translation cache, on behalf of a reader Acervo has already authenticated.
+    """
+    owner_id(request)
+    body = await json_body(request)
+    return _answer(
+        forward(
+            request.app.state.settings, "POST", f"/clips/{segment_id}/translations", json_body=body
+        )
+    )
+
+
+@router.get(f"{PREFIX}/translations/{{job_id}}")
+def translation(job_id: str, request: Request) -> Response:
+    owner_id(request)
+    return _answer(forward(request.app.state.settings, "GET", f"/translations/{job_id}"))
+
+
+@router.delete(f"{PREFIX}/translations/{{job_id}}")
+def cancel_translation(job_id: str, request: Request) -> Response:
+    """Closing the dialog while a translation is still running should not leave it running."""
+    owner_id(request)
+    return _answer(forward(request.app.state.settings, "DELETE", f"/translations/{job_id}"))
 
 
 # ── the channel catalogue, which is the corpus's and is edited through here ─

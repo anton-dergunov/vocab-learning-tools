@@ -13,10 +13,21 @@ import Foundation
 /// exactly as they do in a browser — which is where the interface is developed and tested. Nothing
 /// else about the app changes.
 ///
-/// **The port is remembered, because the origin contains it.** Storage in a web view is keyed by
-/// origin, so a port that moved between launches would throw the replica away every time the app
-/// opened. It is chosen once, kept in preferences, and re-chosen only if something else has taken
-/// it — at which point one re-pull is the honest cost, and the repository already handles it.
+/// **The port is fixed, because the origin contains it.** Storage in a web view is keyed by origin,
+/// so a port that moved between launches would throw the replica away every time the app opened —
+/// and a replica thrown away can only be refilled *from the server*, which is exactly the thing
+/// that is not there when you are offline. An app that quietly needed the network to show you
+/// yesterday's words would not be offline-first in any sense that matters.
+///
+/// So it never moves on its own. It is deliberately in the **registered** range rather than the
+/// ephemeral one: the ephemeral range is where the system hands out ports for outbound connections,
+/// so a port remembered from there could be taken by any program's client socket between launches.
+/// Nothing is auto-assigned from 27703.
+///
+/// And if it cannot be had, the app **says so and stops** rather than opening on another origin.
+/// Silently moving would show an empty vocabulary and call it your own; naming the port is
+/// something you can act on, and `AcervoInterfacePort` overrides it if this machine really has a
+/// permanent conflict.
 ///
 /// Written on POSIX sockets rather than `Network.framework`, for one reason worth recording:
 /// `NWListener` refuses to bind under a restricted execution environment, so the tests below could
@@ -26,7 +37,9 @@ import Foundation
 /// Bound to `127.0.0.1` alone and never to `0.0.0.0`, so nothing off this machine can reach it —
 /// the same rule the deployment lives by about not claiming a host's ports.
 final class InterfaceServer: @unchecked Sendable {
-    /// Where the port is remembered between launches. See the note above about origins.
+    /// The one port, in the registered range where nothing is auto-assigned.
+    static let defaultPort: UInt16 = 27703
+    /// An override, for a machine with a permanent conflict. Absent almost always.
     static let portDefaultsKey = "AcervoInterfacePort"
 
     private let root: URL
@@ -44,17 +57,18 @@ final class InterfaceServer: @unchecked Sendable {
     var origin: URL? { port == 0 ? nil : URL(string: "http://127.0.0.1:\(port)") }
     var startURL: URL? { origin?.appendingPathComponent("index.html") }
 
-    /// Bind the remembered port, else any free one. Throws only when neither can be had.
+    /// The port this app serves on, always the same one unless it has been overridden.
+    var wanted: UInt16 {
+        // An absent key reads as 0, and 0 converts to `UInt16` perfectly well — so the absence has
+        // to be tested rather than coalesced, or every launch binds "any free port" instead.
+        let override = defaults.integer(forKey: Self.portDefaultsKey)
+        guard override > 0, let chosen = UInt16(exactly: override) else { return Self.defaultPort }
+        return chosen
+    }
+
+    /// Bind the one port. Throws rather than moving — see the note above about offline.
     func start() throws {
-        let remembered = UInt16(exactly: defaults.integer(forKey: Self.portDefaultsKey)) ?? 0
-        var bound: (fd: Int32, port: UInt16)?
-        if remembered != 0 {
-            // A remembered port somebody else now holds costs one replica re-pull, not a failure to
-            // open — which is why this falls through rather than reporting the collision.
-            bound = try? Self.bind(to: remembered)
-        }
-        let ready = try bound ?? Self.bind(to: 0)
-        defaults.set(Int(ready.port), forKey: Self.portDefaultsKey)
+        let ready = try Self.bind(to: wanted)
 
         lock.lock()
         descriptor = ready.fd
@@ -106,7 +120,11 @@ final class InterfaceServer: @unchecked Sendable {
         }
         guard bound == 0, listen(fd, 32) == 0 else {
             close(fd)
-            throw UpdateFailure.message("The interface server could not bind 127.0.0.1:\(wanted).")
+            throw UpdateFailure.message(
+                "Another program is using port \(wanted) on this computer, which is where Acervo "
+                + "serves its own interface. Quit that program and reopen Acervo, or set "
+                + "AcervoInterfacePort to a free port."
+            )
         }
 
         var actual = sockaddr_in()

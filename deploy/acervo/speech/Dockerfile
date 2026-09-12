@@ -64,7 +64,11 @@ RUN mkdir -p /var/lib/speech/data/raw /var/lib/speech/data/index \
 # rather than behind a test the entrypoint would have to get right.
 COPY deploy/acervo/speech/entrypoint.sh /usr/local/bin/speech-entrypoint
 COPY deploy/acervo/speech/serve.py /app/serve.py
-RUN chmod +x /usr/local/bin/speech-entrypoint && chmod -R a+rX /app
+# `a+rx`, not `+x`: a bare `+x` is masked by the umask, and the installer extracts a release under
+# `umask 077`, so the copied file arrives owner-only and stays that way. The container runs as the
+# deploying user against a root-owned file and cannot open its own entry point — which reads as
+# "Permission denied" from `/bin/sh` with nothing pointing at the cause.
+RUN chmod a+rx /usr/local/bin/speech-entrypoint && chmod -R a+rX /app
 
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/speech-entrypoint"]
