@@ -15,8 +15,31 @@
 import { useCallback, useEffect, useState } from "react";
 import { AcervoApiError, backendSession, type ClipSettings } from "./api";
 import { channels, setChannelEnabled, SpeechRetrievalApiError } from "./clips";
+import { languageOf } from "./languages";
 
 type Channel = Awaited<ReturnType<typeof channels>>[number];
+
+/**
+ * By language, then by the catalogue's own sections.
+ *
+ * The sections are the retrieval repository's curation — "Long-form conversation and contemporary
+ * informal speech" is a judgement somebody made about what a learner gets from those channels, and
+ * it is more use here than any grouping Acervo could invent. Language is the outer level because it
+ * is the one that will actually multiply: the corpus indexes Spanish today and will not forever.
+ */
+function grouped(rows: Channel[]): { language: string; sections: { name: string; rows: Channel[] }[] }[] {
+  const byLanguage = new Map<string, Map<string, Channel[]>>();
+  for (const row of rows) {
+    const sections = byLanguage.get(row.source_language) ?? new Map<string, Channel[]>();
+    const name = row.section_name || "Other";
+    sections.set(name, [...(sections.get(name) ?? []), row]);
+    byLanguage.set(row.source_language, sections);
+  }
+  return [...byLanguage].map(([language, sections]) => ({
+    language,
+    sections: [...sections].map(([name, rows]) => ({ name, rows }))
+  }));
+}
 
 function reason(error: unknown, fallback: string): string {
   if (error instanceof AcervoApiError) return error.message;
@@ -153,25 +176,46 @@ export default function ClipPanel({ onNotify }: { onNotify(message: string): voi
     <h4 className="config-subhead">Channels</h4>
     <p className="config-help">
       The channel list belongs to the corpus service, not to Acervo, and is shared by everything
-      that reads it. Switching one on adds its videos at the next harvest; it does not change words
-      you already have.
+      that reads it. Switching one on changes nothing by itself: its videos arrive the next time a
+      harvest runs, and a harvest is a command somebody runs —
+      <code>run-worker.sh index-clips</code>, from a shell or a scheduled task. Words you already
+      have are never re-searched either way.
     </p>
 
     {channelError && <p className="config-help warn">{channelError}</p>}
     {!channelError && rows === null && corpus.reachable
       && <p className="config-help" role="status">Reading the channel list…</p>}
 
-    {rows && <div className="channel-list">
-      {rows.map((channel) => <label key={`${channel.source_language}/${channel.id}`} className="style-switch">
-        <input
-          type="checkbox" checked={channel.enabled}
-          onChange={(event) => void toggle(channel, event.target.checked)}
-        />
-        <span>
-          <strong>{channel.name}</strong>
-          <span>{[channel.source_language, ...(channel.varieties ?? []), ...(channel.speech_style ?? [])].join(" · ")}</span>
-        </span>
-      </label>)}
-    </div>}
+    {rows && grouped(rows).map(({ language, sections }) => {
+      const all = sections.flatMap((section) => section.rows);
+      const on = all.filter((channel) => channel.enabled).length;
+      return <details key={language} className="channel-group">
+        {/* Shut by default: this is a long list that is read rarely and changed more rarely still,
+            and the count in the summary answers the question most visits are actually asking. */}
+        <summary>
+          <span className="channel-group-name">
+            {`${languageOf(language).flag} ${languageOf(language).name}`}
+          </span>
+          <span className="channel-group-count">{`${on} of ${all.length} on`}</span>
+        </summary>
+        {sections.map((section) => <div key={section.name} className="channel-section">
+          <h5>{section.name}</h5>
+          {section.rows.map((channel) => <div key={channel.id} className="channel-row">
+            <input
+              id={`channel-${language}-${channel.id}`}
+              type="checkbox" checked={channel.enabled}
+              onChange={(event) => void toggle(channel, event.target.checked)}
+            />
+            <div className="channel-text">
+              {/* The name is the link, because the useful thing to do with a channel you are
+                  deciding about is watch some of it. The checkbox is the switch. */}
+              <a href={channel.url} target="_blank" rel="noreferrer noopener">{channel.name}</a>
+              {/* No language here: it is the group heading. */}
+              <span>{[...(channel.varieties ?? []), ...(channel.speech_style ?? [])].join(" · ")}</span>
+            </div>
+          </div>)}
+        </div>)}
+      </details>;
+    })}
   </section>;
 }

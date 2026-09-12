@@ -1252,7 +1252,46 @@ details.fold .fold-body { padding: 4px 0 18px; }
   letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
 }
 .corpus-readout { margin-bottom: 4px; }
-.channel-list { display: grid; gap: 2px; margin-top: 8px; }
+/* Settings ▸ Clips · the channel catalogue.
+   Grouped by language and, inside that, by the corpus service's own curated sections. Shut by
+   default: a long list, read rarely and changed more rarely, whose usual question — how many are on
+   — is answered in the summary without opening it. */
+.channel-group { border-top: 1px solid var(--rule-soft); }
+.channel-group[open] { padding-bottom: 10px; }
+.channel-group > summary {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 10px 2px; cursor: pointer; list-style: none;
+}
+.channel-group > summary::-webkit-details-marker { display: none; }
+/* A disclosure triangle we draw, so it turns with the section rather than sitting where the
+   platform happens to put one. */
+.channel-group > summary::before {
+  content: "›"; display: inline-block; width: 12px; margin-right: 2px;
+  color: var(--ink-3); transform: rotate(0deg); transition: transform .12s ease;
+}
+.channel-group[open] > summary::before { transform: rotate(90deg); }
+.channel-group > summary:focus-visible { outline: 2px solid var(--core); outline-offset: 2px; }
+.channel-group-name { flex: 1; font-weight: 600; font-size: 14px; }
+.channel-group-count { color: var(--ink-3); font-size: 12px; white-space: nowrap; }
+
+.channel-section { padding: 2px 0 8px 14px; }
+.channel-section h5 {
+  margin: 8px 0 4px; font-family: var(--sans); font-size: 11px; font-weight: 600;
+  letter-spacing: .04em; color: var(--ink-3);
+}
+/* A grid rather than a flex label, which is what ran the name and its details together on one line
+   before: `.style-switch` lays its children out in a row, and these want two. */
+.channel-row {
+  display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 8px;
+  padding: 3px 0; font-size: 13.5px;
+}
+.channel-row input { align-self: center; }
+.channel-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.channel-text a { color: var(--ink); font-weight: 600; text-decoration: none; }
+.channel-text a:hover { color: var(--core); text-decoration: underline; }
+/* The channel opens elsewhere, and the mark says so without costing a word. */
+.channel-text a::after { content: " ↗"; color: var(--ink-3); font-weight: 400; font-size: 11px; }
+.channel-text span { color: var(--ink-3); font-size: 11.5px; line-height: 1.35; }
 
 /* ══════════════════════════ pictures ══════════════════════════ */
 /* The dialog is a `.settings` dialog with a different body, so it inherits the bound, the scroll

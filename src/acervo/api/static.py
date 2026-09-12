@@ -20,6 +20,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
+from starlette.routing import Match
 
 from acervo.api.auth import account_for, bearer_token
 from acervo.errors import ApiError
@@ -65,10 +66,36 @@ def install(app: FastAPI) -> None:
         account_for(app.state.jwt_secret, bearer_token(request))
         return FileResponse(within(Path(settings.media_path), relative))
 
-    @app.get("/api/acervo/{unmatched:path}", include_in_schema=False)
-    def unknown_api_route(unmatched: str) -> None:
-        # Registered after every real route, so the interface's own paths never fall through to the
-        # application shell and come back as HTML with a 200.
+    @app.api_route(
+        "/api/acervo/{unmatched:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        include_in_schema=False,
+    )
+    def unknown_api_route(unmatched: str, request: Request) -> None:
+        """Registered after every real route, so the interface's own paths never fall through to the
+        application shell and come back as HTML with a 200.
+
+        It answers every method, not only `GET`, and tells a wrong *method* from a wrong *path*.
+        Before, a `GET` on a `POST`-only route matched this and was told the route did not exist —
+        which is false, and is the kind of answer somebody reasonably acts on. A translation route
+        that was working reported itself missing for exactly that reason.
+        """
+        # `PARTIAL` is Starlette's word for "this path is a route, but not for this method". Asked
+        # of the *router* rather than of flattened routes, so it holds however this FastAPI version
+        # chooses to nest an included router — and the two fallbacks below are skipped, or an
+        # unknown POST would match the GET-only application shell and report itself as a method
+        # problem.
+        matched = any(
+            route.matches(request.scope)[0] is Match.PARTIAL
+            for route in request.app.routes
+            if not str(getattr(route, "path", "")).endswith(("{unmatched:path}", "{relative:path}"))
+        )
+        if matched:
+            raise ApiError(
+                405,
+                "method_not_allowed",
+                f"That Acervo API route exists but does not accept {request.method}.",
+            )
         raise ApiError(404, "not_found", "The requested Acervo API route does not exist.")
 
     @app.get("/{relative:path}", include_in_schema=False)

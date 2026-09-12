@@ -173,6 +173,21 @@ def test_the_player_can_ask_for_a_translation(server, upstream):
         assert "authorization" not in {name.lower() for name in sent.headers}
 
 
+def test_a_wrong_method_says_so_rather_than_claiming_the_route_is_missing(server, upstream):
+    """"That route does not exist" is false for a path that exists under another method, and it is
+    the kind of answer somebody reasonably acts on: opening the translations URL in a browser is a
+    `GET`, and being told the route was missing sent a real debugging session the wrong way.
+    """
+    answer = server.get("/speech/clips/seg_x/translations")      # it is POST-only
+    assert answer.status_code == 405
+    assert answer.json()["error"]["code"] == "method_not_allowed"
+    assert upstream.seen == [], "and nothing is forwarded"
+
+    missing = server.get("/speech/clips/seg_x/nonsense")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "not_found"
+
+
 def test_a_retrieval_route_acervo_does_not_list_is_not_an_acervo_route(server, upstream):
     """An allow-list rather than a pass-through, so adding a route there never adds one here.
     Suggestions and translation *batches* are real routes on that service and deliberately out."""
