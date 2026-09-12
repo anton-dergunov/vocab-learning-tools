@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from acervo.models import ChainExhausted, TextResult, call, chain
+from acervo.models.errors import ProviderUnavailable
 from acervo.models.catalogue import Catalogue
 
 from acervo.article import ArticleView
@@ -209,13 +210,29 @@ class BriefWriter:
         request = build_request(article, self.styles, self.weights, self.boost_variety)
         offered = tuple(style["styleId"] for style in request["styles"])
         prompt = f"{self.template}\n\n{json.dumps(request, ensure_ascii=False, indent=2)}\n"
+        def ask(candidate: chain.Candidate) -> TextResult:
+            answered = call.text(
+                prompt, row=candidate.row, model=candidate.model, schema=BRIEF_SCHEMA
+            )
+            # Judged here, inside the chain's own callback, so a model that cannot hold the shape
+            # is passed over rather than ending the run. Every check in `parse_reply` is about
+            # whether *this* model followed instructions — an invented style, a skipped sense, an
+            # empty brief — which is a fact about the model and exactly what the next row is for.
+            # Parsed twice on the happy path, which is microseconds against a model call.
+            try:
+                parse_reply(answered.parsed, article, offered)
+            except ValueError as unusable:
+                raise ProviderUnavailable(
+                    "unusable", str(unusable),
+                    provider_id=candidate.row.id, model=candidate.model,
+                ) from None
+            return answered
+
         result: TextResult = chain.walk(
             "text",
             [candidate.named for candidate in self.candidates],
             self.catalogue,
-            lambda candidate: call.text(
-                prompt, row=candidate.row, model=candidate.model, schema=BRIEF_SCHEMA
-            ),
+            ask,
             chain.stamped,
         )
         briefs = parse_reply(result.parsed, article, offered)

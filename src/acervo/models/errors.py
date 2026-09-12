@@ -9,6 +9,15 @@ The division that carries the locked fall-through rule is between the two except
 between reasons: `ProviderUnavailable` is retried at the next row, `ProviderRefused` never is. An
 authentication failure or a rejected configuration is a mistake to fix, not a condition to route
 around; falling through on it hides the mistake and spends money elsewhere.
+
+`unusable` and `empty` are the two reasons a *caller* raises rather than `classify`, and it is retryable for the
+same argument the rule rests on. A model that answers with the wrong shape has not revealed a
+mistake in the deployment — it has revealed that this model cannot do this job, which is exactly
+what a chain of alternatives is for. It is also the only failure the owner can do nothing about: a
+key can be rotated and a project can be fixed, but "this model does not follow a schema" is a fact
+about the model. Falling through records the pair in `passed_over` like any other, so nothing is
+hidden; refusing outright meant a weaker head of the chain made every stronger row behind it
+unreachable.
 """
 
 from __future__ import annotations
@@ -23,10 +32,14 @@ Reason = Literal[
     "rate_limited",    # 429
     "unavailable",     # 5xx
     "unreachable",     # a timeout or a connection failure
+    "unusable",        # it answered, and the answer was not the shape the caller asked for
+    "empty",           # it answered with nothing at all
 ]
 
 TERMINAL: frozenset[str] = frozenset({"unconfigured", "authentication", "configuration", "refused"})
-RETRYABLE: frozenset[str] = frozenset({"rate_limited", "unavailable", "unreachable"})
+RETRYABLE: frozenset[str] = frozenset({
+    "rate_limited", "unavailable", "unreachable", "unusable", "empty"
+})
 
 
 class ProviderError(Exception):

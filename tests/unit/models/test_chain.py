@@ -124,8 +124,15 @@ def test_no_terminal_reason_is_ever_routed_around(reason):
     assert len(tried) == 1
 
 
-@pytest.mark.parametrize("reason", ["rate_limited", "unavailable", "unreachable"])
+@pytest.mark.parametrize(
+    "reason", ["rate_limited", "unavailable", "unreachable", "unusable", "empty"]
+)
 def test_every_retryable_reason_moves_to_the_next_pair(reason):
+    """`unusable` and `empty` are raised by the *caller*, from inside `ask`, when a model answered
+    but not in the shape that was asked for. They are retryable for the same argument the rule
+    rests on: that is a fact about the model rather than a mistake in the deployment, and it is
+    precisely what a chain of alternatives exists for. Terminal, a weak row at the head made every
+    stronger row behind it unreachable."""
     ask, tried = refusing(unavailable(reason))
     chain.walk("text", None, SHIPPED, ask, chain.stamped)
     assert tried == DEFAULT_WALK[:2]
@@ -322,3 +329,4 @@ def test_unconfigured_reads_the_stated_chain_when_it_is_written_as_pairs(monkeyp
             chain.stamped,
         )
     assert caught.value.detail == "CLOUDFLARE_API_TOKEN is not set"
+

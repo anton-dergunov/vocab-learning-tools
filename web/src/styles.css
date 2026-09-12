@@ -1569,6 +1569,14 @@ details.fold .fold-body { padding: 4px 0 18px; }
   --sur-player-shadow:        var(--shadow);
 }
 
+/* Where the target text has got to, for the states the player leaves blank. Without it a clip
+   showed the sentence and nothing under it, and "still working" and "this will never arrive" were
+   the same empty space. */
+.clip-translation {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--rule-soft);
+}
+
 /* What a clip is when the corpus cannot be asked: the sentence and a link that opens at the moment.
    Deliberately not an error panel — the record holds a real citation, which is why the video, its
    title, its channel and the start are stored rather than only the segment id. */

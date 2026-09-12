@@ -159,3 +159,56 @@ describe("what the record alone can do", () => {
     expect(storedClipOf({ ...clipExample(), videoRef: null })).toBeNull();
   });
 });
+
+/* The gap this closes: `translationFor` answers `null` for every way of having no target text, and
+   the player renders nothing at all for that — so the line under the sentence was simply absent,
+   and "still working" and "this will never arrive" were the same empty space. */
+describe("where the translation has got to", () => {
+  const playing = () => {
+    const stored = storedClipOf(clipExample())!;
+    clipFor.mockResolvedValue({
+      clip: { segment_id: "seg_7c3d18e5b04a92f6de27", source_language: "es" },
+      stored, unreachable: false
+    });
+    return stored;
+  };
+
+  it("says the corpus could not be reached, and offers a way to try again", async () => {
+    const stored = playing();
+    translationFor.mockResolvedValue(null);
+    render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
+
+    expect(await screen.findByText(/could not be reached/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("says so while it is still asking, rather than showing nothing", async () => {
+    const stored = playing();
+    translationFor.mockReturnValue(new Promise(() => { /* never settles */ }));
+    render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
+
+    expect(await screen.findByText("Translating…")).toBeInTheDocument();
+  });
+
+  it("says nothing of its own once the player has a translation to draw", async () => {
+    const stored = playing();
+    translationFor.mockResolvedValue({
+      job_id: "j1", status: "complete",
+      result: { target_text: "My nose itches.", target_language: "en" }
+    });
+    render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
+
+    await waitFor(() => expect(screen.getByTestId("target").textContent).toBe("My nose itches."));
+    expect(screen.queryByText(/could not be reached/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Translating…")).not.toBeInTheDocument();
+  });
+
+  it("names the missing setting when the vocabulary has no gloss language", async () => {
+    const stored = playing();
+    render(<ClipDialog stored={stored} glossLang={null} headword="picar" onClose={() => undefined} />);
+
+    expect(await screen.findByText(/no translation language set/)).toBeInTheDocument();
+    // Nothing was asked for, because there is nothing to ask in.
+    expect(translationFor).not.toHaveBeenCalled();
+  });
+});

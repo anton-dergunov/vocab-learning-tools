@@ -49,6 +49,15 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
 }) {
   const [view, setView] = useState<ClipView | null>(null);
   const [translation, setTranslation] = useState<TranslationJob | null>(null);
+  /**
+   * Whether the corpus has been asked yet.
+   *
+   * `translationFor` answers `null` for every way of having no target text — no chain, no
+   * credential, the service down — and the player renders nothing at all for that, so the line
+   * under the sentence was simply absent and there was no way to tell "still working" from "this
+   * will never arrive". Acervo says which, below.
+   */
+  const [asking, setAsking] = useState(true);
   /** A retry in flight, so the player says "Translating…" rather than repeating the failure. */
   const [retrying, setRetrying] = useState(false);
   /** Its own controller, because a retry outlives the effect that started it and can poll for two
@@ -71,8 +80,9 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
     if (!view?.clip || !glossLang) return;
     const cancel = new AbortController();
     let live = true;
+    setAsking(true);
     translationFor(view.clip.segment_id, glossLang, cancel.signal)
-      .then((job) => { if (live) setTranslation(job); });
+      .then((job) => { if (live) { setTranslation(job); setAsking(false); } });
     return () => { live = false; cancel.abort(); };
   }, [view?.clip?.segment_id, glossLang]);
 
@@ -91,6 +101,7 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
       if (cancel.signal.aborted) return;
       setTranslation(job);
       setRetrying(false);
+      setAsking(false);
     });
   }, [view?.clip?.segment_id, glossLang]);
 
@@ -130,10 +141,43 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
           />
         </Suspense>}
 
+        {/* The player draws its own line once it has a job to draw one from. Until then — and when
+            the corpus never answers — this is the only thing that says so. A translation that
+            simply appears one day, with nothing in its place meanwhile, reads as broken. */}
+        {view?.clip && <TranslationLine
+          glossLang={glossLang}
+          asking={asking || retrying}
+          job={translation}
+          onRetry={retry}
+        />}
+
         {view && !view.clip && <Stored stored={stored} unreachable={view.unreachable} />}
       </div>
     </section>
   </div>;
+}
+
+/** Where the target text has got to, in one line, for the states the player leaves blank. */
+function TranslationLine({ glossLang, asking, job, onRetry }: {
+  glossLang: string | null;
+  asking: boolean;
+  job: TranslationJob | null;
+  onRetry(): void;
+}) {
+  // It has one and the player is drawing it. Nothing to add.
+  if (job?.status === "complete" && job.result?.target_text) return null;
+  if (!glossLang) {
+    return <p className="hint clip-translation">
+      This vocabulary has no translation language set, so a clip is not translated.
+    </p>;
+  }
+  if (asking) return <p className="hint clip-translation">Translating…</p>;
+  return <p className="hint clip-translation">
+    {job === null
+      ? "The spoken-usage corpus could not be reached, so this clip has no translation yet."
+      : "That translation did not finish."}
+    <button className="link-btn" onClick={onRetry}>Try again</button>
+  </p>;
 }
 
 /**

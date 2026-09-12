@@ -25,6 +25,7 @@ from typing import Any
 
 from acervo.errors import ApiError
 from acervo.models import Answer, ChainExhausted, ProviderError, TextResult, chain, load_catalogue
+from acervo.models.errors import ProviderUnavailable
 from acervo.models import call as provider
 from acervo.models.catalogue import (
     Catalogue,
@@ -75,6 +76,18 @@ REFUSALS: dict[str, tuple[int, str, str]] = {
         "The language model could not be reached, so nothing was created.",
     ),
     "refused": (502, "llm_failed", "The language model refused the request, so nothing was created."),
+    # Every pair answered with nothing at all.
+    "empty": (
+        502,
+        "llm_empty",
+        "The language model returned nothing, so nothing was created.",
+    ),
+    # Every pair in the chain answered, and none of them answered in the shape that was asked for.
+    "unusable": (
+        502,
+        "llm_unusable",
+        "The language model did not return a usable answer, so nothing was created.",
+    ),
 }
 
 
@@ -178,29 +191,35 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str) -> t
     chain: a caller that could assert a chain of its own would be the "an iOS Shortcut must not pick
     a model" non-goal reappearing one layer down.
     """
+    def ask(candidate: chain.Candidate) -> TextResult:
+        result = provider.text(
+            user, row=candidate.row, model=candidate.model, system=system, as_json=True
+        )
+        # Checked *here*, inside the chain's own callback, rather than after `walk` returns. An
+        # answer in the wrong shape used to end the whole chain, so a weak model at the head made
+        # every stronger row behind it unreachable — which is the opposite of what an order is for.
+        if not result.text.strip():
+            raise ProviderUnavailable(
+                "empty", "the model returned nothing",
+                provider_id=candidate.row.id, model=candidate.model,
+            )
+        if result.parsed is None:
+            raise ProviderUnavailable(
+                "unusable", "the model did not answer with JSON",
+                provider_id=candidate.row.id, model=candidate.model,
+            )
+        return result
+
     try:
         result: TextResult = chain.walk(
-            "text",
-            chain_for(settings, owner),
-            load_catalogue(),
-            lambda candidate: provider.text(
-                user, row=candidate.row, model=candidate.model, system=system, as_json=True
-            ),
-            chain.stamped,
+            "text", chain_for(settings, owner), load_catalogue(), ask, chain.stamped
         )
     except ChainExhausted as exhausted:
         raise refusal(exhausted.last) from None
     except ProviderError as error:
         raise refusal(error) from None
 
-    if not result.text.strip():
-        raise ApiError(502, "llm_empty", "The language model returned nothing, so nothing was created.")
-    if result.parsed is None:
-        # A `prompt`-tier row is not sent a response format at all, so an unparseable reply is the
-        # expected failure there rather than a surprise.
-        raise ApiError(
-            502, "llm_unusable", "The language model did not return a usable answer, so nothing was created."
-        )
+    assert result.parsed is not None  # `ask` refuses anything else, so the chain cannot return one
     return result.parsed, result.answer
 
 

@@ -117,11 +117,14 @@ export function ImageDialog({
   const picker = useFilePicker(attach);
 
   return <div className="modal-backdrop" role="presentation"
-    onMouseDown={(event) => { if (event.target === event.currentTarget && !working) onClose(); }}>
+    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="settings image-dialog" role="dialog" aria-modal="true" aria-labelledby="image-dialog-title">
       <header>
         <h2 id="image-dialog-title">Picture for “{headword}”</h2>
-        <button className="close" onClick={onClose} disabled={working} aria-label="Close">×</button>
+        {/* Always closes, even mid-brief. The call is the server's and finishes either way — the
+            picture arrives on the next pull — so holding the dialog open bought nothing and left
+            the only way out a key a phone does not have. */}
+        <button className="close" onClick={onClose} aria-label="Close">×</button>
       </header>
 
       <div className="settings-body">

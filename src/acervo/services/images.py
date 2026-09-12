@@ -177,6 +177,12 @@ def brief_lexeme(settings: Settings, owner: str, device: str, lexeme_id: str) ->
     try:
         briefs, usage = writer.write(view)
     except ChainExhausted as exhausted:
+        # Every pair was asked and none could hold the shape. Said as a picture problem rather than
+        # in the generic words, because that is what the reader was trying to do.
+        if exhausted.last.reason == "unusable":
+            raise ApiError(
+                502, "llm_unusable", "The language model did not describe a usable picture."
+            ) from None
         raise refusal(exhausted.last) from None
     except ProviderError as error:
         raise refusal(error) from None
