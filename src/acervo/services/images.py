@@ -365,6 +365,7 @@ def _draw(candidates: tuple[chain.Candidate, ...], prompt: str, seed: int, desti
         load_catalogue(),
         lambda candidate: renderer.draw(prompt, seed, destination, candidate),
         chain.stamped,
+        caller="picture",
     )
 
 

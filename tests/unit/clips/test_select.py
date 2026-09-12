@@ -199,3 +199,45 @@ def test_a_reply_that_is_not_a_selection_document_is_refused(payload):
     nothing to keep, so this is the one shape that raises."""
     with pytest.raises(ValueError):
         parse_reply(payload, article(), candidates())
+
+
+def test_a_translation_that_names_the_segment_is_refused():
+    """Observed in production, from `gemini-3.5-flash-lite` and from no other model.
+
+    It answers this schema by running two fields into one string — the translation, then a comma,
+    then `segmentId: seg_…` — and leaves `matchedTranslationForm` empty. Two of two rows it wrote
+    were like that; forty-odd rows from every other model were clean. Stored, it reaches the article
+    as a sentence with an internal id in it, and because the clip search is one-shot at save nothing
+    would ever replace it.
+
+    Refused rather than dropped, deliberately, and the difference from the hallucinated-id rule
+    above is the kind of mistake: an invented id is one bad guess among good ones, while a model
+    that merges two fields does it to every entry it writes. That is a fact about the model, so the
+    next pair is what should answer.
+    """
+    offered = candidates()
+    with pytest.raises(ValueError, match="segment id into the translation"):
+        parse_reply(
+            reply([{
+                "senseId": article().senses[0].id,
+                "segmentId": offered[0].segment_id,
+                "translation":
+                    f"I'm going to take something to snack on., segmentId: {offered[0].segment_id}",
+            }]),
+            article(), offered,
+        )
+
+
+def test_an_honest_translation_that_merely_mentions_a_word_is_kept():
+    """The check names the *id*, so ordinary prose cannot trip it."""
+    offered = candidates()
+    found, _ = parse_reply(
+        reply([{
+            "senseId": article().senses[0].id,
+            "segmentId": offered[0].segment_id,
+            "translation": "I'm going to take something to snack on, something to eat.",
+            "matchedTranslationForm": "snack on",
+        }]),
+        article(), offered,
+    )
+    assert found[0].translation == "I'm going to take something to snack on, something to eat."

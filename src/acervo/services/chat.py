@@ -83,7 +83,8 @@ def run_chat(settings: Settings, owner: str, body: dict[str, Any]) -> dict[str, 
     name = "acervo_chat" if subject["kind"] == "article" else "acervo_chat_reference"
     try:
         answer, call = llm_json(
-            settings, owner, prompt_text(settings.prompts_path, name), _user_turn(subject, body)
+            settings, owner, prompt_text(settings.prompts_path, name),
+            _user_turn(subject, body), caller="chat",
         )
     except ApiError as refused:
         # `llm_json`'s own two messages end "so nothing was created", which is true of every other

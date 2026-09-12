@@ -58,7 +58,8 @@ def resolve(
     )
 
     answer, call = llm_json(
-        settings, owner, prompt_text(settings.prompts_path, "acervo_resolve"), user
+        settings, owner, prompt_text(settings.prompts_path, "acervo_resolve"), user,
+        caller="resolve",
     )
     if isinstance(answer, dict) and trimmed(answer.get("error")):
         raise UNREADABLE

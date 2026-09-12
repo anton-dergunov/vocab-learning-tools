@@ -82,7 +82,8 @@ def compose(
     )
 
     answer, call = llm_json(
-        settings, owner, prompt_text(settings.prompts_path, "acervo_compose"), user
+        settings, owner, prompt_text(settings.prompts_path, "acervo_compose"), user,
+        caller="compose",
     )
     if not isinstance(answer, dict):
         raise ApiError(

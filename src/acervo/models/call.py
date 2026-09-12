@@ -32,6 +32,19 @@ from acervo.models.results import Answer, AudioResult, ImageResult, TextResult
 
 TIMEOUT_SECONDS = 120
 
+# For a call that returns a short structured answer while somebody is watching a page.
+#
+# 120 seconds is the right bound for capture, which writes a whole article and legitimately takes a
+# while. The brief writer and the clip selector inherited it and should not have: measured against a
+# real deployment they answer in 0.7 to 6.7 seconds, so a call still silent at forty-five is not
+# slow, it is gone — and waiting out the other seventy-five buys nothing but a page that looks
+# broken. One hung connection cost two minutes of "Writing a brief…" for a brief that, once the
+# chain fell through to the next pair, took 1.97 seconds.
+#
+# Falling through sooner is safe because the chain is what catches it: the next pair is asked
+# immediately, and `cooldown` demotes the one that hung so the next word starts elsewhere.
+SHORT_TIMEOUT_SECONDS = 45
+
 _FENCED = re.compile(r"^```[a-zA-Z]*\s*\n([\s\S]*?)\n?```$")
 
 # Classified by type, in this order, before any status is looked at.

@@ -122,3 +122,22 @@ def test_no_path_means_no_file_and_no_complaint(tmp_path):
     before = list(logger.handlers)
     open_call_log(Settings(ACERVO_CALL_LOG_PATH=""))
     assert list(logger.handlers) == before
+
+
+def test_a_call_somebody_is_waiting_on_gives_up_long_before_capture_would():
+    """The bound that turned one hung connection into two minutes of "Writing a brief…".
+
+    `TIMEOUT_SECONDS` is right for capture, which writes a whole article. The brief writer and the
+    clip selector inherited it and answer in seconds — so on a real deployment a single connection
+    that never opened cost the full 120 s, and the brief behind it in the queue took 1.97 s once the
+    chain fell through. Asserted against the call sites rather than the constant alone, because the
+    constant existing is not the fix.
+    """
+    from acervo.models import call
+    from acervo.clips import select
+    from acervo.images import brief
+
+    assert call.SHORT_TIMEOUT_SECONDS < call.TIMEOUT_SECONDS
+    for module in (brief, select):
+        source = __import__("inspect").getsource(module)
+        assert "timeout=call.SHORT_TIMEOUT_SECONDS" in source, module.__name__

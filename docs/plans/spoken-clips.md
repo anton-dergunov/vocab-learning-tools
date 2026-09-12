@@ -590,6 +590,13 @@ Three further facts, each of which produced the same single grey line in the pla
   still shows the old failure on every clip already attempted. The player's retry is wired to that
   flag, and it is the only way out from inside the interface.
 
+  Clearing that cache wholesale means deleting `data/speech-index/derived/translations.sqlite3`, and
+  **the service must be restarted afterwards**. `TranslationStore.__init__` creates the tables, and
+  it runs once, in the container's lifespan — so deleting the file under a running service leaves it
+  opening a fresh zero-byte database with no tables, and every query fails from then on. The symptom
+  is a corpus that answers but reports itself unavailable, with a `translations.sqlite3` of exactly
+  0 bytes on disk. Stop, delete, start; or delete and `docker restart acervo-speech-retrieval-1`.
+
 `_Stage` also had to run its call off the event loop. `generate` is synchronous, and awaiting it
 inline held the single uvicorn loop for the length of a model call — during which nothing in that
 container answered, its own three-second healthcheck included.

@@ -200,6 +200,17 @@ def parse_reply(payload: Any, article: ArticleView,
         taken.add(sense_id)
         candidate = by_segment[segment_id]
         translation = str(entry.get("translation") or "").strip() or None
+        # **A translation that names the segment is not a translation.** `gemini-3.5-flash-lite`
+        # answers this schema by running two fields into one string — "…something to eat.,
+        # segmentId: seg_4270b0…" — with `matchedTranslationForm` left empty. Stored, that reaches
+        # the article as a sentence with an internal id in it, and the clip search is one-shot, so
+        # nothing would ever replace it. Raised rather than dropped: a model that merges fields does
+        # it for every entry it writes, which is a fact about the model and exactly what the pair
+        # behind it is for.
+        if translation and (segment_id in translation or "segmentId" in translation):
+            raise ValueError(
+                f"The clip selector wrote the segment id into the translation for sense {sense_id}."
+            )
         matched = str(entry.get("matchedTranslationForm") or "").strip() or None
         # The invariant is verbatim, untrimmed and un-normalised. A form that does not hold loses
         # the form rather than being stored as a lie — the rule the capture path already follows.
@@ -252,7 +263,8 @@ class ClipSelector:
 
         def ask(candidate: chain.Candidate) -> TextResult:
             answered = call.text(
-                prompt, row=candidate.row, model=candidate.model, schema=SELECTION_SCHEMA
+                prompt, row=candidate.row, model=candidate.model, schema=SELECTION_SCHEMA,
+                timeout=call.SHORT_TIMEOUT_SECONDS,
             )
             # Judged inside the chain's callback, exactly as `images/brief.py` judges its own, so a
             # model that cannot hold the shape is passed over instead of having its answer accepted.

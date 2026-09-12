@@ -233,7 +233,8 @@ class BriefWriter:
         prompt = f"{self.template}\n\n{json.dumps(request, ensure_ascii=False, indent=2)}\n"
         def ask(candidate: chain.Candidate) -> TextResult:
             answered = call.text(
-                prompt, row=candidate.row, model=candidate.model, schema=BRIEF_SCHEMA
+                prompt, row=candidate.row, model=candidate.model, schema=BRIEF_SCHEMA,
+                timeout=call.SHORT_TIMEOUT_SECONDS,
             )
             # Judged here, inside the chain's own callback, so a model that cannot hold the shape
             # is passed over rather than ending the run. Every check in `parse_reply` is about

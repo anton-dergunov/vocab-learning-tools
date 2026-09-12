@@ -186,7 +186,8 @@ def capture_health(settings: Settings) -> dict[str, Any]:
     return chain_readout(settings, None, "text")
 
 
-def llm_json(settings: Settings, owner: str | None, system: str, user: str) -> tuple[Any, Answer]:
+def llm_json(settings: Settings, owner: str | None, system: str, user: str,
+             caller: str = "text") -> tuple[Any, Answer]:
     """One constrained call: pass text, get JSON and the model that produced it, or a code saying why not.
 
     Returning the `Answer` rather than a model id is not decoration. The locked contract is that the
@@ -198,6 +199,10 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str) -> t
     site rather than a silent fall back to the deployment default. It is an owner id and never a
     chain: a caller that could assert a chain of its own would be the "an iOS Shortcut must not pick
     a model" non-goal reappearing one layer down.
+
+    `caller` names the job in the call journal, and it is worth passing. Three different jobs come
+    through here, and a log that calls all of them "text" cannot answer the first question anybody
+    asks of it — which of them was slow.
     """
     def ask(candidate: chain.Candidate) -> TextResult:
         result = provider.text(
@@ -220,7 +225,8 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str) -> t
 
     try:
         result: TextResult = chain.walk(
-            "text", chain_for(settings, owner), load_catalogue(), ask, chain.stamped
+            "text", chain_for(settings, owner), load_catalogue(), ask, chain.stamped,
+            caller=caller,
         )
     except ChainExhausted as exhausted:
         raise refusal(exhausted.last) from None
