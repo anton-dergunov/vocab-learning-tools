@@ -115,4 +115,23 @@ while IFS="$(printf '\t')" read -r file expected; do
   echo "verified $file"
 done <"$manifest"
 
+# Anything the pin does not name is a previous version, and leaving it is not merely untidy: the
+# speech image does `COPY vendor/speech/*.whl` and then installs the lot, so two wheels of one
+# package fail the build outright — and `package_acervo_server.sh` would have carried both into the
+# release archive first. Only ever the pinned pair is on disk.
+#
+# Not under --check, which promises to verify and change nothing. A stale artifact is not a
+# verification failure either: what the pin names is present and correct, which is the question
+# --check asks.
+if [ "$check_only" = false ]; then
+for stale in "$destination"/*; do
+  [ -e "$stale" ] || continue
+  name=${stale##*/}
+  if ! cut -f1 <"$manifest" | grep -qxF "$name"; then
+    echo "remove   $name"
+    rm -f -- "$stale"
+  fi
+done
+fi
+
 echo "Pinned spoken-usage-retrieval $version is in vendor/speech/"

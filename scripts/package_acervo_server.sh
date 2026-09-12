@@ -77,9 +77,12 @@ fi
 #
 # Only the wheel: the npm tarball is consumed by `npm --prefix web run build` on the machine cutting
 # the release, and what ships from that is the staged interface under deploy/acervo/server/web.
-speech_wheel=$(find "$repo_root/vendor/speech" -maxdepth 1 -name '*.whl' -print -quit 2>/dev/null || true)
-if [ -z "$speech_wheel" ]; then
-  echo "Missing the pinned spoken-usage-retrieval wheel in vendor/speech/." >&2
+# Named by the pin rather than found by a glob. `find … -print -quit` takes whichever wheel it
+# reaches first, so a leftover from a previous version could be packaged instead of the pinned one
+# — and the archive would deploy a service the pin does not describe, with nothing saying so.
+speech_wheel="$repo_root/vendor/speech/$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]["wheel"]["file"])' "$repo_root/deploy/acervo/speech/pin.json")"
+if [ ! -f "$speech_wheel" ]; then
+  echo "Missing the pinned spoken-usage-retrieval wheel: ${speech_wheel##*/}" >&2
   echo "Run scripts/fetch_speech.sh first; the speech service cannot be built without it." >&2
   exit 1
 fi
