@@ -539,22 +539,22 @@ class Reader {
   }
 }
 
-const EXAMPLE_KEYS = [
+export const EXAMPLE_KEYS = [
   "id", "text", "textLang", "translation", "translationLang", "origin", "sourceAttestationId",
   "modelId", "videoRef", "videoTitle", "videoChannel", "videoStart", "videoEnd", "clipRef",
   "imageRef", "audioRef", "note", "matchedForm", "matchedTranslationForm", "approved"
 ];
-const PROMPT_KEYS = [
+export const PROMPT_KEYS = [
   "id", "exampleId", "prompt", "styleId", "seed", "modelId", "promptVersion", "imageRef",
   "imageModelId"
 ];
-const SENSE_KEYS = [
+export const SENSE_KEYS = [
   "id", "order", "definition", "definitionLang", "domain", "glosses", "examples", "imagePrompts"
 ];
-const ATTESTATION_KEYS = [
+export const ATTESTATION_KEYS = [
   "id", "text", "translation", "sourceKind", "sourceTitle", "sourceUrl", "capturedAt"
 ];
-const ARTICLE_KEYS = [
+export const ARTICLE_KEYS = [
   "id", "language", "headword", "lemma", "reading", "ipa", "pos", "gender", "register", "dialect",
   "emoji", "status", "topics", "shortGloss", "notes", "senses", "attestations", "imagePrompts"
 ];

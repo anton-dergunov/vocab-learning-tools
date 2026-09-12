@@ -188,11 +188,25 @@ export interface CaptureResolution {
   consumedText: string | null;
 }
 
-/** An entry this word already has. Merging into it is §06's job; here it is a signpost. */
+/** An entry this word already has. `foldable` beside it is what a repeat capture can add to it. */
 export interface CaptureDuplicate {
   id: string;
   headword: string;
   shortGloss: string | null;
+}
+
+/**
+ * What a repeat capture carried that the stored entry may not have.
+ *
+ * `null` when the capture was just the word again. The sentences are the learner's own, already
+ * separated from anything a dictionary supplied — which is what makes folding them into the entry
+ * they belong to safe.
+ */
+export interface CaptureFoldable {
+  sentences: CaptureSentence[];
+  /** Whether a dictionary entry came with it. The text itself stays on the server. */
+  reference: boolean;
+  note: string | null;
 }
 
 /** A provider that was asked before the one that answered, and why it was passed over. */
@@ -208,6 +222,8 @@ export interface CaptureResult {
   duplicates: CaptureDuplicate[];
   draft: ArticleDraft | null;
   applied: { lexemeId: string } | null;
+  /** Only ever set alongside `duplicates`: what this capture could add to the word already held. */
+  foldable?: CaptureFoldable | null;
   /**
    * Empty on the ordinary path. Non-empty means the chain fell through, which is otherwise
    * invisible: the entry names the model that wrote it, but a provider at the head of the order
@@ -239,6 +255,83 @@ export interface CaptureRequest {
   reference?: string | null;
   /** How closely to follow it. Absent means the `note` says what to do instead. */
   referenceMode?: "faithful" | "expand" | null;
+}
+
+/* ── chat ───────────────────────────────────────────────────────────────
+   Design §06: chat lives inside the article, and its output is a proposed revision of that record.
+   The route writes nothing. A turn returns prose and, only when the turn implies a change, a set of
+   small edit operations — applied to a draft on this device by `articleEdit.ts`, reviewed as an
+   ordinary article, and saved through `repository.saveArticle` like every other write.
+
+   The document is assembled here rather than on the server on purpose: `yaml.ts` is the only place
+   the projection is understood, so a server-side serialiser would be a second implementation of it,
+   drifting from the first the moment a field is added. */
+
+export interface ChatTurn {
+  role: "you" | "acervo";
+  text: string;
+}
+
+export type ChatSubject =
+  | { kind: "article"; lexemeId: string; document: string; focus: string | null }
+  | { kind: "reference"; headword: string; language: string | null };
+
+/** Headword and gloss only. Enough to say "you already have «el traje»", and nothing more. */
+export interface ChatNeighbour {
+  headword: string;
+  shortGloss: string | null;
+}
+
+export interface ChatRequest {
+  subject: ChatSubject;
+  /** External dictionary text on screen. Read-only context for both subject kinds. */
+  reference?: string | null;
+  referenceSources?: string[];
+  neighbours?: ChatNeighbour[];
+  /** The transcript, oldest first, including the question being asked as its final `you` turn. */
+  turns: ChatTurn[];
+}
+
+/**
+ * The wire form of an edit. Deliberately loose here: this is the shape the server checked, and
+ * whether an id exists or a field may be set is `articleEdit.ts`'s question, against the document.
+ */
+export interface ChatEditOp {
+  op: "set" | "addSense" | "addExample" | "addAttestation" | "remove" | "orderSenses";
+  target?: string;
+  field?: string;
+  value?: unknown;
+  after?: string | null;
+  senseId?: string;
+  fromAttestation?: string | null;
+  ref?: string;
+  reason?: string;
+  ids?: string[];
+  sense?: Record<string, unknown>;
+  example?: Record<string, unknown>;
+  attestation?: Record<string, unknown>;
+}
+
+export interface ChatProposal {
+  summary: string;
+  ops: ChatEditOp[];
+}
+
+/** The argument list for the capture the interface already performs from an external article. */
+export interface ChatCapture {
+  headword: string;
+  note: string;
+  referenceMode: "faithful" | "expand" | null;
+}
+
+export interface ChatResult {
+  reply: string;
+  followUps: string[];
+  /** Article subjects only. A dictionary entry has nothing editable on screen. */
+  proposal: ChatProposal | null;
+  /** Reference subjects only. */
+  capture: ChatCapture | null;
+  modelId: string;
 }
 
 /** An artifact this server holds, as its metadata sidecar describes it. */
@@ -434,6 +527,28 @@ export const backendSession = {
    * through the repository, so capture gets no private path into the store. The headless transports
    * are the ones that ask the server to apply.
    */
+  /**
+   * One turn of conversation. Writes nothing — a proposal is applied to a draft on this device and
+   * only a second press, through the repository, ever reaches the store.
+   *
+   * On `CAPTURE_TIMEOUT` rather than the ordinary read timeout: this is one model call, but a slow
+   * one, and the sync timeout would abort a request that is working.
+   */
+  chat(deviceId: string, request: ChatRequest): Promise<ChatResult> {
+    return client.call<ChatResult>("/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        schemaVersion: SCHEMA_VERSION,
+        deviceId,
+        subject: request.subject,
+        reference: request.reference?.trim() || null,
+        referenceSources: request.referenceSources ?? [],
+        neighbours: request.neighbours ?? [],
+        turns: request.turns
+      })
+    }, false, CAPTURE_TIMEOUT);
+  },
+
   captureText(deviceId: string, request: CaptureRequest): Promise<CaptureResult> {
     return client.call<CaptureResult>("/capture", {
       method: "POST",

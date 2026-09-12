@@ -24,3 +24,10 @@ export const GlobeIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth=
 /* A picture in a frame: what is being made, rather than a clock, which would read as "late". */
 export const PictureIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.7} strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="M4 16.5l4.5-4 3.5 3 3-2.5 5 4" /></svg>;
 export const AlertIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.9} strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17.2v.1" /></svg>;
+/* Asking about a word. A speech bubble with a question in it — deliberately not `✳`, which the
+   article already uses for "where you met it", and not a pencil, which is the YAML escape hatch. */
+export const AskIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} strokeLinejoin="round" aria-hidden="true"><path d="M20 14.5A2.5 2.5 0 0 1 17.5 17H12l-4.5 3.5V17H6.5A2.5 2.5 0 0 1 4 14.5v-8A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5z" /><path d="M10.2 8.6a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.7-.8 1.2v.3" /><path d="M12 14.2v.1" /></svg>;
+/** The sheet's grabber: which way it will move, not a decoration. */
+export const ChevronIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2.2} strokeLinejoin="round" aria-hidden="true"><path d="M5 15l7-7 7 7" /></svg>;
+/** Sending a turn. */
+export const SendIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2} strokeLinejoin="round" aria-hidden="true"><path d="M4 12h14" /><path d="M13 6l6 6-6 6" /></svg>;

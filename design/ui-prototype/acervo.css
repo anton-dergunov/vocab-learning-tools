@@ -848,6 +848,12 @@ details.fold .fold-body { padding: 4px 0 18px; }
   z-index: 90; box-shadow: var(--shadow); max-width: 90vw; text-align: center;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast-action {
+  margin-left: 14px; border: none; background: none; cursor: pointer; pointer-events: auto;
+  color: var(--paper); font: inherit; font-weight: 600; text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.toast:has(.toast-action) { pointer-events: auto; }
 
 /* ══════════════════════════ synchronisation ══════════════════════════ */
 /* Offline is an ordinary state here, not a failure — the chip stays quiet until it is not. */
@@ -909,6 +915,197 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   color: var(--core); padding: 8px; cursor: pointer; font-size: 12px;
 }
 
+
+/* ══════════════════════════ the ask dock ══════════════════════════
+   Design §06 §7. One surface at every width: a bar pinned to the bottom of the article pane which
+   grows upward into a sheet. It lives *inside* `.pane`, so the 780 px article measure and the
+   centring are inherited rather than measured, and `.main` — the scroll container — is what the
+   sticky bottom resolves against. `.pane`'s existing 120 px bottom padding is the room it needs.
+
+   `--kb` is the height of whatever covers the bottom of the window, written by `visualViewport.ts`.
+   It is 0 everywhere the layout viewport already shrinks for the keyboard, and the keyboard's
+   height on iOS Safari, which does not. Without it the composer lands under the keyboard on exactly
+   the device this feature is for. */
+
+.ask {
+  position: sticky; bottom: var(--kb, 0px); z-index: 40;
+  margin: 26px -26px calc(-120px + var(--kb, 0px));
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--paper); border-top: 1px solid var(--rule);
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  transition: height .18s ease;
+}
+.ask-dock { height: auto; }
+.ask-half { height: 45dvh; }
+/* The masthead strip inside the sheet stands in for the article's own, so the word being discussed
+   is never off screen even when the article behind is completely covered. */
+.ask-full { height: calc(100dvh - 96px); }
+@media (prefers-reduced-motion: reduce) { .ask { transition: none; } }
+
+.ask-head {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  padding: 6px 26px 6px 18px; border-bottom: 1px solid var(--rule-soft);
+}
+.ask-grab {
+  border: none; background: none; color: var(--ink-3); cursor: pointer;
+  padding: 4px; display: flex; border-radius: 6px;
+}
+.ask-grab svg { width: 17px; height: 17px; }
+.ask-full .ask-grab svg { transform: rotate(180deg); }
+.ask-grab:hover { background: var(--surface-2); color: var(--ink); }
+.ask-subject {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  font-family: var(--serif); font-size: 16px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ask-emoji { font-size: 18px; }
+
+.ask-thread {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: 14px 26px 4px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.ask-empty { color: var(--ink-3); font-size: 14px; margin: 0; line-height: 1.55; }
+/* The thread is a scrolling flex column, so its children shrink by default — which squashed the
+   proposal card's footer into its own border and clipped the button out of an `overflow: hidden`
+   box. Nothing in a transcript should ever be compressed to fit; it scrolls instead. */
+.ask-thread > * { flex: none; }
+
+.ask-turn { display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 10px; }
+.ask-turn p { margin: 0; font-size: 15px; line-height: 1.58; white-space: pre-wrap; }
+.ask-turn.you p { color: var(--ink-2); }
+.ask-turn.acervo p { color: var(--ink); font-family: var(--serif); font-size: 15.5px; }
+.ask-who {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3); display: flex; align-items: flex-start; padding-top: 3px;
+}
+.ask-turn.acervo .ask-who { color: var(--core); }
+.ask-who svg { width: 15px; height: 15px; }
+.ask-thinking p { color: var(--ink-3); font-style: italic; }
+.ask-failed {
+  margin: 0; font-size: 13.5px; color: var(--warn);
+  background: var(--warn-soft); border-radius: 6px; padding: 9px 12px; line-height: 1.5;
+}
+
+/* A proposal arrives as a card in the thread, NOT as an applied change. Pressing Review applies it
+   to a draft, collapses this sheet, and scrolls the article to the first mark — because the answer
+   to an editing turn is the article, not a chat message. */
+.ask-card {
+  border: 1px solid var(--core); border-radius: 8px; background: var(--core-soft);
+  overflow: hidden; margin-left: 44px;
+}
+.ask-card-head {
+  display: flex; align-items: flex-start; gap: 9px; padding: 12px 14px;
+  font-size: 14.5px; line-height: 1.5; color: var(--ink);
+}
+.ask-card-mark { color: var(--core); flex: none; display: flex; }
+.ask-card-mark svg { width: 16px; height: 16px; }
+.ask-card-foot {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; border-top: 1px solid var(--rule-soft); background: var(--surface);
+}
+
+.ask-followups { display: flex; flex-wrap: wrap; gap: 8px; margin-left: 44px; }
+.ask-followup {
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink-2);
+  border-radius: 999px; padding: 7px 13px; font-size: 13px; cursor: pointer;
+  font-family: inherit; text-align: left;
+}
+.ask-followup:hover { border-color: var(--core); color: var(--core); background: var(--core-soft); }
+
+.ask-bar {
+  flex: none; display: flex; align-items: flex-end; gap: 9px;
+  padding: 10px 26px 0;
+}
+.ask-dock .ask-bar { padding-top: 12px; }
+.ask-mark { color: var(--core); flex: none; display: flex; padding-bottom: 7px; }
+.ask-mark svg { width: 18px; height: 18px; }
+.ask-chip {
+  flex: none; display: flex; align-items: center; gap: 5px; margin-bottom: 5px;
+  border: 1px solid var(--core); background: var(--core-soft); color: var(--core);
+  border-radius: 999px; padding: 4px 8px 4px 10px; font-size: 12px; cursor: pointer;
+  font-family: var(--mono); letter-spacing: .02em;
+}
+.ask-chip svg { width: 12px; height: 12px; }
+.ask-input {
+  flex: 1 1 auto; min-width: 0; resize: none;
+  font-family: inherit; font-size: 15px; line-height: 1.5; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 9px 12px; max-height: 30dvh; overflow-y: auto;
+}
+.ask-input:focus { outline: none; border-color: var(--core); }
+.ask-input:disabled { background: var(--surface-2); color: var(--ink-3); cursor: not-allowed; }
+.ask-send {
+  flex: none; display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 9px; cursor: pointer;
+  border: none; background: var(--core); color: var(--on-core);
+}
+.ask-send svg { width: 17px; height: 17px; }
+.ask-send:disabled { background: var(--surface-2); color: var(--ink-3); cursor: not-allowed; }
+.ask-resume { flex: none; padding-bottom: 9px; font-size: 12.5px; }
+.ask-off .ask-mark { color: var(--ink-3); }
+
+/* ── the review bar, and what a proposal looks like in the article ──────
+   Notion's approach in Acervo's marks: the document is the diff. No side-by-side, no unified diff,
+   no +++/---. A removed block is drawn where it was, struck through — nothing vanishes without
+   being seen going. Existing tokens only: `--core` for added and changed, `--warn` for removed.
+   No red or green enters a palette that has neither. */
+
+.review-bar {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: -30px -26px 18px; padding: 12px 26px;
+  background: var(--core-soft); border-bottom: 1px solid var(--core);
+}
+.review-bar .label { color: var(--core); }
+.review-mark { color: var(--core); font-size: 14px; }
+
+.mark { position: relative; }
+.mark::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 2px;
+}
+.mark-add::before, .mark-change::before { background: var(--core); }
+.mark-cut::before { background: var(--warn); }
+.mark-glyph {
+  font-family: var(--mono); font-size: 11px; font-weight: 600; margin-right: 7px;
+  color: var(--core);
+}
+.mark-cut .mark-glyph { color: var(--warn); }
+
+.ex.mark { padding-left: 16px; border-left-color: transparent; }
+.ex.mark-add, .ex.mark-change { background: var(--core-soft); border-radius: 0 6px 6px 0; }
+.ex.mark-cut { background: var(--warn-soft); border-radius: 0 6px 6px 0; }
+.ex.mark-cut .t, .ex.mark-cut .tr { text-decoration: line-through; color: var(--ink-3); }
+.att.mark { border-color: var(--core); }
+.att.mark-cut { border-color: var(--warn); }
+.att.mark-cut .t, .att.mark-cut .tr { text-decoration: line-through; color: var(--ink-3); }
+.sec.mark { padding-left: 14px; }
+.sec.mark-cut .sense-def { text-decoration: line-through; color: var(--ink-3); }
+.notes li.mark { padding-left: 30px; }
+.notes li.mark::after {
+  content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px;
+  background: var(--core);
+}
+.notes li.mark-cut::after { background: var(--warn); }
+.notes li.mark-cut { text-decoration: line-through; color: var(--ink-3); }
+.headword.mark, .reading.mark, .ipa.mark, .gram.mark, .chips.mark {
+  background: var(--core-soft); border-radius: 4px; box-shadow: 0 0 0 4px var(--core-soft);
+}
+
+/* The anchor beside a sense or an example: tapping it bounds the next turn to that block, which
+   removes the need to type "the second example". Worth more on a phone than on a laptop. */
+.ask-anchor {
+  border: 1px solid var(--rule-soft); background: var(--paper); color: var(--ink-3);
+  border-radius: 7px; padding: 3px; cursor: pointer; display: flex;
+  opacity: 0; transition: opacity .12s;
+}
+.ask-anchor svg { width: 14px; height: 14px; }
+.sec:hover .ask-anchor, .ask-anchor:focus-visible, .ask-anchor.on { opacity: 1; }
+@media (pointer: coarse) { .ask-anchor { opacity: 1; } }
+.ask-anchor:hover, .ask-anchor.on { border-color: var(--core); color: var(--core); background: var(--core-soft); }
+.sense-head { display: flex; align-items: flex-start; gap: 10px; }
+.sense-head .sense-def { flex: 1 1 auto; min-width: 0; }
+
 /* ══════════════════════════ narrow layout ══════════════════════════ */
 @media (max-width: 720px) { #harness { display: none; } }
 
@@ -938,6 +1135,14 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   .tab.on { border-color: transparent; }
   .pane { padding: 20px 16px 110px; }
   .composer { padding: 0 16px; }
+  /* The dock bleeds to the pane's edges at both widths, so its negative margins must follow
+     `.pane`'s padding when that changes. */
+  .ask { margin: 20px -16px calc(-110px + var(--kb, 0px)); }
+  .ask-head { padding: 6px 16px 6px 10px; }
+  .ask-thread { padding: 12px 16px 4px; }
+  .ask-bar { padding: 10px 16px 0; }
+  .ask-card, .ask-followups { margin-left: 0; }
+  .review-bar { margin: -20px -16px 14px; padding: 10px 16px; }
   /* Three segments, a title and a close button do not fit a phone at full size. */
   .composer-head { gap: 8px; }
   .composer-head h2 { font-size: 18px; }

@@ -1,0 +1,548 @@
+/* ── applying a proposal, and showing what it did ────────────────────────
+   Design §06. A turn of conversation returns prose and, when it implies a change, a small set of
+   operations addressed by record id. This module applies them to a draft and compares the two
+   drafts; nothing else in the interface knows the operation language exists.
+
+   Pure, like `selectors.ts` and `yaml.ts` beside it: no storage, no network, no DOM, no clock. The
+   one thing it cannot compute — a new record id — is handed in, so the module stays testable and
+   the minting stays where the rest of the minting is.
+
+   **The change marks come from `diffDrafts`, not from the operations.** That is deliberate and it
+   is what makes the wire format replaceable: if a future model is better at returning a whole
+   article than a list of edits, this file's first half goes and the second half, the review surface
+   and the save path are all untouched. It also means a hand-edit in the YAML tab could be marked by
+   the same machinery if that ever proves useful.
+
+   Operations are a wire format for one request. They are applied to an `ArticleDraft` and then they
+   cease to exist: there is no second article format, and the one writer is still
+   `repository.saveArticle(parseArticle(text))`. */
+
+import {
+  GENDERS, LEXEME_STATUSES, PARTS_OF_SPEECH, REGISTERS, SOURCE_KINDS,
+  type Gender, type Gloss, type LexemeStatus, type PartOfSpeech, type Register, type SourceKind
+} from "./domain";
+import { draftKeys } from "./selectors";
+import type { ArticleDraft, AttestationDraft, ExampleDraft, SenseDraft } from "./yaml";
+
+/* ── the wire format ────────────────────────────────────────────────── */
+
+export type Target = "lexeme" | `sense:${string}` | `example:${string}` | `attestation:${string}`;
+
+export type EditOp =
+  | { op: "set"; target: string; field: string; value: unknown }
+  | { op: "addSense"; after?: string | null; sense: Record<string, unknown> }
+  | { op: "addExample"; senseId: string; fromAttestation?: string | null; example: Record<string, unknown> }
+  | { op: "addAttestation"; ref: string; attestation: Record<string, unknown> }
+  | { op: "remove"; target: string; reason?: string }
+  | { op: "orderSenses"; ids: string[] };
+
+/** At most twelve. A cap the model cannot argue with is worth more than a paragraph it can. */
+export const OP_LIMIT = 12;
+
+export interface EditContext {
+  /** The model that answered, for `modelId` on anything it wrote. */
+  modelId: string;
+  /** `article.glossLangs[0]`, for an example that gains a translation it did not have. */
+  glossLang: string | null;
+  /** `ids.newId` at the call site. Injected so this module stays pure. */
+  mintId(): string;
+}
+
+export interface AppliedEdit {
+  draft: ArticleDraft;
+  /**
+   * Ids minted just now, handed to `saveArticle` so they read as creations rather than as ids
+   * naming nothing. An argument, never a field in the document — a document editing a stored entry
+   * still may not carry ids its producer minted, and this does not change that.
+   */
+  minted: ReadonlySet<string>;
+}
+
+/** A refusal the reader sees, in one plain sentence. */
+export class EditRefused extends Error {}
+
+const refuse = (message: string): never => {
+  throw new EditRefused(message);
+};
+
+/** A draft record seen as the loose bag `setField` and `changedFields` work over. */
+type Fields = Record<string, unknown>;
+const fieldsOf = (record: object): Fields => record as unknown as Fields;
+
+/** A field a new record cannot do without. Returns it, so the caller keeps a narrowed `string`. */
+function required(value: unknown, message: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new EditRefused(message);
+  return value.trim();
+}
+
+const REWRITE = "That was a rewrite rather than an edit, so nothing was changed.";
+const UNKNOWN = "The model referred to a part of the entry that is not there, so nothing was changed.";
+
+/* ── what may be set ────────────────────────────────────────────────────
+   Declared explicitly rather than derived from `yaml.ts`'s key arrays, because those are *document*
+   vocabularies and include `id`, `language` and `origin` — none of which chat may touch. A test
+   asserts each table below is a strict subset of the matching array, so one vocabulary stays one
+   place a new field is noticed. */
+
+type Coerce =
+  | "text" | "textOrNull" | "strings" | "glosses"
+  | { choice: readonly string[] }
+  | { choiceOrNull: readonly string[] };
+
+const LEXEME_FIELDS: Record<string, Coerce> = {
+  headword: "text", lemma: "text", reading: "textOrNull", ipa: "textOrNull",
+  pos: { choice: PARTS_OF_SPEECH }, gender: { choiceOrNull: GENDERS },
+  register: { choiceOrNull: REGISTERS }, dialect: "textOrNull", emoji: "textOrNull",
+  shortGloss: "textOrNull", notes: "strings", topics: "strings",
+  status: { choice: LEXEME_STATUSES }
+};
+const SENSE_FIELDS: Record<string, Coerce> = {
+  definition: "text", definitionLang: "text", domain: "textOrNull", glosses: "glosses"
+};
+const EXAMPLE_FIELDS: Record<string, Coerce> = {
+  text: "text", translation: "textOrNull", note: "textOrNull",
+  matchedForm: "textOrNull", matchedTranslationForm: "textOrNull"
+};
+const ATTESTATION_FIELDS: Record<string, Coerce> = {
+  text: "text", translation: "textOrNull", sourceTitle: "textOrNull",
+  sourceUrl: "textOrNull", sourceKind: { choice: SOURCE_KINDS }
+};
+
+export const SETTABLE = {
+  lexeme: LEXEME_FIELDS, sense: SENSE_FIELDS, example: EXAMPLE_FIELDS, attestation: ATTESTATION_FIELDS
+};
+
+function coerce(field: string, rule: Coerce, value: unknown): unknown {
+  const wrong = () => refuse(`\`${field}\` was given a value of the wrong kind, so nothing was changed.`);
+  if (rule === "text") {
+    if (typeof value !== "string" || !value.trim()) return wrong();
+    return value.trim();
+  }
+  if (rule === "textOrNull") {
+    if (value === null || value === undefined) return null;
+    if (typeof value !== "string") return wrong();
+    return value.trim() || null;
+  }
+  if (rule === "strings") {
+    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return wrong();
+    return (value as string[]).map((item) => item.trim()).filter(Boolean);
+  }
+  if (rule === "glosses") {
+    if (!Array.isArray(value)) return wrong();
+    const groups: Gloss[] = [];
+    for (const item of value) {
+      if (!item || typeof item !== "object") return wrong();
+      const { lang, terms } = item as { lang?: unknown; terms?: unknown };
+      if (typeof lang !== "string" || !lang.trim()) return wrong();
+      if (!Array.isArray(terms) || terms.some((term) => typeof term !== "string")) return wrong();
+      const kept = (terms as string[]).map((term) => term.trim()).filter(Boolean);
+      if (!kept.length) return wrong();
+      groups.push({ lang: lang.trim(), terms: kept });
+    }
+    if (!groups.length) return wrong();
+    return groups;
+  }
+  if ("choice" in rule) {
+    if (typeof value !== "string" || !rule.choice.includes(value)) return wrong();
+    return value;
+  }
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string" || !rule.choiceOrNull.includes(value)) return wrong();
+  return value;
+}
+
+/* ── applying ───────────────────────────────────────────────────────── */
+
+const RECORD_ID = /^[a-z0-9]{15}$/;
+
+function splitTarget(target: string): { kind: string; id: string } {
+  if (target === "lexeme") return { kind: "lexeme", id: "" };
+  const at = target.indexOf(":");
+  if (at < 0) return refuse(UNKNOWN);
+  return { kind: target.slice(0, at), id: target.slice(at + 1) };
+}
+
+/**
+ * Apply a proposal to a draft. All-or-nothing: the work happens on a clone and is returned only if
+ * every operation applied, so no partial edit is reachable even in principle.
+ */
+export function applyOps(draft: ArticleDraft, ops: EditOp[], context: EditContext): AppliedEdit {
+  if (!ops.length) refuse("That proposal changes nothing, so nothing was changed.");
+  if (ops.length > OP_LIMIT) refuse(REWRITE);
+
+  const next: ArticleDraft = structuredClone(draft);
+  const minted = new Set<string>();
+  /** `ref` -> the id minted for it, so an example written in the same answer can name it. */
+  const refs = new Map<string, string>();
+  const touched = new Set<string>();
+
+  const senseAt = (id: string) => {
+    const found = next.senses.find((sense) => sense.id === id);
+    return found ?? refuse(UNKNOWN);
+  };
+
+  for (const op of ops) {
+    switch (op.op) {
+      case "set": {
+        const { kind, id } = splitTarget(op.target);
+        if (kind === "lexeme") {
+          setField(fieldsOf(next), LEXEME_FIELDS, op.field, op.value, "lexeme");
+          touched.add(draftKeys.lexeme(next));
+        } else if (kind === "sense") {
+          setField(fieldsOf(senseAt(id)), SENSE_FIELDS, op.field, op.value, "sense");
+          touched.add(id);
+        } else if (kind === "example") {
+          const example = next.senses.flatMap((sense) => sense.examples).find((item) => item.id === id)
+            ?? refuse(UNKNOWN);
+          setField(fieldsOf(example), EXAMPLE_FIELDS, op.field, op.value, "example");
+          realign(example, context);
+          touched.add(id);
+        } else if (kind === "attestation") {
+          const attestation = next.attestations.find((item) => item.id === id) ?? refuse(UNKNOWN);
+          setField(fieldsOf(attestation), ATTESTATION_FIELDS, op.field, op.value, "attestation");
+          touched.add(id);
+        } else refuse(UNKNOWN);
+        break;
+      }
+
+      case "addSense": {
+        const after = op.after ? splitTarget(op.after).id || op.after : null;
+        const at = after ? next.senses.findIndex((sense) => sense.id === after) : -1;
+        if (after && at < 0) refuse(UNKNOWN);
+        // No id: `saveArticle` mints one, exactly as it does for a hand-written block with none.
+        const sense = newSense(op.sense, next, context);
+        next.senses.splice(at + 1, 0, sense);
+        next.senses.forEach((item, index) => { item.order = index; });
+        touched.add(draftKeys.sense(sense, next.senses.indexOf(sense)));
+        break;
+      }
+
+      case "addExample": {
+        const sense = senseAt(op.senseId);
+        const example = newExample(op.example, next, context, op.fromAttestation ?? null, refs);
+        sense.examples.push(example);
+        touched.add(draftKeys.example(example, next.senses.indexOf(sense), sense.examples.length - 1));
+        break;
+      }
+
+      case "addAttestation": {
+        // The one record chat mints an id for, and only because the example written in the same
+        // answer has to name it: `origin: "attestation"` must resolve or the save is refused by
+        // `validateGraph` on this side and by the server's validation on the other.
+        const id = context.mintId();
+        minted.add(id);
+        refs.set(op.ref, id);
+        next.attestations.push(newAttestation(op.attestation, id));
+        touched.add(id);
+        break;
+      }
+
+      case "remove": {
+        const { kind, id } = splitTarget(op.target);
+        if (kind === "sense") {
+          if (next.senses.length <= 1) {
+            refuse("That would leave the entry with no meanings, so nothing was changed.");
+          }
+          const at = next.senses.findIndex((sense) => sense.id === id);
+          if (at < 0) refuse(UNKNOWN);
+          for (const example of next.senses[at].examples) if (example.id) touched.add(example.id);
+          next.senses.splice(at, 1);
+          next.senses.forEach((item, index) => { item.order = index; });
+        } else if (kind === "example") {
+          const sense = next.senses.find((item) => item.examples.some((example) => example.id === id))
+            ?? refuse(UNKNOWN);
+          sense.examples = sense.examples.filter((example) => example.id !== id);
+        } else if (kind === "attestation") {
+          const named = next.senses
+            .flatMap((sense) => sense.examples)
+            .some((example) => example.sourceAttestationId === id);
+          if (named) {
+            refuse("That sentence is where an example came from, so nothing was changed.");
+          }
+          const before = next.attestations.length;
+          next.attestations = next.attestations.filter((item) => item.id !== id);
+          if (next.attestations.length === before) refuse(UNKNOWN);
+        } else refuse(UNKNOWN);
+        touched.add(id);
+        break;
+      }
+
+      case "orderSenses": {
+        const ids = op.ids.map((id) => splitTarget(id.includes(":") ? id : `sense:${id}`).id);
+        const held = next.senses.map((sense) => sense.id);
+        if (ids.length !== held.length || held.some((id) => !id || !ids.includes(id))) {
+          refuse("That reordering does not list the entry's meanings, so nothing was changed.");
+        }
+        next.senses = ids.map((id) => senseAt(id));
+        next.senses.forEach((item, index) => { item.order = index; });
+        for (const id of ids) touched.add(id);
+        break;
+      }
+
+      default:
+        refuse("The model asked for a change Acervo does not know how to make, so nothing was changed.");
+    }
+  }
+
+  /* The half rule. As §5.3 states it unconditionally it misfires on small entries — a one-sense
+     entry has two records, so "fix the definition and add an example" is already over half, and
+     that is an ordinary edit rather than a rewrite. Below three touched records the twelve-op cap
+     is the only limit, which is enough. */
+  const total = 1 + draft.senses.length
+    + draft.senses.reduce((count, sense) => count + sense.examples.length, 0)
+    + draft.attestations.length;
+  if (touched.size > 2 && touched.size * 2 > total) refuse(REWRITE);
+
+  return { draft: next, minted };
+}
+
+function setField(
+  record: Record<string, unknown>, table: Record<string, Coerce>, field: string, value: unknown,
+  what: string
+): void {
+  const rule = table[field];
+  if (!rule) {
+    refuse(`\`${field}\` is not something chat can change on a ${what}, so nothing was changed.`);
+  }
+  record[field] = coerce(field, rule, value);
+}
+
+/**
+ * The two agreements `validateGraph` enforces, kept after a `set` rather than before it.
+ *
+ * A `translation` and its `translationLang` must be present together, and a `matchedForm` must
+ * occur verbatim in the text it marks. A marker that does not occur is **dropped and the rest of
+ * the edit stands** — the rule `services/capture/draft.py` already applies, and the one deliberate
+ * exception to all-or-nothing: a model that retypes an inflected form instead of copying it should
+ * cost the emphasis, not the whole answer.
+ */
+function realign(example: ExampleDraft, context: EditContext): void {
+  if (example.translation === null) example.translationLang = null;
+  else if (!example.translationLang) example.translationLang = context.glossLang ?? "en";
+  if (example.matchedForm && !example.text.includes(example.matchedForm)) example.matchedForm = null;
+  if (example.matchedTranslationForm
+    && !(example.translation ?? "").includes(example.matchedTranslationForm)) {
+    example.matchedTranslationForm = null;
+  }
+}
+
+function read(raw: Record<string, unknown>, table: Record<string, Coerce>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(raw)) {
+    // A field chat may not set is ignored on a *new* record rather than refused: the model
+    // volunteering `origin: "llm"` on an example it wrote is right about the fact and wrong about
+    // whose job it is, and refusing the answer over that would help nobody.
+    if (table[field]) out[field] = coerce(field, table[field], value);
+  }
+  return out;
+}
+
+function newSense(raw: Record<string, unknown>, draft: ArticleDraft, context: EditContext): SenseDraft {
+  const fields = read(raw, SENSE_FIELDS);
+  const definition = required(fields.definition, "A new meaning needs a definition, so nothing was changed.");
+  const examples = Array.isArray(raw.examples) ? raw.examples : [];
+  return {
+    id: null,
+    order: draft.senses.length,
+    definition,
+    definitionLang: (fields.definitionLang as string | undefined)
+      ?? draft.senses[0]?.definitionLang ?? draft.language,
+    glosses: (fields.glosses as Gloss[] | undefined) ?? [],
+    domain: (fields.domain as string | null | undefined) ?? null,
+    examples: examples.map((item) =>
+      newExample(item as Record<string, unknown>, draft, context, null, new Map())),
+    images: []
+  };
+}
+
+function newExample(
+  raw: Record<string, unknown>, draft: ArticleDraft, context: EditContext,
+  fromAttestation: string | null, refs: Map<string, string>
+): ExampleDraft {
+  const fields = read(raw, EXAMPLE_FIELDS);
+  const text = required(fields.text, "A new example needs a sentence, so nothing was changed.");
+
+  /* Provenance is derived here, never read from the model. A sentence the owner supplied is an
+     attestation and the example names it; anything else the model wrote is generated and records
+     the model that wrote it. There is no field meaning "a person wrote this", and chat does not
+     get one. */
+  let sourceAttestationId: string | null = null;
+  if (fromAttestation) {
+    const resolved = refs.get(fromAttestation)
+      // Also accept an id already in the document, which is how a new example is folded onto a
+      // sentence the entry already holds.
+      ?? (RECORD_ID.test(fromAttestation)
+        && draft.attestations.some((item) => item.id === fromAttestation)
+        ? fromAttestation : null);
+    if (!resolved) refuse("The model quoted a sentence it did not supply, so nothing was changed.");
+    sourceAttestationId = resolved;
+  }
+
+  const translation = (fields.translation as string | null | undefined) ?? null;
+  const example: ExampleDraft = {
+    id: null,
+    text,
+    textLang: draft.language,
+    translation,
+    translationLang: translation ? context.glossLang ?? "en" : null,
+    origin: sourceAttestationId ? "attestation" : "llm",
+    sourceAttestationId,
+    modelId: sourceAttestationId ? null : context.modelId,
+    videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
+    clipRef: null, imageRef: null, audioRef: null,
+    note: (fields.note as string | null | undefined) ?? null,
+    matchedForm: (fields.matchedForm as string | null | undefined) ?? null,
+    matchedTranslationForm: (fields.matchedTranslationForm as string | null | undefined) ?? null,
+    /* Reviewing a proposal *is* the approve gesture: you read the example in the rendered article
+       and pressed Save changes. Nothing lands wearing a chip that says you have not looked at it. */
+    approved: true
+  };
+  realign(example, context);
+  return example;
+}
+
+function newAttestation(raw: Record<string, unknown>, id: string): AttestationDraft {
+  const fields = read(raw, ATTESTATION_FIELDS);
+  const text = required(fields.text, "A new sentence needs some text, so nothing was changed.");
+  return {
+    id,
+    text,
+    translation: (fields.translation as string | null | undefined) ?? null,
+    sourceUrl: (fields.sourceUrl as string | null | undefined) ?? null,
+    sourceTitle: (fields.sourceTitle as string | null | undefined) ?? null,
+    sourceKind: ((fields.sourceKind as SourceKind | undefined) ?? "unknown"),
+    /* A document may not assert a clock, and this module has none. `saveArticle` stamps what it
+       must; `capturedAt` is the one field a draft carries that has to say something, so it says
+       the epoch and the save replaces it. */
+    capturedAt: new Date(0).toISOString().replace(/\.\d+Z$/, ".000Z")
+  };
+}
+
+/* ── the diff ───────────────────────────────────────────────────────── */
+
+export type Mark = "added" | "changed" | "removed";
+
+export interface DraftDiff {
+  /** Record key -> what happened. Keys are exactly `articleFromDraft(graph, shown)`'s record ids. */
+  marks: ReadonlyMap<string, Mark>;
+  /** Which of the lexeme head's fields moved, so the masthead marks a line rather than all of it. */
+  lexemeFields: ReadonlySet<string>;
+  /** Notes have no ids; keyed by text, which is what `LexemeArticle` keys the `<li>` on. */
+  notes: ReadonlyMap<string, Mark>;
+  /**
+   * RENDER ONLY: `after`, plus every removed record put back where it was.
+   *
+   * A removed record is not in `after`, so `articleFromDraft` would never emit it and "drawn where
+   * it was, struck through" would need a second rendering path. Put back, a ghost is an ordinary
+   * draft record that draws for free and needs only a class. **Never saved, never serialised** —
+   * `App` holds `after` separately for that, and saving this would resurrect what was removed.
+   */
+  shown: ArticleDraft;
+  /** What the review bar counts. */
+  count: number;
+}
+
+const changedFields = (
+  before: Record<string, unknown>, after: Record<string, unknown>, table: Record<string, Coerce>
+): string[] =>
+  Object.keys(table).filter((field) =>
+    JSON.stringify(before[field] ?? null) !== JSON.stringify(after[field] ?? null));
+
+/**
+ * What a proposal did, by record id — computed by comparing two drafts, never by reading the
+ * operations. That is what keeps the wire format replaceable, and it is the whole reason the
+ * operations are allowed to be a detail of one request.
+ */
+export function diffDrafts(before: ArticleDraft, after: ArticleDraft): DraftDiff {
+  const marks = new Map<string, Mark>();
+  const notes = new Map<string, Mark>();
+  /* `notes` is deliberately not among these. The notes section marks its lines one by one, so
+     letting the head claim the change as well would mark nothing extra on screen and would count
+     one edit twice in "3 changes proposed". */
+  const lexemeFields = new Set<string>(
+    changedFields(fieldsOf(before), fieldsOf(after), LEXEME_FIELDS).filter((field) => field !== "notes")
+  );
+
+  const shown: ArticleDraft = structuredClone(after);
+  const lexemeKey = draftKeys.lexeme(shown);
+  if (lexemeFields.size) marks.set(lexemeKey, "changed");
+
+  for (const note of after.notes) if (!before.notes.includes(note)) notes.set(note, "added");
+  for (const note of before.notes) {
+    if (!after.notes.includes(note)) {
+      notes.set(note, "removed");
+      // A removed note is drawn where it was, like every other removed record.
+      shown.notes.splice(Math.min(before.notes.indexOf(note), shown.notes.length), 0, note);
+    }
+  }
+
+  /* Senses. A sense held in `before` and missing from `after` is put back at its old index, and its
+     examples come with it — the reader has to see what a proposal takes away. */
+  const keptSenses = new Set(after.senses.map((sense) => sense.id).filter(Boolean) as string[]);
+  before.senses.forEach((sense, index) => {
+    if (sense.id && !keptSenses.has(sense.id)) {
+      shown.senses.splice(Math.min(index, shown.senses.length), 0, structuredClone(sense));
+    }
+  });
+
+  const beforeSenses = new Map(before.senses.filter((sense) => sense.id).map((sense) => [sense.id!, sense]));
+  const beforeExamples = new Map(
+    before.senses.flatMap((sense) => sense.examples).filter((example) => example.id)
+      .map((example) => [example.id!, example])
+  );
+  const afterSenses = new Set(after.senses.map((sense) => sense.id).filter(Boolean) as string[]);
+  const afterExamples = new Set(
+    after.senses.flatMap((sense) => sense.examples).map((example) => example.id).filter(Boolean) as string[]
+  );
+
+  shown.senses.forEach((sense, senseIndex) => {
+    const key = draftKeys.sense(sense, senseIndex);
+    const was = sense.id ? beforeSenses.get(sense.id) : undefined;
+    if (!sense.id) marks.set(key, "added");
+    else if (!afterSenses.has(sense.id)) marks.set(key, "removed");
+    else if (!was) marks.set(key, "added");
+    else if (changedFields(fieldsOf(was), fieldsOf(sense), SENSE_FIELDS).length) marks.set(key, "changed");
+
+    // A removed sense's examples are removed with it, whatever they say on their own.
+    const senseGone = Boolean(sense.id) && !afterSenses.has(sense.id!);
+    const removedHere = was
+      ? was.examples.filter((example) => example.id && !afterExamples.has(example.id))
+      : [];
+    for (const example of removedHere) {
+      const at = was!.examples.indexOf(example);
+      if (!sense.examples.some((item) => item.id === example.id)) {
+        sense.examples.splice(Math.min(at, sense.examples.length), 0, structuredClone(example));
+      }
+    }
+    sense.examples.forEach((example, index) => {
+      const exampleKey = draftKeys.example(example, senseIndex, index);
+      const previous = example.id ? beforeExamples.get(example.id) : undefined;
+      if (senseGone) marks.set(exampleKey, "removed");
+      else if (!example.id || !previous) marks.set(exampleKey, "added");
+      else if (!afterExamples.has(example.id)) marks.set(exampleKey, "removed");
+      else if (changedFields(fieldsOf(previous), fieldsOf(example), EXAMPLE_FIELDS).length) marks.set(exampleKey, "changed");
+    });
+  });
+
+  /* Attestations, the same way. */
+  const afterAttestations = new Set(
+    after.attestations.map((item) => item.id).filter(Boolean) as string[]
+  );
+  before.attestations.forEach((attestation, index) => {
+    if (attestation.id && !afterAttestations.has(attestation.id)) {
+      shown.attestations.splice(Math.min(index, shown.attestations.length), 0, structuredClone(attestation));
+    }
+  });
+  const beforeAttestations = new Map(
+    before.attestations.filter((item) => item.id).map((item) => [item.id!, item])
+  );
+  shown.attestations.forEach((attestation, index) => {
+    const key = draftKeys.attestation(attestation, index);
+    const was = attestation.id ? beforeAttestations.get(attestation.id) : undefined;
+    if (!attestation.id || !was) marks.set(key, "added");
+    else if (!afterAttestations.has(attestation.id)) marks.set(key, "removed");
+    else if (changedFields(fieldsOf(was), fieldsOf(attestation), ATTESTATION_FIELDS).length) marks.set(key, "changed");
+  });
+
+  return { marks, lexemeFields, notes, shown, count: marks.size + notes.size };
+}

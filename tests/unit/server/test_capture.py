@@ -695,3 +695,40 @@ def test_a_provider_that_refused_both_calls_is_reported_once(seeded, cloudflare_
     # cost the report: what was passed over on the way stays reported either way.
     body = seeded.capture().json()["data"]
     assert len(body["passedOver"]) <= 1
+
+
+# ── the fold-in: what a repeat capture carried that the stored entry may not have ───
+
+
+def test_a_repeat_capture_offers_what_it_carried(seeded):
+    """§05: a repeat capture is an addition, not an entry — and this branch already knows what it
+    would add, because resolve has run. No second model call is spent finding out."""
+    seeded.model.resolution = {**RESOLUTION, "headword": "picar", "lemma": "picar"}
+    answered = seeded.capture(text="cuidado que esa salsa pica un monton").json()["data"]
+    assert answered["duplicates"]
+    assert answered["draft"] is None
+    assert answered["foldable"]["sentences"] == RESOLUTION["sentences"]
+    assert answered["foldable"]["reference"] is False
+    # One model call, not two: composing an article for a word already held is what this avoids.
+    assert len(seeded.model.calls) == 1
+
+
+def test_a_repeat_capture_of_just_the_word_offers_nothing(seeded):
+    seeded.model.resolution = {**RESOLUTION, "headword": "picar", "lemma": "picar", "sentences": []}
+    answered = seeded.capture(text="picar").json()["data"]
+    assert answered["duplicates"]
+    assert answered["foldable"] is None
+
+
+def test_a_repeat_capture_counts_a_dictionary_entry_as_something_to_fold(seeded):
+    seeded.model.resolution = {**RESOLUTION, "headword": "picar", "lemma": "picar", "sentences": []}
+    answered = seeded.capture(text="picar", reference="picar — to itch", referenceMode="expand")
+    folded = answered.json()["data"]["foldable"]
+    assert folded["reference"] is True
+    # The dictionary's text is never offered as a sentence: an attestation is somewhere the learner
+    # met the word, and a dictionary's own examples are not that.
+    assert folded["sentences"] == []
+
+
+def test_a_new_word_has_nothing_to_fold_in(seeded):
+    assert seeded.capture().json()["data"]["foldable"] is None

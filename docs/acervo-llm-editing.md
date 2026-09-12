@@ -1,14 +1,16 @@
 # Article chat and LLM editing
 
-**Status:** designed, not built. This is the working design for design `§06`, which fixed the
+**Status:** built, and this is its design. Everything below describes what ships, except where a
+**SUPERSEDED** note says otherwise — four of those, all because the codebase moved after this was
+written and before it was built. This is the working design for design `§06`, which fixed the
 stance — *"chat lives inside the article, and its output is a proposed revision of that record"* —
 and then declared itself out of scope. Everything `§06` decided still holds. What follows is the
 part it did not settle: how the model returns an edit, how the edit is shown, where the
 conversation sits on a phone, and which four places in the interface open one.
 
-It also closes a loose end `§05` left open. The capture route's duplicate branch says, in a comment
-in `acervo.js`, that merging a repeat capture into the entry it belongs to *"is §06's job, and it
-needs the article conversation to do it well."* This design is that job.
+It also closes a loose end `§05` left open. The capture route's duplicate branch used to say, in a
+comment, that merging a repeat capture into the entry it belongs to *"needs the article conversation
+to do it well."* This design is that job, and `§8.3` is now built.
 
 Two deliberate revisions to `§06` are marked **§06 REVISED** where they occur.
 
@@ -112,9 +114,14 @@ learner's store*, *search the external dictionary*, *fetch the sibling sense*.
 
 Against it, specifically here:
 
-- **The hook cannot host a loop cheaply.** `llmJson` in `acervo.js` is one synchronous
-  `$http.send` in the PocketBase JS runtime. A loop is *n* sequential round trips inside a request
-  the client is holding open, with no streaming, against a 120-second ceiling.
+- **SUPERSEDED — the runtime argument is void; the conclusion is not.** The PocketBase JS hooks are
+  gone, replaced by one Python service, and `api/routes/capture.py` already runs *two* sequential
+  120-second model calls inside `run_in_threadpool`. A loop would cost nothing structurally. Three
+  reasons hold in its place: `acervo/models/` stands alone and has no tool-call shape, so `text()`,
+  `chain.walk`, `chain.stamped` and `cooldown` would all need a second path; requiring tool support
+  would make every `prompt`-tier row in `models/catalogue.json` unusable for chat, against a chain
+  design whose whole point is that the owner picks; and the retrieval a tool would perform is the
+  next point, which was always the real argument.
 - **The retrieval a tool would perform is already local.** The replica is complete and on the
   device. The client can select the twenty neighbouring entries worth sending before the request is
   made, for free and offline. A tool call would fetch, slowly and over the network, something the
@@ -455,8 +462,9 @@ where the document is hardest to see is exactly where hiding it hurts most.
 > **An ask dock pinned to the bottom of the article pane, which grows upward into a sheet. One
 > component, one set of states, at every width. No side pane, ever.**
 >
-> **Because** the article column is bounded at `--measure: 68ch` and a tablet in portrait — the
-> primary reading device here — is about 834 px wide. A docked side pane would cut the article to
+> **Because** the article column is 780 px (`.pane`; `--measure` is declared in the stylesheet and
+> unused, so CSS written against it would do nothing) and a tablet in portrait — the primary reading
+> device here — is about 834 px wide. A docked side pane would cut the article to
 > roughly 400 px to make room for a conversation that is usually two turns long. The dock costs the
 > article nothing horizontally at any width, and on a phone it *is* the mobile design rather than a
 > degraded version of a desktop one.
@@ -604,7 +612,9 @@ lands under the keyboard on exactly the device this feature is for.
 
 `AGENTS.md` binds `web/src/styles.css` to `design/ui-prototype/`: they change together, never one
 alone. The dock, the three detents, the proposal card, the diff marks and the review bar all land in
-`acervo.css` and in the prototype's static article page in the same change. The one legitimate
+`acervo.css` and in the prototype in the same change. **SUPERSEDED in one detail:** there is no
+"static article page" — the prototype is a shell plus `app.js`, whose `renderArticle` paints the
+article, so `renderAsk` lands there beside it. The one legitimate
 divergence stays where it is — the prototype has no bundler, so its editor pane remains a picture.
 
 One new mark is needed in `icons.tsx` for the dock and the anchor affordance. `✳` is already the
@@ -737,10 +747,18 @@ export interface ChatResult {
 - Errors reuse the existing codes exactly: `capture_unavailable` when no model is configured,
   `llm_unreachable`, `llm_failed`, `llm_empty`, `llm_unusable`. Every message ends in *"so nothing
   was changed"*, matching the capture route's *"so nothing was created"*.
-- Rate: a modest per-owner floor (30 turns/hour) in the same spirit as the dictionary rate floor.
-- Model: a new `ACERVO_CHAT_MODEL`, falling back to `ACERVO_LLM_MODEL`. The default
-  `gemini-3.1-flash-lite` is right for a one-shot compose and probably wrong for a conversation that
-  proposes edits; this makes that a deployment choice rather than a code change.
+- Model: **SUPERSEDED** — neither `ACERVO_CHAT_MODEL` nor `ACERVO_LLM_MODEL` exists, and adding one
+  would cut against the design: model choice is `models/catalogue.json` plus the owner's chain, and
+  `deploy/acervo/install.sh` validates every environment name against the catalogue. Chat is a text
+  call and answers on the owner's **text** chain — `chain_for(settings, owner, "text")`, resolved per
+  request, so Settings ▸ Models takes effect on the next turn with nothing restarted. If chat later
+  proves to want a different model, the shape is a fourth `kind` beside text/image/audio, and that
+  should be justified by a measurement rather than assumed.
+- Rate: **SUPERSEDED** — there is no rate-limiting machinery anywhere in the server, and building it
+  means a store, which only `repository/` may own. Shipped without one: the route is authenticated
+  and owner-scoped, one model call per turn, and a provider's own limit already surfaces as
+  `llm_rate_limited` with `models/cooldown.py` resting the row. If a floor is wanted it belongs
+  beside `model_selection` as an unreplicated table, not in the route.
 
 ### Prompts
 
@@ -782,7 +800,20 @@ Chat is a **consumer of the core**, exactly as `§06` and `§01` place it. Concr
 
 ## §11 · Build order
 
-Each stage is useful on its own and ships on its own.
+All five stages are built. Two things only a live run against a real model could have told us, both
+now closed:
+
+- **`fromAttestation` arrives in two shapes.** A real model puts it inside `example` about half the
+  time. Missing it is *silent*: the applier derives `origin: "llm"` for a sentence the learner
+  actually met, and nothing downstream ever notices the entry has lied about where it came from.
+  `services/chat.py` lifts it from either place, and the prompt says which one is right and why it
+  matters.
+- **A question was answered with a proposal.** "What is the difference between X and Y?" came back
+  with an edit to the notes — over-eager, and exactly what `§5.3` exists to prevent. The prompt now
+  says in as many words that a question gets prose and a `followUp`, and that proposing needs an
+  actual request. `tests/integration/test_chat_live.py` pins it.
+
+Each stage was useful on its own and shipped on its own.
 
 1. **Explain only.** The route, both prompts' first halves, the dock, the sheet with its three
    detents, the keyboard work in `§7.3`, `followUps`, the focus chip. Returns prose and nothing
@@ -832,9 +863,14 @@ Manual, on the devices this is for:
 - **Which neighbours to send.** Topic-mates is the obvious rule and probably enough. Same-lemma and
   headword-similar entries are cheap to add off the replica; whether they help is a question for
   after stage 1.
-- **Whether the reply should stream.** It cannot today — `llmJson` is one synchronous `$http.send`
-  in the hook runtime. A three-second wait for two sentences may well be fine. Measure before
-  building anything.
+- **Whether the reply should stream.** **SUPERSEDED** — it *can* now; FastAPI streams. It still does
+  not, and the reasons moved: the answer is one JSON object whose most valuable field is last, so
+  streaming it needs a streaming JSON parser to show anything; it would fork
+  `provider.text(…, as_json=True)`'s complete-`TextResult` contract, and `chain.walk` cannot decide
+  a 429 fall-through until enough has arrived to know it is not an error; and it would be the first
+  route outside `api/errors.py`'s `{"data": …}` envelope, so the first client path that does not get
+  `AcervoApiError` handling for free. A three-second wait under a quiet "thinking" line may well be
+  fine. Measure before building anything.
 - **Whether `followUps` should be model-written or fixed presets.** Model-written costs nothing and
   is more relevant; fixed presets are predictable and always sensible. Start with model-written and
   fall back if they turn out bland.

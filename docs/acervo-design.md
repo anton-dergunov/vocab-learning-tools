@@ -761,9 +761,24 @@ records. It does not get its own storage, its own article format, or a private h
 the transcript is a convenience, and losing it costs nothing, which is precisely the test §01 sets
 for whether something belongs in the core. It does not.
 
-**Out of scope for this iteration**, along with capture itself. It is recorded here because it is the
-reason the write route is shaped the way §04 shapes it: an interactive, confirmed, revision-checked
-batch against one article.
+**Built.** The working design is [`acervo-llm-editing.md`](acervo-llm-editing.md), which settled the
+four things this section left open: how the model returns an edit, how the edit is shown, where the
+conversation sits on a phone, and which places in the interface open one. Two decisions above were
+revised there, and both are marked **§06 REVISED** in that document:
+
+- **The document is assembled on the device, not the server.** "The PWA sends the lexeme id and the
+  server attaches the record" cannot hold: `web/src/yaml.ts` is the only place the projection is
+  understood, and a server-side serialiser would be a second implementation of it, drifting from the
+  first the moment a field is added. The device sends the document it already has. Nothing is lost —
+  the server still holds the credentials, still owns the prompt, and still writes nothing.
+- **A repeat capture can now be folded in.** §05's duplicate branch used to stop and say so, because
+  merging needed the article conversation. It has one now, and it needs no extra model call: resolve
+  has already run, so the learner's own sentences are in hand, separated from anything a dictionary
+  supplied. The capture response carries what could be added, and the interface opens the stored
+  article and asks one ordinary question.
+
+The rest of this section stands. It is also why the write route is shaped the way §04 shapes it: an
+interactive, confirmed, revision-checked batch against one article.
 
 ---
 

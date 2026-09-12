@@ -14,7 +14,7 @@ import {
 import { glossLanguagesFor, languageOf, presentationOf, type LanguagePresentation } from "./languages";
 // Type-only, so it is erased at build time and the cycle with `yaml.ts` — which imports `Article`
 // from here — never exists at runtime.
-import type { ArticleDraft } from "./yaml";
+import type { ArticleDraft, AttestationDraft, ExampleDraft, SenseDraft } from "./yaml";
 
 export type SortKey = "recent" | "alpha" | "hard";
 /** A topic record id, or one of the two synthetic collections the rail offers. */
@@ -375,6 +375,23 @@ const UNSAVED: SyncFields & OwnedFields = {
 /** A React key for a record the document did not name, stable across re-parses of the same text. */
 const placeholder = (path: string) => `draft:${path}`;
 
+/**
+ * What `articleFromDraft` will call each record, before it builds anything.
+ *
+ * Exported because a proposal's change marks are keyed by record id and consumed by a component
+ * rendering this function's output, so the two have to agree exactly. Having `articleEdit.ts`
+ * compute the same strings independently would be an agreement that holds until someone renumbers
+ * a placeholder; calling the same four functions is an agreement that cannot come apart.
+ */
+export const draftKeys = {
+  lexeme: (draft: ArticleDraft) => draft.id ?? placeholder("lexeme"),
+  sense: (sense: SenseDraft, index: number) => sense.id ?? placeholder(`sense:${index}`),
+  example: (example: ExampleDraft, senseIndex: number, index: number) =>
+    example.id ?? placeholder(`example:${senseIndex}:${index}`),
+  attestation: (attestation: AttestationDraft, index: number) =>
+    attestation.id ?? placeholder(`attestation:${index}`)
+};
+
 function topicsFromNames(graph: VocabularyGraph, names: string[]): Topic[] {
   const stored = live(graph.topics);
   return names.map((name) => {
@@ -386,7 +403,7 @@ function topicsFromNames(graph: VocabularyGraph, names: string[]): Topic[] {
 }
 
 export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): Article {
-  const lexemeId = draft.id ?? placeholder("lexeme");
+  const lexemeId = draftKeys.lexeme(draft);
   const topics = topicsFromNames(graph, draft.topics);
   const lexeme: Lexeme = {
     ...UNSAVED,
@@ -435,7 +452,7 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
     // Document order throughout, not `byAge`: the placeholder timestamps are all equal, and the
     // order you wrote is the order you are reviewing.
     senses: draft.senses.map((senseDraft, senseIndex) => {
-      const senseId = senseDraft.id ?? placeholder(`sense:${senseIndex}`);
+      const senseId = draftKeys.sense(senseDraft, senseIndex);
       const sense: Sense = {
         ...UNSAVED,
         id: senseId,
@@ -450,7 +467,7 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
         sense,
         examples: senseDraft.examples.map((example, index): Example => ({
           ...UNSAVED,
-          id: example.id ?? placeholder(`example:${senseIndex}:${index}`),
+          id: draftKeys.example(example, senseIndex, index),
           senseId,
           text: example.text,
           textLang: example.textLang,
@@ -477,7 +494,7 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
     }),
     attestations: draft.attestations.map((attestation, index): Attestation => ({
       ...UNSAVED,
-      id: attestation.id ?? placeholder(`attestation:${index}`),
+      id: draftKeys.attestation(attestation, index),
       lexemeId,
       text: attestation.text,
       translation: attestation.translation,

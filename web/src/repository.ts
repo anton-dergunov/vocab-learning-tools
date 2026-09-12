@@ -51,7 +51,7 @@ export interface AcervoRepository {
   attachRemote(remote: RemoteGraph | null): void;
   applyRemote(changes: Partial<VocabularyGraph>, cursor: number, datasetId: string): Promise<number>;
   writeGraph(changes: Partial<VocabularyGraph>): Promise<void>;
-  saveArticle(draft: ArticleDraft): Promise<string>;
+  saveArticle(draft: ArticleDraft, minted?: ReadonlySet<string>): Promise<string>;
   saveVocabulary(input: VocabularyInput, id?: string): Promise<Vocabulary>;
   saveTopic(input: TopicInput, id?: string): Promise<Topic>;
   saveLexeme(input: LexemeInput, id?: string): Promise<Lexeme>;
@@ -286,7 +286,18 @@ export class LocalAcervoRepository implements AcervoRepository {
    *
    * One batch, one round trip, all or nothing: half an applied article is worse than none.
    */
-  async saveArticle(draft: ArticleDraft): Promise<string> {
+  /**
+   * `minted` names ids this save is *creating* rather than naming, and is empty for every caller
+   * but one.
+   *
+   * A document editing a stored entry may not carry ids its producer minted — that rule is what
+   * `claim` below enforces, and it stays exactly as strong. But a chat proposal that adds an
+   * example drawn from a sentence you just supplied needs both records in one save, and the example
+   * has to name the attestation: `origin: "attestation"` must resolve or `validateGraph` refuses it
+   * here and the server refuses it again. So the exception is an **argument**, not a field in the
+   * document: nothing in the text says "I minted this", and a hand-typed document cannot claim it.
+   */
+  async saveArticle(draft: ArticleDraft, minted: ReadonlySet<string> = new Set()): Promise<string> {
     if (!this.ready) throw new Error("Load the Acervo repository before writing.");
     const changed: Partial<VocabularyGraph> = {};
     const change = <T extends Entity>(store: EntityKind, value: T) => {
@@ -352,7 +363,7 @@ export class LocalAcervoRepository implements AcervoRepository {
     const claim = <T extends Entity>(records: T[], id: string | null, owner: (record: T) => boolean): T | undefined => {
       const existing = find(records, id);
       if (!existing) {
-        if (id && !minting) throw new Error(`This document names a record that is not in your vocabulary (${id}), so it was not saved.`);
+        if (id && !minting && !minted.has(id)) throw new Error(`This document names a record that is not in your vocabulary (${id}), so it was not saved.`);
         return undefined;
       }
       if (!owner(existing)) {

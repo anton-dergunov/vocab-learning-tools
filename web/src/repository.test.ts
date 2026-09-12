@@ -389,6 +389,45 @@ describe("saving an article edited as YAML", () => {
     await expect(repository.saveArticle(article)).rejects.toThrow("not in your vocabulary");
   });
 
+  it("creates a record whose id the caller minted, when the caller says it minted it", async () => {
+    /* The one exception, and it is an argument rather than anything in the document: a chat
+       proposal that adds an example drawn from a sentence you just supplied needs both records in
+       one save, and the example has to name the attestation for `origin: "attestation"` to
+       validate. Nothing in the text claims this — a hand-typed document cannot ask for it. */
+    const { repository, draft } = await seeded();
+    const article = draft();
+    article.attestations.push({
+      id: "attest000000077", text: "Se desmayó en el metro.", translation: "He fainted on the metro.",
+      sourceUrl: null, sourceTitle: "Radio", sourceKind: "video",
+      capturedAt: "2026-08-28T12:00:00.000Z"
+    });
+    article.senses[0].examples.push({
+      id: null, text: "Se desmayó en el metro.", textLang: "es",
+      translation: "He fainted on the metro.", translationLang: "en",
+      origin: "attestation", sourceAttestationId: "attest000000077", modelId: null,
+      videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
+      clipRef: null, imageRef: null, audioRef: null, note: null,
+      matchedForm: null, matchedTranslationForm: null, approved: true
+    });
+    await repository.saveArticle(article, new Set(["attest000000077"]));
+    const stored = articleFor(repository.snapshot(), article.id!)!;
+    expect(stored.attestations.some((one) => one.id === "attest000000077")).toBe(true);
+    expect(stored.senses[0].examples.at(-1)!.sourceAttestationId).toBe("attest000000077");
+  });
+
+  it("refuses the same document when nothing says the id was minted", async () => {
+    // The rule stays exactly as strong for every other caller, which is the point of making the
+    // exception an argument rather than a field.
+    const { repository, draft } = await seeded();
+    const article = draft();
+    article.attestations.push({
+      id: "attest000000078", text: "Se desmayó en el metro.", translation: null,
+      sourceUrl: null, sourceTitle: null, sourceKind: "unknown",
+      capturedAt: "2026-08-28T12:00:00.000Z"
+    });
+    await expect(repository.saveArticle(article)).rejects.toThrow("not in your vocabulary");
+  });
+
   it("refuses a topic that does not exist, and names the ones that do", async () => {
     const { repository, draft } = await seeded();
     const article = draft();

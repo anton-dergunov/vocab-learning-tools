@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- `interactive-widget=resizes-content` shrinks the layout viewport when the keyboard opens,
+         so a sheet pinned to the bottom follows it. iOS Safari does not honour it and is handled
+         in `visualViewport.ts` instead; both are needed, neither covers the other. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#EDF1F0" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0C1413" media="(prefers-color-scheme: dark)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

@@ -64,14 +64,26 @@ function signedIn() {
   });
 }
 
+/* One counter for the whole file, never reset. A revision is only ever allocated upward, so a write
+   always beats whatever the fixture pulled — and a second write in the same test always beats the
+   first. Resetting it per test reintroduced exactly the collision it exists to avoid. */
+let allocated = 1000;
+
 /** A server that accepts every write and numbers the rows it hands back, as the real one does. */
 function acceptWrites() {
-  vi.spyOn(backendSession, "pushGraph").mockImplementation(async (_device, changes) => ({
-    schemaVersion: SCHEMA_VERSION, datasetId: DATASET,
-    cursor: repository.snapshot().cursor + 1, serverTime: "2026-08-29T12:00:01.000Z",
-    records: Object.fromEntries(Object.entries(changes).map(([kind, records]) =>
-      [kind, (records ?? []).map((record, index) => ({ ...record, revision: repository.snapshot().cursor + 1 + index }))]))
-  }));
+  /* One ever-increasing counter per owner, which is what the server actually keeps — deliberately
+     not derived from the cursor. A pull can move the cursor back to what the fixture hands out, and
+     a write numbered from it would then collide with a revision already stored, so the merge would
+     drop it as stale. Seeded above anything the fixture pulls, so a write always wins. */
+  vi.spyOn(backendSession, "pushGraph").mockImplementation(async (_device, changes) => {
+    const records = Object.fromEntries(Object.entries(changes).map(([kind, list]) =>
+      [kind, (list ?? []).map((record) => ({ ...record, revision: ++allocated }))]));
+    // The cursor is the highest revision allocated, exactly as the server reports it.
+    return {
+      schemaVersion: SCHEMA_VERSION, datasetId: DATASET, cursor: allocated,
+      serverTime: "2026-08-29T12:00:01.000Z", records
+    };
+  });
 }
 
 /**
@@ -930,5 +942,182 @@ describe("Acervo application", () => {
     // Twice on purpose: once as a row in the text chain, once in the credentials table below it.
     expect(await settings.findAllByText("Gemini (free tier)")).toHaveLength(2);
     expect(settings.getByText("gemini/gemini-3.1-flash-lite")).toBeInTheDocument();
+  });
+});
+
+/* ── the article conversation (design §06) ──────────────────────────────
+   Chat is a consumer of the core: no storage, no second writer, and every change goes through
+   `repository.saveArticle` at the entry's own revision. What is asserted here is that shape — that
+   a proposal reaches the article as marks and nothing else, that saving is one ordinary write, and
+   that undo is the previous document saved again. */
+
+/** A turn that answers in prose and proposes one small edit. */
+function mockChat(reply: string, proposal: unknown = null) {
+  const chat = vi.spyOn(backendSession, "chat");
+  // Reset rather than only re-implement: a spy on a method that was already spied keeps the call
+  // history, and "asks nothing" would then be asserting against the previous test's turn.
+  chat.mockReset();
+  chat.mockResolvedValue({
+    reply, followUps: ["One more example"],
+    proposal: proposal as never, capture: null, modelId: "gemini-3.1-flash-lite"
+  });
+  return chat;
+}
+
+async function openPicar() {
+  await openList();
+  fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+  await screen.findByRole("heading", { name: "picar" });
+}
+
+async function ask(question: string) {
+  const composer = screen.getByLabelText("Ask about picar");
+  fireEvent.change(composer, { target: { value: question } });
+  fireEvent.submit(composer.closest("form")!);
+}
+
+describe("asking about an article", () => {
+  it("offers the dock on a stored article and answers in the thread", async () => {
+    signedIn();
+    const chat = mockChat("«picar» is to itch, and also to chop.");
+    await openPicar();
+    await ask("what does this mean?");
+    expect(await screen.findByText("«picar» is to itch, and also to chop.")).toBeInTheDocument();
+    expect(chat).toHaveBeenCalledTimes(1);
+    // The document goes with the question: `yaml.ts` is the only place the projection is understood,
+    // so the device serialises it rather than the server.
+    const [, request] = chat.mock.calls[0];
+    expect(request.subject.kind).toBe("article");
+    expect((request.subject as { document: string }).document).toContain("headword: picar");
+    // Chosen from the replica before the request left, which is why there is no tool loop.
+    expect(request.neighbours?.length).toBeGreaterThan(0);
+    // A follow-up is one tap instead of a sentence of typing.
+    expect(screen.getByRole("button", { name: "One more example" })).toBeInTheDocument();
+  });
+
+  it("says the server is needed when it is unreachable, and asks nothing", async () => {
+    signedIn();
+    const chat = mockChat("never reached");
+    await openList();
+    vi.spyOn(backendSession, "pullGraph")
+      .mockRejectedValue(new AcervoApiError("unreachable", 0, "offline"));
+    render(<App />);
+    fireEvent.click((await screen.findAllByRole("button", { name: /picar/ }))[0]);
+    await screen.findAllByRole("heading", { name: "picar" });
+    // Reading never depends on the server; this is the only part of the article view that does.
+    // The second render is the reload; the first is still mounted, so take the latest.
+    await waitFor(() => {
+      const composers = screen.getAllByLabelText("Ask about picar");
+      expect(composers[composers.length - 1]).toBeDisabled();
+    });
+    expect(chat).not.toHaveBeenCalled();
+  });
+
+  it("hides the dock entirely when the server has no model configured", async () => {
+    signedIn();
+    serverHealth({ available: false, reason: "no key" });
+    await openPicar();
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Ask about picar")).not.toBeInTheDocument());
+  });
+
+  it("shows a proposal as marks on the article, writing nothing until asked", async () => {
+    signedIn();
+    acceptWrites();
+    mockChat("Worth noting the contrast.", {
+      summary: "Adds a note.",
+      ops: [{ op: "set", target: "lexeme", field: "notes", value: ["Not «rascar»."] }]
+    });
+    await openPicar();
+    await ask("add a note about rascar");
+
+    // The proposal arrives as a card in the thread, not as an applied change.
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    expect(await screen.findByText("Not «rascar».")).toBeInTheDocument();
+    /* `set notes` takes the whole list, so replacing it is one note added and one removed — and
+       both are marked. The removed line is still drawn, struck through: nothing vanishes without
+       being seen going. */
+    expect(screen.getByText(/2 changes proposed/)).toBeInTheDocument();
+    expect(document.querySelector(".mark-add")).not.toBeNull();
+    expect(document.querySelector(".mark-cut")).not.toBeNull();
+    expect(screen.getByText("The sense is carried by the object, not the verb."))
+      .toHaveClass("mark-cut");
+    // Nothing is written until a second press.
+    expect(backendSession.pushGraph).not.toHaveBeenCalled();
+  });
+
+  it("saves a reviewed proposal as one ordinary write, and undoes it as another", async () => {
+    signedIn();
+    acceptWrites();
+    mockChat("Worth noting.", {
+      summary: "Adds a note.",
+      ops: [{ op: "set", target: "lexeme", field: "notes", value: ["Not «rascar»."] }]
+    });
+    await openPicar();
+    await ask("add a note");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(backendSession.pushGraph).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(repository.snapshot().lexemes.find((one) => one.id === "lexemepicar0001")!.notes)
+        .toContain("Not «rascar»."));
+
+    // Undo is the previous document, saved again — an ordinary online write like everything else.
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(backendSession.pushGraph).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(repository.snapshot().lexemes.find((one) => one.id === "lexemepicar0001")!.notes)
+        .not.toContain("Not «rascar»."));
+  });
+
+  it("brings a removed example back with its own id when the save is undone", async () => {
+    signedIn();
+    acceptWrites();
+    mockChat("That one duplicates the other.", {
+      summary: "Removes an example.",
+      ops: [{ op: "remove", target: "example:examplepicar010", reason: "duplicate" }]
+    });
+    await openPicar();
+    await ask("drop the first example");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(
+      repository.snapshot().examples.find((one) => one.id === "examplepicar010")!.deleted).toBe(true));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    // A tombstone, not an erasure, and `stamp` sets `deleted: false` — so naming the id again
+    // brings the record back rather than creating a second one under a new id.
+    await waitFor(() => expect(
+      repository.snapshot().examples.find((one) => one.id === "examplepicar010")!.deleted).toBe(false));
+  });
+
+  it("drops a proposal rather than applying it when the model names something that is not there", async () => {
+    signedIn();
+    mockChat("Here you go.", {
+      summary: "Edits a sense that does not exist.",
+      ops: [{ op: "set", target: "sense:nosuchsense001", field: "domain", value: "cooking" }]
+    });
+    await openPicar();
+    await ask("fix sense three");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    expect(await screen.findByText(/not there, so nothing was changed/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the dock out of the Add view's own preview", async () => {
+    signedIn();
+    mockGarfioCapture();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /Add/ }));
+    fireEvent.change(await screen.findByLabelText(/Paste a word/), {
+      target: { value: "El disfraz de pirata viene con un garfio." }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Process" }));
+    await screen.findByRole("heading", { name: "el garfio" });
+    // The Add view replaces the pane rather than sharing it, so the stored article's dock is gone…
+    expect(screen.queryByLabelText("Ask about picar")).not.toBeInTheDocument();
+    // …and the one over the unsaved proposal is about the word being added (§8.4).
+    expect(screen.getByLabelText("Ask about el garfio")).toBeInTheDocument();
   });
 });

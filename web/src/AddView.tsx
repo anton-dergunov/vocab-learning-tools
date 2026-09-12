@@ -1,13 +1,23 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import type { CaptureHealth, CaptureRequest, CaptureResult } from "./api";
+import type {
+  CaptureFoldable, CaptureHealth, CaptureRequest, CaptureResult, ChatResult, ChatTurn
+} from "./api";
+import AskDock from "./AskDock";
+import {
+  applyOps, diffDrafts, EditRefused, type DraftDiff, type EditOp
+} from "./articleEdit";
 import Composer from "./Composer";
 import type { VocabularyGraph } from "./domain";
 import { useEditorPreferences } from "./editorPreferences";
 import { CaretIcon, CloseIcon } from "./icons";
-import LexemeArticle from "./LexemeArticle";
+import LexemeArticle, { type MarkSlot } from "./LexemeArticle";
+import { newId } from "./ids";
 import { articleFromDraft, type Article } from "./selectors";
 import { ValidationPanel } from "./ValidationPanel";
-import { parseArticle, YAML_TEMPLATE, yamlForDraft, YamlProblems, type YamlProblem } from "./yaml";
+import {
+  parseArticle, YAML_TEMPLATE, yamlForDraft, YamlProblems,
+  type ArticleDraft, type YamlProblem
+} from "./yaml";
 
 // CodeMirror is the largest dependency in the bundle and is only needed once the YAML tab is
 // actually opened, so it is loaded on demand rather than with everything else.
@@ -56,7 +66,7 @@ export interface CaptureSeed {
  */
 export default function AddView({
   tab, onTab, graph, problems, busy, seed, captureHealth,
-  onClose, onCreate, onCapture, onOpenLexeme, onNotify
+  onClose, onCreate, onCapture, onOpenLexeme, onFoldIn, onChat, offline = false, onNotify
 }: {
   tab: AddTab;
   onTab(tab: AddTab): void;
@@ -76,6 +86,12 @@ export default function AddView({
   onCreate(draft: string): void;
   onCapture(request: CaptureRequest): Promise<CaptureResult>;
   onOpenLexeme(id: string): void;
+  /** Open the word already held and ask one question against it, seeded with what was captured. */
+  onFoldIn?(lexemeId: string, foldable: CaptureFoldable): void;
+  /** One turn about the unsaved document. Absent when the server has no model, like Capture itself. */
+  onChat?(document: string, turns: ChatTurn[]): Promise<ChatResult>;
+  /** From `syncStatus`: chat is a round trip, and the dock is the only part of this that needs one. */
+  offline?: boolean;
   onNotify(message: string): void;
 }) {
   const [capture, setCapture] = useState("");
@@ -87,7 +103,18 @@ export default function AddView({
   const [working, setWorking] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<CaptureResult["duplicates"]>([]);
+  /** What this capture carried that the word already held may not have. Null when it carried nothing. */
+  const [foldable, setFoldable] = useState<CaptureFoldable | null>(null);
   const [passedOver, setPassedOver] = useState<CaptureResult["passedOver"]>([]);
+  /**
+   * What the last chat turn changed in this unsaved proposal, so it can be marked.
+   *
+   * Held rather than derived because the editor text is the document of record here: once you touch
+   * it by hand the comparison is against something that no longer exists, so it is dropped.
+   */
+  const [edited, setEdited] = useState<{ before: ArticleDraft; diff: DraftDiff } | null>(null);
+  /** In memory and gone with this composition, exactly as it is on a stored article. */
+  const [chat, setChat] = useState<ChatTurn[]>([]);
   const { wrap, numbers } = useEditorPreferences();
 
   /** The server has told us it cannot build entries. Writing YAML by hand still can. */
@@ -105,6 +132,49 @@ export default function AddView({
 
   /** Nothing has been proposed or written yet, so there is nothing to render. */
   const untouched = draft === YAML_TEMPLATE;
+
+  /** Every write to the document goes through here, so nothing can move without the marks noticing. */
+  const rewrite = (text: string, diff: { before: ArticleDraft; diff: DraftDiff } | null = null) => {
+    setDraft(text);
+    setEdited(diff);
+  };
+
+  const marks = useMemo<MarkSlot | null>(() => {
+    if (!edited) return null;
+    const { marks: byId, lexemeFields, notes } = edited.diff;
+    return {
+      of: (id, field) => (field ? (lexemeFields.has(field) ? "changed" : null) : byId.get(id) ?? null),
+      note: (text) => notes.get(text) ?? null
+    };
+  }, [edited]);
+
+  /**
+   * Asking about a proposal that has not been saved yet (§8.4).
+   *
+   * The document is the editor text, which already carries the ids the server minted for its
+   * children, so operations address it exactly as they address a stored entry. What comes back is
+   * written straight back into the editor, and the preview re-derives on the next render as it does
+   * on every keystroke — so this makes §05's "regenerate with a note" obsolete in the good
+   * direction: one sentence changes one thing, instead of re-running generation and losing what was
+   * already right.
+   */
+  const askAboutDraft = (turns: ChatTurn[]) => onChat!(draft, turns);
+
+  const applyToDraft = (ops: EditOp[], modelId: string) => {
+    try {
+      const before = parseArticle(draft);
+      const applied = applyOps(before, ops, {
+        modelId,
+        glossLang: preview.article?.glossLangs[0] ?? null,
+        // A document with no lexeme id mints freely on save, so nothing here needs a minted set.
+        mintId: newId
+      });
+      rewrite(yamlForDraft(applied.draft), { before, diff: diffDrafts(before, applied.draft) });
+    } catch (error) {
+      onNotify(error instanceof EditRefused ? error.message
+        : "That proposal could not be applied, so nothing was changed.");
+    }
+  };
 
   /**
    * The preview is derived from the editor text rather than kept beside it. That is what makes
@@ -142,6 +212,7 @@ export default function AddView({
       setPassedOver(result.passedOver ?? []);
       if (result.duplicates.length) {
         setDuplicates(result.duplicates);
+        setFoldable(result.foldable ?? null);
         return;
       }
       if (!result.draft) {
@@ -149,7 +220,7 @@ export default function AddView({
         return;
       }
       // The proposal becomes an ordinary editable document from here on, and is read as an article.
-      setDraft(yamlForDraft(result.draft));
+      rewrite(yamlForDraft(result.draft));
       onTab("article");
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "That text could not be processed.");
@@ -197,7 +268,19 @@ export default function AddView({
               {duplicate.shortGloss ? ` — ${duplicate.shortGloss}` : ""}
             </li>)}
           </ul>
-          <span>Nothing was created. Open the entry to see what it already says.</span>
+          <span>
+            {foldable
+              ? "Nothing was created. Open it to read it, or fold what you just captured into it."
+              : "Nothing was created. Open the entry to see what it already says."}
+          </span>
+          {/* §05: a repeat capture is an addition, not an entry. Folding it in is one ordinary turn
+              of the article conversation producing one ordinary proposal — no merge path, no second
+              writer, and nothing the chat could not already do. */}
+          {foldable && duplicates.length === 1 && <div className="fold-in">
+            <button className="tb-btn primary" onClick={() => onFoldIn?.(duplicates[0].id, foldable)}>
+              Fold in
+            </button>
+          </div>}
         </div>}
         {/* A fall-through is silent otherwise. The entry names the model that wrote it, but a
             provider at the head of the order that is quietly broken looks exactly like one that was
@@ -322,7 +405,21 @@ export default function AddView({
       {preview.article
         ? <div className="article-preview">
             {/* No delete, and no storage footer: there is nothing stored to delete or describe. */}
-            <LexemeArticle article={preview.article} onUnsupported={onNotify} meta={false} />
+            <LexemeArticle
+              article={preview.article} onUnsupported={onNotify} meta={false} marks={marks}
+            />
+            {/* The same dock, over a proposal nobody has saved yet. `meta={false}` already says this
+                is not a stored word, and there is no review bar: the editor text *is* the proposal,
+                and Save is already on this surface. */}
+            {onChat && <AskDock
+              headword={preview.article.lexeme.headword}
+              emoji={preview.article.lexeme.emoji}
+              turns={chat}
+              onTurns={setChat}
+              ask={askAboutDraft}
+              offline={offline}
+              onPropose={(found, modelId) => applyToDraft(found.ops as EditOp[], modelId)}
+            />}
           </div>
         : <p className="empty">
             {untouched
@@ -350,7 +447,7 @@ export default function AddView({
     <div className="code-wrap">
       <div className="code-head"><span className="label">new-entry.yaml</span></div>
       <Suspense fallback={<p className="empty">Loading the editor…</p>}>
-        <EditorSurface value={draft} onChange={setDraft} wrap={wrap} numbers={numbers} />
+        <EditorSurface value={draft} onChange={(text) => rewrite(text)} wrap={wrap} numbers={numbers} />
       </Suspense>
     </div>
   </Composer>;

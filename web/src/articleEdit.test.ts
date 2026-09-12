@@ -1,0 +1,341 @@
+/* What a proposal is allowed to do to an article, and what it must be refused for.
+ *
+ * `articleEdit.ts` is the only place the edit language is understood, and it is the one thing
+ * standing between a model's answer and the owner's entry. Everything here is a contract test. */
+
+import { describe, expect, it } from "vitest";
+import {
+  applyOps, diffDrafts, EditRefused, SETTABLE, type EditOp
+} from "./articleEdit";
+import { articleFor, articleFromDraft } from "./selectors";
+import { testGraph } from "./testGraph";
+import {
+  ARTICLE_KEYS, ATTESTATION_KEYS, draftFor, EXAMPLE_KEYS, parseArticle, SENSE_KEYS, yamlForDraft
+} from "./yaml";
+
+const PICAR = "lexemepicar0001";
+const ITCH = "sensepicaritch0";
+const CHOP = "sensepicarchop0";
+const ITCH_EXAMPLE = "examplepicar010";
+const ATTESTATION = "attestpicar0010";
+
+const graph = testGraph();
+const draft = () => draftFor(articleFor(graph, PICAR)!);
+
+let minted = 0;
+const context = {
+  modelId: "gemini-3.1-flash-lite",
+  glossLang: "en",
+  // Deterministic, and a real 15-character lowercase alphanumeric id so the round-trip test is
+  // asserting against what `newId` actually produces rather than a shape of its own.
+  mintId: () => `mint${String(++minted).padStart(11, "0")}`
+};
+
+const apply = (ops: EditOp[]) => applyOps(draft(), ops, context);
+
+describe("what may be set", () => {
+  it("refuses a field that is not in the table for that kind of record", () => {
+    expect(() => apply([{ op: "set", target: "lexeme", field: "language", value: "fr" }]))
+      .toThrow(/not something chat can change/);
+    expect(() => apply([{ op: "set", target: "lexeme", field: "id", value: "aaaaaaaaaaaaaaa" }]))
+      .toThrow(EditRefused);
+    expect(() => apply([{ op: "set", target: `sense:${ITCH}`, field: "order", value: 3 }]))
+      .toThrow(EditRefused);
+    // Provenance is modelled, never flagged, and never set by the model.
+    expect(() => apply([{ op: "set", target: `example:${ITCH_EXAMPLE}`, field: "origin", value: "manual" }]))
+      .toThrow(EditRefused);
+  });
+
+  it("refuses a value of the wrong kind", () => {
+    expect(() => apply([{ op: "set", target: "lexeme", field: "notes", value: "one note" }]))
+      .toThrow(/wrong kind/);
+    expect(() => apply([{ op: "set", target: "lexeme", field: "pos", value: "substantive" }]))
+      .toThrow(/wrong kind/);
+  });
+
+  it("keeps every settable table a strict subset of the document's own vocabulary", () => {
+    // One vocabulary, so a field added to the projection is noticed in one place rather than
+    // drifting into a second list nobody remembers to update.
+    const subset = (fields: object, keys: string[]) =>
+      Object.keys(fields).every((field) => keys.includes(field));
+    expect(subset(SETTABLE.lexeme, ARTICLE_KEYS)).toBe(true);
+    expect(subset(SETTABLE.sense, SENSE_KEYS)).toBe(true);
+    expect(subset(SETTABLE.example, EXAMPLE_KEYS)).toBe(true);
+    expect(subset(SETTABLE.attestation, ATTESTATION_KEYS)).toBe(true);
+    expect(Object.keys(SETTABLE.lexeme)).not.toContain("id");
+    expect(Object.keys(SETTABLE.lexeme)).not.toContain("language");
+  });
+});
+
+describe("applying", () => {
+  it("applies operations in order", () => {
+    const { draft: after } = apply([
+      { op: "set", target: "lexeme", field: "notes", value: ["first"] },
+      { op: "set", target: "lexeme", field: "notes", value: ["second"] }
+    ]);
+    expect(after.notes).toEqual(["second"]);
+  });
+
+  it("refuses the whole set when one id is not in the document, and changes nothing", () => {
+    const before = draft();
+    expect(() => applyOps(before, [
+      { op: "set", target: "lexeme", field: "emoji", value: "🌶" },
+      { op: "set", target: "sense:nosuchsense001", field: "domain", value: "cooking" }
+    ], context)).toThrow(/not there/);
+    // The refusal is structural: the work happens on a clone, so no partial edit is reachable.
+    expect(before.emoji).toEqual(draft().emoji);
+  });
+
+  it("refuses more than twelve operations", () => {
+    const ops: EditOp[] = Array.from({ length: 13 }, () =>
+      ({ op: "set", target: "lexeme", field: "emoji", value: "🌶" }) as EditOp);
+    expect(() => apply(ops)).toThrow(/rewrite rather than an edit/);
+  });
+
+  it("refuses a proposal that touches over half the entry", () => {
+    expect(() => apply([
+      { op: "set", target: `sense:${ITCH}`, field: "definition", value: "Uno." },
+      { op: "set", target: `sense:${CHOP}`, field: "definition", value: "Dos." },
+      { op: "set", target: `example:${ITCH_EXAMPLE}`, field: "text", value: "Tres." },
+      { op: "set", target: `attestation:${ATTESTATION}`, field: "translation", value: "Cuatro." }
+    ])).toThrow(/rewrite rather than an edit/);
+  });
+
+  it("allows an ordinary edit that would trip an unconditional half rule", () => {
+    // A small entry has few records, so "fix the definition and add an example" is already over
+    // half of one. That is an edit, not a rewrite, and the cap must not refuse it.
+    const small = draftFor(articleFor(graph, "lexemebalsa0001")!);
+    const { draft: after } = applyOps(small, [
+      { op: "set", target: "sense:sensebalsaraft0", field: "definition", value: "Embarcación plana y ligera." },
+      { op: "addExample", senseId: "sensebalsaraft0", example: { text: "La balsa flotaba." } }
+    ], context);
+    expect(after.senses[0].examples).toHaveLength(2);
+  });
+});
+
+describe("provenance, which the applier derives and the model never sets", () => {
+  it("gives an example the model wrote the generated origin and the model id", () => {
+    const { draft: after, minted: ids } = apply([
+      { op: "addExample", senseId: ITCH, example: { text: "Me pica la espalda.", translation: "My back itches." } }
+    ]);
+    const added = after.senses[0].examples.at(-1)!;
+    expect(added.origin).toBe("llm");
+    expect(added.modelId).toBe("gemini-3.1-flash-lite");
+    expect(added.sourceAttestationId).toBeNull();
+    // `saveArticle` mints the id for an added example, exactly as it does for a hand-written block.
+    expect(added.id).toBeNull();
+    expect(ids.size).toBe(0);
+    // Reviewing the rendered article *is* the approve gesture, so nothing lands wearing a chip
+    // saying it has not been looked at.
+    expect(added.approved).toBe(true);
+  });
+
+  it("resolves a ref, so a sentence you supplied becomes an attestation the example names", () => {
+    const { draft: after, minted: ids } = apply([
+      {
+        op: "addAttestation", ref: "a1",
+        attestation: { text: "Se disfrazó de médico.", translation: "He dressed up as a doctor.", sourceKind: "video" }
+      },
+      {
+        op: "addExample", senseId: ITCH, fromAttestation: "a1",
+        example: { text: "Se disfrazó de médico.", translation: "He dressed up as a doctor." }
+      }
+    ]);
+    const attestation = after.attestations.at(-1)!;
+    const added = after.senses[0].examples.at(-1)!;
+    expect(added.origin).toBe("attestation");
+    expect(added.sourceAttestationId).toBe(attestation.id);
+    expect(added.modelId).toBeNull();
+    // The one id the applier mints, and the only thing `minted` ever carries.
+    expect([...ids]).toEqual([attestation.id]);
+  });
+
+  it("refuses an example that quotes a sentence nothing supplied", () => {
+    expect(() => apply([
+      { op: "addExample", senseId: ITCH, fromAttestation: "a1", example: { text: "Hola." } }
+    ])).toThrow(/quoted a sentence it did not supply/);
+  });
+
+  it("folds a new example onto a sentence the entry already holds", () => {
+    const { draft: after } = apply([
+      { op: "addExample", senseId: ITCH, fromAttestation: ATTESTATION, example: { text: "Esa salsa pica." } }
+    ]);
+    expect(after.senses[0].examples.at(-1)!.sourceAttestationId).toBe(ATTESTATION);
+  });
+});
+
+describe("the two agreements the data model imposes", () => {
+  it("fills the translation language when an example gains a translation", () => {
+    const { draft: after } = apply([
+      { op: "set", target: `example:${ITCH_EXAMPLE}`, field: "translation", value: "My nose itches badly." }
+    ]);
+    const example = after.senses.flatMap((sense) => sense.examples).find((item) => item.id === ITCH_EXAMPLE)!;
+    expect(example.translationLang).toBe("en");
+  });
+
+  it("clears the translation language when the translation goes", () => {
+    const { draft: after } = apply([
+      { op: "set", target: `example:${ITCH_EXAMPLE}`, field: "translation", value: null }
+    ]);
+    const example = after.senses.flatMap((sense) => sense.examples).find((item) => item.id === ITCH_EXAMPLE)!;
+    expect(example.translationLang).toBeNull();
+  });
+
+  it("drops a marked form that is not in the sentence, and keeps the rest of the edit", () => {
+    // The one deliberate exception to all-or-nothing: a model that retypes the dictionary form
+    // instead of copying the inflected one should cost the emphasis, not the whole answer.
+    const { draft: after } = apply([
+      { op: "addExample", senseId: ITCH, example: { text: "Me pica la espalda.", matchedForm: "picar" } }
+    ]);
+    const added = after.senses[0].examples.at(-1)!;
+    expect(added.text).toBe("Me pica la espalda.");
+    expect(added.matchedForm).toBeNull();
+  });
+});
+
+describe("removing", () => {
+  it("refuses to leave the entry with no meanings", () => {
+    const small = draftFor(articleFor(graph, "lexemebalsa0001")!);
+    expect(() => applyOps(small, [{ op: "remove", target: "sense:sensebalsaraft0", reason: "wrong" }], context))
+      .toThrow(/no meanings/);
+  });
+
+  it("refuses to remove a sentence an example was drawn from", () => {
+    expect(() => apply([{ op: "remove", target: `attestation:${ATTESTATION}`, reason: "tidy" }]))
+      .toThrow(/where an example came from/);
+  });
+
+  it("removes an example", () => {
+    const { draft: after } = apply([{ op: "remove", target: `example:${ITCH_EXAMPLE}`, reason: "duplicate" }]);
+    expect(after.senses.flatMap((sense) => sense.examples).some((item) => item.id === ITCH_EXAMPLE)).toBe(false);
+  });
+});
+
+describe("reordering", () => {
+  it("reorders the senses and renumbers them", () => {
+    const { draft: after } = apply([{ op: "orderSenses", ids: [CHOP, ITCH] }]);
+    expect(after.senses.map((sense) => sense.id)).toEqual([CHOP, ITCH]);
+    expect(after.senses.map((sense) => sense.order)).toEqual([0, 1]);
+  });
+
+  it("refuses a list that is not the entry's meanings", () => {
+    expect(() => apply([{ op: "orderSenses", ids: [ITCH] }])).toThrow(EditRefused);
+  });
+});
+
+describe("the round trip", () => {
+  it("survives the projection, which is what the save path actually writes", () => {
+    const { draft: after } = apply([
+      { op: "set", target: "lexeme", field: "notes", value: ["Not «rascar»."] },
+      { op: "addExample", senseId: ITCH, example: { text: "Me pica la espalda.", translation: "My back itches." } }
+    ]);
+    const reparsed = parseArticle(yamlForDraft(after));
+    expect(reparsed.notes).toEqual(["Not «rascar»."]);
+    const added = reparsed.senses[0].examples.at(-1)!;
+    expect(added.text).toBe("Me pica la espalda.");
+    expect(added.origin).toBe("llm");
+    expect(added.approved).toBe(true);
+  });
+});
+
+describe("the diff", () => {
+  it("marks added, changed and removed by record id", () => {
+    const before = draft();
+    const { draft: after } = applyOps(before, [
+      { op: "set", target: `sense:${ITCH}`, field: "domain", value: "medicine" },
+      { op: "addExample", senseId: CHOP, example: { text: "Pica el ajo." } },
+      { op: "remove", target: `example:${ITCH_EXAMPLE}`, reason: "duplicate" }
+    ], context);
+    const diff = diffDrafts(before, after);
+    expect(diff.marks.get(ITCH)).toBe("changed");
+    expect(diff.marks.get(ITCH_EXAMPLE)).toBe("removed");
+    expect([...diff.marks.values()]).toContain("added");
+    expect(diff.count).toBeGreaterThan(0);
+  });
+
+  it("keys every mark to a record the renderer will actually draw", () => {
+    // The marks are consumed by a component rendering `articleFromDraft(graph, shown)`, which mints
+    // its placeholder ids from positions. If the two disagreed, a mark would silently land on the
+    // wrong block — or on nothing.
+    const before = draft();
+    const { draft: after } = applyOps(before, [
+      { op: "addExample", senseId: ITCH, example: { text: "Me pica todo." } },
+      { op: "remove", target: `example:${ITCH_EXAMPLE}`, reason: "duplicate" },
+      { op: "set", target: "lexeme", field: "emoji", value: "🌶" }
+    ], context);
+    const diff = diffDrafts(before, after);
+    const rendered = articleFromDraft(graph, diff.shown);
+    const drawn = new Set<string>([
+      rendered.lexeme.id,
+      ...rendered.senses.map((entry) => entry.sense.id),
+      ...rendered.senses.flatMap((entry) => entry.examples.map((example) => example.id)),
+      ...rendered.attestations.map((attestation) => attestation.id)
+    ]);
+    for (const key of diff.marks.keys()) expect(drawn).toContain(key);
+  });
+
+  it("puts a removed record back where it was so it can be drawn struck through", () => {
+    const before = draft();
+    const { draft: after } = applyOps(before,
+      [{ op: "remove", target: `example:${ITCH_EXAMPLE}`, reason: "duplicate" }], context);
+    // Gone from what will be saved…
+    expect(after.senses.flatMap((sense) => sense.examples).some((item) => item.id === ITCH_EXAMPLE))
+      .toBe(false);
+    // …and present in what will be shown. Nothing vanishes without being seen going.
+    const diff = diffDrafts(before, after);
+    const position = before.senses[0].examples.findIndex((item) => item.id === ITCH_EXAMPLE);
+    expect(diff.shown.senses[0].examples[position].id).toBe(ITCH_EXAMPLE);
+  });
+
+  it("marks a removed sense's examples as removed too", () => {
+    const before = draft();
+    const { draft: after } = applyOps(before,
+      [{ op: "remove", target: `sense:${CHOP}`, reason: "duplicate" }], context);
+    const diff = diffDrafts(before, after);
+    expect(diff.marks.get(CHOP)).toBe("removed");
+    expect(diff.marks.get("osd6ieh00s2hxql")).toBe("removed");
+  });
+
+  it("names which of the lexeme head's fields moved, not the whole head", () => {
+    const before = draft();
+    const { draft: after } = applyOps(before,
+      [{ op: "set", target: "lexeme", field: "emoji", value: "🌶" }], context);
+    const diff = diffDrafts(before, after);
+    expect([...diff.lexemeFields]).toEqual(["emoji"]);
+  });
+
+  it("marks a note by its text, which is what the list is keyed on", () => {
+    const before = draft();
+    const { draft: after } = applyOps(before,
+      [{ op: "set", target: "lexeme", field: "notes", value: [...before.notes, "Nueva nota."] }], context);
+    const diff = diffDrafts(before, after);
+    expect(diff.notes.get("Nueva nota.")).toBe("added");
+  });
+
+  it("reports no change when nothing moved", () => {
+    const before = draft();
+    expect(diffDrafts(before, structuredClone(before)).count).toBe(0);
+  });
+});
+
+describe("counting", () => {
+  it("counts a changed note once, not once as a note and again as the head", () => {
+    // The notes section marks its lines one by one, so the lexeme head must not also claim the
+    // change — "1 change proposed" is what the reader can actually count on the page.
+    const before = draft();
+    const { draft: after } = applyOps(before,
+      [{ op: "set", target: "lexeme", field: "notes", value: [...before.notes, "Nueva nota."] }], context);
+    const diff = diffDrafts(before, after);
+    expect(diff.count).toBe(1);
+    expect(diff.lexemeFields.has("notes")).toBe(false);
+  });
+
+  it("counts a head change and a note change separately", () => {
+    const before = draft();
+    const { draft: after } = applyOps(before, [
+      { op: "set", target: "lexeme", field: "emoji", value: "🌶" },
+      { op: "set", target: "lexeme", field: "notes", value: [...before.notes, "Nueva nota."] }
+    ], context);
+    expect(diffDrafts(before, after).count).toBe(2);
+  });
+});

@@ -1,18 +1,29 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AddView, { type AddTab, type CaptureSeed } from "./AddView";
 import type { ImagePrompt } from "./domain";
-import { backendSession, type CaptureHealth, type CaptureRequest, type ImageStyle } from "./api";
+import AskDock from "./AskDock";
+import {
+  applyOps, diffDrafts, EditRefused, type DraftDiff, type EditOp
+} from "./articleEdit";
+import { newId } from "./ids";
+import {
+  backendSession, type CaptureFoldable, type CaptureHealth, type CaptureRequest,
+  type ChatCapture, type ChatNeighbour,
+  type ChatProposal, type ChatSubject, type ChatTurn, type ImageStyle
+} from "./api";
 import {
   forgetCachedLookups, hydrateGlosses, lookup as lookupDictionaries, searchDictionaries,
   type SearchTier
 } from "./dictionaries";
 import ExternalArticle, { type DictionaryAddRequest } from "./ExternalArticle";
 import {
-  externalEntryOf, EXTERNAL_ROW_LIMIT, mergeHits,
+  externalEntryOf, EXTERNAL_ROW_LIMIT, mergeHits, referenceTextOf,
   type ExternalEntry, type ExternalRow, type RawHit
 } from "./externalEntries";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
-import LexemeArticle, { type ClipSlot, type PictureSlot } from "./LexemeArticle";
+import LexemeArticle, {
+  type AskSlot, type AskTarget, type ClipSlot, type MarkSlot, type PictureSlot
+} from "./LexemeArticle";
 import LexemeList, { type ExternalSearch } from "./LexemeList";
 import { languageOf } from "./languages";
 import {
@@ -22,8 +33,8 @@ import {
 } from "./pwa";
 import { repository, type ReplicaSnapshot } from "./repository";
 import {
-  articleFor, imageWork, inboxCount, languageOptions, topicOptions, visibleRows,
-  type ImageWork, type SortKey, type TopicSelection
+  articleFor, articleFromDraft, imageWork, inboxCount, languageOptions, lexemesIn, shortGlossOf,
+  topicOptions, visibleRows, type ImageWork, type SortKey, type TopicSelection
 } from "./selectors";
 import Settings, { type Page as SettingsPage } from "./Settings";
 
@@ -40,7 +51,10 @@ import { ImageDialog } from "./ImageDialog";
 import { clearPictures, forget } from "./media";
 import { SyncChip } from "./SyncStatus";
 import { ActivityChip, ActivityPanel } from "./ActivityPanel";
-import { parseArticle, yamlFor, YamlProblems, type YamlProblem } from "./yaml";
+import {
+  draftFor, parseArticle, yamlFor, yamlForDraft, YamlProblems,
+  type ArticleDraft, type YamlProblem
+} from "./yaml";
 import "./styles.css";
 
 // CodeMirror is the largest dependency in the bundle and is only needed once the YAML tab or the
@@ -141,6 +155,29 @@ export default function App() {
   const [problems, setProblems] = useState<YamlProblem[]>([]);
   const [saving, setSaving] = useState(false);
 
+  /* The conversation, in memory and keyed by what is being discussed. Design §06 §3.3: §01's test
+     for whether something belongs in the core is whether losing it would hurt, and losing a
+     transcript costs nothing — the *article* is where the value landed. So no collection, no sync
+     state, nothing to tombstone, and it is gone on reload on purpose. A ref holds it across the
+     dock unmounting; the state beside it is only what makes the dock re-render. */
+  const threads = useRef(new Map<string, ChatTurn[]>());
+  const [thread, setThread] = useState<ChatTurn[]>([]);
+  const [askFocus, setAskFocus] = useState<AskTarget | null>(null);
+  /** What the dictionary fold has open beneath the article, if anything. Read-only context. */
+  const [reference, setReference] = useState<ExternalEntry | null>(null);
+  const [seededTurn, setSeededTurn] = useState<string | null>(null);
+  /**
+   * A proposal under review. Never stored, never replicated, and dropped rather than kept: it is a
+   * suggestion, not a state (§6.3). `before` is what undo saves; `after` is what save saves;
+   * `diff.shown` is what is rendered, and is `after` plus the removed records put back so they can
+   * be drawn struck through.
+   */
+  const [proposal, setProposal] = useState<{
+    before: ArticleDraft; after: ArticleDraft; diff: DraftDiff;
+    minted: ReadonlySet<string>; summary: string;
+  } | null>(null);
+  /** The document a save replaced, so undo is one more ordinary write. */
+  const undoable = useRef<{ id: string; text: string } | null>(null);
   const [addTab, setAddTab] = useState<AddTab | null>(null);
   const [addSeed, setAddSeed] = useState<CaptureSeed | null>(null);
   const [langMenu, setLangMenu] = useState(false);
@@ -165,6 +202,8 @@ export default function App() {
   const [settings, setSettings] = useState<SettingsPage | null>(null);
   const [armed, setArmed] = useState<"delete" | null>(null);
   const [toast, setToast] = useState("");
+  /** One optional action on the toast. Undo after a chat edit is the only thing that uses it. */
+  const [toastAction, setToastAction] = useState<{ label: string; run(): void } | null>(null);
   const [update, setUpdate] = useState<UpdateStage | undefined>(() => updateStage());
   /* What the server can build entries with. `undefined` means unknown — still checking, or the
      server is unreachable — and unknown never disables anything: reads are offline-first, and a
@@ -180,10 +219,13 @@ export default function App() {
   const token = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const notify = useCallback((message: string) => {
+  const notify = useCallback((message: string, action?: { label: string; run(): void }) => {
     setToast(message);
+    setToastAction(action ?? null);
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(""), 2200);
+    // An action needs long enough to read the sentence and decide. Without one, nothing is lost by
+    // the toast going.
+    toastTimer.current = setTimeout(() => { setToast(""); setToastAction(null); }, action ? 7000 : 2200);
   }, []);
 
   useEffect(() => {
@@ -260,14 +302,50 @@ export default function App() {
     () => (snapshot && language ? topicOptions(snapshot, language) : []),
     [snapshot, language]
   );
+  /* Two feeders, one renderer. A stored article is `articleFor`; a live proposal is an unsaved
+     document under review, which is exactly what `articleFromDraft` exists for and exactly what
+     `AddView` already does with a generated entry. A proposal puts this view into AddView's regime
+     for as long as it lasts and leaves it the moment it is saved or discarded — same component,
+     same rule, no third feeder. */
   const article = useMemo(
-    () => (snapshot && openId ? articleFor(snapshot, openId) : null),
-    [snapshot, openId]
+    () => (proposal && snapshot ? articleFromDraft(snapshot, proposal.diff.shown)
+      : snapshot && openId ? articleFor(snapshot, openId) : null),
+    [snapshot, openId, proposal]
   );
+
+  const markSlot = useMemo<MarkSlot | null>(() => {
+    if (!proposal) return null;
+    const { marks, lexemeFields, notes } = proposal.diff;
+    return {
+      of: (id, field) => {
+        const mark = marks.get(id) ?? null;
+        // The masthead marks the line that changed rather than the whole head, so a new emoji does
+        // not light up the IPA beside it.
+        if (field) return lexemeFields.has(field) ? "changed" : null;
+        return mark;
+      },
+      note: (text) => notes.get(text) ?? null
+    };
+  }, [proposal]);
 
   useEffect(() => {
     document.title = article ? `${article.lexeme.headword} — Acervo` : "Acervo";
   }, [article]);
+
+  /* A proposal is written against one revision of one entry. If sync brings a newer one while the
+     conversation is open, the proposal is dropped rather than rebased — the server would refuse the
+     write anyway, and silently re-marking a document nobody proposed would be worse than saying so. */
+  const openRevision = snapshot && openId
+    ? snapshot.lexemes.find((one) => one.id === openId)?.revision ?? null
+    : null;
+  const reviewedAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (!proposal) { reviewedAt.current = openRevision; return; }
+    if (reviewedAt.current !== null && openRevision !== null && openRevision !== reviewedAt.current) {
+      setProposal(null);
+      notify("That entry changed elsewhere, so the proposal was dropped.");
+    }
+  }, [openRevision, proposal, notify]);
 
   /* ── pictures ─────────────────────────────────────────────────────────
      The article shows what the replica holds; the dialog is the only thing that changes a picture,
@@ -501,6 +579,9 @@ export default function App() {
 
   const openLexeme = useCallback((id: string) => {
     setOpenId(id);
+    // A proposal belongs to the entry it was written against, and is a suggestion rather than a
+    // state: leaving the article drops it.
+    setProposal(null);
     setExternal(null);
     setProblems([]);
     setMode("read");
@@ -510,6 +591,7 @@ export default function App() {
   const chooseTopic = useCallback((next: TopicSelection) => {
     setTopic(next);
     setOpenId(null);
+    setProposal(null);
     setExternal(null);
     setQuery("");
   }, []);
@@ -539,11 +621,11 @@ export default function App() {
    * removal and sends the lot as one write. A refusal leaves both the replica and the draft alone,
    * so nothing typed is lost to a failed save.
    */
-  async function applyYaml(text: string): Promise<string | null> {
+  async function applyYaml(text: string, minted?: ReadonlySet<string>): Promise<string | null> {
     setSaving(true);
     setProblems([]);
     try {
-      const id = await repository.saveArticle(parseArticle(text));
+      const id = await repository.saveArticle(parseArticle(text), minted);
       setSnapshot(repository.snapshot());
       return id;
     } catch (error) {
@@ -577,6 +659,189 @@ export default function App() {
     enrichment.enqueue(id, repository.snapshot().lexemes.find((one) => one.id === id)?.headword ?? "");
     notify("Added to your vocabulary");
   }
+
+  /* ── the article conversation (design §06) ────────────────────────────
+     Chat is a consumer of the core, exactly as §06 and §01 place it: no storage, no second writer,
+     no second serialiser, no offline anything. Every turn is a server round trip; reading the
+     article never is. */
+
+  /** What is being discussed, which is also the transcript's key. */
+  const subjectKey = external ? `ref:${external.word}` : openId ? `lex:${openId}` : null;
+
+  useEffect(() => {
+    setThread(subjectKey ? threads.current.get(subjectKey) ?? [] : []);
+    setAskFocus(null);
+    // A fold is opened per article, so what it had loaded does not belong to the next one.
+    setReference(null);
+  }, [subjectKey]);
+
+  const rememberTurns = useCallback((next: ChatTurn[]) => {
+    if (subjectKey) threads.current.set(subjectKey, next);
+    setThread(next);
+  }, [subjectKey]);
+
+  const askSlot = useMemo<AskSlot | null>(() => {
+    // Absent while a proposal is live: its added records carry `articleFromDraft`'s placeholder
+    // ids, which are deliberately not record ids, so there would be nothing an anchor could name.
+    if (!article || mode !== "read" || proposal) return null;
+    return { focus: setAskFocus, focused: askFocus?.id ?? null };
+  }, [article, mode, proposal, askFocus]);
+
+  /**
+   * One turn. The request is assembled *here*, on every turn, rather than held — so after a
+   * proposal is saved the model sees the applied article rather than the one it was asked about.
+   *
+   * The document is serialised on this device because `yaml.ts` is the only place the projection is
+   * understood; a server-side serialiser would be a second implementation of it (§06 REVISED).
+   */
+  const askAbout = useCallback((turns: ChatTurn[]) => {
+    const deviceId = repository.snapshot().deviceId;
+    let subject: ChatSubject;
+    let neighbours: ChatNeighbour[] = [];
+    if (article) {
+      subject = {
+        kind: "article",
+        lexemeId: article.lexeme.id,
+        document: yamlFor(article),
+        focus: askFocus ? `${askFocus.kind}:${askFocus.id}` : null
+      };
+      // Chosen from the replica before the request leaves, offline and for free — which is most of
+      // why there is no tool loop. Topic-mates, capped at twenty, headword and gloss only.
+      if (snapshot) {
+        const mates = new Set(article.lexeme.topicIds);
+        neighbours = lexemesIn(snapshot, article.lexeme.language)
+          .filter((lexeme) => lexeme.id !== article.lexeme.id
+            && lexeme.topicIds.some((id) => mates.has(id)))
+          .slice(0, 20)
+          .map((lexeme) => ({ headword: lexeme.headword, shortGloss: shortGlossOf(snapshot, lexeme) }));
+      }
+    } else if (external) {
+      // They do not hold this word, so there is no replica of it to send and nothing to propose.
+      subject = { kind: "reference", headword: external.word, language: external.language };
+    } else {
+      return Promise.reject(new Error("There is nothing to ask about."));
+    }
+    const open = external ?? reference;
+    return backendSession.chat(deviceId, {
+      subject,
+      reference: open ? referenceTextOf(open) : null,
+      referenceSources: open ? open.sections.map((section) => section.name) : [],
+      neighbours,
+      turns
+    });
+  }, [article, askFocus, snapshot, external, reference]);
+
+  /** Pressing *Add to my words* on a reference conversation: the existing capture, one field filled. */
+  const captureFromChat = useCallback((capture: ChatCapture) => {
+    if (!external) return;
+    addFromDictionary({
+      headword: capture.headword || external.word,
+      language: external.language,
+      reference: referenceTextOf(external),
+      referenceMode: capture.referenceMode,
+      note: capture.note || null,
+      sources: external.sections.map((section) => section.name)
+    });
+  }, [external, addFromDictionary]);
+
+  /**
+   * Pressing *Review* on a proposal card: apply the operations to a draft and show the article with
+   * the change marks. Nothing is written — that needs a second press.
+   *
+   * The operations are refused here rather than on the server, because refusing them needs the
+   * document's *meaning* — whether an id exists, whether a field may be set on that kind of record —
+   * and `yaml.ts` is the only place the projection is understood.
+   */
+  const reviewProposal = useCallback((ops: EditOp[], summary: string, modelId: string) => {
+    if (!article || !snapshot) return;
+    const before = draftFor(article);
+    try {
+      const applied = applyOps(before, ops, {
+        modelId,
+        glossLang: article.glossLangs[0] ?? null,
+        mintId: newId
+      });
+      setProposal({
+        before, after: applied.draft, diff: diffDrafts(before, applied.draft),
+        minted: applied.minted, summary
+      });
+      if (main.current) main.current.scrollTop = 0;
+    } catch (error) {
+      notify(error instanceof EditRefused ? error.message
+        : "That proposal could not be applied, so nothing was changed.");
+    }
+  }, [article, snapshot, notify]);
+
+  const saveProposal = useCallback(async () => {
+    if (!proposal || !openId) return;
+    const previous = yamlForDraft(proposal.before);
+    // The same call a hand-edited document makes: same validation, same id diffing, same revision
+    // check. A chat-driven edit is indistinguishable downstream from a typed one.
+    const id = await applyYaml(yamlForDraft(proposal.after), proposal.minted);
+    if (!id) {
+      // A stale entry is refused, never merged. The proposal goes with it: it was written against a
+      // document that has moved.
+      setProposal(null);
+      notify("That entry changed elsewhere, so the proposal was dropped.");
+      return;
+    }
+    undoable.current = { id, text: previous };
+    setProposal(null);
+    enrichment.enqueue(id, repository.snapshot().lexemes.find((one) => one.id === id)?.headword ?? "");
+    notify("Saved to the server", { label: "Undo", run: () => void undoProposal() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposal, openId, notify]);
+
+  /**
+   * Undo is the previous document, saved again.
+   *
+   * It needs no special support: `saveArticle` tombstones what a document stops mentioning rather
+   * than erasing it, and `stamp` sets `deleted: false`, so naming a tombstoned id brings the record
+   * back with its id intact. An ordinary online write like everything else.
+   */
+  const undoProposal = useCallback(async () => {
+    const held = undoable.current;
+    if (!held) return;
+    undoable.current = null;
+    const id = await applyYaml(held.text);
+    notify(id ? "Put back" : "That could not be undone.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notify]);
+
+  /**
+   * Asking about a proposal the Add view has not saved yet.
+   *
+   * The document comes from the editor rather than from the graph — it is not stored, so there is
+   * nothing to read it out of — and the neighbours are left empty: a word being added has no topics
+   * chosen yet, and guessing at them would be conditioning on nothing.
+   */
+  const askAboutDraft = useCallback((document: string, turns: ChatTurn[]) => {
+    const deviceId = repository.snapshot().deviceId;
+    return backendSession.chat(deviceId, {
+      subject: { kind: "article", lexemeId: "", document, focus: null },
+      turns
+    });
+  }, []);
+
+  /**
+   * A repeat capture, folded into the word you already have (§05, §8.3).
+   *
+   * The decision was taken on the duplicate panel, so the turn is *sent* rather than typed into the
+   * composer — following `AddView`'s own precedent for a seeded composition. Nothing about this
+   * reaches the prompt as a special mode: it is one ordinary question producing one ordinary
+   * proposal, reviewed and saved like any other.
+   */
+  const foldIn = useCallback((lexemeId: string, foldable: CaptureFoldable) => {
+    const quoted = foldable.sentences.map((sentence) => `«${sentence.text}»`).join(" ");
+    const note = foldable.note ? ` ${foldable.note}` : "";
+    setProblems([]);
+    setAddTab(null);
+    setAddSeed(null);
+    openLexeme(lexemeId);
+    setSeededTurn(quoted
+      ? `Fold this in: ${quoted}.${note}`
+      : `I met this word again.${note || " Is there anything worth adding?"}`);
+  }, [openLexeme]);
 
   /**
    * Capture submits text and gets back a proposal — never a stored record. Everything that saves
@@ -751,6 +1016,9 @@ export default function App() {
             onCreate={(draft) => void createFromYaml(draft)}
             onCapture={captureText}
             onOpenLexeme={(id) => { setProblems([]); setAddTab(null); openLexeme(id); }}
+            onFoldIn={foldIn}
+            onChat={captureHealth?.available === false ? undefined : askAboutDraft}
+            offline={syncStatus.state === "offline"}
             onNotify={notify}
           /> : article && mode === "edit" ? <Suspense fallback={<p className="empty">Loading the editor…</p>}>
             <YamlEditor
@@ -767,15 +1035,30 @@ export default function App() {
               <span className="label">Other dictionaries</span>
               <span className="spacer" />
             </div>}
+            {/* Sticky for as long as a proposal is live. Nothing is written until Save changes,
+                and Discard leaves the stored entry untouched because nothing ever reached it. */}
+            {proposal && <div className="review-bar">
+              <span className="review-mark">✎</span>
+              <span className="label">
+                {proposal.diff.count} {proposal.diff.count === 1 ? "change" : "changes"} proposed
+              </span>
+              <span className="spacer" />
+              <button className="tb-btn" onClick={() => setProposal(null)}>Discard</button>
+              <button className="tb-btn primary" disabled={saving} onClick={() => void saveProposal()}>
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+            </div>}
             {article && <div className="art-bar">
-              <button className="icon-btn" aria-label="Back to the list" onClick={() => setOpenId(null)}><BackIcon /></button>
+              <button className="icon-btn" aria-label="Back to the list" onClick={() => { setOpenId(null); setProposal(null); }}><BackIcon /></button>
               <span className="label">{topicLabel}</span>
               <span className="spacer" />
               <div className="seg">
                 <button className={mode === "read" ? "on" : ""} onClick={() => setMode("read")}>Read</button>
                 <button className={mode !== "read" ? "on" : ""} onClick={() => setMode("yaml")}>YAML</button>
               </div>
-              <button className="icon-btn" aria-label="Edit as YAML" title="Edit as YAML" onClick={() => setMode("edit")}><PencilIcon /></button>
+              {/* The escape hatch. Hand-editing drops a live proposal: the editor is the document of
+                  record there, and two sets of unsaved changes over one entry is not a state worth having. */}
+              <button className="icon-btn" aria-label="Edit as YAML" title="Edit as YAML" onClick={() => { setProposal(null); setMode("edit"); }}><PencilIcon /></button>
               <button className="icon-btn" aria-label="Delete" title="Delete" onClick={() => void removeLexeme(article.lexeme.id)}><TrashIcon /></button>
             </div>}
 
@@ -789,11 +1072,43 @@ export default function App() {
                   onSort={setSort} onOpen={openLexeme}
                   external={externalSearch}
                 />
-              : mode === "read" ? <LexemeArticle article={article} onUnsupported={notify} pictures={pictures} clips={clips} />
+              : mode === "read" ? <LexemeArticle
+                  article={article} onUnsupported={notify} pictures={pictures} clips={clips}
+                  marks={markSlot} ask={askSlot} onReference={setReference}
+                />
               // Editing is a composer above, so only reading and the read-only projection get here.
               : <Suspense fallback={<p className="empty">Loading the editor…</p>}>
-                  <YamlView name={article.lexeme.headword} yaml={yamlFor(article)} />
+                  {/* The proposed document when one is live, and deliberately *unmarked*: someone
+                      who opens this wants to read or edit the text, and gutter decorations here
+                      would answer a question the Article tab already answered. */}
+                  <YamlView
+                    name={article.lexeme.headword}
+                    yaml={proposal ? yamlForDraft(proposal.after) : yamlFor(article)}
+                  />
                 </Suspense>}
+
+            {/* The dock, pinned to the bottom of this pane at every width. Present on a stored
+                article and on an external entry; never inside AddView, which replaces the pane
+                rather than sharing it. Hidden entirely when the server has no model — the capture
+                surface already knows how to say that. */}
+            {snapshot && (article || external) && mode === "read" && captureHealth?.available !== false
+              && <AskDock
+                key={subjectKey ?? "none"}
+                headword={article ? article.lexeme.headword : external!.word}
+                emoji={article ? article.lexeme.emoji : null}
+                turns={thread}
+                onTurns={rememberTurns}
+                ask={askAbout}
+                offline={syncStatus.state === "offline"}
+                focus={askFocus ? { label: askFocus.label } : null}
+                onClearFocus={() => setAskFocus(null)}
+                onPropose={article
+                  ? (found, modelId) => reviewProposal(found.ops as EditOp[], found.summary, modelId)
+                  : undefined}
+                onCapture={external ? captureFromChat : undefined}
+                seeded={seededTurn}
+                onSeedUsed={() => setSeededTurn(null)}
+              />}
           </div>}
         </main>
       </div>
@@ -848,6 +1163,13 @@ export default function App() {
       work={imageBacklog}
       onClose={() => setActivity(false)}
     />}
-    <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
+    <div className={`toast ${toast ? "show" : ""}`}>
+      {toast}
+      {toastAction && <button className="toast-action" onClick={() => {
+        const run = toastAction.run;
+        setToast(""); setToastAction(null);
+        run();
+      }}>{toastAction.label}</button>}
+    </div>
   </>;
 }

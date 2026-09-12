@@ -51,6 +51,12 @@ class ModelStub:
     # The clip selector, which also puts its template in the user turn — so these two are told apart
     # by the opening line of the template itself, the way the two capture calls already are.
     selection: dict[str, Any] = field(default_factory=dict)
+    # The two chat prompts, told apart from each other and from capture by their opening lines, the
+    # way the two capture calls already are. Two answers rather than one because a reference subject
+    # returns a `capture` where an article subject returns a `proposal`, and a test that could only
+    # set one would be unable to assert that each kind drops the other's field.
+    chat: dict[str, Any] = field(default_factory=dict)
+    chat_reference: dict[str, Any] = field(default_factory=dict)
     calls: list[dict[str, Any]] = field(default_factory=list)
     error: BaseException | None = None
     errors: list[BaseException | None] = field(default_factory=list)
@@ -86,8 +92,14 @@ class ModelStub:
                 body = _dumped(
                     self.selection if "You choose recorded speech" in asked else self.brief
                 )
+            elif "You decide what a learner" in system:
+                body = _dumped(self.resolution)
+            elif "You answer a learner's question" in system:
+                body = _dumped(self.chat)
+            elif "You help a learner read" in system:
+                body = _dumped(self.chat_reference)
             else:
-                body = _dumped(self.resolution if "You decide what a learner" in system else self.article)
+                body = _dumped(self.article)
         answered = ModelResponse(
             model=kwargs["model"],
             choices=[
@@ -201,6 +213,21 @@ class Server:
             **overrides,
         }
         return self.post("/capture", body)
+
+    def chat(self, **overrides):
+        body = {
+            "schemaVersion": SCHEMA_VERSION,
+            "deviceId": DEVICE,
+            "subject": {
+                "kind": "article",
+                "lexemeId": "lexemepicar0001",
+                "document": "headword: picar\nlanguage: es\n",
+                "focus": None,
+            },
+            "turns": [{"role": "you", "text": "what does this mean?"}],
+            **overrides,
+        }
+        return self.post("/chat", body)
 
 
 @pytest.fixture(autouse=True)

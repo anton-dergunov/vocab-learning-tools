@@ -262,8 +262,16 @@ export default function ExternalArticle({ entry, onAdd, busy = false }: {
  * you are reading should not be quietly issuing byte-range reads on the chance you are curious, and
  * on a phone that chance is mostly no.
  */
-export function DictionaryFold({ headword, lemma, language }: {
+export function DictionaryFold({ headword, lemma, language, onLoaded }: {
   headword: string; lemma: string; language: string;
+  /**
+   * What this fold has on screen, reported upward so a question can be asked against it.
+   *
+   * Only what is actually open: closed, nothing is loaded and nothing is reported, which is the
+   * honest answer. Chat sends the dictionary text as read-only context, never as something it may
+   * propose changing.
+   */
+  onLoaded?(entry: ExternalEntry | null): void;
 }) {
   const [state, setState] = useState<"closed" | "loading" | "ready" | "failed">("closed");
   const [entry, setEntry] = useState<ExternalEntry | null>(null);
@@ -277,8 +285,10 @@ export function DictionaryFold({ headword, lemma, language }: {
     // lemma and Acervo's headword keeps the article that tells a learner the gender.
     void lookup(headword, language, ["device", "server"], [lemma])
       .then((results) => {
-        setEntry(externalEntryOf(headword, results));
+        const found = externalEntryOf(headword, results);
+        setEntry(found);
         setState("ready");
+        onLoaded?.(found);
       })
       .catch(() => setState("failed"));
   }
