@@ -207,19 +207,20 @@ def _asking(monkeypatch):
     return seen
 
 
-def test_the_schema_is_renamed_before_it_is_sent(monkeypatch):
+def test_no_schema_is_sent_at_all(monkeypatch):
+    """Constrained decoding is not used here, or anywhere — AGENTS.md says why, and the alignment
+    measurement behind it is the strongest case that was tried and still lost."""
     seen = _asking(monkeypatch)
     ChainGenerator(None).generate(
         instructions="Translate it.", user_text="me pica",
         schema={"type": "OBJECT", "properties": {"target_text": {"type": "STRING"}}},
     )
-    assert seen[-1]["schema"] == {
-        "type": "object", "properties": {"target_text": {"type": "string"}}
-    }
+    assert "schema" not in seen[-1]
+    assert seen[-1]["as_json"] is True
 
 
 def test_the_shape_is_also_stated_in_the_instructions(monkeypatch):
-    """Not belt-and-braces: it is the only thing that makes a `jsonSchema: "prompt"` row work here.
+    """Not belt-and-braces: with no schema sent anywhere, it is the only statement of the shape.
 
     The retrieval service's two prompts name no field at all — they end with "Return only the
     requested structured result" and leave the shape entirely to the schema, which is how its own

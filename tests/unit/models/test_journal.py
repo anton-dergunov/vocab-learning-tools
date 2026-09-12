@@ -141,3 +141,48 @@ def test_a_call_somebody_is_waiting_on_gives_up_long_before_capture_would():
     for module in (brief, select):
         source = __import__("inspect").getsource(module)
         assert "timeout=call.SHORT_TIMEOUT_SECONDS" in source, module.__name__
+
+
+# ── reading the log back ────────────────────────────────────────────────────
+
+
+LIVE = """2026-09-12 20:32:56,709 INFO text gemini-free:gemini/gemini-3.1-flash-lite ok in 6.65s
+2026-09-12 20:33:06,691 INFO brief gemini-free:gemini/gemini-3.1-flash-lite ok in 1.46s
+2026-09-12 20:33:58,074 INFO brief gemini-free:gemini/gemini-3.1-flash-lite ok in 2.19s
+2026-09-12 20:34:56,116 INFO brief gemini-free:gemini/gemini-3.1-flash-lite ok in 2.29s
+2026-09-12 20:46:02,888 WARNING clips gemini-free:gemini/gemini-3.1-flash-lite unreachable — Timeout
+2026-09-12 20:46:04,329 INFO clips gemini-free:gemini/gemini-3.5-flash-lite ok in 1.44s
+2026-09-12 20:46:06,457 ERROR brief exhausted after 1 attempt(s): unusable""".splitlines()
+
+
+def test_the_log_answers_how_long_each_job_takes():
+    """The whole reason the reader sits beside the writer: a timeout is only defensible if the
+    durations it is set from can be produced on demand."""
+    from acervo.models import journal
+
+    rows = {(row.caller, row.pair.split(":", 1)[1]): row for row in journal.summarise(LIVE)}
+    brief = rows[("brief", "gemini/gemini-3.1-flash-lite")]
+    assert (brief.answered, brief.failed) == (3, 0)
+    assert brief.at(.5) == 2.19
+    assert brief.at(1.0) == 2.29
+
+    # A timeout is counted and contributes no duration: it took exactly as long as the bound
+    # allowed, so averaging it in would measure the bound rather than the provider.
+    timed_out = rows[("clips", "gemini/gemini-3.1-flash-lite")]
+    assert (timed_out.answered, timed_out.failed) == (0, 1)
+    assert timed_out.at(1.0) == 0.0
+
+    # The `exhausted` line names no pair and is not a call; it must not become one.
+    assert not any(row.pair.startswith("exhausted") for row in journal.summarise(LIVE))
+
+
+def test_the_bounds_are_the_ones_the_measurements_support():
+    """Set from `admin calls` against a real deployment, where the slowest answer of any kind was
+    6.74s and the slowest brief 2.29s. Being wrong on the short side is cheap and announces itself:
+    the chain asks the next pair and the log records the timeout with the job named."""
+    from acervo.models import call
+
+    slowest_seen = 6.74
+    assert call.SHORT_TIMEOUT_SECONDS < call.TIMEOUT_SECONDS
+    assert call.TIMEOUT_SECONDS >= slowest_seen * 4
+    assert call.SHORT_TIMEOUT_SECONDS >= 2.29 * 4

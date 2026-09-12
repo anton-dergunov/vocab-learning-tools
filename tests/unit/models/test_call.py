@@ -19,8 +19,8 @@ from acervo.models.catalogue import load_catalogue
 from acervo.models.errors import RETRYABLE, TERMINAL, ProviderRefused, ProviderUnavailable
 
 SHIPPED = load_catalogue()
-GEMINI = SHIPPED.find("gemini-free")       # jsonSchema: native
-CLOUDFLARE = SHIPPED.find("cloudflare")    # jsonSchema: prompt
+GEMINI = SHIPPED.find("gemini-free")       # jsonMode: native
+CLOUDFLARE = SHIPPED.find("cloudflare")    # jsonMode: prompt
 PRIVATE = "provider details that must stay private"
 
 
@@ -167,7 +167,10 @@ def test_the_row_supplies_its_credential_its_endpoint_and_its_parameters(monkeyp
     call.text("hello", row=GEMINI, system="be brief")
     assert calls[-1]["api_key"] == "a-gemini-key"
     assert calls[-1]["messages"][0] == {"role": "system", "content": "be brief"}
-    assert calls[-1]["timeout"] == 120
+    # The constant, not a literal: it is set from `admin calls` against a real deployment and
+    # will move again as the log says more. A test that pinned the number would make the
+    # measurement the thing that has to justify itself to the test.
+    assert calls[-1]["timeout"] == call.TIMEOUT_SECONDS
     assert "vertex_location" not in calls[-1]
 
     # `params`, not an `if provider == "vertex"` — which is what let `reasoning_effort` be dropped
@@ -394,92 +397,80 @@ def _recording(calls, answer):
     return record
 
 
-def test_a_declared_schema_is_sent_inside_the_envelope_litellm_reads(monkeypatch):
-    """A bare JSON Schema as `response_format` is not a `response_format`, and was dropped whole.
+def test_nothing_asks_for_constrained_decoding_anywhere(monkeypatch):
+    """The rule, enforced rather than remembered: `AGENTS.md`, "Constrained decoding is not used".
 
-    `response_format` is an envelope with a `type`; a schema handed over as one matches no branch of
-    LiteLLM's mapping, so the shape went unstated *and* JSON mode went unrequested — on every row
-    declaring `jsonSchema: "native"`. Acervo's own callers never noticed because their prompts also
-    describe the shape; the speech adapter's prompts deliberately do not, and every clip translation
-    failed. `test_the_envelope_is_the_one_litellm_understands` is the other half of this check.
+    `text()` has no `schema` argument, so there is nothing to pass and no call site to police. What
+    a `native` row gets is JSON *mode* — "answer with a JSON object" — and nothing about its shape.
+
+    The history is worth keeping, because the mistake was subtle in both directions. A schema was
+    first sent *bare* in `response_format`, which LiteLLM silently mapped to nothing at all: the
+    shape went unstated and JSON mode went unrequested, and nobody noticed for two deployments
+    because the prompts described the shape anyway. Wrapping it correctly then made it work — and
+    working is what did the damage: the clip selector's translations grew from 61 characters to
+    between 266 and 1039, three calls in four timed out, and the alignment schema was rejected
+    outright by the provider above about a hundred tokens.
     """
+    import inspect
+
+    assert "schema" not in inspect.signature(call.text).parameters
+
     calls = []
     monkeypatch.setattr(call, "completion", _recording(calls, reply('{"a": 1}')))
-    schema = {"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]}
 
-    call.text("hello", row=GEMINI, schema=schema)
-    assert calls[-1]["response_format"] == {
-        "type": "json_schema",
-        "json_schema": {"name": "reply", "schema": schema, "strict": False},
-    }
+    call.text("hello", row=GEMINI, as_json=True)
+    assert calls[-1]["response_format"] == {"type": "json_object"}
 
-    # `strict` stays false on purpose: OpenAI's strict mode also demands
-    # `additionalProperties: false` on every object and every property in `required`, which none of
-    # the schemas in this repository satisfy. Tightening them is a separate decision from sending
-    # them at all.
-    assert calls[-1]["response_format"]["json_schema"]["strict"] is False
-
-    # A row that cannot take one is still sent none — the declaration is what decides, unchanged.
-    call.text("hello", row=CLOUDFLARE, schema=schema)
+    # And a row that cannot take even that is sent nothing; asking is the prompt's job there.
+    call.text("hello", row=CLOUDFLARE, as_json=True)
     assert "response_format" not in calls[-1]
 
 
-def test_the_envelope_is_the_one_litellm_understands():
-    """Pinned against LiteLLM itself, because this is where the bug lived and nothing else sees it.
+def test_no_caller_reintroduces_a_schema_by_hand():
+    """`response_format` is built in one place, so a caller cannot smuggle a schema past the rule
+    by passing one through `params`. Cheap to assert, and the alternative is finding out in
+    production the way we did the first time."""
+    from acervo.models import load_catalogue
 
-    Every layer above happily carried the old value: it was a valid dict, `completion` accepted it,
-    and the only symptom was a model that answered in prose. The assertion has to be made against
-    the library's own mapping or it is not made at all.
+    for row in load_catalogue().rows:
+        for kind in row.kinds:
+            assert "response_format" not in row.params_for(kind), f"{row.id}/{kind}"
+
+
+def test_a_row_can_state_its_own_timeout_because_rows_differ_by_twentyfold(monkeypatch):
+    """One number cannot serve a chain whose rows answer 20× apart.
+
+    Measured on one deployment, the same clip-selection call: 0.9–1.8 s on the gemini free tier,
+    21–37 s on Vertex. A bound sized for the fast row cuts the slow one off before it can rescue
+    anything — which is the opposite of what a fallback is for — and one sized for the slow row
+    restores the two-minute hang it was meant to remove. So it is a per-row fact, recorded beside
+    the other per-provider facts rather than branched on in code.
     """
-    from litellm.llms.vertex_ai.gemini.vertex_and_google_ai_studio_gemini import VertexGeminiConfig
+    from acervo.models import load_catalogue
 
-    schema = {"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]}
-    envelope = {"type": "json_schema", "json_schema": {"name": "reply", "schema": schema,
-                                                       "strict": False}}
-    mapped = VertexGeminiConfig().map_openai_params(
-        {"response_format": envelope}, {}, "gemini-2.0-flash", False
-    )
-    assert mapped["response_mime_type"] == "application/json"
-    assert mapped["response_json_schema"] == schema
+    calls = []
+    monkeypatch.setattr(call, "completion", _recording(calls, reply("{}")))
+    catalogue = load_catalogue()
+    fast, slow = catalogue.find("gemini-free"), catalogue.find("vertex")
 
-    # What was sent before, for contrast: nothing at all reached the provider.
-    assert VertexGeminiConfig().map_openai_params(
-        {"response_format": schema}, {}, "gemini-2.0-flash", False
-    ) == {}
+    assert fast.timeout_for("text", call.SHORT_TIMEOUT_SECONDS) == call.SHORT_TIMEOUT_SECONDS
+    assert slow.timeout_for("text", call.SHORT_TIMEOUT_SECONDS) > call.TIMEOUT_SECONDS
+
+    call.text("hello", row=slow, model=slow.models_for("text")[0],
+              timeout=call.SHORT_TIMEOUT_SECONDS)
+    assert calls[-1]["timeout"] == slow.timeout_for("text", 0)
+
+    # And a row that says nothing still takes what the caller asked for.
+    call.text("hello", row=fast, timeout=call.SHORT_TIMEOUT_SECONDS)
+    assert calls[-1]["timeout"] == call.SHORT_TIMEOUT_SECONDS
 
 
-def test_a_schema_requires_every_field_its_parser_demands():
-    """The check that would have caught the regression b8dd6ec caused, and the reason it exists.
+def test_the_timeout_is_ours_and_never_reaches_the_provider(monkeypatch):
+    """`params` is spread into the provider call, so a bound kept there would be sent as an
+    argument the provider never asked for. Its own field, for that reason."""
+    from acervo.models import load_catalogue
 
-    A schema is only guidance while nobody reads it. Once it is sent natively it reaches Google as
-    `responseJsonSchema` and becomes the *definition* of a legal answer, so an optional field is one
-    the model is free to omit — and constrained decoding takes the cheapest legal path. Both of
-    Acervo's schemas listed `senseId` alone, so `{"senses":[{"senseId":"…"}]}` was fully legal,
-    every parser rejected it, and every model in the chain was walked producing the same legal
-    nothing. The prompts had spelled out every field the whole time and were simply outranked.
-
-    So: anything a parser treats as mandatory belongs in `required`. A schema that asks for less
-    than the prompt does is worse than sending no schema at all.
-    """
-    from acervo.clips.select import SELECTION_SCHEMA
-    from acervo.images.brief import BRIEF_SCHEMA
-
-    brief = BRIEF_SCHEMA["properties"]["senses"]["items"]
-    # `parse_reply` refuses a sense whose style is not one it offered and one whose brief is empty,
-    # and reads `refused` to decide whether to demand either.
-    assert {"senseId", "styleId", "situation", "subject", "brief", "refused"} <= set(brief["required"])
-    # Genuinely conditional, and deliberately not required: an unknown anchor is blanked rather than
-    # refused, and a reason exists only on a refusal.
-    assert "anchorExampleId" not in brief["required"]
-    assert "refusalReason" not in brief["required"]
-
-    selection = SELECTION_SCHEMA["properties"]["senses"]["items"]
-    # `segmentId` required *and* nullable: declining stays expressible and cheap, which is the whole
-    # design, while silence stops looking like a decision.
-    assert {"senseId", "segmentId"} <= set(selection["required"])
-    assert selection["properties"]["segmentId"]["type"] == ["string", "null"]
-
-    for schema in (BRIEF_SCHEMA, SELECTION_SCHEMA):
-        items = schema["properties"]["senses"]["items"]
-        assert items["additionalProperties"] is False
-        assert schema["properties"]["senses"]["minItems"] == 1
+    vertex = load_catalogue().find("vertex")
+    assert "timeout" not in vertex.params_for("text")
+    assert "timeoutSeconds" not in vertex.params_for("text")
+    assert vertex.timeouts["text"] > 0

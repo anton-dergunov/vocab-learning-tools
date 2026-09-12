@@ -24,6 +24,9 @@ cleaned only on its way to a log has a path that skips the cleaning, and this re
 from __future__ import annotations
 
 import logging
+import re
+from dataclasses import dataclass
+from typing import Iterable
 
 # The name a handler attaches to. Deliberately not `acervo.models`, so installing a file for this
 # does not also capture whatever else the package might one day log.
@@ -60,3 +63,58 @@ def passed(caller: str, provider: str, model: str, reason: str, detail: str) -> 
 
 def exhausted(caller: str, attempts: int, reasons: tuple[str, ...]) -> None:
     logger.error("%s exhausted after %d attempt(s): %s", caller, attempts, ", ".join(reasons))
+
+
+# ── reading it back ─────────────────────────────────────────────────────────
+#
+# The reader lives beside the writer on purpose. A log format described in two places drifts, and
+# this one is the answer to a question worth asking often: how long does each job actually take, and
+# therefore what is a sensible bound to give up at? Timeouts set from a guess are either so long
+# that a dead connection reads as a hung page, or so short that a legitimately slow answer is thrown
+# away. Neither is necessary when the durations are right here.
+
+_OK = re.compile(r"^(?P<when>\S+ \S+) \w+ (?P<caller>\S+) (?P<pair>\S+:\S+) ok in (?P<seconds>[\d.]+)s")
+_BAD = re.compile(r"^(?P<when>\S+ \S+) \w+ (?P<caller>\S+) (?P<pair>\S+:\S+) (?P<reason>\S+) — ")
+
+
+@dataclass(frozen=True)
+class Timing:
+    """What one (caller, pair) did, over every call in the log."""
+
+    caller: str
+    pair: str
+    answered: int
+    failed: int
+    seconds: tuple[float, ...]
+
+    def at(self, share: float) -> float:
+        """The duration at a share of the calls, nearest-rank. `at(1.0)` is the slowest seen."""
+        if not self.seconds:
+            return 0.0
+        ordered = sorted(self.seconds)
+        index = max(0, min(len(ordered) - 1, round(share * len(ordered) + 0.5) - 1))
+        return ordered[index]
+
+
+def summarise(lines: Iterable[str]) -> list[Timing]:
+    """Every (caller, pair) in the log, slowest first by its worst call.
+
+    Failures are counted but contribute no duration: a call that timed out took exactly as long as
+    the bound allowed, so averaging it in would measure the bound rather than the provider.
+    """
+    answered: dict[tuple[str, str], list[float]] = {}
+    failed: dict[tuple[str, str], int] = {}
+    for line in lines:
+        if match := _OK.match(line):
+            key = (match["caller"], match["pair"])
+            answered.setdefault(key, []).append(float(match["seconds"]))
+        elif match := _BAD.match(line):
+            key = (match["caller"], match["pair"])
+            failed[key] = failed.get(key, 0) + 1
+    keys = set(answered) | set(failed)
+    rows = [
+        Timing(caller, pair, len(answered.get((caller, pair), ())), failed.get((caller, pair), 0),
+               tuple(answered.get((caller, pair), ())))
+        for caller, pair in keys
+    ]
+    return sorted(rows, key=lambda row: (row.at(1.0), row.answered), reverse=True)

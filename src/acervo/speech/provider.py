@@ -12,11 +12,18 @@ cache exists for. That is the opposite of the rule for a *stored* record — an 
 names the model that did the work — and the difference is that one is provenance and the other is a
 cache key.
 
-**The shape is both sent and said.** The schema arrives in Google's GenAI dialect and is renamed
-into JSON Schema's before `acervo.models` sees it, and it is also written into the instructions —
-because the service's two prompts name no field, leaving the shape entirely to the schema, and a
-row that declares `jsonSchema: "prompt"` is sent none. Saying it is what makes those rows usable
-here at all; it costs a hundred tokens on the rows where the schema also goes over the wire.
+**The shape is said, not sent.** The retrieval service's two prompts name no field at all — they
+end with "Return only the requested structured result" and leave the shape entirely to a schema,
+which is how its own native adapter works. So the schema is rendered into the instructions here,
+in JSON Schema's spelling rather than Google's, and that text is the whole contract.
+
+It is not *also* sent as a constrained schema, and that is a measured decision rather than a
+stylistic one — see `AGENTS.md`, "Constrained decoding is not used". The alignment stage was the
+strongest case for sending one, because its schema restricts every id to an enum of this request's
+own tokens. Measured against constructed ground truth it bought no accuracy at any size it worked
+at, and above roughly a hundred tokens the provider rejected the schema outright with a 400, which
+this chain classifies as terminal. Saying the shape costs a few hundred tokens and works at every
+size.
 
 This module imports `acervo.models` and nothing else of Acervo's, and nothing at all of the
 retrieval service's — the dialect rename is a pure dict walk that names no package.
@@ -128,11 +135,10 @@ class ChainGenerator:
 
         started = time.perf_counter()
         shape = json_schema(schema)
-        # Stated in the instructions as well as sent, because the retrieval service's own prompts
-        # name no field at all — they end with "Return only the requested structured result" and
-        # leave the shape entirely to the schema, which is how its native Gemini adapter works. A
-        # row declaring `jsonSchema: "prompt"` is sent no schema by design, so without this line
-        # cloudflare and openrouter could never answer either of these two stages.
+        # The only statement of the shape there is. The retrieval service's own prompts name no
+        # field — they end with "Return only the requested structured result" and leave it entirely
+        # to a schema — and no schema is sent, so without this line no row could answer either of
+        # these two stages at all.
         instructions = (
             f"{instructions}\n\nReturn a single JSON object, and nothing else, matching this JSON "
             f"Schema:\n{json.dumps(shape, ensure_ascii=False)}"
@@ -151,7 +157,7 @@ class ChainGenerator:
                 load_catalogue(),
                 lambda candidate: call.text(
                     user_text, row=candidate.row, model=candidate.model,
-                    system=instructions, schema=shape, timeout=self._timeout,
+                    system=instructions, as_json=True, timeout=self._timeout,
                 ),
                 chain.stamped,
             )

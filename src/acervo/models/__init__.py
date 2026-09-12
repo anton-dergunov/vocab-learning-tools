@@ -7,7 +7,7 @@ cost or the model that answered, so the pipeline that needed both bypassed it. E
 returns an `Answer` alongside its payload.
 
 A provider is a row of data in `models/catalogue.json`, never a class. A row declares what it
-supports — `capabilities.jsonSchema` is `native` or `prompt` — and this package adapts once, at the
+supports — `capabilities.jsonMode` is `native` or `prompt` — and this package adapts once, at the
 call boundary. There is no per-provider code except `cloudflare.py`, which exists because LiteLLM
 covers neither Cloudflare images nor Cloudflare audio.
 

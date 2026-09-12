@@ -12,6 +12,7 @@ import re
 import httpx
 import litellm
 import pytest
+from acervo.models import call as provider_call
 from graph_records import lexeme, topic, vocabulary
 
 # What a provider says when it refuses. Every classification test asserts this never reaches
@@ -334,8 +335,8 @@ def test_it_asks_the_first_credentialed_row_in_the_catalogue(seeded):
     call = seeded.model.calls[0]
     assert call["model"] == "gemini/gemini-3.1-flash-lite"
     assert call["api_key"] == "stub-key"
-    assert call["timeout"] == 120
-    # Gemini's row declares `jsonSchema: native`, so the format is sent rather than asked for in
+    assert call["timeout"] == provider_call.TIMEOUT_SECONDS
+    # Gemini's row declares `jsonMode: native`, so JSON mode is requested rather than asked for in
     # prose. The two capture prompts return free-form documents, so it is `json_object` and not a
     # schema.
     assert call["response_format"] == {"type": "json_object"}
@@ -359,7 +360,7 @@ def test_the_chain_setting_decides_which_row_is_asked_first(seeded, monkeypatch)
     call = seeded.model.calls[0]
     assert call["model"].startswith("cloudflare/")
     assert call["api_key"] == "cloudflare-token"
-    # Cloudflare's row declares `jsonSchema: prompt`: the instruction is the prompt's job there, and
+    # Cloudflare's row declares `jsonMode: prompt`: the instruction is the prompt's job there, and
     # the reply is parsed afterwards.
     assert "response_format" not in call
 

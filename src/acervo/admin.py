@@ -15,6 +15,7 @@ from typing import Any
 
 from acervo import seed_data
 from acervo.domain.projection import COLLECTION_BY_NAME, projected
+from acervo.models import journal
 from acervo.repository import accounts, graph
 from acervo.repository.session import open_database
 from acervo.settings import Settings, settings as read_settings
@@ -128,6 +129,39 @@ def providers() -> int:
     return 0
 
 
+def call_timings(settings: Settings) -> int:
+    """How long each job actually takes, per model, from the call log.
+
+    The reading a timeout should be set from. A bound picked by feel is either so long that a dead
+    connection reads as a hung page — two minutes of "Writing a brief…" for a brief that takes two
+    seconds — or so short that a legitimately slow answer is thrown away. The durations have been
+    recorded all along; this is the part that was missing.
+    """
+    path = settings.call_log_path
+    if not path or not path.exists():
+        print(f"No call log at {path or '(disabled)'}.")
+        return 1
+    # Rotated files too, oldest first, so a summary is not silently a summary of the last few hours.
+    lines: list[str] = []
+    for backup in sorted(path.parent.glob(f"{path.name}.*"), reverse=True):
+        lines.extend(backup.read_text(encoding="utf-8", errors="replace").splitlines())
+    lines.extend(path.read_text(encoding="utf-8", errors="replace").splitlines())
+
+    rows = journal.summarise(lines)
+    if not rows:
+        print(f"{len(lines)} line(s) in {path}, none of them a model call.")
+        return 1
+    print(f"{'job':10} {'provider:model':46} {'ok':>4} {'fail':>5} "
+          f"{'median':>7} {'p95':>7} {'worst':>7}")
+    for row in rows:
+        print(f"{row.caller:10} {row.pair:46} {row.answered:4d} {row.failed:5d} "
+              f"{row.at(.5):6.2f}s {row.at(.95):6.2f}s {row.at(1):6.2f}s")
+    slowest = max(row.at(1.0) for row in rows)
+    print(f"\nSlowest answer seen: {slowest:.2f}s. A timeout wants headroom over that, not over a "
+          f"guess — and a call past it is not slow, it is gone.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="acervo.admin", description="Manage an Acervo server.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -142,12 +176,16 @@ def main(argv: list[str] | None = None) -> int:
 
     commands.add_parser("providers", help="what this machine can call, and as whom")
 
+    commands.add_parser("calls", help="how long each job takes per model, from the call log")
+
     serve_parser = commands.add_parser("serve", help="run the HTTP service")
     serve_parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 - the container's own port
     serve_parser.add_argument("--port", type=int, default=8000)
 
     arguments = parser.parse_args(argv)
     settings = read_settings()
+    if arguments.command == "calls":
+        return call_timings(settings)
     if arguments.command == "accounts":
         return create_account(settings, arguments.email)
     if arguments.command == "seed":

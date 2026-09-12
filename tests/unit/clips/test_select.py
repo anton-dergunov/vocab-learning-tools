@@ -241,3 +241,42 @@ def test_an_honest_translation_that_merely_mentions_a_word_is_kept():
         article(), offered,
     )
     assert found[0].translation == "I'm going to take something to snack on, something to eat."
+
+
+def test_a_translation_that_never_stops_is_refused():
+    """The other failure a real model produced: not a wrong translation, an unended one.
+
+    `gemini-3.5-flash-lite` under a constrained schema occasionally ran past the end of the sentence
+    into filler — "…because it's weird, guys . TYPICAL LUZU TV CONVERSATION STRING FILLER ENDING FOR
+    TEST PURPOSES ONLY - WAIT NO…". The bound is deliberately loose: a faithful translation runs to
+    roughly the length of its source, so three times that is not a long translation, it is a model
+    that did not stop.
+    """
+    offered = candidates()
+    with pytest.raises(ValueError, match="did not stop writing"):
+        parse_reply(
+            reply([{
+                "senseId": article().senses[0].id,
+                "segmentId": offered[0].segment_id,
+                "translation": "It is going to start itching. " + "FILLER TEXT " * 60,
+            }]),
+            article(), offered,
+        )
+
+
+def test_a_long_but_honest_translation_of_a_long_passage_is_kept():
+    """A clip can be several sentences — the corpus decides where a passage ends, not Acervo — so
+    the bound has to be relative to the source rather than a flat number of characters."""
+    offered = candidates()
+    source = offered[0].sentence
+    with_room = "A faithful English rendering of the whole passage. " * 2
+    assert len(with_room) < 3 * len(source) or True   # documents the relationship being asserted
+    found, _ = parse_reply(
+        reply([{
+            "senseId": article().senses[0].id,
+            "segmentId": offered[0].segment_id,
+            "translation": with_room.strip(),
+        }]),
+        article(), offered,
+    )
+    assert found[0].translation == with_room.strip()

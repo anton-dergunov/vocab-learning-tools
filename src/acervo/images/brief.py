@@ -22,47 +22,11 @@ from acervo.article import ArticleView
 from .article import anchor_for
 from .styles import StyleTable
 
-# What the writer must return. Sent as `response_format` where the row understands one and written
-# into the prompt where it does not — the row decides, and `parse_reply` checks the answer either
-# way against this article's own sense ids and the styles this call actually offered, neither of
-# which a schema can name.
-#
-# **`required` lists everything `parse_reply` needs, and that is not tidiness.** Where a schema is
-# sent natively it reaches Google as `responseJsonSchema` and becomes the definition of a legal
-# answer — so an optional field is one the model is free to leave out, and constrained decoding
-# takes the cheapest legal path. This once listed `senseId` alone: `{"senses":[{"senseId":"…"}]}`
-# satisfied it completely, `parse_reply` rejected it, and every model in the chain was walked in
-# turn producing the same legal nothing. The prompt spelled out all eight fields the whole time and
-# was simply outranked. A schema that says less than the prompt is worse than no schema at all.
-#
-# `anchorExampleId` and `refusalReason` stay optional because they are genuinely conditional: an
-# unknown anchor is blanked rather than refused below, and a reason only exists on a refusal.
-BRIEF_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "senses": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "senseId": {"type": "string"},
-                    "styleId": {"type": "string"},
-                    "anchorExampleId": {"type": "string"},
-                    "situation": {"type": "string"},
-                    "subject": {"type": "string"},
-                    "brief": {"type": "string"},
-                    "refused": {"type": "boolean"},
-                    "refusalReason": {"type": "string"},
-                },
-                "required": ["senseId", "styleId", "situation", "subject", "brief", "refused"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["senses"],
-    "additionalProperties": False,
-}
+# What the writer must return is stated in `prompts/acervo_image_brief.md`, with a worked example
+# naming every field — and it is stated *there and only there*. No JSON Schema is sent: see
+# AGENTS.md, "Constrained decoding is not used". `parse_reply` below is the contract that is
+# actually enforced, and it checks what a schema never could — this article's own sense ids, and
+# the styles this particular call offered.
 
 
 @dataclass(frozen=True)
@@ -233,7 +197,7 @@ class BriefWriter:
         prompt = f"{self.template}\n\n{json.dumps(request, ensure_ascii=False, indent=2)}\n"
         def ask(candidate: chain.Candidate) -> TextResult:
             answered = call.text(
-                prompt, row=candidate.row, model=candidate.model, schema=BRIEF_SCHEMA,
+                prompt, row=candidate.row, model=candidate.model, as_json=True,
                 timeout=call.SHORT_TIMEOUT_SECONDS,
             )
             # Judged here, inside the chain's own callback, so a model that cannot hold the shape

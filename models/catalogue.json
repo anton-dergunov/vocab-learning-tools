@@ -5,108 +5,227 @@
     {
       "id": "gemini-free",
       "label": "Gemini (free tier)",
-      "kinds": ["text", "audio"],
+      "kinds": [
+        "text",
+        "audio"
+      ],
       "litellm": {
-        "text": ["gemini/gemini-3.1-flash-lite", "gemini/gemini-3.5-flash-lite"],
-        "audio": ["gemini/gemini-3.1-flash-tts-preview"]
+        "text": [
+          "gemini/gemini-3.1-flash-lite",
+          "gemini/gemini-3.5-flash-lite"
+        ],
+        "audio": [
+          "gemini/gemini-3.1-flash-tts-preview"
+        ]
       },
       "keyEnv": "GEMINI_API_KEY",
       "usageUrl": "https://aistudio.google.com/rate-limit?timeRange=last-28-days",
       "capabilities": {
-        "jsonSchema": "native",
-        "audio": { "defaultVoice": "kore" }
+        "jsonMode": "native",
+        "audio": {
+          "defaultVoice": "kore"
+        }
       },
-      "params": { "text": {} },
+      "params": {
+        "text": {}
+      },
       "notes": "Two text models at 500 requests a day each, which is why both are listed rather than one: they are separate buckets, so the second is a genuine thousand-a-day rather than a spare. Speech is one model at 10 a day — enough for a handful of words, not for a batch. The tier allows a second speech model, `gemini-2.5-flash-preview-tts`, and it is deliberately not listed: it answers a short word with generated *text* often enough to be useless, which Gemini then refuses with a 400, and LiteLLM's speech bridge surfaces that as an IndexError rather than as a refusal — so the chain would read it as terminal and stop rather than falling through. Prompting it as a transcript instruction does not help. Worth revisiting when audio gets a caller. There is deliberately no `image` kind: on this tier every image model, Nano Banana included, is allowed 0 requests, so listing one would put a row in the chain that can only 429. Voice names do not carry across providers, so the row names one Gemini accepts; a caller that asks for a specific voice overrides it. Temperature is deliberately unset: LiteLLM recommends leaving Gemini 3+ at its default."
     },
     {
       "id": "vertex",
       "label": "Vertex AI",
-      "kinds": ["text", "image", "audio"],
+      "kinds": [
+        "text",
+        "image",
+        "audio"
+      ],
       "litellm": {
-        "text": ["vertex_ai/gemini-3.8-flash", "vertex_ai/gemini-3.5-flash"],
-        "image": ["vertex_ai/gemini-3.1-flash-lite-image"],
-        "audio": ["vertex_ai/gemini-3.1-flash-tts-preview"]
+        "text": [
+          "vertex_ai/gemini-3.8-flash",
+          "vertex_ai/gemini-3.5-flash"
+        ],
+        "image": [
+          "vertex_ai/gemini-3.1-flash-lite-image"
+        ],
+        "audio": [
+          "vertex_ai/gemini-3.1-flash-tts-preview"
+        ]
       },
       "auth": "adc",
       "authEnv": "GOOGLE_APPLICATION_CREDENTIALS",
       "accountEnv": "ACERVO_VERTEX_ACCOUNT",
-      "requires": ["ACERVO_VERTEX_PROJECT"],
-      "passes": { "vertex_project": "ACERVO_VERTEX_PROJECT" },
+      "requires": [
+        "ACERVO_VERTEX_PROJECT"
+      ],
+      "passes": {
+        "vertex_project": "ACERVO_VERTEX_PROJECT"
+      },
       "usageUrl": "https://console.cloud.google.com/billing?project={ACERVO_VERTEX_PROJECT}",
       "capabilities": {
-        "jsonSchema": "native",
-        "image": { "responseFormat": null, "size": "fixed", "seed": "ignored" },
-        "audio": { "defaultVoice": "Sulafat" }
+        "jsonMode": "native",
+        "image": {
+          "responseFormat": null,
+          "size": "fixed",
+          "seed": "ignored"
+        },
+        "audio": {
+          "defaultVoice": "Sulafat"
+        }
       },
       "params": {
-        "text": { "vertex_location": "global" },
-        "image": { "vertex_location": "global", "imageConfig": { "imageSize": "1K" } },
-        "audio": { "vertex_location": "global" }
+        "text": {
+          "vertex_location": "global"
+        },
+        "image": {
+          "vertex_location": "global",
+          "imageConfig": {
+            "imageSize": "1K"
+          }
+        },
+        "audio": {
+          "vertex_location": "global"
+        }
       },
-      "notes": "Application default credentials, not an API key: LiteLLM has no Vertex express-key path (BerriAI/litellm#21036). Present on a workstation that has run `gcloud auth application-default login`; on a server it needs a service-account JSON and GOOGLE_APPLICATION_CREDENTIALS. This is the only row that can generate an image today, the free tier having no image allowance at all. The image model is a Gemini one rather than Imagen, no Imagen id being reachable in this project, and it is also what the sense-image pipeline already uses. Location stays `global`; the Gemini image models 404 in a named region. The text models are the ones this project actually has: `gemini-3-flash` and `gemini-3.1-flash` both 404 here, and `gemini-3.8-flash` is what the sense-image pipeline already asks for briefs. Being paid rather than metered, the second model is availability cover rather than a second quota. Set `ACERVO_VERTEX_ACCOUNT` to the service account this row is allowed to spend and it will refuse to run as anything else — application default credentials are whichever Google login was last signed in, so on a machine that holds a work account as well as a personal one that is the difference between noticing afterwards and it not happening. Speech is the same model the free tier offers and the best-sounding one tried across a separate prototype, but paid and so without the free tier's ten-a-day cap — which is the whole reason to reach it here. `Sulafat` is a Gemini voice name and a per-language table would be better still; that is audio's own plan, along with everything else about speech. Two image parameters are declarations rather than hopes, both measured against the installed LiteLLM: `size` reaches this row only as an aspect ratio, `image_size` falling through both of LiteLLM's parameter gates, so the resolution travels in `params.image.imageConfig` — the one channel that survives into `generationConfig`. And `seed` never reaches the request at all, the Vertex transformer not reading it, so the row says `ignored` and a caller is told its picture is not reproducible rather than recording a seed that does nothing. There is no `reasoning_effort`: the REST call this replaced sent `thinkingLevel: MEDIUM`, but LiteLLM refuses the parameter for `gemini-3-flash` outright, and `params` is where it goes back if that changes."
+      "notes": "Application default credentials, not an API key: LiteLLM has no Vertex express-key path (BerriAI/litellm#21036). Present on a workstation that has run `gcloud auth application-default login`; on a server it needs a service-account JSON and GOOGLE_APPLICATION_CREDENTIALS. This is the only row that can generate an image today, the free tier having no image allowance at all. The image model is a Gemini one rather than Imagen, no Imagen id being reachable in this project, and it is also what the sense-image pipeline already uses. Location stays `global`; the Gemini image models 404 in a named region. The text models are the ones this project actually has: `gemini-3-flash` and `gemini-3.1-flash` both 404 here, and `gemini-3.8-flash` is what the sense-image pipeline already asks for briefs. Being paid rather than metered, the second model is availability cover rather than a second quota. Set `ACERVO_VERTEX_ACCOUNT` to the service account this row is allowed to spend and it will refuse to run as anything else — application default credentials are whichever Google login was last signed in, so on a machine that holds a work account as well as a personal one that is the difference between noticing afterwards and it not happening. Speech is the same model the free tier offers and the best-sounding one tried across a separate prototype, but paid and so without the free tier's ten-a-day cap — which is the whole reason to reach it here. `Sulafat` is a Gemini voice name and a per-language table would be better still; that is audio's own plan, along with everything else about speech. Two image parameters are declarations rather than hopes, both measured against the installed LiteLLM: `size` reaches this row only as an aspect ratio, `image_size` falling through both of LiteLLM's parameter gates, so the resolution travels in `params.image.imageConfig` — the one channel that survives into `generationConfig`. And `seed` never reaches the request at all, the Vertex transformer not reading it, so the row says `ignored` and a caller is told its picture is not reproducible rather than recording a seed that does nothing. There is no `reasoning_effort`: the REST call this replaced sent `thinkingLevel: MEDIUM`, but LiteLLM refuses the parameter for `gemini-3-flash` outright, and `params` is where it goes back if that changes.",
+      "timeouts": {
+        "text": 90,
+        "image": 180,
+        "audio": 90
+      }
     },
     {
       "id": "cloudflare",
       "label": "Cloudflare Workers AI",
-      "kinds": ["text", "image", "audio"],
-      "litellm": { "text": ["cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"] },
-      "adapter": { "image": "cloudflare", "audio": "cloudflare" },
+      "kinds": [
+        "text",
+        "image",
+        "audio"
+      ],
+      "litellm": {
+        "text": [
+          "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+        ]
+      },
+      "adapter": {
+        "image": "cloudflare",
+        "audio": "cloudflare"
+      },
       "models": {
-        "image": ["@cf/black-forest-labs/flux-2-klein-4b"],
-        "audio": ["@cf/deepgram/aura-1"]
+        "image": [
+          "@cf/black-forest-labs/flux-2-klein-4b"
+        ],
+        "audio": [
+          "@cf/deepgram/aura-1"
+        ]
       },
       "keyEnv": "CLOUDFLARE_API_TOKEN",
-      "requires": ["CLOUDFLARE_ACCOUNT_ID"],
+      "requires": [
+        "CLOUDFLARE_ACCOUNT_ID"
+      ],
       "usageUrl": "https://dash.cloudflare.com/{CLOUDFLARE_ACCOUNT_ID}/ai/workers-ai",
       "capabilities": {
-        "jsonSchema": "prompt",
-        "image": { "size": "native", "seed": "native" },
-        "audio": { "inputField": "text" }
+        "jsonMode": "prompt",
+        "image": {
+          "size": "native",
+          "seed": "native"
+        },
+        "audio": {
+          "inputField": "text"
+        }
       },
-      "params": { "text": { "max_tokens": 4096 } },
+      "params": {
+        "text": {
+          "max_tokens": 4096
+        }
+      },
       "notes": "Workers AI has no account-less endpoint, so the account id is required as well as the token — and it is what makes the usage link point at the right dashboard. LiteLLM covers text only: image and audio go through the hand-written adapter, because FLUX.2 Klein needs multipart/form-data even for a text-only prompt. Audio is Deepgram Aura rather than melotts: melotts answers Spanish with AiError 8002 and answered a plain English word with a 500. Aura takes `text` where melotts took `prompt`. The model ids here are the ones that answered a live call; the rest of Workers AI's catalogue is unverified. `max_tokens` is set because Workers AI defaults it to about 256, which silently truncates a composed article mid-JSON — the reply parses or not depending on how long the model felt like being, which reads as a model that cannot write JSON rather than as a cap."
     },
     {
       "id": "openai",
       "label": "OpenAI",
-      "kinds": ["text", "image", "audio"],
+      "kinds": [
+        "text",
+        "image",
+        "audio"
+      ],
       "litellm": {
-        "text": ["openai/gpt-5.1"],
-        "image": ["openai/gpt-image-1"],
-        "audio": ["openai/gpt-4o-mini-tts"]
+        "text": [
+          "openai/gpt-5.1"
+        ],
+        "image": [
+          "openai/gpt-image-1"
+        ],
+        "audio": [
+          "openai/gpt-4o-mini-tts"
+        ]
       },
       "keyEnv": "OPENAI_API_KEY",
       "usageUrl": "https://platform.openai.com/usage",
       "capabilities": {
-        "jsonSchema": "native",
-        "image": { "size": "native", "seed": "ignored" }
+        "jsonMode": "native",
+        "image": {
+          "size": "native",
+          "seed": "ignored"
+        }
       },
-      "params": { "text": {} },
-      "notes": "Listed, not verified: no live call has been made against this row. `seed` is `ignored` because LiteLLM turns it into an `extra_body` field the Images API rejects outright — a 400 rather than a picture without a seed."
+      "params": {
+        "text": {}
+      },
+      "notes": "Listed, not verified: no live call has been made against this row. `seed` is `ignored` because LiteLLM turns it into an `extra_body` field the Images API rejects outright — a 400 rather than a picture without a seed.",
+      "timeouts": {
+        "text": 60
+      }
     },
     {
       "id": "openrouter",
       "label": "OpenRouter",
-      "kinds": ["text"],
-      "litellm": { "text": ["openrouter/meta-llama/llama-3.3-70b-instruct"] },
+      "kinds": [
+        "text"
+      ],
+      "litellm": {
+        "text": [
+          "openrouter/meta-llama/llama-3.3-70b-instruct"
+        ]
+      },
       "keyEnv": "OPENROUTER_API_KEY",
       "usageUrl": "https://openrouter.ai/activity",
-      "capabilities": { "jsonSchema": "prompt" },
-      "params": { "text": {} },
-      "notes": "One key in front of many models. Whether a schema is honoured depends on the model behind it, so this row claims the weaker guarantee. Listed, not verified."
+      "capabilities": {
+        "jsonMode": "prompt"
+      },
+      "params": {
+        "text": {}
+      },
+      "notes": "One key in front of many models. Whether a schema is honoured depends on the model behind it, so this row claims the weaker guarantee. Listed, not verified.",
+      "timeouts": {
+        "text": 60
+      }
     },
     {
       "id": "ollama-local",
       "label": "Ollama (this machine)",
-      "kinds": ["text"],
-      "litellm": { "text": ["ollama_chat/llama3.3"] },
+      "kinds": [
+        "text"
+      ],
+      "litellm": {
+        "text": [
+          "ollama_chat/llama3.3"
+        ]
+      },
       "auth": "none",
-      "requires": ["ACERVO_OLLAMA_URL"],
+      "requires": [
+        "ACERVO_OLLAMA_URL"
+      ],
       "baseUrl": "{ACERVO_OLLAMA_URL}",
-      "capabilities": { "jsonSchema": "native" },
-      "params": { "text": {} },
-      "notes": "No credential, but declared rather than assumed: the row is available only where ACERVO_OLLAMA_URL says a server is listening. A row that were always available would make `capture_unavailable` unreachable and would send every exhausted chain at a port that is usually closed. There is no usage link because there is no bill. Running a local model somewhere other than this machine is `docs/plans/nas-to-mac-job-queue.md`."
+      "capabilities": {
+        "jsonMode": "native"
+      },
+      "params": {
+        "text": {}
+      },
+      "notes": "No credential, but declared rather than assumed: the row is available only where ACERVO_OLLAMA_URL says a server is listening. A row that were always available would make `capture_unavailable` unreachable and would send every exhausted chain at a port that is usually closed. There is no usage link because there is no bill. Running a local model somewhere other than this machine is `docs/plans/nas-to-mac-job-queue.md`.",
+      "timeouts": {
+        "text": 60
+      }
     }
   ]
 }

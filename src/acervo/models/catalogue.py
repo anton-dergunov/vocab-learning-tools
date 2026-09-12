@@ -29,7 +29,11 @@ from typing import Any
 CATALOGUE_PATH = Path(__file__).resolve().parents[3] / "models" / "catalogue.json"
 
 KINDS = ("text", "image", "audio")
-SCHEMA_MODES = ("native", "prompt", "unsupported")
+# Whether a row understands a request for JSON *mode* — `{"type": "json_object"}`, meaning "answer
+# with a JSON object" and nothing more. Not a schema: this package does not send schemas at all (see
+# AGENTS.md, "Constrained decoding is not used"). `native` sends the request, `prompt` leaves the
+# asking to the prompt, and the reply is parsed and validated by the caller either way.
+JSON_MODES = ("native", "prompt", "unsupported")
 
 _PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _ADC_FILE = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
@@ -66,6 +70,16 @@ class Row:
     usageUrl: str | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
     params: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # How long to wait on this row, per kind, when the caller does not insist. Its own field rather
+    # than a key in `params`, because `params` is spread into the provider call and a timeout is
+    # ours rather than theirs.
+    #
+    # A row rather than a constant because the spread is enormous and real: measured on one chain,
+    # the same clip-selection call answers in 0.9-1.8s on the free tier and takes 21-37s on Vertex.
+    # A single number is wrong for somebody either way — sized for the fast row it cuts the slow one
+    # off before it can rescue anything, and sized for the slow row it restores the two-minute hang
+    # it was meant to remove.
+    timeouts: dict[str, float] = field(default_factory=dict)
     # Call arguments whose values live in the environment: {argument: VARIABLE}. Vertex needs
     # its project passed explicitly rather than read from ADC, and saying so as data keeps the
     # call path free of a per-provider branch.
@@ -89,9 +103,14 @@ class Row:
     def params_for(self, kind: str) -> dict[str, Any]:
         return dict(self.params.get(kind) or {})
 
+    def timeout_for(self, kind: str, default: float) -> float:
+        """This row's bound for this kind, or the caller's if the row does not say."""
+        stated = (self.timeouts or {}).get(kind)
+        return float(stated) if isinstance(stated, (int, float)) and stated > 0 else default
+
     @property
-    def schema_mode(self) -> str:
-        return str(self.capabilities.get("jsonSchema") or "prompt")
+    def json_mode(self) -> str:
+        return str(self.capabilities.get("jsonMode") or "prompt")
 
     @property
     def secret_names(self) -> tuple[str, ...]:
@@ -145,8 +164,8 @@ def _validate(row: Row) -> None:
             )
         if len(set(named)) != len(named):
             raise CatalogueError(f"{row.id} names the same {kind} model twice")
-    if row.schema_mode not in SCHEMA_MODES:
-        raise CatalogueError(f"{row.id} declares an unknown jsonSchema mode {row.schema_mode!r}")
+    if row.json_mode not in JSON_MODES:
+        raise CatalogueError(f"{row.id} declares an unknown jsonMode {row.json_mode!r}")
     if row.keyEnv and row.keyEnv in row.passes.values():
         raise CatalogueError(f"{row.id} passes its key as an ordinary call argument")
     # `requires` names are the row's non-secret deployment facts — a project, an account id, a

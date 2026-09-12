@@ -30,20 +30,22 @@ from acervo.models.errors import RETRYABLE, ProviderRefused, ProviderUnavailable
 from acervo.models.redact import redactor
 from acervo.models.results import Answer, AudioResult, ImageResult, TextResult
 
-TIMEOUT_SECONDS = 120
+# **Both of these are set from the call log, not from feel** — run `python -m acervo.admin calls`
+# and they can be argued with. Across every call that deployment has recorded, the slowest answer of
+# any kind was **6.74 s**, and the slowest brief 2.29 s. The 120 seconds this file used to carry for
+# everything was a guess, and it was wrong by more than an order of magnitude: one connection that
+# never opened cost two minutes of "Writing a brief…" for a brief that took 1.97 s once the chain
+# moved on.
+#
+# Being wrong on the short side is cheap and self-announcing. A call past the bound is not slow, it
+# is gone — the chain asks the next pair immediately, `cooldown` demotes the one that hung, and the
+# log records the timeout with the job named. So if either number is too tight, the evidence arrives
+# as a line saying exactly that, rather than as a page nobody can explain.
+TIMEOUT_SECONDS = 30
+"""Capture, which writes a whole article. Slowest recorded: 6.74 s."""
 
-# For a call that returns a short structured answer while somebody is watching a page.
-#
-# 120 seconds is the right bound for capture, which writes a whole article and legitimately takes a
-# while. The brief writer and the clip selector inherited it and should not have: measured against a
-# real deployment they answer in 0.7 to 6.7 seconds, so a call still silent at forty-five is not
-# slow, it is gone — and waiting out the other seventy-five buys nothing but a page that looks
-# broken. One hung connection cost two minutes of "Writing a brief…" for a brief that, once the
-# chain fell through to the next pair, took 1.97 seconds.
-#
-# Falling through sooner is safe because the chain is what catches it: the next pair is asked
-# immediately, and `cooldown` demotes the one that hung so the next word starts elsewhere.
-SHORT_TIMEOUT_SECONDS = 45
+SHORT_TIMEOUT_SECONDS = 20
+"""A short structured answer with somebody watching a page. Slowest recorded: 2.29 s."""
 
 _FENCED = re.compile(r"^```[a-zA-Z]*\s*\n([\s\S]*?)\n?```$")
 
@@ -190,7 +192,6 @@ def text(
     row: Row,
     model: str | None = None,
     system: str | None = None,
-    schema: Any | None = None,
     as_json: bool = False,
     timeout: float = TIMEOUT_SECONDS,
 ) -> TextResult:
@@ -198,21 +199,18 @@ def text(
 
     `model` is the one the chain chose from this row's list; without it the row's first is used.
 
-    `as_json` asks for a JSON object without naming its shape, which is what the two capture prompts
-    want: they return free-form documents, not a fixed model. `schema` names a shape and is used by
-    the image and audio jobs. Either is sent as `response_format` only where the row says it is
-    understood natively; where the row says `prompt`, the instruction is the prompt's job and the
-    reply is parsed and validated afterwards. `parsed` is None when the reply was not readable as
-    JSON — deciding whether that is an error belongs to the caller.
+    `as_json` asks for a JSON object **without naming its shape**, which is the only thing this
+    package asks for and the only thing it will ask for. Where the row says it understands that
+    natively, `{"type": "json_object"}` is sent; where the row says `prompt`, asking is the prompt's
+    job. Either way the reply is parsed and validated afterwards by the caller, and `parsed` is None
+    when it was not readable as JSON — deciding whether that is an error belongs to the caller.
 
-    **A schema is wrapped, never sent bare.** `response_format` is an envelope with a `type`, and a
-    plain JSON Schema handed over as one is not recognised: LiteLLM maps it to nothing at all, so
-    the shape went unstated *and* JSON mode went unrequested, on every row that declares
-    `jsonSchema: "native"`. Acervo's own callers survived that because their prompts describe the
-    shape as well; the speech adapter's prompts deliberately do not, and its translations failed on
-    every clip. `strict` stays false: OpenAI's strict mode additionally demands
-    `additionalProperties: false` on every object and every property in `required`, which none of
-    the schemas here satisfy, and tightening them is a separate decision from sending them.
+    **There is deliberately no `schema` argument.** Sending a JSON Schema turns generation into
+    constrained decoding, and this repository measured what that costs rather than assuming it was
+    free: see `AGENTS.md`, "Constrained decoding is not used". A schema guarantees a shape, never a
+    meaning, and the validation that catches a wrong meaning has to exist regardless — so the
+    guarantee bought nothing that was not already being checked, while the constraint degraded the
+    answers and, at realistic input sizes, was rejected by the provider outright.
     """
     model = model or row.models_for("text")[0]
     messages = [{"role": "system", "content": system}] if system else []
@@ -221,17 +219,12 @@ def text(
     request: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "timeout": timeout,
+        "timeout": row.timeout_for("text", timeout),
         **row.params_for("text"),
         **_transport(row),
     }
-    wants_json = as_json or schema is not None
-    if wants_json and row.schema_mode == "native":
-        request["response_format"] = (
-            {"type": "json_schema", "json_schema": {"name": "reply", "schema": schema,
-                                                    "strict": False}}
-            if schema is not None else {"type": "json_object"}
-        )
+    if as_json and row.json_mode == "native":
+        request["response_format"] = {"type": "json_object"}
 
     started = time.monotonic()
     try:
@@ -242,7 +235,7 @@ def text(
 
     body = unfenced(str(response.choices[0].message.content or ""))
     parsed = None
-    if wants_json and body:
+    if as_json and body:
         try:
             parsed = json.loads(body)
         except ValueError:
@@ -271,7 +264,7 @@ def image(
     request: dict[str, Any] = {
         "prompt": prompt,
         "model": model,
-        "timeout": timeout,
+        "timeout": row.timeout_for("image", timeout),
         **row.params_for("image"),
         **_transport(row),
     }
@@ -352,7 +345,7 @@ def speech(
         # Voice names do not carry across providers: Gemini refuses OpenAI's "alloy" and names
         # twenty-nine of its own. The row says which one it means.
         "voice": voice or audio.get("defaultVoice"),
-        "timeout": timeout,
+        "timeout": row.timeout_for("audio", timeout),
         **row.params_for("audio"),
         **_transport(row),
     }

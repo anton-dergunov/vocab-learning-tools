@@ -572,9 +572,16 @@ result" and leave the shape entirely to a `responseSchema`, which is how its own
 works. Acervo's side had *two* things wrong with carrying that across, and either alone was enough
 to fail every clip: the schema went into `response_format` bare, which is not a `response_format`
 and which LiteLLM maps to nothing whatever, and it arrived in Google's GenAI dialect with its type
-keywords in capitals. So the adapter renames the dialect and writes the shape into the instructions
-as well — the second is not belt-and-braces but the only thing that makes a row declaring
-`jsonSchema: "prompt"` usable here, since such a row is sent no schema by design.
+keywords in capitals.
+
+**The resolution went further than fixing either.** Sending the schema correctly is what finally
+showed what sending it costs, and the answer was measured rather than argued: no schema is sent
+anywhere now, here included. The adapter renames the dialect and writes the shape into the
+instructions, and that text is the whole contract. The alignment stage was the strongest case for
+keeping a schema — it restricts every id to an enum of that request's own tokens — and against
+constructed ground truth it bought no accuracy at any size it worked at, while above roughly a
+hundred tokens the provider rejected it outright with a 400 this chain treats as terminal. See
+`AGENTS.md`, "Constrained decoding is not used".
 
 Three further facts, each of which produced the same single grey line in the player:
 

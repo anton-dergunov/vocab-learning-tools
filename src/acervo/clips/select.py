@@ -40,42 +40,16 @@ from acervo.models.errors import SHAPE_TRIES, ProviderUnavailable
 
 from .corpus import Candidate
 
-# What the selector must return. Sent as `response_format` where the row understands one and written
-# into the prompt where it does not — the row decides, and `parse_reply` checks the answer either
-# way against *this* article's sense ids and the segments *this* call offered, neither of which a
-# schema can name.
+# What the selector must return is stated in `prompts/acervo_clip_select.md`, with a worked example
+# naming every field, including the `segmentId: null` that is how a sense declines. No JSON Schema
+# is sent — this was the caller that measured the cost of sending one (AGENTS.md, "Constrained
+# decoding is not used"): constrained, its translations came back at 266 to 1039 characters with
+# three calls in four timing out; unconstrained, 61 characters every time, which is what a faithful
+# translation of those sentences weighs.
 #
-# **`segmentId` is required, and null is how a sense declines.** Where the schema is sent natively
-# it becomes the definition of a legal answer, so a merely *optional* `segmentId` let a model omit
-# it for every sense — a reply that satisfied the schema, named no clip, and read exactly like the
-# honest "none of these are good enough" this pipeline is built to expect. Requiring the field while
-# allowing null keeps refusing as cheap as §2.7 demands and makes silence impossible to mistake for
-# a decision. `images/brief.py` carries the same note and the same scar.
-#
-# `translation` and `matchedTranslationForm` stay optional: they are absent by definition when
-# nothing was chosen.
-SELECTION_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "senses": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "senseId": {"type": "string"},
-                    "segmentId": {"type": ["string", "null"]},
-                    "translation": {"type": "string"},
-                    "matchedTranslationForm": {"type": "string"},
-                },
-                "required": ["senseId", "segmentId"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["senses"],
-    "additionalProperties": False,
-}
+# `parse_reply` is the contract that is enforced, and it checks what a schema could not: *this*
+# article's sense ids, the segments *this* call offered, and that a translation is a translation
+# rather than the model's own drafting.
 
 
 @dataclass(frozen=True)
@@ -159,6 +133,12 @@ def build_request(article: ArticleView, candidates: Sequence[Candidate],
     }
 
 
+def candidate_text(by_segment: dict[str, Candidate], segment_id: str) -> str:
+    """The sentence a translation is meant to be of, for measuring it against."""
+    candidate = by_segment.get(segment_id)
+    return candidate.sentence if candidate else ""
+
+
 def parse_reply(payload: Any, article: ArticleView,
                 offered: Sequence[Candidate]) -> tuple[list[Selection], int]:
     """The selections, and how many the reply named that the request never offered.
@@ -200,16 +180,25 @@ def parse_reply(payload: Any, article: ArticleView,
         taken.add(sense_id)
         candidate = by_segment[segment_id]
         translation = str(entry.get("translation") or "").strip() or None
-        # **A translation that names the segment is not a translation.** `gemini-3.5-flash-lite`
-        # answers this schema by running two fields into one string — "…something to eat.,
-        # segmentId: seg_4270b0…" — with `matchedTranslationForm` left empty. Stored, that reaches
-        # the article as a sentence with an internal id in it, and the clip search is one-shot, so
-        # nothing would ever replace it. Raised rather than dropped: a model that merges fields does
-        # it for every entry it writes, which is a fact about the model and exactly what the pair
-        # behind it is for.
+        # **What a translation of this passage cannot be.** Both checks are failures seen from a real
+        # model rather than hazards imagined: one run of a sentence into the next field —
+        # "…something to eat., segmentId: seg_4270b0…" — and one failure to stop, rambling past the
+        # end of the sentence into filler. Either one stored reaches the article as prose with
+        # rubbish in it, and because the clip search is one-shot at save nothing would ever replace
+        # it.
+        #
+        # Raised rather than dropped, unlike a hallucinated id: a model that runs fields together or
+        # cannot end a string does it to every entry it writes, which is a fact about the model and
+        # exactly what the pair behind it is for. The length bound is generous on purpose — a
+        # faithful translation runs to roughly the length of its source, so three times it is not a
+        # long translation, it is a model that did not stop.
         if translation and (segment_id in translation or "segmentId" in translation):
             raise ValueError(
                 f"The clip selector wrote the segment id into the translation for sense {sense_id}."
+            )
+        if translation and len(translation) > max(240, 3 * len(candidate_text(by_segment, segment_id))):
+            raise ValueError(
+                f"The clip selector did not stop writing the translation for sense {sense_id}."
             )
         matched = str(entry.get("matchedTranslationForm") or "").strip() or None
         # The invariant is verbatim, untrimmed and un-normalised. A form that does not hold loses
@@ -263,7 +252,7 @@ class ClipSelector:
 
         def ask(candidate: chain.Candidate) -> TextResult:
             answered = call.text(
-                prompt, row=candidate.row, model=candidate.model, schema=SELECTION_SCHEMA,
+                prompt, row=candidate.row, model=candidate.model, as_json=True,
                 timeout=call.SHORT_TIMEOUT_SECONDS,
             )
             # Judged inside the chain's callback, exactly as `images/brief.py` judges its own, so a
