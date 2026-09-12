@@ -17,7 +17,7 @@
  * bundle that most sessions never open.
  */
 
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   clipFor, directLink, translationFor, type ClipView, type StoredClip, type TranslationJob
 } from "./clips";
@@ -49,6 +49,12 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
 }) {
   const [view, setView] = useState<ClipView | null>(null);
   const [translation, setTranslation] = useState<TranslationJob | null>(null);
+  /** A retry in flight, so the player says "Translating…" rather than repeating the failure. */
+  const [retrying, setRetrying] = useState(false);
+  /** Its own controller, because a retry outlives the effect that started it and can poll for two
+      minutes — closing the dialog has to stop it as surely as it stops the first ask. */
+  const retryCancel = useRef<AbortController | null>(null);
+  useEffect(() => () => retryCancel.current?.abort(), []);
 
   useEffect(() => {
     const cancel = new AbortController();
@@ -68,6 +74,24 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
     translationFor(view.clip.segment_id, glossLang, cancel.signal)
       .then((job) => { if (live) setTranslation(job); });
     return () => { live = false; cancel.abort(); };
+  }, [view?.clip?.segment_id, glossLang]);
+
+  /* The player already draws a retry beside a failed translation; this is the callback it needs to
+     render one. It matters more than a convenience: the corpus remembers a stage that produced
+     unusable output and answers from that memory ever after, so a clip attempted under a broken
+     configuration cannot recover on its own. `retryFailed` is the only thing that re-asks. */
+  const retry = useCallback(() => {
+    const segmentId = view?.clip?.segment_id;
+    if (!segmentId || !glossLang) return;
+    retryCancel.current?.abort();
+    const cancel = new AbortController();
+    retryCancel.current = cancel;
+    setRetrying(true);
+    void translationFor(segmentId, glossLang, cancel.signal, true).then((job) => {
+      if (cancel.signal.aborted) return;
+      setTranslation(job);
+      setRetrying(false);
+    });
   }, [view?.clip?.segment_id, glossLang]);
 
   useEffect(() => {
@@ -97,11 +121,12 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
             accessibleName={`Clip for ${headword}`}
             targetText={translation?.result?.target_text ?? null}
             targetLanguage={translation?.result?.target_language ?? glossLang}
-            translationStatus={translation?.status ?? "not_requested"}
+            translationStatus={retrying ? "running" : translation?.status ?? "not_requested"}
             translationProvenance={translation?.result?.provenance ?? null}
             alignmentStatus={translation?.result?.alignment_status ?? "unavailable"}
             alignmentGroups={translation?.result?.alignment_groups ?? null}
             alignmentGraph={translation?.result?.alignment_graph ?? null}
+            onTranslationRetry={retry}
           />
         </Suspense>}
 

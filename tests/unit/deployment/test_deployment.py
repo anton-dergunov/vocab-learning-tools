@@ -1771,3 +1771,48 @@ def test_the_launcher_refuses_an_unexpected_acervo_root(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "Refusing unexpected Acervo root" in result.stderr
+
+
+def test_every_service_that_calls_a_model_is_given_the_same_credentials() -> None:
+    """Three services walk the owner's chain, and they must be able to walk all of it.
+
+    Nothing asserted this, and the speech service was silently missing Cloudflare's two variables
+    while the server and the worker had them. The symptom is as bad as it is quiet: a catalogue row
+    is checked for environment variables, so the row looks perfectly available *in the container
+    that has them* and is simply skipped in the one that does not — and a chain naming only that row
+    fails every call there while succeeding everywhere else.
+    """
+    import yaml
+
+    compose = yaml.safe_load(
+        (REPO_ROOT / "deploy/acervo/compose.yaml").read_text(encoding="utf-8")
+    )
+    callers = ("server", "acervo-worker", "speech-retrieval")
+    # Everything a catalogue row names, plus the chain that orders them. Not a wildcard over the
+    # services' environments: each carries variables of its own that have no business being shared.
+    required = {
+        "ACERVO_TEXT_CHAIN", "GEMINI_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
+        "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "ACERVO_OLLAMA_URL",
+        "ACERVO_VERTEX_PROJECT", "GOOGLE_APPLICATION_CREDENTIALS", "ACERVO_VERTEX_ACCOUNT",
+    }
+    for name in callers:
+        environment = set(compose["services"][name]["environment"])
+        assert required <= environment, f"{name} is missing {sorted(required - environment)}"
+    # Vertex is the one credential that is a file, so the directory has to be mounted as well as
+    # named — half of that configuration works exactly as badly as none of it.
+    for name in callers:
+        mounts = " ".join(compose["services"][name]["volumes"])
+        assert "/run/acervo/credentials" in mounts, f"{name} cannot read Vertex credentials"
+
+
+def test_the_speech_image_can_authenticate_to_vertex() -> None:
+    """LiteLLM does not require `google-auth`, and reaches Vertex through a deferred import of it.
+
+    The server image gets it transitively through `google-genai`; this one installs LiteLLM alone
+    and got nothing, so a Vertex chain raised on the first real call — with the row having looked
+    entirely available, because availability is environment variables and a credentials file and
+    never an importable library. The `[requests]` extra is what supplies
+    `google.auth.transport.requests`; LiteLLM itself depends on httpx.
+    """
+    dockerfile = (REPO_ROOT / "deploy/acervo/speech/Dockerfile").read_text(encoding="utf-8")
+    assert "google-auth[requests]" in dockerfile

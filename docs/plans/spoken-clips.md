@@ -566,6 +566,34 @@ repository already exposes the seam and changes nothing.
   and `ACERVO_TEXT_CHAIN` plus the credentials mount that makes Vertex work.
 - The player's translation props wired through the modal of step 4.
 
+**The schema is both sent and said, and that is what this step turned out to be about.** The
+service's two prompts name no field at all — they end with "Return only the requested structured
+result" and leave the shape entirely to a `responseSchema`, which is how its own Gemini adapter
+works. Acervo's side had *two* things wrong with carrying that across, and either alone was enough
+to fail every clip: the schema went into `response_format` bare, which is not a `response_format`
+and which LiteLLM maps to nothing whatever, and it arrived in Google's GenAI dialect with its type
+keywords in capitals. So the adapter renames the dialect and writes the shape into the instructions
+as well — the second is not belt-and-braces but the only thing that makes a row declaring
+`jsonSchema: "prompt"` usable here, since such a row is sent no schema by design.
+
+Three further facts, each of which produced the same single grey line in the player:
+
+- **The image must carry `google-auth`.** LiteLLM does not require it and reaches Vertex through a
+  deferred import of it; the server image gets it through `google-genai` and this one installs
+  LiteLLM alone. A catalogue row is checked for environment variables and a credentials file, never
+  for an importable library, so the row looked available and raised on the first call.
+- **The startup guard must ask the question the chain asks.** Asking whether *any* text row is
+  credentialed, while `chain.resolve` honours `ACERVO_TEXT_CHAIN`, injects a provider that can only
+  fail. Injecting nothing is what produces the truthful "Translation is unavailable."
+- **The service caches a refusal.** A stage that produced unusable output is remembered and served
+  from that memory ever after, `cache_hit` and all, unless `retry_failed` is sent — so a correct fix
+  still shows the old failure on every clip already attempted. The player's retry is wired to that
+  flag, and it is the only way out from inside the interface.
+
+`_Stage` also had to run its call off the event loop. `generate` is synchronous, and awaiting it
+inline held the single uvicorn loop for the length of a model call — during which nothing in that
+container answered, its own three-second healthcheck included.
+
 **Done when:** opening a clip shows the translation and its word alignment; an exhausted provider
 falls through to the next without re-translating what is already cached; and a deployment with no
 chain configured shows the authored caption where one exists and no target text where none does.

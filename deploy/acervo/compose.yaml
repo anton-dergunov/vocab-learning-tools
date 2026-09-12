@@ -98,6 +98,8 @@ services:
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN:-}"
+      CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"
       ACERVO_OLLAMA_URL: "${ACERVO_OLLAMA_URL:-}"
       # Vertex needs the credentials *file*, which is the one provider whose secret is not a value.
       ACERVO_VERTEX_PROJECT: "${ACERVO_VERTEX_PROJECT:-}"

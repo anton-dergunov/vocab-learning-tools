@@ -12,12 +12,19 @@ cache exists for. That is the opposite of the rule for a *stored* record — an 
 names the model that did the work — and the difference is that one is provenance and the other is a
 cache key.
 
+**The shape is both sent and said.** The schema arrives in Google's GenAI dialect and is renamed
+into JSON Schema's before `acervo.models` sees it, and it is also written into the instructions —
+because the service's two prompts name no field, leaving the shape entirely to the schema, and a
+row that declares `jsonSchema: "prompt"` is sent none. Saying it is what makes those rows usable
+here at all; it costs a hundred tokens on the rows where the schema also goes over the wire.
+
 This module imports `acervo.models` and nothing else of Acervo's, and nothing at all of the
-retrieval service's.
+retrieval service's — the dialect rename is a pure dict walk that names no package.
 """
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any, Sequence
@@ -48,6 +55,35 @@ class Generated:
     usage: dict[str, int] | None
     raw_output: str
     provider_metadata: dict[str, str] | None = None
+
+
+# Google's GenAI dialect spells the type keywords in capitals; JSON Schema, which `acervo.models`
+# speaks, spells them in lower case. Nothing else about the two differs for the shapes that arrive
+# here, so this is a rename rather than a translation — and it is a no-op on a schema that was
+# already JSON Schema, which is why it is applied unconditionally rather than sniffed for.
+_TYPES = frozenset({"OBJECT", "ARRAY", "STRING", "NUMBER", "INTEGER", "BOOLEAN", "NULL"})
+
+
+def _keyword(value: Any) -> Any:
+    """One type keyword, lower-cased if it is one. An `enum`'s values are data and never reach here."""
+    return value.lower() if isinstance(value, str) and value.upper() in _TYPES else value
+
+
+def json_schema(value: Any) -> Any:
+    """The same schema, with its type keywords in JSON Schema's spelling."""
+    if isinstance(value, dict):
+        renamed = {}
+        for name, member in value.items():
+            if name != "type":
+                renamed[name] = json_schema(member)
+            elif isinstance(member, list):
+                renamed[name] = [_keyword(entry) for entry in member]
+            else:
+                renamed[name] = _keyword(member)
+        return renamed
+    if isinstance(value, list):
+        return [json_schema(entry) for entry in value]
+    return value
 
 
 # The service's codes, which are a smaller set than `acervo.models`'s seven reasons.
@@ -91,6 +127,16 @@ class ChainGenerator:
         from acervo.models import ChainExhausted, ProviderError, call, chain, load_catalogue
 
         started = time.perf_counter()
+        shape = json_schema(schema)
+        # Stated in the instructions as well as sent, because the retrieval service's own prompts
+        # name no field at all — they end with "Return only the requested structured result" and
+        # leave the shape entirely to the schema, which is how its native Gemini adapter works. A
+        # row declaring `jsonSchema: "prompt"` is sent no schema by design, so without this line
+        # cloudflare and openrouter could never answer either of these two stages.
+        instructions = (
+            f"{instructions}\n\nReturn a single JSON object, and nothing else, matching this JSON "
+            f"Schema:\n{json.dumps(shape, ensure_ascii=False)}"
+        )
         candidates = self._candidates()
         if not candidates:
             raise GenerationFailed(
@@ -105,7 +151,7 @@ class ChainGenerator:
                 load_catalogue(),
                 lambda candidate: call.text(
                     user_text, row=candidate.row, model=candidate.model,
-                    system=instructions, schema=schema, timeout=self._timeout,
+                    system=instructions, schema=shape, timeout=self._timeout,
                 ),
                 chain.stamped,
             )

@@ -137,3 +137,103 @@ def test_the_chain_is_given_rather_than_looked_up(walking):
     source = (module.__file__ or "")
     assert "acervo.repository" not in open(source, encoding="utf-8").read()
     assert "acervo.settings" not in open(source, encoding="utf-8").read()
+
+
+# ── the shape of the answer, said twice ─────────────────────────────────────
+
+
+def test_googles_type_spelling_is_renamed_into_json_schemas():
+    """The retrieval service's schemas are written in Google's GenAI dialect, which spells the type
+    keywords in capitals. `acervo.models` speaks JSON Schema. Nothing else about the two differs for
+    these shapes, so this is a rename — and it is applied unconditionally because it is a no-op on a
+    schema that was already JSON Schema."""
+    from acervo.speech.provider import json_schema
+
+    assert json_schema({
+        "type": "OBJECT",
+        "properties": {
+            "alignments": {
+                "type": "ARRAY",
+                "minItems": 2,
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {"source_id": {"type": "STRING", "enum": ["S1", "S2"]}},
+                    "required": ["source_id"],
+                },
+            },
+        },
+        "required": ["alignments"],
+    }) == {
+        "type": "object",
+        "properties": {
+            "alignments": {
+                "type": "array",
+                "minItems": 2,
+                "items": {
+                    "type": "object",
+                    # An enum's *values* are data, not type keywords, and are left alone.
+                    "properties": {"source_id": {"type": "string", "enum": ["S1", "S2"]}},
+                    "required": ["source_id"],
+                },
+            },
+        },
+        "required": ["alignments"],
+    }
+
+    # Already JSON Schema, including a union, and unchanged.
+    already = {"type": "object", "properties": {"segmentId": {"type": ["string", "null"]}}}
+    assert json_schema(already) == already
+
+
+def _asking(monkeypatch):
+    """A chain that actually calls the ask, so what reaches `call.text` can be read."""
+    from acervo.models import call, chain
+
+    seen: list[dict] = []
+
+    def text(prompt, **kwargs):
+        seen.append({"prompt": prompt, **kwargs})
+        return answered('{"target_text": "it itches"}')
+
+    monkeypatch.setattr(call, "text", text)
+    monkeypatch.setattr(chain, "walk", lambda kind, chosen, catalogue, ask, stamp: ask(Asked()))
+
+    class Asked:
+        row = object()
+        model = "flash"
+        named = ("gemini-free", "flash")
+
+    monkeypatch.setattr(ChainGenerator, "_candidates", lambda self: (Asked(),))
+    return seen
+
+
+def test_the_schema_is_renamed_before_it_is_sent(monkeypatch):
+    seen = _asking(monkeypatch)
+    ChainGenerator(None).generate(
+        instructions="Translate it.", user_text="me pica",
+        schema={"type": "OBJECT", "properties": {"target_text": {"type": "STRING"}}},
+    )
+    assert seen[-1]["schema"] == {
+        "type": "object", "properties": {"target_text": {"type": "string"}}
+    }
+
+
+def test_the_shape_is_also_stated_in_the_instructions(monkeypatch):
+    """Not belt-and-braces: it is the only thing that makes a `jsonSchema: "prompt"` row work here.
+
+    The retrieval service's two prompts name no field at all — they end with "Return only the
+    requested structured result" and leave the shape entirely to the schema, which is how its own
+    Gemini adapter works. A row declaring `prompt` is sent no schema by design, so cloudflare and
+    openrouter could never answer either stage without this line. It is in JSON Schema's spelling
+    too, so the instruction and the wire say the same thing.
+    """
+    seen = _asking(monkeypatch)
+    ChainGenerator(None).generate(
+        instructions="Translate it.", user_text="me pica",
+        schema={"type": "OBJECT", "properties": {"target_text": {"type": "STRING"}}},
+    )
+    system = seen[-1]["system"]
+    assert system.startswith("Translate it.")
+    assert '"type": "object"' in system
+    assert "target_text" in system
+    assert "OBJECT" not in system

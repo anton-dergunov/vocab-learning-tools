@@ -1330,6 +1330,12 @@ body.tablet .viewport { width: 834px; height: 1000px; }
    region and the full-screen-on-a-phone rule rather than restating any of them. Wider, because the
    player carries a video frame and the sentence under it wants a readable measure beside it. */
 .clip-dialog { width: min(760px, 100%); }
+/* On a phone the dialog is already the whole screen, and the reclaimed room belongs to the player
+   rather than to a margin around it: the video, the slider and the sentence all want width, and
+   nothing here is a form that needs air. */
+@media (max-width: 760px) {
+  .clip-dialog .settings-body { padding: 12px; }
+}
 
 /* The packaged player's own tokens, mapped onto Acervo's.
    The retrieval package documents these and its light defaults are already Acervo's palette — the

@@ -103,18 +103,39 @@ export async function clipFor(stored: StoredClip, signal?: AbortSignal): Promise
  *
  * A job rather than a value, because translation is two provider calls and the service caches the
  * result: the second viewer of a clip gets it immediately, and the first waits once.
+ *
+ * **`retryFailed` is the way out of a cached refusal.** The service remembers a stage that produced
+ * unusable output and answers from that memory, `cache_hit` and all, on every later request — which
+ * is correct (a bad answer is not worth paying for twice) and means a clip that failed under a
+ * broken configuration keeps failing after the configuration is fixed. Only this flag re-asks, so
+ * it is what the player's retry button is wired to.
  */
 export async function translationFor(segmentId: string, targetLanguage: string,
-                                     signal?: AbortSignal): Promise<TranslationJob | null> {
+                                     signal?: AbortSignal,
+                                     retryFailed = false): Promise<TranslationJob | null> {
   const client = corpus();
   try {
-    let job = await client.requestTranslation(segmentId, { targetLanguage, signal });
-    // Bounded on purpose: the modal is open and somebody is waiting. Giving up leaves the source
-    // text and the article's own line, which is the state the player is designed to render anyway.
-    for (let turn = 0; turn < 30 && (job.status === "queued" || job.status === "running"); turn += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    let job = await client.requestTranslation(segmentId, { targetLanguage, retryFailed, signal });
+    /* Bounded on purpose: the modal is open and somebody is waiting. Giving up leaves the source
+       text and the article's own line, which is the state the player is designed to render anyway.
+
+       The bound is two chained provider calls, not one — translate, then align — and only the
+       first viewer of a clip ever pays it, because the service caches what it produced. Thirty
+       seconds was under a single call's timeout and turned a slow success into a spinner that
+       never resolved. */
+    const deadline = Date.now() + 120_000;
+    while ((job.status === "queued" || job.status === "running") && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 700));
       if (signal?.aborted) return null;
       job = await client.translation(job.job_id, { signal });
+    }
+    /* Said out loud. The job carries the reason it failed and the player, by design, renders one
+       sentence for every way that can happen — so without this the difference between "no provider
+       is credentialed", "the model returned prose" and "the segment was translated before the
+       chain changed" is one identical line of grey text. */
+    if (job.status !== "complete") {
+      console.warn(`Acervo: the clip translation ended ${job.status}`,
+                   job.error?.code ?? "", job.cache_hit ? "(from the corpus's cache)" : "");
     }
     return job;
   } catch (error) {

@@ -392,3 +392,57 @@ def _recording(calls, answer):
         return answer
 
     return record
+
+
+def test_a_declared_schema_is_sent_inside_the_envelope_litellm_reads(monkeypatch):
+    """A bare JSON Schema as `response_format` is not a `response_format`, and was dropped whole.
+
+    `response_format` is an envelope with a `type`; a schema handed over as one matches no branch of
+    LiteLLM's mapping, so the shape went unstated *and* JSON mode went unrequested — on every row
+    declaring `jsonSchema: "native"`. Acervo's own callers never noticed because their prompts also
+    describe the shape; the speech adapter's prompts deliberately do not, and every clip translation
+    failed. `test_the_envelope_is_the_one_litellm_understands` is the other half of this check.
+    """
+    calls = []
+    monkeypatch.setattr(call, "completion", _recording(calls, reply('{"a": 1}')))
+    schema = {"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]}
+
+    call.text("hello", row=GEMINI, schema=schema)
+    assert calls[-1]["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "reply", "schema": schema, "strict": False},
+    }
+
+    # `strict` stays false on purpose: OpenAI's strict mode also demands
+    # `additionalProperties: false` on every object and every property in `required`, which none of
+    # the schemas in this repository satisfy. Tightening them is a separate decision from sending
+    # them at all.
+    assert calls[-1]["response_format"]["json_schema"]["strict"] is False
+
+    # A row that cannot take one is still sent none — the declaration is what decides, unchanged.
+    call.text("hello", row=CLOUDFLARE, schema=schema)
+    assert "response_format" not in calls[-1]
+
+
+def test_the_envelope_is_the_one_litellm_understands():
+    """Pinned against LiteLLM itself, because this is where the bug lived and nothing else sees it.
+
+    Every layer above happily carried the old value: it was a valid dict, `completion` accepted it,
+    and the only symptom was a model that answered in prose. The assertion has to be made against
+    the library's own mapping or it is not made at all.
+    """
+    from litellm.llms.vertex_ai.gemini.vertex_and_google_ai_studio_gemini import VertexGeminiConfig
+
+    schema = {"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]}
+    envelope = {"type": "json_schema", "json_schema": {"name": "reply", "schema": schema,
+                                                       "strict": False}}
+    mapped = VertexGeminiConfig().map_openai_params(
+        {"response_format": envelope}, {}, "gemini-2.0-flash", False
+    )
+    assert mapped["response_mime_type"] == "application/json"
+    assert mapped["response_json_schema"] == schema
+
+    # What was sent before, for contrast: nothing at all reached the provider.
+    assert VertexGeminiConfig().map_openai_params(
+        {"response_format": schema}, {}, "gemini-2.0-flash", False
+    ) == {}

@@ -191,6 +191,15 @@ def text(
     understood natively; where the row says `prompt`, the instruction is the prompt's job and the
     reply is parsed and validated afterwards. `parsed` is None when the reply was not readable as
     JSON — deciding whether that is an error belongs to the caller.
+
+    **A schema is wrapped, never sent bare.** `response_format` is an envelope with a `type`, and a
+    plain JSON Schema handed over as one is not recognised: LiteLLM maps it to nothing at all, so
+    the shape went unstated *and* JSON mode went unrequested, on every row that declares
+    `jsonSchema: "native"`. Acervo's own callers survived that because their prompts describe the
+    shape as well; the speech adapter's prompts deliberately do not, and its translations failed on
+    every clip. `strict` stays false: OpenAI's strict mode additionally demands
+    `additionalProperties: false` on every object and every property in `required`, which none of
+    the schemas here satisfy, and tightening them is a separate decision from sending them.
     """
     model = model or row.models_for("text")[0]
     messages = [{"role": "system", "content": system}] if system else []
@@ -205,7 +214,11 @@ def text(
     }
     wants_json = as_json or schema is not None
     if wants_json and row.schema_mode == "native":
-        request["response_format"] = schema if schema is not None else {"type": "json_object"}
+        request["response_format"] = (
+            {"type": "json_schema", "json_schema": {"name": "reply", "schema": schema,
+                                                    "strict": False}}
+            if schema is not None else {"type": "json_object"}
+        )
 
     started = time.monotonic()
     try:

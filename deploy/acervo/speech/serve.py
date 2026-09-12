@@ -16,6 +16,7 @@ to its own behaviour — the authored caption where one exists, and no target te
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -54,9 +55,19 @@ class _Stage:
         self.provider = generator.provider
         self.model = generator.model
 
-    def _call(self, *, instructions: str, user_text: str, schema, temperature: float) -> ProviderResponse:
+    async def _call(self, *, instructions: str, user_text: str, schema,
+                    temperature: float) -> ProviderResponse:
+        """One stage, off the event loop.
+
+        `generate` is synchronous — LiteLLM's `completion` is — and awaiting it inline would hold
+        the single uvicorn loop for the length of a model call. Nothing else in this container
+        would answer meanwhile: not a search, not a clip, not its own healthcheck, which allows
+        three seconds. Two stages at a sixty-second timeout is two minutes of a service that is
+        running perfectly and reports itself unhealthy.
+        """
         try:
-            answer = self._generator.generate(
+            answer = await asyncio.to_thread(
+                self._generator.generate,
                 instructions=instructions, user_text=user_text, schema=schema,
                 temperature=temperature,
             )
@@ -86,7 +97,7 @@ class AcervoTranslationProvider(_Stage):
             if request.authored_reference
             else ""
         )
-        return self._call(
+        return await self._call(
             instructions=TRANSLATION_PROMPT.text,
             user_text=(
                 f"Source language: {request.source_language}\n"
@@ -105,7 +116,7 @@ class AcervoAlignmentProvider(_Stage):
                 f"{token.id}: {json.dumps(token.text, ensure_ascii=False)}" for token in tokens
             )
 
-        return self._call(
+        return await self._call(
             instructions=ALIGNMENT_PROMPT.text,
             user_text=(
                 f"Source language: {request.source_language}\n"
@@ -129,23 +140,35 @@ def providers():
     Separate generators so the two stages are separate cache keys — the service keys them apart and
     they need not be served by the same model. Absent when nothing is configured, which leaves the
     service's own behaviour: the authored caption where one exists, and no target text where none.
+
+    **The question asked here is the one the chain will ask.** An earlier version asked whether
+    *any* text row was credentialed, ignoring `ACERVO_TEXT_CHAIN` — so a chain naming only rows
+    this container lacks passed the guard, injected a provider, and failed every single clip with a
+    message about a failure. "Translation is unavailable." is the truthful answer to that state,
+    and it is only reachable by injecting nothing.
     """
     named = [part.strip() for part in os.environ.get("ACERVO_TEXT_CHAIN", "").split(",") if part.strip()]
     try:
-        from acervo.models import load_catalogue
-        from acervo.models.catalogue import available
+        from acervo.models import chain, load_catalogue
 
-        if not any(available(row) for row in load_catalogue().serving("text")):
-            print("speech: no credentialed text provider; the player will show no target text",
-                  file=sys.stderr, flush=True)
-            return None, None
+        candidates = chain.resolve("text", named or None, load_catalogue())
     except Exception as error:   # noqa: BLE001 — a broken catalogue must not stop the corpus serving
         # Searching and playing must keep working; only the target text is lost. Said out loud,
         # because the first version of this swallowed a misplaced catalogue and the only symptom was
         # translations quietly never appearing.
-        print(f"speech: the model catalogue could not be read ({error!r}); "
+        print(f"speech: the text chain could not be resolved ({error!r}); "
               "the player will show no target text", file=sys.stderr, flush=True)
         return None, None
+    if not candidates:
+        print("speech: no credentialed text provider; the player will show no target text",
+              file=sys.stderr, flush=True)
+        return None, None
+    # What would answer, and in what order. This image carries no `acervo.admin`, so this line is
+    # the only reading of it available on the deployment — and the one question worth being able to
+    # answer from a log when the player shows nothing.
+    print("speech: target text runs on " + ", ".join(
+        f"{candidate.row.id}:{candidate.model}" for candidate in candidates
+    ), file=sys.stderr, flush=True)
     return (
         AcervoTranslationProvider(ChainGenerator(named or None)),
         AcervoAlignmentProvider(ChainGenerator(named or None)),

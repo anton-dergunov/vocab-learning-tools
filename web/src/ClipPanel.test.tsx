@@ -35,10 +35,13 @@ const channel = (over: Partial<Record<string, unknown>> = {}) => ({
   ...over
 });
 
-function panel() {
+function panel(corpus: Record<string, unknown> = {}) {
   clipSettings.mockResolvedValue({
     searchEnabled: true, selfContainedOnly: false, chosen: false,
-    corpus: { configured: true, reachable: true, ready: true, indexedLanguages: ["es"], videos: 251, segments: 60704 }
+    corpus: {
+      configured: true, reachable: true, ready: true, indexedLanguages: ["es"],
+      videos: 251, segments: 60704, ...corpus
+    }
   });
   render(<ClipPanel onNotify={() => undefined} />);
 }
@@ -118,5 +121,33 @@ describe("the channel catalogue", () => {
     channels.mockResolvedValue([channel()]);
     panel();
     expect(await screen.findByText(/index-clips/)).toBeTruthy();
+  });
+});
+
+
+describe("whether the player translates a clip", () => {
+  /* The one part of this deployment that can go quiet without complaining. The player renders the
+     same grey sentence whether no provider is credentialed, the chain names rows that container
+     lacks, or a model answered badly — and there was nowhere at all to read which. It is a separate
+     surface from the article's own translation line, which is Acervo's and came from the
+     clip-selection call, so saying so matters when only one of the two is missing. */
+
+  it("names what would answer, which is the chain rather than the row that did", async () => {
+    panel({ translation: { available: true, provider: "acervo-chain", model: "gemini-free" } });
+    await waitFor(() => expect(screen.getByText(/translated in the player/)).toBeTruthy());
+    expect(screen.getByText("gemini-free")).toBeTruthy();
+  });
+
+  it("says so plainly when nothing is credentialed, and that the article line is unaffected",
+     async () => {
+    panel({ translation: { available: false, provider: null, model: null } });
+    await waitFor(() => expect(screen.getByText(/not translated in the player/)).toBeTruthy());
+    expect(screen.getByText(/article's own translation line is unaffected/)).toBeTruthy();
+  });
+
+  it("says nothing at all when the corpus is too old to report it", async () => {
+    panel();
+    await waitFor(() => expect(screen.getByText(/60,704/)).toBeTruthy());
+    expect(screen.queryByText(/translated in the player/)).toBeNull();
   });
 });

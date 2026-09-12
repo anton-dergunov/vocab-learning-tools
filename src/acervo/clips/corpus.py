@@ -187,16 +187,29 @@ class Corpus:
         `indexed_languages` is the one field a caller must read before searching: a language the
         corpus does not index yet may be indexed later, so a word in one has not been *consulted*
         and must not be marked as though it had.
+
+        `translation` is about the *player's* target text, not the article's — a different surface
+        with a different owner (`docs/plans/spoken-clips.md` §2.13). It is carried because it is the
+        one thing about this service that can be switched off without anything saying so: the player
+        renders one grey sentence whether no provider is configured, the chain has no credential
+        here, or a model answered badly, and there was nowhere to read which.
         """
         payload = self._get("/status")
         if not isinstance(payload, dict):
             raise CorpusError("refused", "The corpus did not describe itself.")
+        translation = payload.get("translation")
+        translation = translation if isinstance(translation, dict) else {}
         return {
             "ready": bool(payload.get("ready")),
             "builtAt": _text(payload.get("built_at")) or None,
             "indexedLanguages": _strings(payload.get("indexed_languages")),
             "videos": int(payload.get("videos") or 0),
             "segments": int(payload.get("segments") or 0),
+            "translation": {
+                "available": bool(translation.get("provider_available")),
+                "provider": _text(translation.get("provider")) or None,
+                "model": _text(translation.get("model")) or None,
+            },
         }
 
     def search(self, language: str, query: str, *, limit: int = CANDIDATE_LIMIT) -> tuple[Candidate, ...]:

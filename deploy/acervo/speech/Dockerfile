@@ -46,7 +46,14 @@ COPY src/acervo/models /app/src/acervo/models
 COPY src/acervo/speech /app/src/acervo/speech
 COPY models /app/models
 ENV PYTHONPATH=/app/src
-RUN pip install --no-cache-dir "litellm>=1.100"
+# `google-auth` is not optional here even though LiteLLM does not require it. Vertex is the one
+# provider that authenticates from a file, and LiteLLM reaches it with a deferred
+# `import google.auth` — so without this the row looks perfectly available (a catalogue row is
+# checked for environment variables and a credentials file, never for an importable library) and
+# raises on the first real call. The server image gets it for free through `google-genai`; this one
+# installs LiteLLM alone and got nothing. The `[requests]` extra is what supplies
+# `google.auth.transport.requests`, LiteLLM itself depending on httpx.
+RUN pip install --no-cache-dir "litellm>=1.100" "google-auth[requests]>=2"
 
 # `data` holds two very different things and they are mounted separately: `raw/` is acquired
 # captions, which cost bandwidth and are the one thing here nothing may delete, while `index/` and
