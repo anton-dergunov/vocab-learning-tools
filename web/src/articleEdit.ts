@@ -22,19 +22,31 @@ import {
   type Gender, type Gloss, type LexemeStatus, type PartOfSpeech, type Register, type SourceKind
 } from "./domain";
 import { draftKeys } from "./selectors";
+import { lcs, similarity, wordDiff, words, type DiffPart } from "./wordDiff";
 import type { ArticleDraft, AttestationDraft, ExampleDraft, SenseDraft } from "./yaml";
 
 /* ── the wire format ────────────────────────────────────────────────── */
 
 export type Target = "lexeme" | `sense:${string}` | `example:${string}` | `attestation:${string}`;
 
+/**
+ * Every operation is an `op` and a `target`.
+ *
+ * `target` names a record — `lexeme`, or `<kind>:<id>` — except on `add` and `reorder`, where the
+ * record does not exist yet and it names a kind instead. That uniformity is the whole point of the
+ * shape: one vocabulary of targets, and the parent is named by a field (`after`, `in`) rather than
+ * encoded in the operation's name.
+ */
 export type EditOp =
   | { op: "set"; target: string; field: string; value: unknown }
-  | { op: "addSense"; after?: string | null; sense: Record<string, unknown> }
-  | { op: "addExample"; senseId: string; fromAttestation?: string | null; example: Record<string, unknown> }
-  | { op: "addAttestation"; ref: string; attestation: Record<string, unknown> }
+  | { op: "add"; target: "sense"; after?: string | null; value: Record<string, unknown> }
+  | {
+      op: "add"; target: "example"; in: string; fromAttestation?: string | null;
+      value: Record<string, unknown>;
+    }
+  | { op: "add"; target: "attestation"; ref: string; value: Record<string, unknown> }
   | { op: "remove"; target: string; reason?: string }
-  | { op: "orderSenses"; ids: string[] };
+  | { op: "reorder"; target: "senses"; ids: string[] };
 
 /** At most twelve. A cap the model cannot argue with is worth more than a paragraph it can. */
 export const OP_LIMIT = 12;
@@ -155,6 +167,11 @@ function coerce(field: string, rule: Coerce, value: unknown): unknown {
 
 const RECORD_ID = /^[a-z0-9]{15}$/;
 
+/** A record reference that may come as `sense:ID` or as a bare `ID`, which models do both of. */
+function reference(value: string, kind: string): string {
+  return splitTarget(value.includes(":") ? value : `${kind}:${value}`).id;
+}
+
 function splitTarget(target: string): { kind: string; id: string } {
   if (target === "lexeme") return { kind: "lexeme", id: "" };
   const at = target.indexOf(":");
@@ -205,35 +222,34 @@ export function applyOps(draft: ArticleDraft, ops: EditOp[], context: EditContex
         break;
       }
 
-      case "addSense": {
-        const after = op.after ? splitTarget(op.after).id || op.after : null;
-        const at = after ? next.senses.findIndex((sense) => sense.id === after) : -1;
-        if (after && at < 0) refuse(UNKNOWN);
-        // No id: `saveArticle` mints one, exactly as it does for a hand-written block with none.
-        const sense = newSense(op.sense, next, context);
-        next.senses.splice(at + 1, 0, sense);
-        next.senses.forEach((item, index) => { item.order = index; });
-        touched.add(draftKeys.sense(sense, next.senses.indexOf(sense)));
-        break;
-      }
-
-      case "addExample": {
-        const sense = senseAt(op.senseId);
-        const example = newExample(op.example, next, context, op.fromAttestation ?? null, refs);
-        sense.examples.push(example);
-        touched.add(draftKeys.example(example, next.senses.indexOf(sense), sense.examples.length - 1));
-        break;
-      }
-
-      case "addAttestation": {
-        // The one record chat mints an id for, and only because the example written in the same
-        // answer has to name it: `origin: "attestation"` must resolve or the save is refused by
-        // `validateGraph` on this side and by the server's validation on the other.
-        const id = context.mintId();
-        minted.add(id);
-        refs.set(op.ref, id);
-        next.attestations.push(newAttestation(op.attestation, id));
-        touched.add(id);
+      /* `op.target` here is a bare kind word, so it deliberately does NOT go through
+         `splitTarget` — that function refuses a target with no colon, which is correct for a
+         record reference and wrong for a kind. */
+      case "add": {
+        if (op.target === "sense") {
+          const after = op.after ? reference(op.after, "sense") : null;
+          const at = after ? next.senses.findIndex((sense) => sense.id === after) : -1;
+          if (after && at < 0) refuse(UNKNOWN);
+          // No id: `saveArticle` mints one, exactly as it does for a hand-written block with none.
+          const sense = newSense(op.value, next, context);
+          next.senses.splice(at + 1, 0, sense);
+          next.senses.forEach((item, index) => { item.order = index; });
+          touched.add(draftKeys.sense(sense, next.senses.indexOf(sense)));
+        } else if (op.target === "example") {
+          const sense = senseAt(reference(op.in, "sense"));
+          const example = newExample(op.value, next, context, op.fromAttestation ?? null, refs);
+          sense.examples.push(example);
+          touched.add(draftKeys.example(example, next.senses.indexOf(sense), sense.examples.length - 1));
+        } else if (op.target === "attestation") {
+          // The one record chat mints an id for, and only because the example written in the same
+          // answer has to name it: `origin: "attestation"` must resolve or the save is refused by
+          // `validateGraph` on this side and by the server's validation on the other.
+          const id = context.mintId();
+          minted.add(id);
+          refs.set(op.ref, id);
+          next.attestations.push(newAttestation(op.value, id));
+          touched.add(id);
+        } else refuse(UNKNOWN);
         break;
       }
 
@@ -267,8 +283,9 @@ export function applyOps(draft: ArticleDraft, ops: EditOp[], context: EditContex
         break;
       }
 
-      case "orderSenses": {
-        const ids = op.ids.map((id) => splitTarget(id.includes(":") ? id : `sense:${id}`).id);
+      case "reorder": {
+        if (op.target !== "senses") refuse(UNKNOWN);
+        const ids = op.ids.map((id) => reference(id, "sense"));
         const held = next.senses.map((sense) => sense.id);
         if (ids.length !== held.length || held.some((id) => !id || !ids.includes(id))) {
           refuse("That reordering does not list the entry's meanings, so nothing was changed.");
@@ -418,17 +435,54 @@ function newAttestation(raw: Record<string, unknown>, id: string): AttestationDr
   };
 }
 
-/* ── the diff ───────────────────────────────────────────────────────── */
+/* ── the diff ─────────────────────────────────────────────────────────────
+   What a proposal did, computed by comparing two drafts and never by reading the operations. That
+   is what keeps the wire format replaceable, and it is the whole reason the operations are allowed
+   to be a detail of one request.
 
-export type Mark = "added" | "changed" | "removed";
+   Two things here are more than bookkeeping. A changed field carries a **word diff**, so a reworded
+   sentence says which words moved rather than only that it moved. And a record that merely changed
+   position is `moved` rather than unmarked — a reorder used to produce no marks and a count of zero
+   while the article silently renumbered itself. */
+
+export type Mark = "added" | "changed" | "removed" | "moved";
+
+/** What happened to one field, or to one note. `words` is null for anything that is not prose. */
+export interface Change {
+  mark: Mark;
+  words: DiffPart[] | null;
+}
+
+export interface RecordDiff {
+  /** The block treatment. Precedence: removed, added, moved, changed. */
+  mark: Mark;
+  /** Which fields moved, so a tint lands on the line that changed rather than on the whole record. */
+  fields: ReadonlyMap<string, Change>;
+  /** For a `moved` record only: the position it held before, counting from one. */
+  wasAt?: number;
+}
 
 export interface DraftDiff {
   /** Record key -> what happened. Keys are exactly `articleFromDraft(graph, shown)`'s record ids. */
-  marks: ReadonlyMap<string, Mark>;
-  /** Which of the lexeme head's fields moved, so the masthead marks a line rather than all of it. */
-  lexemeFields: ReadonlySet<string>;
-  /** Notes have no ids; keyed by text, which is what `LexemeArticle` keys the `<li>` on. */
-  notes: ReadonlyMap<string, Mark>;
+  records: ReadonlyMap<string, RecordDiff>;
+  /**
+   * Notes, keyed by their index in `shown.notes` — ghosts included.
+   *
+   * Indexed rather than keyed by text, which is what the first version did. Text is not an identity:
+   * two identical notes collided in the map and produced a duplicate React key, a reordered note was
+   * invisible, and — the one that mattered — a *reworded* note had no partner to diff against, so it
+   * read as a deletion beside an addition instead of as one change.
+   */
+  notes: ReadonlyMap<number, Change>;
+  /**
+   * Every change, in the order the article draws them: the head, then each sense with its examples,
+   * then attestations, then notes as `note:<index into shown.notes>`.
+   *
+   * This is what the review bar's next and previous step through, and it is why that component needs
+   * to know nothing about record ids. A `note:` key cannot collide with a record key: stored ids are
+   * fifteen characters of `[a-z0-9]` and placeholders are `draft:`-prefixed.
+   */
+  order: readonly string[];
   /**
    * RENDER ONLY: `after`, plus every removed record put back where it was.
    *
@@ -438,7 +492,7 @@ export interface DraftDiff {
    * `App` holds `after` separately for that, and saving this would resurrect what was removed.
    */
   shown: ArticleDraft;
-  /** What the review bar counts. */
+  /** What the review bar counts. One marked record is one change, however many of its fields moved. */
   count: number;
 }
 
@@ -448,35 +502,152 @@ const changedFields = (
   Object.keys(table).filter((field) =>
     JSON.stringify(before[field] ?? null) !== JSON.stringify(after[field] ?? null));
 
+const blank = (value: unknown) =>
+  value === null || value === undefined || value === "" || (Array.isArray(value) && !value.length);
+
+/** Which fields moved, how, and — for prose — which words. */
+function fieldChanges(
+  before: Record<string, unknown>, after: Record<string, unknown>, table: Record<string, Coerce>
+): Map<string, Change> {
+  const changes = new Map<string, Change>();
+  for (const field of changedFields(before, after, table)) {
+    const was = before[field];
+    const now = after[field];
+    const mark: Mark = blank(was) ? "added" : blank(now) ? "removed" : "changed";
+    changes.set(field, {
+      mark,
+      words: typeof was === "string" && typeof now === "string" ? wordDiff(was, now) : null
+    });
+  }
+  return changes;
+}
+
 /**
- * What a proposal did, by record id — computed by comparing two drafts, never by reading the
- * operations. That is what keeps the wire format replaceable, and it is the whole reason the
- * operations are allowed to be a detail of one request.
+ * Positions in `sequence` that kept their relative order. Everything else is what actually moved.
+ *
+ * `sequence` is where each surviving record *used* to be, read in the order they appear now, so the
+ * longest increasing run is the set that did not move and the complement is minimal. Rotating three
+ * senses therefore reports one change for one drag rather than three.
  */
-export function diffDrafts(before: ArticleDraft, after: ArticleDraft): DraftDiff {
-  const marks = new Map<string, Mark>();
-  const notes = new Map<string, Mark>();
-  /* `notes` is deliberately not among these. The notes section marks its lines one by one, so
-     letting the head claim the change as well would mark nothing extra on screen and would count
-     one edit twice in "3 changes proposed". */
-  const lexemeFields = new Set<string>(
-    changedFields(fieldsOf(before), fieldsOf(after), LEXEME_FIELDS).filter((field) => field !== "notes")
-  );
+function anchored(sequence: readonly number[]): Set<number> {
+  // The longest increasing subsequence of a list is its common subsequence with its sorted self.
+  const rising = [...sequence].sort((one, other) => one - other);
+  return new Set(lcs(sequence, rising, (one, other) => one === other).map((pair) => pair.a));
+}
 
-  const shown: ArticleDraft = structuredClone(after);
-  const lexemeKey = draftKeys.lexeme(shown);
-  if (lexemeFields.size) marks.set(lexemeKey, "changed");
+const NOTE_PAIR = 0.5;
+const NOTE_TOKENS = 3;
+const NOTE_LIMIT = 24;
 
-  for (const note of after.notes) if (!before.notes.includes(note)) notes.set(note, "added");
-  for (const note of before.notes) {
-    if (!after.notes.includes(note)) {
-      notes.set(note, "removed");
-      // A removed note is drawn where it was, like every other removed record.
-      shown.notes.splice(Math.min(before.notes.indexOf(note), shown.notes.length), 0, note);
+interface NoteRow {
+  text: string;
+  change: Change | null;
+}
+
+/**
+ * Match the notes of one draft against another's, so a reworded note is one change and not two.
+ *
+ * `set notes` takes the whole list, so a model fixing one word in the second note sends all three.
+ * Exact pairing silences the two it did not touch; similarity pairing recognises the one it did.
+ *
+ * Four passes: exact matches, *consuming* so two identical notes pair with two identical notes
+ * rather than collapsing into one; then the most similar remaining pairs, greedily; then the longest
+ * run that kept its order, so the rest read as moved; then whatever is left over is an addition or a
+ * removal.
+ */
+function pairNotes(before: readonly string[], after: readonly string[]): NoteRow[] {
+  const takenBefore = new Set<number>();
+  const takenAfter = new Set<number>();
+  /** after index -> before index */
+  const pairs = new Map<number, number>();
+
+  const same = (one: string, other: string) => one.normalize("NFC") === other.normalize("NFC");
+  for (let j = 0; j < after.length; j += 1) {
+    for (let i = 0; i < before.length; i += 1) {
+      if (takenBefore.has(i) || !same(before[i], after[j])) continue;
+      pairs.set(j, i);
+      takenBefore.add(i);
+      takenAfter.add(j);
+      break;
     }
   }
 
-  /* Senses. A sense held in `before` and missing from `after` is put back at its old index, and its
+  /* Dice over the same word tokens the diff will draw, which is the quantity being asked about:
+     how much of this note survived. Above half, or the rendered diff is all deletions and
+     insertions and "removed, and here is a new one" is the more honest reading. Three tokens
+     minimum, because at two a single shared word scores exactly a half and would pair "Rare."
+     with "Common.". */
+  if (before.length <= NOTE_LIMIT && after.length <= NOTE_LIMIT) {
+    const candidates: { i: number; j: number; score: number }[] = [];
+    for (let j = 0; j < after.length; j += 1) {
+      if (takenAfter.has(j) || words(after[j]).length < NOTE_TOKENS) continue;
+      for (let i = 0; i < before.length; i += 1) {
+        if (takenBefore.has(i) || words(before[i]).length < NOTE_TOKENS) continue;
+        const score = similarity(before[i], after[j]);
+        if (score > NOTE_PAIR) candidates.push({ i, j, score });
+      }
+    }
+    // Best first, and deterministic where scores tie.
+    candidates.sort((one, other) => other.score - one.score || one.j - other.j || one.i - other.i);
+    for (const candidate of candidates) {
+      if (takenBefore.has(candidate.i) || takenAfter.has(candidate.j)) continue;
+      pairs.set(candidate.j, candidate.i);
+      takenBefore.add(candidate.i);
+      takenAfter.add(candidate.j);
+    }
+  }
+
+  const ordered = [...pairs.keys()].sort((one, other) => one - other);
+  const stayed = anchored(ordered.map((j) => pairs.get(j)!));
+  const kept = new Set(ordered.filter((_, position) => stayed.has(position)));
+
+  const rows: NoteRow[] = after.map((text, j) => {
+    const i = pairs.get(j);
+    if (i === undefined) return { text, change: { mark: "added", words: null } };
+    const moved = !kept.has(j);
+    if (same(before[i], text)) return { text, change: moved ? { mark: "moved", words: null } : null };
+    // Reworded, and possibly moved as well. `moved` wins the label and the words come along, so the
+    // reader still sees which words changed.
+    return { text, change: { mark: moved ? "moved" : "changed", words: wordDiff(before[i], text) } };
+  });
+
+  /* Ghosts go back where they were: walk `before` in order and flush each paired note's partner as
+     it comes up, so a removed note lands among the notes it used to sit between. */
+  const partnerOf = new Map<number, number>();
+  for (const [j, i] of pairs) partnerOf.set(i, j);
+  const merged: NoteRow[] = [];
+  let cursor = 0;
+  for (let i = 0; i < before.length; i += 1) {
+    const j = partnerOf.get(i);
+    if (j === undefined) {
+      merged.push({ text: before[i], change: { mark: "removed", words: null } });
+      continue;
+    }
+    while (cursor <= j) merged.push(rows[cursor++]);
+  }
+  while (cursor < rows.length) merged.push(rows[cursor++]);
+  return merged;
+}
+
+export function diffDrafts(before: ArticleDraft, after: ArticleDraft): DraftDiff {
+  const records = new Map<string, RecordDiff>();
+  const noteMarks = new Map<number, Change>();
+  const shown: ArticleDraft = structuredClone(after);
+
+  /* The head. `notes` is excluded because the notes section marks its own lines, and letting the
+     head claim the change as well would mark nothing extra on screen and count one edit twice. */
+  const headFields = fieldChanges(fieldsOf(before), fieldsOf(after), LEXEME_FIELDS);
+  headFields.delete("notes");
+  if (headFields.size) {
+    records.set(draftKeys.lexeme(shown), { mark: "changed", fields: headFields });
+  }
+
+  /* Notes, matched rather than compared, and indexed against what will be drawn. */
+  const noteRows = pairNotes(before.notes, after.notes);
+  shown.notes = noteRows.map((row) => row.text);
+  noteRows.forEach((row, index) => { if (row.change) noteMarks.set(index, row.change); });
+
+  /* Senses. One held in `before` and missing from `after` goes back at its old index, and its
      examples come with it — the reader has to see what a proposal takes away. */
   const keptSenses = new Set(after.senses.map((sense) => sense.id).filter(Boolean) as string[]);
   before.senses.forEach((sense, index) => {
@@ -490,21 +661,39 @@ export function diffDrafts(before: ArticleDraft, after: ArticleDraft): DraftDiff
     before.senses.flatMap((sense) => sense.examples).filter((example) => example.id)
       .map((example) => [example.id!, example])
   );
-  const afterSenses = new Set(after.senses.map((sense) => sense.id).filter(Boolean) as string[]);
   const afterExamples = new Set(
     after.senses.flatMap((sense) => sense.examples).map((example) => example.id).filter(Boolean) as string[]
   );
 
+  /* Which senses actually moved, rather than which ones are in a different place. Rotating three
+     senses moves one of them, and the review bar should say one change for one drag. */
+  const wasAt = new Map(
+    (before.senses.map((sense) => sense.id).filter(Boolean) as string[]).map((id, index) => [id, index])
+  );
+  const survived = after.senses
+    .map((sense) => sense.id)
+    .filter((id): id is string => Boolean(id) && wasAt.has(id as string));
+  const stayed = anchored(survived.map((id) => wasAt.get(id)!));
+  const held = new Set(survived.filter((_, position) => stayed.has(position)));
+
+  const empty: ReadonlyMap<string, Change> = new Map();
   shown.senses.forEach((sense, senseIndex) => {
     const key = draftKeys.sense(sense, senseIndex);
     const was = sense.id ? beforeSenses.get(sense.id) : undefined;
-    if (!sense.id) marks.set(key, "added");
-    else if (!afterSenses.has(sense.id)) marks.set(key, "removed");
-    else if (!was) marks.set(key, "added");
-    else if (changedFields(fieldsOf(was), fieldsOf(sense), SENSE_FIELDS).length) marks.set(key, "changed");
+    const gone = Boolean(sense.id) && !keptSenses.has(sense.id!);
+    if (gone) {
+      records.set(key, { mark: "removed", fields: empty });
+    } else if (!sense.id || !was) {
+      records.set(key, { mark: "added", fields: empty });
+    } else {
+      const fields = fieldChanges(fieldsOf(was), fieldsOf(sense), SENSE_FIELDS);
+      if (!held.has(sense.id)) {
+        records.set(key, { mark: "moved", fields, wasAt: wasAt.get(sense.id)! + 1 });
+      } else if (fields.size) {
+        records.set(key, { mark: "changed", fields });
+      }
+    }
 
-    // A removed sense's examples are removed with it, whatever they say on their own.
-    const senseGone = Boolean(sense.id) && !afterSenses.has(sense.id!);
     const removedHere = was
       ? was.examples.filter((example) => example.id && !afterExamples.has(example.id))
       : [];
@@ -517,10 +706,15 @@ export function diffDrafts(before: ArticleDraft, after: ArticleDraft): DraftDiff
     sense.examples.forEach((example, index) => {
       const exampleKey = draftKeys.example(example, senseIndex, index);
       const previous = example.id ? beforeExamples.get(example.id) : undefined;
-      if (senseGone) marks.set(exampleKey, "removed");
-      else if (!example.id || !previous) marks.set(exampleKey, "added");
-      else if (!afterExamples.has(example.id)) marks.set(exampleKey, "removed");
-      else if (changedFields(fieldsOf(previous), fieldsOf(example), EXAMPLE_FIELDS).length) marks.set(exampleKey, "changed");
+      // A removed sense's examples are removed with it, whatever they say on their own.
+      if (gone || (example.id && !afterExamples.has(example.id))) {
+        records.set(exampleKey, { mark: "removed", fields: empty });
+      } else if (!example.id || !previous) {
+        records.set(exampleKey, { mark: "added", fields: empty });
+      } else {
+        const fields = fieldChanges(fieldsOf(previous), fieldsOf(example), EXAMPLE_FIELDS);
+        if (fields.size) records.set(exampleKey, { mark: "changed", fields });
+      }
     });
   });
 
@@ -539,10 +733,28 @@ export function diffDrafts(before: ArticleDraft, after: ArticleDraft): DraftDiff
   shown.attestations.forEach((attestation, index) => {
     const key = draftKeys.attestation(attestation, index);
     const was = attestation.id ? beforeAttestations.get(attestation.id) : undefined;
-    if (!attestation.id || !was) marks.set(key, "added");
-    else if (!afterAttestations.has(attestation.id)) marks.set(key, "removed");
-    else if (changedFields(fieldsOf(was), fieldsOf(attestation), ATTESTATION_FIELDS).length) marks.set(key, "changed");
+    if (!attestation.id || !was) {
+      records.set(key, { mark: "added", fields: empty });
+    } else if (!afterAttestations.has(attestation.id)) {
+      records.set(key, { mark: "removed", fields: empty });
+    } else {
+      const fields = fieldChanges(fieldsOf(was), fieldsOf(attestation), ATTESTATION_FIELDS);
+      if (fields.size) records.set(key, { mark: "changed", fields });
+    }
   });
 
-  return { marks, lexemeFields, notes, shown, count: marks.size + notes.size };
+  /* Document order, which is not the order this function computed things in: the article draws the
+     head, then the senses, then where you met it, then the notes. Next and previous have to move
+     down the page. */
+  const order: string[] = [];
+  const at = (key: string) => { if (records.has(key)) order.push(key); };
+  at(draftKeys.lexeme(shown));
+  shown.senses.forEach((sense, senseIndex) => {
+    at(draftKeys.sense(sense, senseIndex));
+    sense.examples.forEach((example, index) => at(draftKeys.example(example, senseIndex, index)));
+  });
+  shown.attestations.forEach((attestation, index) => at(draftKeys.attestation(attestation, index)));
+  for (const index of [...noteMarks.keys()].sort((one, other) => one - other)) order.push(`note:${index}`);
+
+  return { records, notes: noteMarks, order, shown, count: records.size + noteMarks.size };
 }

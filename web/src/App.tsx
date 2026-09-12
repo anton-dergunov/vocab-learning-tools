@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AddView, { type AddTab, type CaptureSeed } from "./AddView";
 import type { ImagePrompt } from "./domain";
-import AskDock from "./AskDock";
+import AskDock, { type Detent } from "./AskDock";
+import ReviewBar from "./ReviewBar";
 import {
   applyOps, diffDrafts, EditRefused, type DraftDiff, type EditOp
 } from "./articleEdit";
@@ -167,6 +168,16 @@ export default function App() {
   const [reference, setReference] = useState<ExternalEntry | null>(null);
   const [seededTurn, setSeededTurn] = useState<string | null>(null);
   /**
+   * How far open the conversation is, mirrored from the dock.
+   *
+   * `App` does not own the detent — the dock does — but at `full` the article must not be drawn at
+   * all, and only this component holds both. Reaching `full` used to leave a one-line strip of
+   * article above the sheet, which was useless on a phone and no better on a desktop.
+   */
+  const [askDetent, setAskDetent] = useState<Detent>("dock");
+  /** Where the article was, so a trip to `full` and back does not land you at the masthead. */
+  const parked = useRef(0);
+  /**
    * A proposal under review. Never stored, never replicated, and dropped rather than kept: it is a
    * suggestion, not a state (§6.3). `before` is what undo saves; `after` is what save saves;
    * `diff.shown` is what is rendered, and is `after` plus the removed records put back so they can
@@ -315,22 +326,34 @@ export default function App() {
 
   const markSlot = useMemo<MarkSlot | null>(() => {
     if (!proposal) return null;
-    const { marks, lexemeFields, notes } = proposal.diff;
+    const { records, notes } = proposal.diff;
     return {
-      of: (id, field) => {
-        const mark = marks.get(id) ?? null;
-        // The masthead marks the line that changed rather than the whole head, so a new emoji does
-        // not light up the IPA beside it.
-        if (field) return lexemeFields.has(field) ? "changed" : null;
-        return mark;
-      },
-      note: (text) => notes.get(text) ?? null
+      of: (id) => records.get(id)?.mark ?? null,
+      field: (id, field) => records.get(id)?.fields.get(field) ?? null,
+      note: (index) => notes.get(index) ?? null,
+      movedFrom: (id) => records.get(id)?.wasAt ?? null
     };
   }, [proposal]);
 
   useEffect(() => {
     document.title = article ? `${article.lexeme.headword} — Acervo` : "Acervo";
   }, [article]);
+
+  /** The conversation has taken the pane, so the article is not drawn. */
+  const asking = askDetent === "full" && mode === "read" && Boolean(article || external);
+
+  /* `.main.composing` sets `overflow: hidden`, which clamps `scrollTop` to zero — so the offset is
+     parked on the way into `full` and put back on the way out. Four lines, and the alternative was
+     positioning the sheet against a topbar on one layout and a topbar plus a dynamic rail on the
+     other. */
+  useEffect(() => {
+    const host = main.current;
+    if (!host) return;
+    if (asking) {
+      parked.current = host.scrollTop;
+      return () => { host.scrollTop = parked.current; };
+    }
+  }, [asking]);
 
   /* A proposal is written against one revision of one entry. If sync brings a newer one while the
      conversation is open, the proposal is dropped rather than rebased — the server would refuse the
@@ -765,7 +788,9 @@ export default function App() {
         before, after: applied.draft, diff: diffDrafts(before, applied.draft),
         minted: applied.minted, summary
       });
-      if (main.current) main.current.scrollTop = 0;
+      /* No scroll to the top: `ReviewBar` brings the *first change* into view instead, which is
+         what design §6.2 asked for and what makes an edit to the third sense of a long entry
+         something you can see rather than something you have to go looking for. */
     } catch (error) {
       notify(error instanceof EditRefused ? error.message
         : "That proposal could not be applied, so nothing was changed.");
@@ -904,7 +929,9 @@ export default function App() {
 
   const active = languageOf(language || "en");
   /** Both surfaces you compose in. The main region stops scrolling and hands that to the view. */
-  const composing = Boolean(addTab) || Boolean(article && mode === "edit");
+  /* `asking` joins this for the same reason the other two are here: a surface that owns the height
+     and scrolls itself must not sit inside a region that also scrolls. */
+  const composing = Boolean(addTab) || Boolean(article && mode === "edit") || asking;
   const inbox = snapshot && language ? inboxCount(snapshot, language) : 0;
   const currentTopic = topics.find((option) => option.id === topic);
   const topicLabel = topic === "all" ? "All words" : topic === "inbox" ? "Inbox" : currentTopic?.name ?? "Topic";
@@ -1029,25 +1056,22 @@ export default function App() {
               onCancel={() => { setProblems([]); setMode("read"); }}
               onSave={(draft) => void saveArticleYaml(draft)}
             />
-          </Suspense> : <div className="pane">
+          </Suspense> : <div className={`pane ${asking ? "ask-only" : ""}`}>
             {external && <div className="art-bar">
               <button className="icon-btn" aria-label="Back to the list" onClick={() => setExternal(null)}><BackIcon /></button>
               <span className="label">Other dictionaries</span>
               <span className="spacer" />
             </div>}
-            {/* Sticky for as long as a proposal is live. Nothing is written until Save changes,
-                and Discard leaves the stored entry untouched because nothing ever reached it. */}
-            {proposal && <div className="review-bar">
-              <span className="review-mark">✎</span>
-              <span className="label">
-                {proposal.diff.count} {proposal.diff.count === 1 ? "change" : "changes"} proposed
-              </span>
-              <span className="spacer" />
-              <button className="tb-btn" onClick={() => setProposal(null)}>Discard</button>
-              <button className="tb-btn primary" disabled={saving} onClick={() => void saveProposal()}>
-                {saving ? "Saving…" : "Save changes"}
-              </button>
-            </div>}
+            {/* Live for as long as a proposal is. Nothing is written until Save changes, and
+                Discard leaves the stored entry untouched because nothing ever reached it. */}
+            {proposal && <ReviewBar
+              count={proposal.diff.count}
+              order={proposal.diff.order}
+              saving={saving}
+              scroller={main}
+              onDiscard={() => setProposal(null)}
+              onSave={() => void saveProposal()}
+            />}
             {article && <div className="art-bar">
               <button className="icon-btn" aria-label="Back to the list" onClick={() => { setOpenId(null); setProposal(null); }}><BackIcon /></button>
               <span className="label">{topicLabel}</span>
@@ -1108,6 +1132,7 @@ export default function App() {
                 onCapture={external ? captureFromChat : undefined}
                 seeded={seededTurn}
                 onSeedUsed={() => setSeededTurn(null)}
+                onDetent={setAskDetent}
               />}
           </div>}
         </main>

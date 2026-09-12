@@ -19,8 +19,14 @@ import type { ChatCapture, ChatProposal, ChatResult, ChatTurn } from "./api";
 import { AskIcon, ChevronIcon, CloseIcon, PlusIcon, SendIcon } from "./icons";
 import { useKeyboardInset } from "./visualViewport";
 
-/** How far the sheet is open. Three stops, no drag library and no intermediate state. */
-type Detent = "dock" | "half" | "full";
+/**
+ * How far the sheet is open. Three stops, no drag library and no intermediate state.
+ *
+ * `open` rather than `half`: the name was the bug. It described a fixed fraction of the screen, so
+ * focusing the composer reserved a large empty box before there was anything to put in it. It is
+ * now content-sized with a cap.
+ */
+export type Detent = "dock" | "open" | "full";
 
 type Phase =
   | { at: "idle" }
@@ -60,13 +66,23 @@ export interface AskDockProps {
   seeded?: string | null;
   /** Said once, when the seeded turn has been sent, so it cannot be sent again on a later visit. */
   onSeedUsed?(): void;
+  /**
+   * How far open the sheet now is.
+   *
+   * Reported rather than controlled: the detent is this component's business, but at `full` the
+   * article must not be drawn at all, and only the surface holding both can arrange that.
+   */
+  onDetent?(detent: Detent): void;
+  /** Whether `full` is offered. False on the Add view, whose own composer already owns the height. */
+  expandable?: boolean;
 }
 
 const OFFLINE = "Chat needs the server. Your words are all still here.";
 
 export default function AskDock({
   headword, emoji = null, turns, onTurns, ask, offline,
-  focus = null, onClearFocus, onPropose, onCapture, seeded = null, onSeedUsed
+  focus = null, onClearFocus, onPropose, onCapture, seeded = null, onSeedUsed,
+  onDetent, expandable = true
 }: AskDockProps) {
   const [detent, setDetent] = useState<Detent>("dock");
   const [draft, setDraft] = useState("");
@@ -97,7 +113,7 @@ export default function AskDock({
     setFollowUps([]);
     setCard(null);
     setPhase({ at: "thinking" });
-    setDetent((open) => (open === "dock" ? "half" : open));
+    setDetent((now) => (now === "dock" ? "open" : now));
     try {
       const answer = await ask(next);
       onTurns([...next, { role: "acervo", text: answer.reply }]);
@@ -136,10 +152,12 @@ export default function AskDock({
   };
 
   const step = (way: 1 | -1) => {
-    const order: Detent[] = ["dock", "half", "full"];
+    const order: Detent[] = expandable ? ["dock", "open", "full"] : ["dock", "open"];
     const at = order.indexOf(detent) + way;
     if (at >= 0 && at < order.length) setDetent(order[at]);
   };
+
+  useEffect(() => { onDetent?.(detent); }, [detent, onDetent]);
 
   /* `field-sizing: content` is Chromium-only, and the device this is for runs Safari — so the
      composer is grown by hand. Height to `auto` first, or it can only ever get taller. The cap is
@@ -229,15 +247,20 @@ export default function AskDock({
       </div>}
     </div>}
 
+    {/* Its own row, so the field keeps the full width. Inline, a chip reading "example 1 of sense 3"
+        took more of a phone than the thing you were typing into. */}
+    {focus && <div className="ask-chips">
+      <button
+        type="button" className="ask-chip" onClick={() => onClearFocus?.()}
+        aria-label={`Stop asking about ${focus.label}`}
+      >{focus.label}<CloseIcon /></button>
+    </div>}
+
     <form
       className="ask-bar"
       onSubmit={(event) => { event.preventDefault(); void send(draft); }}
     >
       <span className="ask-mark"><AskIcon /></span>
-      {focus && <button
-        type="button" className="ask-chip" onClick={() => onClearFocus?.()}
-        aria-label={`Stop asking about ${focus.label}`}
-      >{focus.label}<CloseIcon /></button>}
       <textarea
         ref={composer}
         className="ask-input"
@@ -246,7 +269,7 @@ export default function AskDock({
         disabled={offline}
         placeholder={offline ? OFFLINE : `Ask about ${headword}…`}
         aria-label={`Ask about ${headword}`}
-        onFocus={() => { if (detent === "dock") setDetent("half"); }}
+        onFocus={() => { if (detent === "dock") setDetent("open"); }}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
@@ -265,7 +288,7 @@ export default function AskDock({
         disabled={offline || thinking || !draft.trim()}
       ><SendIcon /></button>
       {detent === "dock" && turns.length > 0 && <button
-        type="button" className="link-btn ask-resume" onClick={() => open("half")}
+        type="button" className="link-btn ask-resume" onClick={() => open("open")}
       >{exchanges === 1 ? "1 turn" : `${exchanges} turns`}</button>}
     </form>
   </section>;

@@ -28,3 +28,16 @@ if (typeof Blob !== "undefined" && typeof Blob.prototype.text !== "function") {
     return readBlob<string>(this, "text");
   };
 }
+
+/**
+ * jsdom does no layout, so it implements no scrolling at all — `Element.prototype.scrollIntoView`
+ * simply is not there.
+ *
+ * The review bar brings the first change into view on every proposal, so without this every test
+ * that reviews one throws. A no-op rather than a spy by default: a test that cares about *where* it
+ * scrolled spies on this itself. Same standing as the `Blob` fills above — the test environment is
+ * missing something every browser has, and production calls it unguarded.
+ */
+if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = function scrollIntoView() { /* jsdom has no layout */ };
+}

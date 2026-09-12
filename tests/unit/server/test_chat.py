@@ -251,12 +251,69 @@ def test_it_reads_a_nested_attestation_reference(talking):
     talking.model.chat = {
         **REPLY,
         "proposal": {"summary": "…", "ops": [
-            {"op": "addAttestation", "ref": "a1", "attestation": {"text": "Se disfrazó."}},
-            {"op": "addExample", "senseId": "kq2m7x1p4vd9r0s",
-             "example": {"text": "Se disfrazó.", "fromAttestation": "a1"}},
+            {"op": "add", "target": "attestation", "ref": "a1", "value": {"text": "Se disfrazó."}},
+            {"op": "add", "target": "example", "in": "sense:kq2m7x1p4vd9r0s",
+             "value": {"text": "Se disfrazó.", "fromAttestation": "a1"}},
         ]},
     }
     ops = talking.chat().json()["data"]["proposal"]["ops"]
     assert ops[1]["fromAttestation"] == "a1"
     # Lifted, not duplicated: the applier reads one place.
-    assert "fromAttestation" not in ops[1]["example"]
+    assert "fromAttestation" not in ops[1]["value"]
+
+
+def test_it_drops_an_add_target_it_does_not_know(talking):
+    talking.model.chat = {
+        **REPLY,
+        "proposal": {"summary": "…", "ops": [{"op": "add", "target": "picture", "value": {}}]},
+    }
+    assert talking.chat().json()["data"]["proposal"] is None
+
+
+def test_it_drops_a_reorder_of_something_other_than_senses(talking):
+    talking.model.chat = {
+        **REPLY,
+        "proposal": {"summary": "…", "ops": [
+            {"op": "reorder", "target": "examples", "ids": ["kq2m7x1p4vd9r0s"]}
+        ]},
+    }
+    assert talking.chat().json()["data"]["proposal"] is None
+
+
+def test_it_requires_the_parent_an_added_example_goes_into(talking):
+    talking.model.chat = {
+        **REPLY,
+        "proposal": {"summary": "…", "ops": [
+            {"op": "add", "target": "example", "value": {"text": "Se disfrazó."}}
+        ]},
+    }
+    assert talking.chat().json()["data"]["proposal"] is None
+
+
+# ── follow-ups that say nothing ─────────────────────────────────────────────
+
+
+def test_it_drops_a_follow_up_that_only_agrees_with_itself(talking):
+    """The prompt forbids these; this is the cap it cannot argue with.
+
+    A follow-up is the only one-tap action there is on a phone, and "Looks good" spends it on
+    nothing — there is no change to make and no question to answer.
+    """
+    talking.model.chat = {
+        "reply": "«el traje» is any outfit.",
+        "followUps": ["Looks good", "Thanks!", "Perfect.", "One more example"],
+        "proposal": None,
+    }
+    assert talking.chat().json()["data"]["followUps"] == ["One more example"]
+
+
+def test_it_keeps_a_follow_up_that_merely_starts_with_thanks(talking):
+    # Whole-string only, never substring. This is the case the ban must not break.
+    talking.model.chat = {
+        "reply": "…",
+        "followUps": ["Thanks, now add an example", "How do I remember it?"],
+        "proposal": None,
+    }
+    assert talking.chat().json()["data"]["followUps"] == [
+        "Thanks, now add an example", "How do I remember it?"
+    ]

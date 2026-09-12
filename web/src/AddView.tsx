@@ -141,10 +141,12 @@ export default function AddView({
 
   const marks = useMemo<MarkSlot | null>(() => {
     if (!edited) return null;
-    const { marks: byId, lexemeFields, notes } = edited.diff;
+    const { records, notes } = edited.diff;
     return {
-      of: (id, field) => (field ? (lexemeFields.has(field) ? "changed" : null) : byId.get(id) ?? null),
-      note: (text) => notes.get(text) ?? null
+      of: (id) => records.get(id)?.mark ?? null,
+      field: (id, field) => records.get(id)?.fields.get(field) ?? null,
+      note: (index) => notes.get(index) ?? null,
+      movedFrom: (id) => records.get(id)?.wasAt ?? null
     };
   }, [edited]);
 
@@ -419,6 +421,9 @@ export default function AddView({
               ask={askAboutDraft}
               offline={offline}
               onPropose={(found, modelId) => applyToDraft(found.ops as EditOp[], modelId)}
+              /* No `full` here: this surface is itself a review, and its Composer already owns the
+                 height. There is nothing for the sheet to take over. */
+              expandable={false}
             />}
           </div>
         : <p className="empty">

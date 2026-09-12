@@ -46,14 +46,33 @@ REFERENCE_MODES = ("faithful", "expand")
 # *shape* only — whether `sense:kq2…` names a record, whether `notes` may be set on it, and whether
 # the value is of the right type are questions about the document's meaning, and the document is a
 # YAML string this layer deliberately does not parse. `web/src/articleEdit.ts` answers those.
+#
+# Every operation carries a `target`. On `set` and `remove` it names a record; on `add` and
+# `reorder` the record does not exist yet, so it names a kind and `_ADD_SHAPE` says what else that
+# kind needs.
 _OP_SHAPE: dict[str, tuple[tuple[str, type], ...]] = {
     "set": (("target", str), ("field", str)),
-    "addSense": (("sense", dict),),
-    "addExample": (("senseId", str), ("example", dict)),
-    "addAttestation": (("ref", str), ("attestation", dict)),
+    "add": (("target", str),),
     "remove": (("target", str),),
-    "orderSenses": (("ids", list),),
+    "reorder": (("target", str), ("ids", list)),
 }
+
+_ADD_SHAPE: dict[str, tuple[tuple[str, type], ...]] = {
+    "sense": (("value", dict),),
+    "example": (("in", str), ("value", dict)),
+    "attestation": (("ref", str), ("value", dict)),
+}
+
+# A follow-up that says nothing back wastes the only one-tap slot there is on a phone. The prompt
+# forbids these; this is the cap it cannot argue with, in the spirit of every other limit here.
+# Matched against the **whole** string, never as a substring, so "Thanks, now add an example"
+# survives — which is the one thing this must not get wrong.
+_ACKNOWLEDGEMENTS = frozenset({
+    "looks good", "look good", "thanks", "thank you", "perfect", "great", "nice", "ok", "okay",
+    "got it", "sounds good", "makes sense", "cool", "no thanks", "nothing else", "all good",
+    "thats helpful", "that's helpful", "good to know", "understood", "fine", "agreed", "yes",
+    "no", "noted",
+})
 
 
 UNUSABLE = "The language model did not return a usable answer, so nothing was changed."
@@ -191,7 +210,9 @@ def _shaped(answer: Mapping[str, Any], subject: dict[str, Any], model: str) -> d
     reply = trimmed(answer.get("reply"))
     if not reply:
         raise ApiError(502, "llm_unusable", UNUSABLE)
-    follow_ups = [text[:FOLLOW_UP_CHARS] for text in text_list(answer.get("followUps"))]
+    follow_ups = [
+        text[:FOLLOW_UP_CHARS] for text in text_list(answer.get("followUps")) if _useful(text)
+    ]
     return {
         "reply": reply[:REPLY_LIMIT],
         "followUps": follow_ups[:FOLLOW_UP_LIMIT],
@@ -241,7 +262,11 @@ def _op(raw: Any) -> dict[str, Any] | None:
             return None
         else:
             op[field] = value
-    if name == "orderSenses":
+    if name == "reorder":
+        # One kind of reordering exists. A target this layer does not know is a mistake to surface,
+        # not a thing to pass on.
+        if op["target"] != "senses":
+            return None
         ids = [trimmed(item) for item in op["ids"]]
         if not ids or not all(ids):
             return None
@@ -250,19 +275,41 @@ def _op(raw: Any) -> dict[str, Any] | None:
         # `value` is the one field with no shape at all: a string, a list of strings, a list of
         # gloss objects, or null, depending on which field is being set. The device knows which.
         op["value"] = raw.get("value")
-    if name == "addSense":
-        op["after"] = trimmed(raw.get("after")) or None
-    if name == "addExample":
-        # Accepted at the top level or inside `example`, because a real model puts it in both
-        # places. This is not compatibility machinery: the answer is untrusted input and reading it
-        # generously is what `capture/coerce.py` exists for. Getting it wrong is *silent* — the
-        # applier would derive `origin: "llm"` for a sentence the learner actually met, which is a
-        # provenance lie no validation would catch.
-        nested = op["example"].pop("fromAttestation", None)
-        op["fromAttestation"] = trimmed(raw.get("fromAttestation")) or trimmed(nested) or None
+    if name == "add":
+        required = _ADD_SHAPE.get(op["target"])
+        # An unknown kind drops the whole proposal, exactly as an unknown operation name does.
+        if required is None:
+            return None
+        for field, kind in required:
+            value = raw.get(field)
+            if kind is str:
+                text = trimmed(value)
+                if not text:
+                    return None
+                op[field] = text
+            elif not isinstance(value, kind):
+                return None
+            else:
+                op[field] = value
+        if op["target"] == "sense":
+            op["after"] = trimmed(raw.get("after")) or None
+        if op["target"] == "example":
+            # Accepted beside `in` or inside `value`, because a real model puts it in both places.
+            # This is not compatibility machinery: the answer is untrusted input and reading it
+            # generously is what `capture/coerce.py` exists for. Getting it wrong is *silent* — the
+            # applier would derive `origin: "llm"` for a sentence the learner actually met, which is
+            # a provenance lie no validation would catch.
+            nested = op["value"].pop("fromAttestation", None)
+            op["fromAttestation"] = trimmed(raw.get("fromAttestation")) or trimmed(nested) or None
     if name == "remove":
         op["reason"] = trimmed(raw.get("reason"))
     return op
+
+
+def _useful(text: str) -> bool:
+    """Is this follow-up worth the slot it occupies?"""
+    bare = "".join(letter for letter in text.casefold() if letter.isalnum() or letter in " '").strip()
+    return bool(bare) and bare not in _ACKNOWLEDGEMENTS
 
 
 def _capture(raw: Any) -> dict[str, Any] | None:

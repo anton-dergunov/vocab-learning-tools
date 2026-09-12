@@ -858,10 +858,24 @@ details.fold .fold-body { padding: 4px 0 18px; }
   transition: height .18s ease;
 }
 .ask-dock { height: auto; }
-.ask-half { height: 45dvh; }
-/* The masthead strip inside the sheet stands in for the article's own, so the word being discussed
-   is never off screen even when the article behind is completely covered. */
-.ask-full { height: calc(100dvh - 96px); }
+/* Content-sized with a cap, not a fixed fraction — which is what `half` used to be, and why
+   focusing the composer reserved a large empty box before there was anything to put in it. `.ask`
+   is a flex column and `.ask-thread` is `flex: 1 1 auto; min-height: 0`, so with `height: auto` an
+   empty conversation is one hint line plus the bar, it grows turn by turn, and past the cap the
+   thread shrinks and scrolls instead. */
+.ask-open { height: auto; max-height: min(60dvh, calc(100dvh - var(--kb, 0px) - var(--topbar) - 24px)); }
+/* At its largest the sheet takes the pane and the article is not drawn at all. It used to be
+   `calc(100dvh - 96px)`, whose magic number left a one-line strip of article above — useless on a
+   phone and just as useless on a desktop. The mechanism is the one `Composer` already uses:
+   `.main.composing` stops the region scrolling and hands the height to its child, so the sheet
+   owns it and does its own scrolling. `App` saves and restores `main.scrollTop` across the trip,
+   because `overflow: hidden` clamps it to zero. The masthead strip inside the sheet header stands
+   in for the article's own, so the word being discussed is never off screen. */
+.pane.ask-only { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
+/* `:has` so this holds whether the sheet is a direct child of the pane, as in the
+   application, or wrapped, as in the prototype. */
+.pane.ask-only > *:not(.ask):not(:has(.ask)) { display: none; }
+.ask-full { position: static; flex: 1 1 auto; height: auto; min-height: 0; margin: 0 -26px; }
 @media (prefers-reduced-motion: reduce) { .ask { transition: none; } }
 
 .ask-head {
@@ -942,8 +956,12 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .ask-dock .ask-bar { padding-top: 12px; }
 .ask-mark { color: var(--core); flex: none; display: flex; padding-bottom: 7px; }
 .ask-mark svg { width: 18px; height: 18px; }
+/* The focus chip is context, not part of the input, so it gets its own row. Inline it squeezed the
+   field to nothing on a phone — a chip reading "example 1 of sense 3" took more width than the
+   thing you were trying to type into. Its own row at every width, so the layout is one layout. */
+.ask-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: none; padding: 8px 26px 0; }
 .ask-chip {
-  flex: none; display: flex; align-items: center; gap: 5px; margin-bottom: 5px;
+  flex: none; display: flex; align-items: center; gap: 5px;
   border: 1px solid var(--core); background: var(--core-soft); color: var(--core);
   border-radius: 999px; padding: 4px 8px 4px 10px; font-size: 12px; cursor: pointer;
   font-family: var(--mono); letter-spacing: .02em;
@@ -970,51 +988,131 @@ details.fold .fold-body { padding: 4px 0 18px; }
 /* ── the review bar, and what a proposal looks like in the article ──────
    Notion's approach in Acervo's marks: the document is the diff. No side-by-side, no unified diff,
    no +++/---. A removed block is drawn where it was, struck through — nothing vanishes without
-   being seen going. Existing tokens only: `--core` for added and changed, `--warn` for removed.
-   No red or green enters a palette that has neither. */
+   being seen going. Existing tokens only: `--core` for added and changed, `--warn` for removed,
+   `--ink-3` for a block that merely moved. No red or green enters a palette that has neither.
+
+   **THE RULE: no `.mark` selector may move body text.** A mark draws in the gutter its block
+   already owns, and the glyph is absolutely positioned. The first version broke this three times —
+   `.ex.mark` by 2px, `.notes li.mark` by 15px, and `.sec.mark` by 14px on the definition, the
+   glosses *and every example under a changed sense* — and a marked note sitting right of its
+   unmarked neighbours is the defect that is hardest to unsee. Nothing here sets padding or margin
+   except `.notes li.mark`, which borrows from the pane and pins its em-dash back where it was.
+
+   There is deliberately no `.mark::before`: it collided with `.notes li::before`, the em-dash, which
+   won `content` on specificity and then inherited the bar's width and background. */
 
 .review-bar {
   position: sticky; top: 0; z-index: 30;
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
   margin: -30px -26px 18px; padding: 12px 26px;
   background: var(--core-soft); border-bottom: 1px solid var(--core);
 }
-.review-bar .label { color: var(--core); }
-.review-mark { color: var(--core); font-size: 14px; }
+/* Never wraps: on a phone it used to take two rows and eat the article on the device with least of
+   it. The count is what shrinks, because it is the one part you can infer from the marks. */
+.review-bar .label {
+  color: var(--core); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.review-mark { color: var(--core); font-size: 14px; flex: none; }
+.review-bar .tb-btn { flex: none; }
+.review-nav { display: flex; align-items: center; gap: 2px; flex: none; }
+.review-nav button {
+  display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border: 1px solid var(--core); border-radius: 6px; background: transparent; color: var(--core);
+  cursor: pointer;
+}
+.review-nav button:disabled { opacity: .4; cursor: not-allowed; }
+.review-nav button svg { width: 14px; height: 14px; }
+.review-at { font-family: var(--mono); font-size: 11px; color: var(--core); flex: none; }
+.review-down { display: flex; transform: rotate(180deg); }
+.review-bar .spacer { flex: 1 1 auto; }
 
 .mark { position: relative; }
-.mark::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 2px;
-}
-.mark-add::before, .mark-change::before { background: var(--core); }
-.mark-cut::before { background: var(--warn); }
 .mark-glyph {
-  font-family: var(--mono); font-size: 11px; font-weight: 600; margin-right: 7px;
-  color: var(--core);
+  position: absolute; font-family: var(--mono); font-size: 11px; font-weight: 600; line-height: 1;
+  color: var(--core); pointer-events: none;
 }
 .mark-cut .mark-glyph { color: var(--warn); }
+.mark-moved .mark-glyph { color: var(--ink-3); }
 
-.ex.mark { padding-left: 16px; border-left-color: transparent; }
-.ex.mark-add, .ex.mark-change { background: var(--core-soft); border-radius: 0 6px 6px 0; }
-.ex.mark-cut { background: var(--warn-soft); border-radius: 0 6px 6px 0; }
+/* An inline word diff, which is what makes "changed" mean anything. `wd-ins` is a colour and a
+   weight rather than a background, because the changed block already carries `--core-soft` and
+   teal on teal is invisible. */
+/* A hair of margin because a substitution puts the two runs directly against each other — the
+   deleted tokens carry their own trailing punctuation, so without it "montón.muchísimo." runs
+   together and the eye cannot find the seam. */
+.wd-ins { color: var(--core); font-weight: 650; margin: 0 .1em; }
+.wd-del {
+  color: var(--warn); text-decoration: line-through; text-decoration-thickness: from-font;
+  margin: 0 .1em;
+}
+
+/* One field of a record, tinted where it is drawn. `box-shadow` rather than padding, so the tint
+   has breathing room without moving anything — the trick the masthead already used. */
+.field-change { background: var(--core-soft); border-radius: 3px; box-shadow: 0 0 0 3px var(--core-soft); }
+
+/* An example is a small block, so tinting all of it is right and the word diff inside says what
+   moved. Its 2px `border-left` is already exactly where a bar belongs: recolour it rather than
+   drawing a second one over it. The cost is that a marked example loses `.ex.own`'s teal for the
+   length of the review; the `origin` chip in the foot still says `attestation`. */
+.ex.mark-add, .ex.mark-change {
+  border-left-color: var(--core); background: var(--core-soft); border-radius: 0 6px 6px 0;
+}
+.ex.mark-cut {
+  border-left-color: var(--warn); background: var(--warn-soft); border-radius: 0 6px 6px 0;
+}
+.ex.mark-moved { border-left-color: var(--ink-3); }
 .ex.mark-cut .t, .ex.mark-cut .tr { text-decoration: line-through; color: var(--ink-3); }
-.att.mark { border-color: var(--core); }
-.att.mark-cut { border-color: var(--warn); }
+.ex .mark-glyph { left: 3px; top: 16px; }
+
+/* An attestation is a small card too, so it tints whole. */
+.att.mark-add, .att.mark-change { border-color: var(--core); background: var(--core-soft); }
+.att.mark-cut { border-color: var(--warn); background: var(--warn-soft); }
 .att.mark-cut .t, .att.mark-cut .tr { text-decoration: line-through; color: var(--ink-3); }
-.sec.mark { padding-left: 14px; }
+.att .mark-glyph { left: 5px; top: 17px; }
+
+/* A sense is a large block — a definition, glosses, examples, a picture — so it is deliberately
+   NOT tinted whole: that would claim its untouched examples changed. The bar goes on the rail and
+   the tint goes on the line that actually moved. */
+/* The rail's own text starts at x=0, so a bar at `left: 0` would sit on top of the first letter of
+   "SENSE". Ten pixels of gutter, borrowed from the pane's padding by an equal negative margin, so
+   the rail's text does not move either. */
+.sec.mark > .rail-l { margin-left: -10px; padding-left: 10px; }
+.sec.mark > .rail-l::after {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 2px;
+  background: var(--core);
+}
+.sec.mark-cut > .rail-l::after { background: var(--warn); }
+.sec.mark-moved > .rail-l::after { background: var(--ink-3); }
 .sec.mark-cut .sense-def { text-decoration: line-through; color: var(--ink-3); }
-.notes li.mark { padding-left: 30px; }
+/* The rail is not body text, so the glyph may sit in the flow here — and there is room for it. */
+.sec .num .mark-glyph { position: static; margin-right: 6px; }
+.mark-was { display: block; margin-top: 6px; color: var(--ink-3); }
+
+/* A note is a small block and tints whole, which is what it did not do before: it got a bar and
+   nothing else, so a changed note read as quieter than a changed example for no reason.
+   `margin-left: -14px` with `padding-left: 29px` leaves the content edge exactly where the
+   unmarked 15px puts it, and the em-dash is pinned back to match. */
+.notes li.mark { margin-left: -14px; padding-left: 29px; }
+.notes li.mark::before { left: 14px; }
 .notes li.mark::after {
   content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px;
   background: var(--core);
 }
 .notes li.mark-cut::after { background: var(--warn); }
-.notes li.mark-cut { text-decoration: line-through; color: var(--ink-3); }
-.headword.mark, .reading.mark, .ipa.mark, .gram.mark, .chips.mark {
-  background: var(--core-soft); border-radius: 4px; box-shadow: 0 0 0 4px var(--core-soft);
+.notes li.mark-moved::after { background: var(--ink-3); }
+.notes li.mark-add, .notes li.mark-change { background: var(--core-soft); border-radius: 0 4px 4px 0; }
+.notes li.mark-cut {
+  background: var(--warn-soft); border-radius: 0 4px 4px 0;
+  text-decoration: line-through; color: var(--ink-3);
 }
+.notes li .mark-glyph { left: 6px; top: 4px; }
 
-/* The anchor beside a sense or an example: tapping it bounds the next turn to that block, which
+/* Every block carries its record id whether or not anything happened to it, so the attribute is a
+   fact about the article rather than about a proposal. `data-*` rather than `id` because a draft's
+   placeholder ids contain colons and `id` is a namespace the external article already uses. */
+[data-record], [data-note] { scroll-margin-top: calc(var(--review-h, 66px) + 14px); }
+
+/* The anchor beside a sense or an example: tapping one bounds the next turn to that block, which
    removes the need to type "the second example". Worth more on a phone than on a laptop. */
 .ask-anchor {
   border: 1px solid var(--rule-soft); background: var(--paper); color: var(--ink-3);
@@ -1062,6 +1160,13 @@ details.fold .fold-body { padding: 4px 0 18px; }
   .ask-head { padding: 6px 16px 6px 10px; }
   .ask-thread { padding: 12px 16px 4px; }
   .ask-bar { padding: 10px 16px 0; }
+  .ask-chips { padding: 8px 16px 0; }
+  .ask-full { margin: 0 -16px; }
+  /* A phone has room for "3 changes · Discard · Save", and not for a word more. Hiding these is
+     what keeps the bar on one row; without it the count was the only thing that could shrink, and
+     it truncated to "3 cha…". */
+  .review-long { display: none; }
+  .review-bar { gap: 8px; }
   .ask-card, .ask-followups { margin-left: 0; }
   .review-bar { margin: -20px -16px 14px; padding: 10px 16px; }
   /* Three segments, a title and a close button do not fit a phone at full size. */

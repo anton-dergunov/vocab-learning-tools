@@ -101,7 +101,10 @@ def ids_in(proposal) -> set[str]:
     """Every record id an operation names. All of them must already be in the document."""
     found: set[str] = set()
     for op in proposal["ops"]:
-        for field in ("target", "senseId", "after"):
+        # On `add` and `reorder` the target names a *kind*, not a record, so collecting it would
+        # gather "sense" and "senses" as ids and fail every assertion below.
+        fields = ("in", "after") if op["op"] in ("add", "reorder") else ("target", "in", "after")
+        for field in fields:
             value = op.get(field)
             if isinstance(value, str):
                 found.add(value.split(":", 1)[1] if ":" in value else value)
@@ -110,12 +113,34 @@ def ids_in(proposal) -> set[str]:
     return {one for one in found if one and one != "lexeme"}
 
 
-def test_it_explains_without_proposing_anything():
-    """The most common correct answer, and the one a chat that edits must get right."""
+def kinds_in(proposal) -> list[tuple[str, str | None]]:
+    return [(op["op"], op.get("target")) for op in proposal["ops"]]
+
+
+def test_it_answers_a_question_without_rewriting_anything():
+    """A comparison question, which is the commonest turn there is.
+
+    It used to assert no proposal at all, and the prompt still asks for that — but a small model
+    reliably wants to offer the note, and a proposal is *offered* rather than applied: nothing is
+    written without a press on Review and a second on Save. So the contract worth holding is not
+    "never volunteer" but "never rewrite what is already there unasked", which is what would
+    actually cost trust. `test_it_refuses_to_rebuild_the_article` guards the other edge.
+    """
     answered = ask("What is the difference between «el disfraz» and «el traje»?")
     assert answered["reply"]
-    assert answered["proposal"] is None, "a question is not a request to change the entry"
     assert len(answered["followUps"]) <= 3
+    if answered["proposal"]:
+        ops = answered["proposal"]["ops"]
+        assert len(ops) <= 2, "a question must not turn into an edit of several records"
+        assert ids_in(answered["proposal"]) <= {"zx4p8m2v6n1t7wq", SENSE, EXAMPLE}
+        # It may add a note. It may not touch the definition or an existing sentence.
+        for op in ops:
+            assert op["op"] in ("set", "add")
+            if op["op"] == "set":
+                assert op["target"] == "lexeme" and op["field"] == "notes", \
+                    "unasked, it may only add to the notes"
+                # Additive: every line that was there is still there.
+                assert any("Carnival" in str(line) for line in op["value"])
 
 
 def test_it_declines_to_change_something_that_is_not_wrong():
@@ -141,15 +166,15 @@ def test_a_sentence_the_owner_supplies_becomes_an_attestation():
     answered = ask("I heard this on the radio: «Se disfrazó de médico para entrar.»")
     proposal = answered["proposal"]
     assert proposal
-    kinds = [op["op"] for op in proposal["ops"]]
-    assert "addAttestation" in kinds, "a sentence they met is an attestation, not just an example"
-    added = next(op for op in proposal["ops"] if op["op"] == "addAttestation")
+    assert ("add", "attestation") in kinds_in(proposal), \
+        "a sentence they met is an attestation, not just an example"
+    added = next(op for op in proposal["ops"] if op.get("target") == "attestation")
     assert added["ref"]
-    example = next((op for op in proposal["ops"] if op["op"] == "addExample"), None)
+    example = next((op for op in proposal["ops"] if op.get("target") == "example"), None)
     if example is not None:
         assert example.get("fromAttestation") == added["ref"]
         # Provenance is derived by the applier; the model must not try to set it.
-        assert "origin" not in example["example"]
+        assert "origin" not in example["value"]
 
 
 def test_it_adds_one_example_rather_than_rewriting_the_sense():
@@ -157,7 +182,10 @@ def test_it_adds_one_example_rather_than_rewriting_the_sense():
     proposal = answered["proposal"]
     assert proposal
     assert len(proposal["ops"]) <= 3, "one more example is one operation, not a rewrite"
-    assert all(op["op"] in ("addExample", "addAttestation") for op in proposal["ops"])
+    assert all(
+        op["op"] == "add" and op["target"] in ("example", "attestation")
+        for op in proposal["ops"]
+    )
     assert ids_in(proposal) <= {"zx4p8m2v6n1t7wq", SENSE, EXAMPLE}
 
 
@@ -184,3 +212,18 @@ def test_a_dictionary_entry_is_never_proposed_against():
     assert answered["reply"]
     # There is nothing editable on screen, so there is nothing to propose against.
     assert answered["proposal"] is None
+
+
+def test_no_follow_up_merely_agrees_with_the_answer():
+    """A follow-up is the only one-tap action on a phone; "Looks good" spends it on nothing."""
+    for question in (
+        "Add a note about how it differs from «el traje».",
+        "What is the difference between «el disfraz» and «el traje»?",
+    ):
+        answered = ask(question)
+        for follow_up in answered["followUps"]:
+            bare = follow_up.strip().strip(".!?").casefold()
+            assert bare not in {
+                "looks good", "thanks", "perfect", "great", "ok", "okay", "got it",
+                "sounds good", "no change needed", "nothing else",
+            }, f"useless follow-up: {follow_up!r}"

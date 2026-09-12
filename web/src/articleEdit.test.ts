@@ -107,7 +107,7 @@ describe("applying", () => {
     const small = draftFor(articleFor(graph, "lexemebalsa0001")!);
     const { draft: after } = applyOps(small, [
       { op: "set", target: "sense:sensebalsaraft0", field: "definition", value: "Embarcación plana y ligera." },
-      { op: "addExample", senseId: "sensebalsaraft0", example: { text: "La balsa flotaba." } }
+      { op: "add", target: "example", in: "sensebalsaraft0", value: { text: "La balsa flotaba." } }
     ], context);
     expect(after.senses[0].examples).toHaveLength(2);
   });
@@ -116,7 +116,7 @@ describe("applying", () => {
 describe("provenance, which the applier derives and the model never sets", () => {
   it("gives an example the model wrote the generated origin and the model id", () => {
     const { draft: after, minted: ids } = apply([
-      { op: "addExample", senseId: ITCH, example: { text: "Me pica la espalda.", translation: "My back itches." } }
+      { op: "add", target: "example", in: ITCH, value: { text: "Me pica la espalda.", translation: "My back itches." } }
     ]);
     const added = after.senses[0].examples.at(-1)!;
     expect(added.origin).toBe("llm");
@@ -133,12 +133,11 @@ describe("provenance, which the applier derives and the model never sets", () =>
   it("resolves a ref, so a sentence you supplied becomes an attestation the example names", () => {
     const { draft: after, minted: ids } = apply([
       {
-        op: "addAttestation", ref: "a1",
-        attestation: { text: "Se disfrazó de médico.", translation: "He dressed up as a doctor.", sourceKind: "video" }
+        op: "add", target: "attestation", ref: "a1",
+        value: { text: "Se disfrazó de médico.", translation: "He dressed up as a doctor.", sourceKind: "video" }
       },
-      {
-        op: "addExample", senseId: ITCH, fromAttestation: "a1",
-        example: { text: "Se disfrazó de médico.", translation: "He dressed up as a doctor." }
+      { op: "add", target: "example", in: ITCH, fromAttestation: "a1",
+        value: { text: "Se disfrazó de médico.", translation: "He dressed up as a doctor." }
       }
     ]);
     const attestation = after.attestations.at(-1)!;
@@ -152,13 +151,13 @@ describe("provenance, which the applier derives and the model never sets", () =>
 
   it("refuses an example that quotes a sentence nothing supplied", () => {
     expect(() => apply([
-      { op: "addExample", senseId: ITCH, fromAttestation: "a1", example: { text: "Hola." } }
+      { op: "add", target: "example", in: ITCH, fromAttestation: "a1", value: { text: "Hola." } }
     ])).toThrow(/quoted a sentence it did not supply/);
   });
 
   it("folds a new example onto a sentence the entry already holds", () => {
     const { draft: after } = apply([
-      { op: "addExample", senseId: ITCH, fromAttestation: ATTESTATION, example: { text: "Esa salsa pica." } }
+      { op: "add", target: "example", in: ITCH, fromAttestation: ATTESTATION, value: { text: "Esa salsa pica." } }
     ]);
     expect(after.senses[0].examples.at(-1)!.sourceAttestationId).toBe(ATTESTATION);
   });
@@ -185,7 +184,7 @@ describe("the two agreements the data model imposes", () => {
     // The one deliberate exception to all-or-nothing: a model that retypes the dictionary form
     // instead of copying the inflected one should cost the emphasis, not the whole answer.
     const { draft: after } = apply([
-      { op: "addExample", senseId: ITCH, example: { text: "Me pica la espalda.", matchedForm: "picar" } }
+      { op: "add", target: "example", in: ITCH, value: { text: "Me pica la espalda.", matchedForm: "picar" } }
     ]);
     const added = after.senses[0].examples.at(-1)!;
     expect(added.text).toBe("Me pica la espalda.");
@@ -213,13 +212,13 @@ describe("removing", () => {
 
 describe("reordering", () => {
   it("reorders the senses and renumbers them", () => {
-    const { draft: after } = apply([{ op: "orderSenses", ids: [CHOP, ITCH] }]);
+    const { draft: after } = apply([{ op: "reorder", target: "senses", ids: [CHOP, ITCH] }]);
     expect(after.senses.map((sense) => sense.id)).toEqual([CHOP, ITCH]);
     expect(after.senses.map((sense) => sense.order)).toEqual([0, 1]);
   });
 
   it("refuses a list that is not the entry's meanings", () => {
-    expect(() => apply([{ op: "orderSenses", ids: [ITCH] }])).toThrow(EditRefused);
+    expect(() => apply([{ op: "reorder", target: "senses", ids: [ITCH] }])).toThrow(EditRefused);
   });
 });
 
@@ -227,7 +226,7 @@ describe("the round trip", () => {
   it("survives the projection, which is what the save path actually writes", () => {
     const { draft: after } = apply([
       { op: "set", target: "lexeme", field: "notes", value: ["Not «rascar»."] },
-      { op: "addExample", senseId: ITCH, example: { text: "Me pica la espalda.", translation: "My back itches." } }
+      { op: "add", target: "example", in: ITCH, value: { text: "Me pica la espalda.", translation: "My back itches." } }
     ]);
     const reparsed = parseArticle(yamlForDraft(after));
     expect(reparsed.notes).toEqual(["Not «rascar»."]);
@@ -243,13 +242,13 @@ describe("the diff", () => {
     const before = draft();
     const { draft: after } = applyOps(before, [
       { op: "set", target: `sense:${ITCH}`, field: "domain", value: "medicine" },
-      { op: "addExample", senseId: CHOP, example: { text: "Pica el ajo." } },
+      { op: "add", target: "example", in: CHOP, value: { text: "Pica el ajo." } },
       { op: "remove", target: `example:${ITCH_EXAMPLE}`, reason: "duplicate" }
     ], context);
     const diff = diffDrafts(before, after);
-    expect(diff.marks.get(ITCH)).toBe("changed");
-    expect(diff.marks.get(ITCH_EXAMPLE)).toBe("removed");
-    expect([...diff.marks.values()]).toContain("added");
+    expect(diff.records.get(ITCH)!.mark).toBe("changed");
+    expect(diff.records.get(ITCH_EXAMPLE)!.mark).toBe("removed");
+    expect([...diff.records.values()].map((one) => one.mark)).toContain("added");
     expect(diff.count).toBeGreaterThan(0);
   });
 
@@ -259,7 +258,7 @@ describe("the diff", () => {
     // wrong block — or on nothing.
     const before = draft();
     const { draft: after } = applyOps(before, [
-      { op: "addExample", senseId: ITCH, example: { text: "Me pica todo." } },
+      { op: "add", target: "example", in: ITCH, value: { text: "Me pica todo." } },
       { op: "remove", target: `example:${ITCH_EXAMPLE}`, reason: "duplicate" },
       { op: "set", target: "lexeme", field: "emoji", value: "🌶" }
     ], context);
@@ -271,7 +270,15 @@ describe("the diff", () => {
       ...rendered.senses.flatMap((entry) => entry.examples.map((example) => example.id)),
       ...rendered.attestations.map((attestation) => attestation.id)
     ]);
-    for (const key of diff.marks.keys()) expect(drawn).toContain(key);
+    for (const key of diff.records.keys()) expect(drawn).toContain(key);
+    // And a note key is a position in what will be drawn, not a string that may not be there.
+    for (const index of diff.notes.keys()) {
+      expect(index).toBeLessThan(diff.shown.notes.length);
+    }
+    // `order` is what next/previous walks, so it must name every change and nothing else.
+    expect([...diff.order].sort()).toEqual(
+      [...diff.records.keys(), ...[...diff.notes.keys()].map((index) => `note:${index}`)].sort()
+    );
   });
 
   it("puts a removed record back where it was so it can be drawn struck through", () => {
@@ -292,24 +299,84 @@ describe("the diff", () => {
     const { draft: after } = applyOps(before,
       [{ op: "remove", target: `sense:${CHOP}`, reason: "duplicate" }], context);
     const diff = diffDrafts(before, after);
-    expect(diff.marks.get(CHOP)).toBe("removed");
-    expect(diff.marks.get("osd6ieh00s2hxql")).toBe("removed");
+    expect(diff.records.get(CHOP)!.mark).toBe("removed");
+    expect(diff.records.get("osd6ieh00s2hxql")!.mark).toBe("removed");
   });
 
-  it("names which of the lexeme head's fields moved, not the whole head", () => {
+  it("names which of a record's fields moved, not the whole record", () => {
+    // Per-field rather than per-record is what lets a tint land on the definition that was reworded
+    // instead of on a sense's untouched examples.
     const before = draft();
-    const { draft: after } = applyOps(before,
-      [{ op: "set", target: "lexeme", field: "emoji", value: "🌶" }], context);
+    const { draft: after } = applyOps(before, [
+      { op: "set", target: "lexeme", field: "emoji", value: "🌶" },
+      { op: "set", target: `sense:${ITCH}`, field: "domain", value: "medicine" }
+    ], context);
     const diff = diffDrafts(before, after);
-    expect([...diff.lexemeFields]).toEqual(["emoji"]);
+    expect([...diff.records.get(before.id!)!.fields.keys()]).toEqual(["emoji"]);
+    expect([...diff.records.get(ITCH)!.fields.keys()]).toEqual(["domain"]);
   });
 
-  it("marks a note by its text, which is what the list is keyed on", () => {
+  it("marks a note by its position, because text is not an identity", () => {
     const before = draft();
     const { draft: after } = applyOps(before,
       [{ op: "set", target: "lexeme", field: "notes", value: [...before.notes, "Nueva nota."] }], context);
     const diff = diffDrafts(before, after);
-    expect(diff.notes.get("Nueva nota.")).toBe("added");
+    const added = diff.shown.notes.indexOf("Nueva nota.");
+    expect(diff.notes.get(added)!.mark).toBe("added");
+    // The note that was already there is not marked at all.
+    expect(diff.notes.size).toBe(1);
+  });
+
+  it("reads a reworded note as one change, with the words that moved", () => {
+    // This is the failure that started this round: matched by text, a reworded note had no partner
+    // to diff against and came back as a deletion beside an addition.
+    const before = draft();
+    const reworded = before.notes[0].replace("object", "objeto");
+    const { draft: after } = applyOps(before,
+      [{ op: "set", target: "lexeme", field: "notes", value: [reworded] }], context);
+    const diff = diffDrafts(before, after);
+    expect(diff.count).toBe(1);
+    const change = diff.notes.get(0)!;
+    expect(change.mark).toBe("changed");
+    expect(change.words!.some((part) => part.at === "del" && part.text.includes("object"))).toBe(true);
+    expect(change.words!.some((part) => part.at === "ins" && part.text.includes("objeto"))).toBe(true);
+  });
+
+  it("does not let two identical notes collide", () => {
+    // Keyed by text they shared one map entry and one React key; keyed by position they are two.
+    const before = draft();
+    before.notes = ["La misma nota.", "La misma nota."];
+    const { draft: after } = applyOps(before,
+      [{ op: "set", target: "lexeme", field: "notes", value: ["La misma nota."] }], context);
+    const diff = diffDrafts(before, after);
+    expect(diff.shown.notes).toHaveLength(2);
+    expect(diff.count).toBe(1);
+    expect([...diff.notes.values()].map((one) => one.mark)).toEqual(["removed"]);
+  });
+
+  it("marks a sense that only moved, and only the one that moved", () => {
+    // A reorder used to produce no marks and a count of zero, over an article that had silently
+    // renumbered itself. Rotating two senses moves one of them.
+    const before = draft();
+    const { draft: after } = applyOps(before,
+      [{ op: "reorder", target: "senses", ids: [CHOP, ITCH] }], context);
+    const diff = diffDrafts(before, after);
+    expect(diff.count).toBe(1);
+    const moved = [...diff.records.entries()].filter(([, one]) => one.mark === "moved");
+    expect(moved).toHaveLength(1);
+    expect(moved[0][1].wasAt).toBeGreaterThan(0);
+  });
+
+  it("puts `order` in the order the article draws things", () => {
+    // Next and previous have to move down the page, and the article draws notes after senses.
+    const before = draft();
+    const { draft: after } = applyOps(before, [
+      { op: "set", target: `sense:${ITCH}`, field: "domain", value: "medicine" },
+      { op: "set", target: "lexeme", field: "notes", value: [...before.notes, "Nueva nota."] }
+    ], context);
+    const diff = diffDrafts(before, after);
+    expect(diff.order[0]).toBe(ITCH);
+    expect(diff.order[diff.order.length - 1]).toMatch(/^note:/);
   });
 
   it("reports no change when nothing moved", () => {
@@ -327,7 +394,7 @@ describe("counting", () => {
       [{ op: "set", target: "lexeme", field: "notes", value: [...before.notes, "Nueva nota."] }], context);
     const diff = diffDrafts(before, after);
     expect(diff.count).toBe(1);
-    expect(diff.lexemeFields.has("notes")).toBe(false);
+    expect(diff.records.get(before.id!)).toBeUndefined();
   });
 
   it("counts a head change and a note change separately", () => {

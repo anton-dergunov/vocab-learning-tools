@@ -56,6 +56,9 @@
     <div class="pane" id="paneWrap">
       <div class="art-bar" id="artBar" style="display:none"></div>
       <div id="pane"></div>
+      <!-- The ask dock is a sibling of the article, not a child of it, exactly as it is in the
+           application: at its largest detent the article is hidden and the sheet is not. -->
+      <div id="askSlot"></div>
     </div>
     <!-- Composing replaces the list rather than covering it, so the surface owns the height and
          can pin its own header and buttons. -->

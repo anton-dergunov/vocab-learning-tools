@@ -17,7 +17,7 @@ const state = {
   scope: { device: true, server: true, online: true },
   /* How far the ask dock is open, and which block a question is bounded to. Three detents and no
      intermediate state: dock | half | full (design §06 §7.3). */
-  ask: "dock",
+  ask: "dock",   // dock | open | full
   askFocus: null,
   /* A proposal under review. Painted rather than applied — the prototype has no applier — so the
      marks, the review bar and the struck-through removal can all be looked at. */
@@ -283,9 +283,15 @@ function exampleBlock(e, at) {
   const cls = e.origin === "attestation" || e.origin === "manual" ? "own" : "";
   const mark = reviewMark("example", at);
   const glyph = mark.includes("mark-add") ? "+" : mark.includes("mark-cut") ? "−" : mark ? "~" : "";
+  /* The glyph is a direct child of the block and absolutely positioned — never inside the
+     paragraph, which is what used to push a marked block's text right of its neighbours. */
+  const text = mark.includes("mark-change")
+    ? `${e.text.replace(/\.$/, "")} <span class="wd-del">un montón</span><span class="wd-ins">muchísimo</span>.`
+    : e.text;
   return `
-    <div class="ex ${cls}${mark}">
-      <p class="t">${glyph ? `<span class="mark-glyph">${glyph}</span>` : ""}${e.text}</p>
+    <div class="ex ${cls}${mark}" data-record="${esc(e.id || "")}">
+      ${glyph ? `<span class="mark-glyph">${glyph}</span>` : ""}
+      <p class="t">${text}</p>
       ${e.translation ? `<p class="tr">${e.translation}</p>` : ""}
       <div class="foot">
         <span class="prov ${cls}">${esc(e.origin)}</span>
@@ -310,7 +316,11 @@ function reviewMark(kind, index) {
   if (!state.review) return "";
   if (kind === "example" && index === 0) return " mark mark-add";
   if (kind === "example" && index === 1) return " mark mark-cut";
+  if (kind === "example" && index === 2) return " mark mark-change";
   if (kind === "sense" && index === 0) return " mark mark-change";
+  if (kind === "sense" && index === 1) return " mark mark-moved";
+  if (kind === "note" && index === 0) return " mark mark-change";
+  if (kind === "note" && index === 1) return " mark mark-cut";
   return "";
 }
 
@@ -319,12 +329,16 @@ function senseSection(s, i, x) {
   return `
     <section class="sec${reviewMark("sense", i)}">
       <div class="rail-l"><div class="inner">
-        <span class="num">${state.review && reviewMark("sense", i) ? '<span class="mark-glyph">~</span>' : ""}${String(i + 1).padStart(2, "0")}</span>
+        <span class="num">${state.review && reviewMark("sense", i)
+          ? `<span class="mark-glyph">${reviewMark("sense", i).includes("mark-moved") ? "↕" : "~"}</span>`
+          : ""}${String(i + 1).padStart(2, "0")}</span>
         <span class="label">Sense${s.domain ? `<br>${esc(s.domain)}` : ""}</span>
+        ${state.review && reviewMark("sense", i).includes("mark-moved")
+          ? '<span class="label mark-was">was 01</span>' : ""}
       </div></div>
       <div class="body">
         <div class="sense-head">
-          <p class="sense-def">${esc(s.definition)}</p>
+          <p class="sense-def${state.review && reviewMark("sense", i).includes("mark-change") ? " field-change" : ""}">${esc(s.definition)}</p>
           <button class="ask-anchor" aria-label="Ask about this meaning">${ICON.ask}</button>
         </div>
         <div class="glosses">${s.glosses.map(glossLine).join("")}</div>
@@ -387,9 +401,11 @@ function renderAsk(x) {
   return `
     <section class="ask ask-${at}" aria-label="Conversation about ${esc(x.headword)}">
       ${thread}
+      ${state.askFocus ? `<div class="ask-chips">
+        <button type="button" class="ask-chip">${esc(state.askFocus)}${ICON.close}</button>
+      </div>` : ""}
       <form class="ask-bar" onsubmit="return false">
         <span class="ask-mark">${ICON.ask}</span>
-        ${state.askFocus ? `<button type="button" class="ask-chip">${esc(state.askFocus)}${ICON.close}</button>` : ""}
         <textarea class="ask-input" rows="1" aria-label="Ask about ${esc(x.headword)}"
           placeholder="Ask about ${esc(x.headword)}…"></textarea>
         <button type="submit" class="ask-send" aria-label="Ask">${ICON.send}</button>
@@ -402,10 +418,15 @@ function renderArticle(x, opts) {
   const review = meta && state.review ? `
     <div class="review-bar">
       <span class="review-mark">✎</span>
-      <span class="label">3 changes proposed</span>
+      <span class="label">3 changes<span class="review-long"> proposed</span></span>
+      <div class="review-nav">
+        <button aria-label="Previous change" disabled>${ICON.chevron}</button>
+        <span class="review-at">1/3</span>
+        <button aria-label="Next change"><span class="review-down">${ICON.chevron}</span></button>
+      </div>
       <span class="spacer"></span>
       <button class="tb-btn" id="discardBtn">Discard</button>
-      <button class="tb-btn primary" id="saveProposal">Save changes</button>
+      <button class="tb-btn primary" id="saveProposal">Save<span class="review-long"> changes</span></button>
     </div>` : "";
   const attest = x.attestations.length ? `
     <section class="sec">
@@ -427,7 +448,16 @@ function renderArticle(x, opts) {
   const notes = x.notes.length ? `
     <section class="sec">
       <div class="rail-l"><div class="inner"><span class="num">✎</span><span class="label">Notes</span></div></div>
-      <div class="body"><ul class="notes">${x.notes.map((n) => `<li>${n}</li>`).join("")}</ul></div>
+      <div class="body"><ul class="notes">${x.notes.map((n, i) => {
+        const mark = reviewMark("note", i);
+        const glyph = mark.includes("mark-add") ? "+" : mark.includes("mark-cut") ? "−" : mark ? "~" : "";
+        /* A reworded note is one change with the words that moved, not a delete beside an add. */
+        const body = mark.includes("mark-change")
+          ? `${n.replace(/\.$/, "")} <span class="wd-del">verb</span><span class="wd-ins">verbo</span>.`
+          : n;
+        return `<li class="${mark.replace(" mark ", "mark ").trim()}" data-note="${i}">${
+          glyph ? `<span class="mark-glyph">${glyph}</span>` : ""}${body}</li>`;
+      }).join("")}</ul></div>
     </section>` : "";
 
   const study = x.study ? `
@@ -466,7 +496,6 @@ function renderArticle(x, opts) {
     </div>
     ${x.senses.map((s, i) => senseSection(s, i, x)).join("")}
     ${attest}${notes}${study}
-    ${meta ? renderAsk(x) : ""}
     ${meta ? `
     <div class="meta-foot">
       <span>id <b>${x.id}</b></span>
@@ -820,6 +849,10 @@ function render() {
       <button class="icon-btn" id="delBtn" aria-label="Delete" title="Delete">${ICON.trash}</button>`;
     // Editing is a composer above, so only reading and the read-only projection get here.
     main.innerHTML = state.mode === "read" ? renderArticle(x) : renderYaml(x);
+    $("#askSlot").innerHTML = state.mode === "read" ? renderAsk(x) : "";
+    // At its largest the conversation takes the pane: the article is not drawn, rather than left as
+    // a one-line strip above the sheet.
+    $("#paneWrap").classList.toggle("ask-only", state.ask === "full" && state.mode === "read");
   }
   document.title = x ? `${x.headword} — Acervo` : "Acervo";
 }
@@ -864,7 +897,7 @@ function wireSheet() {
 
 document.addEventListener("focusin", (ev) => {
   // Focusing the composer opens the sheet to the half detent, which is where a phone starts.
-  if (ev.target.closest(".ask-input") && state.ask === "dock") { state.ask = "half"; render(); }
+  if (ev.target.closest(".ask-input") && state.ask === "dock") { state.ask = "open"; render(); }
 });
 
 document.addEventListener("click", (ev) => {
@@ -886,7 +919,7 @@ document.addEventListener("click", (ev) => {
   /* The dock's three detents, so the design can actually be looked at at each of them. Focusing
      the composer opens it, the grabber steps it, and the close button returns it to a bar — the
      same transitions `AskDock.tsx` makes. Nothing here talks to a server. */
-  if (hit(".ask-grab")) { state.ask = state.ask === "full" ? "half" : "full"; render(); return; }
+  if (hit(".ask-grab")) { state.ask = state.ask === "full" ? "open" : "full"; render(); return; }
   if (hit(".ask .icon-btn")) { state.ask = "dock"; render(); return; }
   if (hit(".ask-send")) { toast("One turn of conversation — not wired up in the prototype"); return; }
   if (hit("#discardBtn")) { state.review = false; render(); return; }
@@ -898,7 +931,7 @@ document.addEventListener("click", (ev) => {
     const section = t.closest(".sec");
     const number = section ? section.querySelector(".num")?.textContent?.trim() : null;
     state.askFocus = number ? `sense ${Number(number)}` : "this block";
-    state.ask = "half";
+    state.ask = "open";
     render();
     return;
   }
@@ -999,7 +1032,9 @@ if (params.get("open")) {
   // `ask=half|full` and `review=1` make the conversation and a proposal under review reachable for
   // a screenshot, the way `mode` already does for the editor.
   const ask = params.get("ask");
-  if (ask === "half" || ask === "full") state.ask = ask;
+  // `half` is the old name for `open`, kept because deep links to it exist in the design notes.
+  if (ask === "open" || ask === "half") state.ask = "open";
+  if (ask === "full") state.ask = "full";
   if (params.get("focus")) state.askFocus = params.get("focus");
   if (params.get("review") === "1") state.review = true;
 }

@@ -1037,7 +1037,7 @@ describe("asking about an article", () => {
     /* `set notes` takes the whole list, so replacing it is one note added and one removed — and
        both are marked. The removed line is still drawn, struck through: nothing vanishes without
        being seen going. */
-    expect(screen.getByText(/2 changes proposed/)).toBeInTheDocument();
+    expect(document.querySelector(".review-bar")!.textContent).toContain("2 changes");
     expect(document.querySelector(".mark-add")).not.toBeNull();
     expect(document.querySelector(".mark-cut")).not.toBeNull();
     expect(screen.getByText("The sense is carried by the object, not the verb."))
@@ -1056,7 +1056,7 @@ describe("asking about an article", () => {
     await openPicar();
     await ask("add a note");
     fireEvent.click(await screen.findByRole("button", { name: "Review" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Save/ }));
 
     await waitFor(() => expect(backendSession.pushGraph).toHaveBeenCalledTimes(1));
     await waitFor(() =>
@@ -1081,7 +1081,7 @@ describe("asking about an article", () => {
     await openPicar();
     await ask("drop the first example");
     fireEvent.click(await screen.findByRole("button", { name: "Review" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Save/ }));
     await waitFor(() => expect(
       repository.snapshot().examples.find((one) => one.id === "examplepicar010")!.deleted).toBe(true));
 
@@ -1102,7 +1102,7 @@ describe("asking about an article", () => {
     await ask("fix sense three");
     fireEvent.click(await screen.findByRole("button", { name: "Review" }));
     expect(await screen.findByText(/not there, so nothing was changed/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+    expect(document.querySelector(".review-bar")).toBeNull();
   });
 
   it("keeps the dock out of the Add view's own preview", async () => {
@@ -1119,5 +1119,136 @@ describe("asking about an article", () => {
     expect(screen.queryByLabelText("Ask about picar")).not.toBeInTheDocument();
     // …and the one over the unsaved proposal is about the word being added (§8.4).
     expect(screen.getByLabelText("Ask about el garfio")).toBeInTheDocument();
+  });
+});
+
+/* ── reviewing a proposal: what it marks, and how you get to it ──────────
+   Round two. The complaints these pin: a proposal below the fold was invisible, a reworded sentence
+   never said which words moved, and a reorder reported "0 changes proposed" over an article that
+   had silently renumbered itself. */
+
+describe("stepping through a proposal", () => {
+  it("brings the first change into view rather than scrolling to the top", async () => {
+    signedIn();
+    acceptWrites();
+    const seen = vi.spyOn(Element.prototype, "scrollIntoView");
+    mockChat("Fixed.", {
+      summary: "Sharpens the second sense.",
+      ops: [{ op: "set", target: "sense:sensepicarchop0", field: "domain", value: "culinary" }]
+    });
+    await openPicar();
+    await ask("tighten the second sense");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+
+    await waitFor(() => expect(seen).toHaveBeenCalled());
+    const target = seen.mock.instances[seen.mock.instances.length - 1] as Element;
+    expect(target.getAttribute("data-record")).toBe("sensepicarchop0");
+  });
+
+  it("walks the changes with next and previous, and clamps at both ends", async () => {
+    signedIn();
+    acceptWrites();
+    mockChat("Two things.", {
+      summary: "Two changes.",
+      ops: [
+        { op: "set", target: "sense:sensepicaritch0", field: "domain", value: "medicine" },
+        { op: "set", target: "sense:sensepicarchop0", field: "domain", value: "culinary" }
+      ]
+    });
+    await openPicar();
+    await ask("tidy both senses");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+
+    expect(await screen.findByText("1/2")).toBeInTheDocument();
+    // Previous is unavailable on the first change.
+    expect(screen.getByRole("button", { name: "Previous change" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Next change" }));
+    expect(await screen.findByText("2/2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next change" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Previous change" }));
+    expect(await screen.findByText("1/2")).toBeInTheDocument();
+  });
+
+  it("counts and marks a sense that only moved", async () => {
+    signedIn();
+    acceptWrites();
+    mockChat("Reordered.", {
+      summary: "Puts the cooking sense first.",
+      ops: [{ op: "reorder", target: "senses", ids: ["sensepicarchop0", "sensepicaritch0"] }]
+    });
+    await openPicar();
+    await ask("put the cooking sense first");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+
+    // It used to say "0 changes proposed" over an article that had renumbered itself.
+    const bar = await screen.findByText(/1 change/);
+    expect(bar).toBeInTheDocument();
+    expect(document.querySelector(".mark-moved")).not.toBeNull();
+    // A move gets no tint, because none of its content changed.
+    expect(document.querySelector(".mark-moved .field-change")).toBeNull();
+  });
+
+  it("shows which words moved when a sentence is reworded", async () => {
+    signedIn();
+    acceptWrites();
+    mockChat("Tidied.", {
+      summary: "Rewords the first example.",
+      ops: [{
+        op: "set", target: "example:examplepicar010", field: "text",
+        value: "Me pica mucho la nariz."
+      }]
+    });
+    await openPicar();
+    await ask("make the first example stronger");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+
+    const block = await waitFor(() => {
+      const found = document.querySelector('[data-record="examplepicar010"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    // The inserted word is marked, and the sentence still reads as one sentence.
+    expect(block.querySelector(".wd-ins")!.textContent).toContain("mucho");
+    expect(block.querySelector(".t")!.textContent).toBe("Me pica mucho la nariz.");
+  });
+
+  it("reads a reworded note as one change with a word diff, not a delete and an add", async () => {
+    signedIn();
+    acceptWrites();
+    mockChat("Tidied the note.", {
+      summary: "Rewords the note.",
+      ops: [{
+        op: "set", target: "lexeme", field: "notes",
+        value: ["The sense is carried by the object, not by the verb."]
+      }]
+    });
+    await openPicar();
+    await ask("tidy the note");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+
+    expect(await screen.findByText(/1 change/)).toBeInTheDocument();
+    const note = document.querySelector('[data-note="0"]')!;
+    expect(note.className).toContain("mark-change");
+    expect(note.querySelector(".wd-ins")!.textContent).toContain("by");
+  });
+});
+
+describe("the conversation at its largest", () => {
+  it("takes the pane and hands the height to the sheet", async () => {
+    signedIn();
+    mockChat("…");
+    await openPicar();
+    // Focusing opens it to the content-sized detent; the grabber then takes it to full.
+    fireEvent.focus(screen.getByLabelText("Ask about picar"));
+    fireEvent.click(await screen.findByRole("button", { name: "Expand the conversation" }));
+
+    // `display: none` is CSS, which jsdom does not load — the contract is the class, and the class
+    // is what stops the region scrolling and hands the height to the sheet.
+    await waitFor(() => expect(document.querySelector(".pane.ask-only")).not.toBeNull());
+    expect(document.querySelector(".main.composing")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Shrink the conversation" }));
+    await waitFor(() => expect(document.querySelector(".pane.ask-only")).toBeNull());
+    expect(document.querySelector(".main.composing")).toBeNull();
   });
 });

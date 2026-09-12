@@ -237,17 +237,27 @@ One JSON object. No prose outside it, same as every other prompt in `prompts/`.
 A target is a flat token — `lexeme`, or `<kind>:<id>` — because a flat string is what models get
 right. Every id must already occur in the document that was sent.
 
+**REVISED in round two** — the operation names were repetitive, and `add` encoded in three names
+what a `target` already says. Every operation is now an `op` and a `target`, and the parent is a
+named field rather than part of the operation's name:
+
 ```ts
 type Target = "lexeme" | `sense:${string}` | `example:${string}` | `attestation:${string}`;
 
 type EditOp =
   | { op: "set";     target: Target; field: string; value: unknown }
-  | { op: "addSense";   after: string | null; sense: SenseValue }
-  | { op: "addExample"; senseId: string; example: ExampleValue }
-  | { op: "addAttestation"; ref: string; attestation: AttestationValue }
-  | { op: "remove";  target: Target; reason: string }
-  | { op: "orderSenses"; ids: string[] };
+  | { op: "add";     target: "sense";       after?: string | null; value: SenseValue }
+  | { op: "add";     target: "example";     in: string; fromAttestation?: string | null;
+                     value: ExampleValue }
+  | { op: "add";     target: "attestation"; ref: string; value: AttestationValue }
+  | { op: "remove";  target: Target; reason?: string }
+  | { op: "reorder"; target: "senses"; ids: string[] };
 ```
+
+`target` names a record everywhere except on `add` and `reorder`, where the record does not exist
+yet and it names a kind. This is legibility rather than accuracy — the old names worked — and it is
+cheap precisely because `§3.1`'s escape hatch is real: the marks are computed from drafts, so the
+operation language is a detail of one request.
 
 Settable fields, and nothing else:
 
@@ -414,14 +424,28 @@ say so in the margin — Notion's approach, in Acervo's marks and Acervo's palet
        ┃✂ • Common around Carnival.
 ```
 
-- `┃+` added · `┃~` changed · `┃✂` removed. A removed block is **drawn where it was**, struck
-  through — nothing vanishes without being seen going.
+- `┃+` added · `┃~` changed · `┃−` removed · `┃↕` moved. A removed block is **drawn where it was**,
+  struck through — nothing vanishes without being seen going.
+- **REVISED in round two.** `✂` is a smudge at 11px in the mono face; `−` pairs with `+`. The glyph
+  is absolutely positioned in the gutter the block already owns and is never inside a paragraph:
+  **no mark may change where body text sits**, a rule the first version broke in three places.
+  `moved` is a fourth mark, because a reorder previously produced no marks and a count of zero over
+  an article that had silently renumbered itself.
+- **A changed field carries a word-level diff**, computed on the device: the words that went struck
+  through in `--warn`, the words that arrived in `--core`. Without it `changed` said only that
+  something moved, and a reworded note — matched by text — read as a deletion beside an addition
+  rather than as one change.
+- **Only the field that changed is tinted** on a large block. A changed definition tints the
+  definition and the sense keeps its rail bar; tinting the whole section would claim its untouched
+  examples had changed. Small blocks — an example, an attestation, a note — tint whole.
 - Colour: added and changed take `--core-soft`, removed takes `--warn-soft` with strikethrough.
   Existing tokens, correct in both themes, no red/green added to a palette that has neither.
 - The mark is the *only* addition. The example still renders through `ExampleBlock`, still shows
   `llm · <model> · unapproved`, and still looks like the article it is about to become.
-- The review bar is sticky at the top of the pane for as long as a proposal is live, and the pane
-  scrolls to the first mark when one arrives.
+- The review bar is sticky at the top of the pane for as long as a proposal is live, the pane
+  scrolls to the first mark when one arrives, and `‹ 1/3 ›` steps through the rest in the order the
+  article draws them. It never wraps: on a phone the sentence shortens rather than taking a second
+  row of a screen that has none to spare.
 
 **The YAML tab shows the proposed document and does not mark it.** The reason is that the YAML tab
 is the escape hatch, not the review surface: someone who opens it wants to edit the text, and
@@ -537,9 +561,16 @@ applies it to the draft, collapses the sheet to the dock, and scrolls the articl
 
 ### §7.3 · Narrow — a phone with the keyboard up
 
-Three detents: **dock** (the bar alone) → **half** (about 45% of the pane, the default when the
-keyboard is up) → **full** (the thread, with the masthead pinned above it as a context strip so the
-word being discussed is never off screen).
+Three detents: **dock** (the bar alone) → **open** → **full** (the thread alone, with the masthead
+pinned above it as a context strip so the word being discussed is never off screen).
+
+**REVISED in round two.** `open` was "about 45% of the pane", which reserved a large empty box the
+moment you focused the composer; it is now content-sized with a cap, so a fresh conversation is one
+line and it grows turn by turn. `full` was `100dvh - 96px`, whose magic number left a useless
+one-line strip of article above the sheet — it now takes the pane and the article is not drawn at
+all, at every width, because that strip was a desktop defect too. The focus chip sits on its own row
+above the composer rather than inside it, at every width: inline, it left an Android field about
+180px wide.
 
 ```
 ┌───────────────────────────┐   ┌───────────────────────────┐
@@ -800,8 +831,12 @@ Chat is a **consumer of the core**, exactly as `§06` and `§01` place it. Concr
 
 ## §11 · Build order
 
-All five stages are built. Two things only a live run against a real model could have told us, both
-now closed:
+All five stages are built, and a second round on the review surface followed real use on macOS, iOS
+and Android — [`plans/llm-editing-review.md`](plans/llm-editing-review.md) records what it exposed
+and the ten decisions it took.
+
+Two things only a live run against a real model could have told us in the first round, both now
+closed:
 
 - **`fromAttestation` arrives in two shapes.** A real model puts it inside `example` about half the
   time. Missing it is *silent*: the applier derives `origin: "llm"` for a sentence the learner
