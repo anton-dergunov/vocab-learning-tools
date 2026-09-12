@@ -1,16 +1,16 @@
 {
   "note": "The one version of spoken-usage-retrieval this deployment runs. Acervo names a version and upgrades deliberately; the two repositories do not share a release cadence. See docs/plans/spoken-clips.md 2.1. Digests are the RELEASE's, taken from its SHA256SUMS asset - the wheel is byte-reproducible but `npm pack` is not, because its gzip output follows the Node version that built it.",
   "repository": "https://github.com/anton-dergunov/spoken-usage-retrieval",
-  "version": "0.2.1",
-  "tag": "v0.2.1",
+  "version": "0.3.0",
+  "tag": "v0.3.0",
   "artifacts": {
     "wheel": {
-      "file": "spoken_usage_retrieval-0.2.1-py3-none-any.whl",
-      "sha256": "26465d2485ac70affa7974eef5869f130a86599e3fb655a6d04e17595abb2bf0"
+      "file": "spoken_usage_retrieval-0.3.0-py3-none-any.whl",
+      "sha256": "7fbdd1a4dbbb57b97b69e07defadc8ed52eb5545f0dbae49e47bdb7c96ceaaba"
     },
     "react": {
-      "file": "spoken-usage-retrieval-react-0.2.1.tgz",
-      "sha256": "c261da12b8856de8b0b4cac0dbff0e7d14ca2f614a11cf515d97926ba89dd5a3"
+      "file": "spoken-usage-retrieval-react-0.3.0.tgz",
+      "sha256": "66bcd1835638c5d9c856ef23cf113a4308ded52fa552eb254cd2781456a5b2d6"
     }
   }
 }
