@@ -237,8 +237,20 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str,
     return result.parsed, result.answer
 
 
-def refusal(error: ProviderError) -> ApiError:
+def refusal(error: ProviderError, kind: str = "text") -> ApiError:
+    """The same code for every caller, and prose that names what actually refused.
+
+    The **code** is shared deliberately — a picture that could not be drawn and an entry that could
+    not be written fail alike, and `scripts/ingest_vocabulary_file.py` retries on exactly three of
+    them. The **sentence** is not the code, and saying "the language model is temporarily rate
+    limited" over a drawing that an image model refused sent a real debugging session looking at the
+    text chain. `kind` is what the chain was walked for, so the sentence can say so.
+    """
     status, code, message = REFUSALS[error.reason]
+    if kind == "image":
+        message = message.replace("The language model", "The image model")
+    elif kind == "audio":
+        message = message.replace("The language model", "The speech model")
     # "Unconfigured" is the one refusal whose *particular* cause the owner can act on, and it is
     # already safe to show: it names an environment variable or says every model is switched off,
     # never a value. `/health` has shown exactly this string since the route existed.

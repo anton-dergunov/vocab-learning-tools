@@ -66,6 +66,10 @@ export interface EnrichmentStatus {
 
 const RECENT = 20;
 /** Providers meter roughly one image a minute, so a refusal means waiting, not trying harder. */
+/* How many times a word comes back to a provider that was busy before leaving the rest to the
+   server's sweep. Bounded because the rest doubles: three passes is at most half a minute, then a
+   minute, and an allowance that is spent for the day is not going to refill inside that. */
+const DRAW_PASSES = 3;
 const FIRST_REST = 30_000;
 const LONGEST_REST = 10 * 60_000;
 /** A 429 does not say whether a per-minute or a per-day allowance ran out, so the rest doubles. */
@@ -371,20 +375,37 @@ class EnrichmentEngine {
       }
     }
 
-    for (const row of this.pending(lexemeId).drawable) {
-      if (this.stopped) return;
-      const job = this.begin(lexemeId, label, "render", row.senseId);
-      try {
-        await backendSession.renderImage(row.id, device);
-        await syncEngine.syncNow();
-        this.rest.image = FIRST_REST;
-        this.finish(job);
-      } catch (error) {
-        this.finish(job, message(error));
-        // A rate limit is about the provider, not this sense: rest, then carry on. Giving up on the
-        // word would leave its remaining senses to the sweep for no reason.
-        if (!(await this.rested(error, "image"))) return;
+    /* Ask again after every rest rather than walking a list captured before it.
+       The server does not count a rate limit against the sense — `render_prompt` raises without
+       writing, leaving the row exactly as it was — so the row that just failed is *still* drawable,
+       and the thirty seconds were paid on its behalf. Walking straight on to the next row spent the
+       wait and then abandoned what it was waiting for: the sense kept a brief, no picture and
+       `attempts: 0`, which reads as "waiting" on the device for ever, because nothing enqueues a
+       word except saving it. Two senses sat like that for ten minutes while the same provider drew
+       the next word's pictures happily. */
+    for (let pass = 0; pass < DRAW_PASSES; pass += 1) {
+      const drawable = this.pending(lexemeId).drawable;
+      if (!drawable.length || this.stopped) return;
+      let waited = false;
+      for (const row of drawable) {
+        if (this.stopped) return;
+        const job = this.begin(lexemeId, label, "render", row.senseId);
+        try {
+          await backendSession.renderImage(row.id, device);
+          await syncEngine.syncNow();
+          this.rest.image = FIRST_REST;
+          this.finish(job);
+        } catch (error) {
+          this.finish(job, message(error));
+          // Anything but a busy provider is this sense's own problem and the server recorded it.
+          if (!(await this.rested(error, "image"))) return;
+          waited = true;
+          break;
+        }
       }
+      // Nothing was rested, so every row that could be drawn was drawn. Anything still outstanding
+      // is the server's to sweep.
+      if (!waited) return;
     }
   }
 

@@ -474,3 +474,23 @@ def test_the_timeout_is_ours_and_never_reaches_the_provider(monkeypatch):
     assert "timeout" not in vertex.params_for("text")
     assert "timeoutSeconds" not in vertex.params_for("text")
     assert vertex.timeouts["text"] > 0
+
+
+def test_a_refusal_names_what_actually_refused():
+    """The code is shared across callers on purpose; the sentence should not be.
+
+    "The language model is temporarily rate limited" over a drawing that an *image* model refused
+    sent a real debugging session at the text chain while the image allowance was the thing that
+    had run out. The code stays identical — `scripts/ingest_vocabulary_file.py` retries on exactly
+    three of them and must not notice this — and only the prose changes.
+    """
+    from acervo.models.errors import ProviderUnavailable
+    from acervo.services.models import refusal
+
+    busy = ProviderUnavailable("rate_limited", "", provider_id="vertex", model="m")
+    text, picture, speech = refusal(busy), refusal(busy, "image"), refusal(busy, "audio")
+
+    assert text.code == picture.code == speech.code == "llm_rate_limited"
+    assert "language model" in text.message
+    assert "image model" in picture.message and "language model" not in picture.message
+    assert "speech model" in speech.message

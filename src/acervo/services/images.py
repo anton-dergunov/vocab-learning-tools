@@ -79,12 +79,12 @@ def _candidates(settings: Settings, owner: str, kind: str) -> tuple[chain.Candid
     try:
         return chain.resolve(kind, chain_for(settings, owner, kind), load_catalogue())
     except ProviderError as error:
-        raise refusal(error) from None
+        raise refusal(error, kind) from None
 
 
 def _require(candidates: tuple[chain.Candidate, ...], settings: Settings, owner: str, kind: str) -> None:
     if not candidates:
-        raise refusal(chain.unconfigured(kind, chain_for(settings, owner, kind), load_catalogue()))
+        raise refusal(chain.unconfigured(kind, chain_for(settings, owner, kind), load_catalogue()), kind)
 
 
 # ── settings ────────────────────────────────────────────────────────────────
@@ -332,14 +332,15 @@ def render_prompt(settings: Settings, owner: str, device: str, prompt_id: str,
                 **tried,
                 "failureReason": declined.detail or "the provider declined to draw this",
             }, table)
-        raise refusal(declined) from None
+        raise refusal(declined, "image") from None
     except ChainExhausted as exhausted:
         # Nothing was drawn and nothing is wrong with the request, so the attempt is not counted
         # against the sense: an allowance that ran out must not use up a sense's retries, and the
-        # row is left exactly as it was.
-        raise refusal(exhausted.last) from None
+        # row is left exactly as it was. The interface re-reads what is still drawable after it
+        # rests, which is what turns that into a retry rather than a word left one picture short.
+        raise refusal(exhausted.last, "image") from None
     except ProviderError as error:
-        raise refusal(error) from None
+        raise refusal(error, "image") from None
 
     return _write(owner, device, {
         **tried,

@@ -206,6 +206,48 @@ describe("enriching a word that was just saved", () => {
     expect(forget).toHaveBeenCalledWith("images/lexemepicar0001/imagepicar00010.webp");
   });
 
+  it("comes back to the sense the provider was too busy to draw", async () => {
+    /* The bug this closes, seen in production: a 429 on the image call left the sense with a brief,
+       no picture and `attempts: 0` — still drawable by this engine's own rule — and nothing looked
+       again, because a word is only enqueued when it is saved. Two senses read as "waiting" for ten
+       minutes while the same provider drew the next word's pictures.
+
+       The engine already *rested* thirty seconds for that row; it simply walked on through a list
+       captured before the wait and then finished the word. The server deliberately does not count a
+       rate limit against the sense (`render_prompt` raises without writing), so coming back is safe
+       and is exactly what the rest was paid for. */
+    const graph = repository.snapshot();
+    await repository.applyRemote(
+      { senses: graph.senses.filter((sense) => sense.lexemeId !== "lexemepicar0001" || sense.id === "sensepicaritch0"),
+        imagePrompts: [{ ...graph.imagePrompts[0], imageRef: null, imageModelId: null, attempts: 0, revision: 99 }] },
+      99, "dataset00000001"
+    );
+    const stale = repository.snapshot().senses.filter(
+      (sense) => sense.lexemeId === "lexemepicar0001" && sense.id !== "sensepicaritch0"
+    );
+    await repository.applyRemote(
+      { senses: stale.map((sense) => ({ ...sense, deleted: true, revision: 200 })) }, 200, "dataset00000001"
+    );
+
+    vi.useFakeTimers();
+    try {
+      const render = vi.spyOn(backendSession, "renderImage")
+        .mockRejectedValueOnce(new AcervoApiError("busy", 503, "llm_rate_limited"))
+        .mockResolvedValue(row({ imageRef: "images/a.webp", imageModelId: "painter", attempts: 1 }));
+
+      enrichment.enqueue("lexemepicar0001", "picar");
+      // Unconditionally rather than `while (running)`: the engine has not started on the first tick.
+      for (let turn = 0; turn < 60; turn += 1) await vi.advanceTimersByTimeAsync(5_000);
+
+      // Asked for again after the rest, rather than left for the server's sweep with the thirty
+      // seconds already spent on its behalf.
+      expect(render.mock.calls.length).toBeGreaterThan(1);
+      expect(render.mock.calls.every((call) => call[0] === "imagepicar00010")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("draws nothing on its own once the owner switches drawing off", async () => {
     // The bug this closes: the switch used to gate only the server's sweep, so saving a word still
     // produced pictures with it off. The setting lives on the server, so it is asked rather than
