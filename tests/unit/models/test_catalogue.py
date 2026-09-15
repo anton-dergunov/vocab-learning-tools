@@ -86,8 +86,8 @@ def test_the_same_model_named_twice_in_one_row_is_refused(tmp_path):
 def test_the_free_tier_row_offers_two_text_models_because_each_has_its_own_daily_quota():
     """Two buckets of 500 a day are a thousand a day. The second is reached by the first's 429."""
     assert SHIPPED.find("gemini-free").models_for("text") == (
-        "gemini/gemini-3.1-flash-lite",
         "gemini/gemini-3.5-flash-lite",
+        "gemini/gemini-3.1-flash-lite",
     )
 
 

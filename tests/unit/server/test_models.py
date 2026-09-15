@@ -16,8 +16,8 @@ from graph_records import vocabulary
 
 from acervo.domain.projection import COLLECTIONS
 
-GEMINI = "gemini/gemini-3.1-flash-lite"
-GEMINI_SECOND = "gemini/gemini-3.5-flash-lite"
+GEMINI = "gemini/gemini-3.5-flash-lite"
+GEMINI_SECOND = "gemini/gemini-3.1-flash-lite"
 CLOUDFLARE = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 ACCOUNT_ID = "0123456789abcdef0123456789abcdef"
 

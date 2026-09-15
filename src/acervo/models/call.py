@@ -47,6 +47,18 @@ TIMEOUT_SECONDS = 30
 SHORT_TIMEOUT_SECONDS = 20
 """A short structured answer with somebody watching a page. Slowest recorded: 2.29 s."""
 
+# How long a pair may stay silent before the next one is asked beside it (`chain.walk`'s
+# `hedge_after`). Not a timeout — the first call keeps running and still wins if it answers first.
+# Measured on 2026-09-15 against the free Gemini tier with the real prompts: a healthy compose took
+# 1.5–3 s with one at 7.7 s, and a healthy resolve under 3 s — while the same models sometimes took
+# 19–23 s or never opened a connection. Set just above the healthy tail, so a race is rare and costs
+# one extra free-tier request when it happens.
+HEDGE_SECONDS = 8
+"""Capture's compose, and chat: a whole article or a proposed revision of one."""
+
+SHORT_HEDGE_SECONDS = 4
+"""Capture's resolve: a few fields about what a scrap of text is."""
+
 _FENCED = re.compile(r"^```[a-zA-Z]*\s*\n([\s\S]*?)\n?```$")
 
 # Classified by type, in this order, before any status is looked at.

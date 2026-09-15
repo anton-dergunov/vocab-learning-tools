@@ -7,6 +7,7 @@ from typing import Any
 from acervo.domain.validation import POS_VALUES
 from acervo.errors import ApiError
 from acervo.models import Answer
+from acervo.models.call import SHORT_HEDGE_SECONDS
 from acervo.services.capture.coerce import (
     language_or_none,
     pick_choice,
@@ -59,7 +60,7 @@ def resolve(
 
     answer, call = llm_json(
         settings, owner, prompt_text(settings.prompts_path, "acervo_resolve"), user,
-        caller="resolve",
+        caller="resolve", hedge_after=SHORT_HEDGE_SECONDS,
     )
     if isinstance(answer, dict) and trimmed(answer.get("error")):
         raise UNREADABLE

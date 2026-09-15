@@ -15,6 +15,14 @@ the back of the queue for a while, so an exhausted free tier is not re-probed on
 only ever an ordering hint — when every pair is resting the hints are ignored and the chain is
 walked as written, which is what makes recovery automatic without knowing anyone's reset hour.
 
+**A caller with somebody waiting may race.** Given `hedge_after`, a pair that has been silent for
+longer than a healthy answer takes is not waited out to its timeout: the next pair is asked beside
+it and the first usable answer wins. Measured against the free Gemini tier, the same model that
+answers a resolve in 0.8 s sometimes takes 23 s, and a connection that never opens costs the whole
+bound — two failures the walk used to serve in sequence, one after another, to a person watching a
+spinner. Everything else about the walk holds: at most two pairs are in flight, a retryable failure
+starts the next pair, a terminal one still stops, and the answer names the pair that answered.
+
 The other contract here is provenance. `Answer.provider_id` and `Answer.model` name the pair that
 *answered*, and `attempts` names every pair tried, oldest first. A fall-through that left `modelId`
 naming the first choice would be a bug, so the answer is rewritten as it comes back out rather than
@@ -24,6 +32,7 @@ assembled by the caller from what it asked for.
 from __future__ import annotations
 
 import time
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from typing import Callable, Sequence, TypeVar
 
@@ -155,6 +164,7 @@ def walk(
     ask: Callable[[Candidate], Result],
     stamp: Callable[[Result, tuple[tuple[str, str], ...], tuple[tuple[str, str, str], ...]], Result],
     caller: str = "text",
+    hedge_after: float | None = None,
 ) -> Result:
     """Ask each pair in turn until one answers.
 
@@ -165,6 +175,10 @@ def walk(
     sees every attempt and its outcome, so it is the one place worth writing them down from; without
     it a chain that walked nine pairs left no trace but a `passedOver` array in a reply that may
     never have come.
+
+    `hedge_after`, when given, is how long a pair may stay silent before the next one is asked
+    beside it. `ask` is then called from worker threads, so it must not hold anything tied to the
+    calling thread.
     """
     candidates = resolve(kind, chosen, catalogue)
     if not candidates:
@@ -175,27 +189,117 @@ def walk(
     awake = rests.ready([candidate.named for candidate in candidates])
     order = sorted(candidates, key=lambda candidate: candidate.named not in awake)
 
-    attempts: list[tuple[str, str]] = []
-    passed_over: list[tuple[str, str, str]] = []
-    last: ProviderUnavailable | None = None
-    for candidate in order:
-        attempts.append(candidate.named)
-        started = time.monotonic()
-        try:
-            answer = stamp(ask(candidate), tuple(attempts), tuple(passed_over))
-        except ProviderUnavailable as error:
-            rests.note(candidate.named, error.reason, retry_after=retry_after_of(error))
-            passed_over.append((*candidate.named, error.reason))
-            journal.passed(caller, *candidate.named, error.reason, str(error))
-            last = error
-        else:
-            rests.succeeded(candidate.named)
-            journal.answered(caller, *candidate.named, time.monotonic() - started)
-            return answer
-    assert last is not None
-    reasons = tuple(reason for _, _, reason in passed_over)
-    journal.exhausted(caller, len(attempts), reasons)
-    raise ChainExhausted(tuple(attempts), last, reasons)
+    walked = _Walk(caller)
+    if hedge_after is None:
+        for candidate in order:
+            walked.attempts.append(candidate.named)
+            started = time.monotonic()
+            try:
+                result = ask(candidate)
+            except ProviderUnavailable as error:
+                walked.failed(candidate, error, started)
+            else:
+                return walked.answered(candidate, result, started, stamp)
+        walked.exhaust()
+
+    return _raced(order, ask, stamp, walked, hedge_after)
+
+
+IN_FLIGHT = 2
+"""Pairs asked at once in a race. Two covers one slow model; more would spend quota to cover two."""
+
+
+class _Walk:
+    """What one walk has tried, what passed it over, and the journal lines for both."""
+
+    def __init__(self, caller: str) -> None:
+        self.caller = caller
+        self.attempts: list[tuple[str, str]] = []
+        self.passed_over: list[tuple[str, str, str]] = []
+        self.last: ProviderUnavailable | None = None
+
+    def failed(self, candidate: Candidate, error: ProviderUnavailable, started: float) -> None:
+        rests.note(candidate.named, error.reason, retry_after=retry_after_of(error))
+        self.passed_over.append((*candidate.named, error.reason))
+        journal.passed(self.caller, *candidate.named, error.reason, str(error), time.monotonic() - started)
+        self.last = error
+
+    def answered(self, candidate: Candidate, result: Result, started: float, stamp) -> Result:
+        rests.succeeded(candidate.named)
+        journal.answered(self.caller, *candidate.named, time.monotonic() - started)
+        return stamp(result, tuple(self.attempts), tuple(self.passed_over))
+
+    def exhaust(self) -> None:
+        assert self.last is not None
+        reasons = tuple(reason for _, _, reason in self.passed_over)
+        journal.exhausted(self.caller, len(self.attempts), reasons)
+        raise ChainExhausted(tuple(self.attempts), self.last, reasons)
+
+
+def _raced(
+    order: Sequence[Candidate],
+    ask: Callable[[Candidate], Result],
+    stamp,
+    walked: _Walk,
+    hedge_after: float,
+) -> Result:
+    waiting = list(order)
+    running: dict[Future, tuple[Candidate, float]] = {}
+    pool = ThreadPoolExecutor(max_workers=IN_FLIGHT, thread_name_prefix=f"chain-{walked.caller}")
+
+    def start() -> None:
+        candidate = waiting.pop(0)
+        walked.attempts.append(candidate.named)
+        running[pool.submit(ask, candidate)] = (candidate, time.monotonic())
+
+    try:
+        start()
+        while running:
+            patience = None
+            if waiting and len(running) < IN_FLIGHT:
+                newest = max(started for _, started in running.values())
+                patience = max(0.0, newest + hedge_after - time.monotonic())
+            done, _ = wait(running, timeout=patience, return_when=FIRST_COMPLETED)
+            if not done:
+                start()
+                continue
+            for future in done:
+                candidate, started = running.pop(future)
+                try:
+                    result = future.result()
+                except ProviderUnavailable as error:
+                    walked.failed(candidate, error, started)
+                    continue
+                except BaseException:
+                    _abandon(running, walked.caller)
+                    raise
+                _abandon(running, walked.caller)
+                return walked.answered(candidate, result, started, stamp)
+            if waiting and not running:
+                start()
+        walked.exhaust()
+        raise AssertionError("unreachable")  # exhaust always raises
+    finally:
+        # Never wait: a LiteLLM call cannot be cancelled, and the loser finishes on its own bound.
+        pool.shutdown(wait=False)
+
+
+def _abandon(running: dict[Future, tuple[Candidate, float]], caller: str) -> None:
+    """Let the losers finish in the background. What they say later is noted, never returned."""
+    for future, (candidate, started) in running.items():
+        def settle(done: Future, candidate: Candidate = candidate, started: float = started) -> None:
+            seconds = time.monotonic() - started
+            error = done.exception()
+            if error is None:
+                journal.late(caller, *candidate.named, "ok", seconds)
+                return
+            reason = getattr(error, "reason", type(error).__name__)
+            if isinstance(error, ProviderUnavailable):
+                rests.note(candidate.named, error.reason, retry_after=retry_after_of(error))
+            journal.late(caller, *candidate.named, str(reason), seconds)
+
+        future.add_done_callback(settle)
+    running.clear()
 
 
 def stamped(

@@ -22,6 +22,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from acervo.errors import ApiError
+from acervo.models.call import HEDGE_SECONDS
 from acervo.services.capture.coerce import (
     REFERENCE_LIMIT,
     pick_optional_choice,
@@ -84,7 +85,7 @@ def run_chat(settings: Settings, owner: str, body: dict[str, Any]) -> dict[str, 
     try:
         answer, call = llm_json(
             settings, owner, prompt_text(settings.prompts_path, name),
-            _user_turn(subject, body), caller="chat",
+            _user_turn(subject, body), caller="chat", hedge_after=HEDGE_SECONDS,
         )
     except ApiError as refused:
         # `llm_json`'s own two messages end "so nothing was created", which is true of every other

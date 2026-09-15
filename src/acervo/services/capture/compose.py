@@ -13,6 +13,7 @@ from typing import Any
 
 from acervo.errors import ApiError
 from acervo.models import Answer
+from acervo.models.call import HEDGE_SECONDS
 from acervo.services.capture.coerce import reference_of, text_list, trimmed
 from acervo.services.models import llm_json
 from acervo.services.prompts import prompt_text
@@ -83,7 +84,7 @@ def compose(
 
     answer, call = llm_json(
         settings, owner, prompt_text(settings.prompts_path, "acervo_compose"), user,
-        caller="compose",
+        caller="compose", hedge_after=HEDGE_SECONDS,
     )
     if not isinstance(answer, dict):
         raise ApiError(

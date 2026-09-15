@@ -231,7 +231,7 @@ def test_it_builds_a_draft_keeping_the_learners_sentence_as_an_attestation_the_e
     assert own["sourceAttestationId"] == draft["attestations"][0]["id"]
     assert own["modelId"] is None
     assert invented["origin"] == "llm"
-    assert invented["modelId"] == "gemini/gemini-3.1-flash-lite"
+    assert invented["modelId"] == "gemini/gemini-3.5-flash-lite"
     # Every minted id is a real Acervo id, or nothing could reference anything.
     for identifier in (draft["senses"][0]["id"], own["id"], draft["attestations"][0]["id"]):
         assert re.match(r"^[a-z0-9]{15}$", identifier)
@@ -339,7 +339,7 @@ def test_a_draft_is_not_written_unless_applying_was_asked_for(seeded):
 def test_it_asks_the_first_credentialed_row_in_the_catalogue(seeded):
     seeded.capture()
     call = seeded.model.calls[0]
-    assert call["model"] == "gemini/gemini-3.1-flash-lite"
+    assert call["model"] == "gemini/gemini-3.5-flash-lite"
     assert call["api_key"] == "stub-key"
     assert call["timeout"] == provider_call.TIMEOUT_SECONDS
     # Gemini's row declares `jsonMode: native`, so JSON mode is requested rather than asked for in
@@ -374,26 +374,26 @@ def test_the_chain_setting_decides_which_row_is_asked_first(seeded, monkeypatch)
 def test_a_rate_limited_model_falls_through_to_the_next_model_of_the_same_provider(seeded):
     """The reason a row lists several models: they are separate free-tier buckets, so the second is
     reached by the first one's 429 rather than being a spare."""
-    seeded.model.limited = {"gemini/gemini-3.1-flash-lite"}
+    seeded.model.limited = {"gemini/gemini-3.5-flash-lite"}
 
     draft = seeded.capture().json()["data"]["draft"]
     asked = [call["model"] for call in seeded.model.calls]
-    assert asked[:2] == ["gemini/gemini-3.1-flash-lite", "gemini/gemini-3.5-flash-lite"]
+    assert asked[:2] == ["gemini/gemini-3.5-flash-lite", "gemini/gemini-3.1-flash-lite"]
     _own, invented = draft["senses"][0]["examples"]
-    assert invented["modelId"] == "gemini/gemini-3.5-flash-lite"
+    assert invented["modelId"] == "gemini/gemini-3.1-flash-lite"
 
 
 def test_the_second_model_call_does_not_re_probe_what_the_first_exhausted(seeded):
     """A capture is two model calls. Asking a model that just returned 429 a second time, seconds
     later, buys nothing and costs the owner the wait — so the refusal is remembered."""
-    seeded.model.limited = {"gemini/gemini-3.1-flash-lite"}
+    seeded.model.limited = {"gemini/gemini-3.5-flash-lite"}
     seeded.capture()
 
     asked = [call["model"] for call in seeded.model.calls]
     assert asked == [
-        "gemini/gemini-3.1-flash-lite",   # resolve: tried, refused, and rested
-        "gemini/gemini-3.5-flash-lite",   # resolve: answered
-        "gemini/gemini-3.5-flash-lite",   # compose: went straight here
+        "gemini/gemini-3.5-flash-lite",   # resolve: tried, refused, and rested
+        "gemini/gemini-3.1-flash-lite",   # resolve: answered
+        "gemini/gemini-3.1-flash-lite",   # compose: went straight here
     ]
 
 
@@ -401,7 +401,7 @@ def test_an_exhausted_provider_falls_through_and_the_entry_records_who_answered(
     """The locked provenance contract, end to end. `modelId` naming the first choice is a bug."""
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
-    seeded.model.limited = {"gemini/gemini-3.1-flash-lite", "gemini/gemini-3.5-flash-lite"}
+    seeded.model.limited = {"gemini/gemini-3.5-flash-lite", "gemini/gemini-3.1-flash-lite"}
 
     draft = seeded.capture().json()["data"]["draft"]
     asked = [call["model"] for call in seeded.model.calls]
@@ -520,7 +520,7 @@ def test_health_reports_the_row_that_would_be_asked_first(seeded):
     assert capture_health(seeded) == {
         "available": True,
         "provider": "gemini-free",
-        "model": "gemini/gemini-3.1-flash-lite",
+        "model": "gemini/gemini-3.5-flash-lite",
         "reason": None,
     }
 
@@ -569,7 +569,7 @@ def test_health_never_puts_a_key_an_endpoint_or_an_account_id_in_an_unauthentica
 # restarted and nothing redeployed. These run against the same process, which is the whole claim.
 
 
-GEMINI_SECOND = "gemini/gemini-3.5-flash-lite"
+GEMINI_SECOND = "gemini/gemini-3.1-flash-lite"
 CLOUDFLARE_TEXT = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
 
@@ -658,7 +658,7 @@ def test_health_reports_the_deployment_while_the_owner_reports_their_own(seeded,
 
     assert capture_health(seeded) == {
         "available": True, "provider": "gemini-free",
-        "model": "gemini/gemini-3.1-flash-lite", "reason": None,
+        "model": "gemini/gemini-3.5-flash-lite", "reason": None,
     }
     chosen = seeded.get("/models").json()["data"]["chains"]["text"]
     assert chosen["source"] == "owner"

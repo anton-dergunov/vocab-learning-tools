@@ -187,7 +187,7 @@ def capture_health(settings: Settings) -> dict[str, Any]:
 
 
 def llm_json(settings: Settings, owner: str | None, system: str, user: str,
-             caller: str = "text") -> tuple[Any, Answer]:
+             caller: str = "text", hedge_after: float | None = None) -> tuple[Any, Answer]:
     """One constrained call: pass text, get JSON and the model that produced it, or a code saying why not.
 
     Returning the `Answer` rather than a model id is not decoration. The locked contract is that the
@@ -203,6 +203,8 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str,
     `caller` names the job in the call journal, and it is worth passing. Three different jobs come
     through here, and a log that calls all of them "text" cannot answer the first question anybody
     asks of it — which of them was slow.
+
+    `hedge_after` is for a caller with somebody waiting: see `chain.walk`.
     """
     def ask(candidate: chain.Candidate) -> TextResult:
         result = provider.text(
@@ -218,7 +220,7 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str,
             )
         if result.parsed is None:
             raise ProviderUnavailable(
-                "unusable", "the model did not answer with JSON",
+                "unusable", "the model did not answer with JSON: " + journal.excerpt(result.text),
                 provider_id=candidate.row.id, model=candidate.model,
             )
         return result
@@ -226,7 +228,7 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str,
     try:
         result: TextResult = chain.walk(
             "text", chain_for(settings, owner), load_catalogue(), ask, chain.stamped,
-            caller=caller,
+            caller=caller, hedge_after=hedge_after,
         )
     except ChainExhausted as exhausted:
         raise refusal(exhausted.last) from None

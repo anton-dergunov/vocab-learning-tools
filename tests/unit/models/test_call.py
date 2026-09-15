@@ -24,7 +24,7 @@ CLOUDFLARE = SHIPPED.find("cloudflare")    # jsonMode: prompt
 PRIVATE = "provider details that must stay private"
 
 
-def reply(text: str, model: str = "gemini/gemini-3.1-flash-lite"):
+def reply(text: str, model: str = "gemini/gemini-3.5-flash-lite"):
     return litellm.ModelResponse(
         model=model,
         choices=[{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": text}}],
@@ -105,7 +105,7 @@ def test_the_failing_row_and_model_are_carried_on_the_error(monkeypatch):
     with pytest.raises(ProviderUnavailable) as caught:
         call.text("hello", row=GEMINI)
     assert caught.value.provider_id == "gemini-free"
-    assert caught.value.model == "gemini/gemini-3.1-flash-lite"
+    assert caught.value.model == "gemini/gemini-3.5-flash-lite"
     assert caught.value.status == 429
 
 
@@ -197,9 +197,9 @@ def test_the_answer_names_the_pair_that_answered_and_how_long_it_took(monkeypatc
     monkeypatch.setattr(call, "completion", _recording([], reply("{}")))
     answer = call.text("hello", row=GEMINI).answer
     assert answer.provider_id == "gemini-free"
-    assert answer.model == "gemini/gemini-3.1-flash-lite"  # the row's first, none having been named
+    assert answer.model == "gemini/gemini-3.5-flash-lite"  # the row's first, none having been named
     assert answer.seconds >= 0
-    assert answer.attempts == (("gemini-free", "gemini/gemini-3.1-flash-lite"),)
+    assert answer.attempts == (("gemini-free", "gemini/gemini-3.5-flash-lite"),)
 
 
 def test_the_model_the_chain_chose_is_the_one_asked(monkeypatch):
@@ -207,9 +207,9 @@ def test_the_model_the_chain_chose_is_the_one_asked(monkeypatch):
     listed in the catalogue and never actually reached."""
     calls = []
     monkeypatch.setattr(call, "completion", _recording(calls, reply("{}")))
-    result = call.text("hello", row=GEMINI, model="gemini/gemini-3.5-flash-lite")
-    assert calls[-1]["model"] == "gemini/gemini-3.5-flash-lite"
-    assert result.answer.model == "gemini/gemini-3.5-flash-lite"
+    result = call.text("hello", row=GEMINI, model="gemini/gemini-3.1-flash-lite")
+    assert calls[-1]["model"] == "gemini/gemini-3.1-flash-lite"
+    assert result.answer.model == "gemini/gemini-3.1-flash-lite"
 
 
 @pytest.mark.parametrize(

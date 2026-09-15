@@ -152,10 +152,10 @@ def call_timings(settings: Settings) -> int:
         print(f"{len(lines)} line(s) in {path}, none of them a model call.")
         return 1
     print(f"{'job':10} {'provider:model':46} {'ok':>4} {'fail':>5} "
-          f"{'median':>7} {'p95':>7} {'worst':>7}")
+          f"{'median':>7} {'p95':>7} {'worst':>7} {'lost':>8}")
     for row in rows:
         print(f"{row.caller:10} {row.pair:46} {row.answered:4d} {row.failed:5d} "
-              f"{row.at(.5):6.2f}s {row.at(.95):6.2f}s {row.at(1):6.2f}s")
+              f"{row.at(.5):6.2f}s {row.at(.95):6.2f}s {row.at(1):6.2f}s {row.lost:7.2f}s")
     slowest = max(row.at(1.0) for row in rows)
     print(f"\nSlowest answer seen: {slowest:.2f}s. A timeout wants headroom over that, not over a "
           f"guess — and a call past it is not slow, it is gone.")

@@ -23,8 +23,8 @@ SHIPPED = load_catalogue()
 # What the fixture below credentials, as (provider, model) pairs in the order they are walked:
 # gemini-free offers two text models, so it is asked twice before cloudflare is asked at all.
 DEFAULT_WALK = [
-    ("gemini-free", "gemini/gemini-3.1-flash-lite"),
     ("gemini-free", "gemini/gemini-3.5-flash-lite"),
+    ("gemini-free", "gemini/gemini-3.1-flash-lite"),
     ("cloudflare", "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
     ("openai", "openai/gpt-5.1"),
 ]
@@ -87,7 +87,7 @@ def test_a_rate_limited_model_falls_through_to_the_next_model_of_the_same_provid
     result = chain.walk("text", None, SHIPPED, ask, chain.stamped)
     assert tried == DEFAULT_WALK[:2]
     assert result.answer.provider_id == "gemini-free"
-    assert result.answer.model == "gemini/gemini-3.5-flash-lite"
+    assert result.answer.model == "gemini/gemini-3.1-flash-lite"
     assert result.answer.attempts == tuple(DEFAULT_WALK[:2])
 
 
@@ -230,7 +230,7 @@ def test_the_walk_calls_the_real_text_function_with_the_model_it_chose(monkeypat
         chain.stamped,
     )
     assert seen == [pair[1] for pair in DEFAULT_WALK[:2]]
-    assert result.answer.model == "gemini/gemini-3.5-flash-lite"
+    assert result.answer.model == "gemini/gemini-3.1-flash-lite"
     assert result.answer.attempts == tuple(DEFAULT_WALK[:2])
 
 
@@ -240,13 +240,13 @@ def test_the_walk_calls_the_real_text_function_with_the_model_it_chose(monkeypat
 # catalogue. The pair is what the owner's record stores, because a free tier is metered per model.
 
 
-GEMINI_MODELS = ("gemini/gemini-3.1-flash-lite", "gemini/gemini-3.5-flash-lite")
+GEMINI_MODELS = ("gemini/gemini-3.5-flash-lite", "gemini/gemini-3.1-flash-lite")
 
 
 def test_a_pair_resolves_to_that_model_alone_even_though_the_row_offers_two():
-    chosen = [("gemini-free", "gemini/gemini-3.5-flash-lite")]
+    chosen = [("gemini-free", "gemini/gemini-3.1-flash-lite")]
     assert [c.named for c in chain.resolve("text", chosen, SHIPPED)] == [
-        ("gemini-free", "gemini/gemini-3.5-flash-lite")
+        ("gemini-free", "gemini/gemini-3.1-flash-lite")
     ]
 
 
@@ -357,3 +357,108 @@ def test_a_chain_that_only_ever_answered_badly_is_waiting_for_nothing():
     with pytest.raises(ChainExhausted) as caught:
         chain.walk("text", None, SHIPPED, ask, chain.stamped)
     assert caught.value.waited_on_nothing is True
+
+
+# ── racing a silent pair ────────────────────────────────────────────────────
+# With `hedge_after`, a pair silent past a healthy answer's time is not waited out to its timeout:
+# the next is asked beside it and the first usable answer wins. Driven by events, not sleeps, so
+# "slow" means "has not been released" and nothing depends on the machine's speed.
+
+
+def released_when(gates):
+    """An `ask` that holds each pair named in `gates` until its event is set, then runs `then`."""
+    tried: list[tuple[str, str]] = []
+    lock = __import__("threading").Lock()
+
+    def ask(candidate):
+        with lock:
+            tried.append(candidate.named)
+        gate = gates.get(candidate.named)
+        if gate is not None:
+            event, then = gate
+            assert event.wait(10), "the test never released this pair"
+            if isinstance(then, BaseException):
+                raise then
+        return answers(candidate)
+
+    return ask, tried
+
+
+def eventually(condition):
+    import time
+
+    for _ in range(500):
+        if condition():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_a_silent_pair_is_raced_and_the_first_answer_wins():
+    import threading
+
+    held = threading.Event()
+    ask, tried = released_when({DEFAULT_WALK[0]: (held, None)})
+    try:
+        result = chain.walk("text", None, SHIPPED, ask, chain.stamped, hedge_after=0.01)
+    finally:
+        held.set()
+    assert tried == DEFAULT_WALK[:2]
+    assert result.answer.model == DEFAULT_WALK[1][1]
+    assert result.answer.attempts == tuple(DEFAULT_WALK[:2])
+
+
+def test_a_pair_that_answers_in_time_is_never_raced():
+    ask, tried = refusing()
+    result = chain.walk("text", None, SHIPPED, ask, chain.stamped, hedge_after=60)
+    assert tried == DEFAULT_WALK[:1]
+    assert result.answer.attempts == tuple(DEFAULT_WALK[:1])
+
+
+def test_a_fast_failure_starts_the_next_pair_without_waiting_for_the_hedge():
+    import time
+
+    ask, tried = refusing(unavailable("unavailable"))
+    started = time.monotonic()
+    result = chain.walk("text", None, SHIPPED, ask, chain.stamped, hedge_after=60)
+    assert time.monotonic() - started < 5
+    assert tried == DEFAULT_WALK[:2]
+    assert result.answer.passed_over == ((*DEFAULT_WALK[0], "unavailable"),)
+
+
+def test_a_terminal_refusal_still_stops_a_race():
+    ask, tried = refusing(refused())
+    with pytest.raises(ProviderRefused):
+        chain.walk("text", None, SHIPPED, ask, chain.stamped, hedge_after=60)
+    assert tried == DEFAULT_WALK[:1]
+
+
+def test_a_race_that_nobody_wins_is_exhausted_like_a_walk():
+    ask, tried = refusing(*[unavailable("rate_limited")] * len(DEFAULT_WALK))
+    with pytest.raises(ChainExhausted) as caught:
+        chain.walk("text", None, SHIPPED, ask, chain.stamped, hedge_after=0.01)
+    assert sorted(caught.value.attempts) == sorted(DEFAULT_WALK)
+    assert sorted(tried) == sorted(DEFAULT_WALK)
+
+
+def test_a_loser_that_fails_later_is_rested_and_changes_nothing_returned():
+    import threading
+
+    held = threading.Event()
+    ask, _ = released_when({DEFAULT_WALK[0]: (held, unavailable("rate_limited"))})
+    result = chain.walk("text", None, SHIPPED, ask, chain.stamped, hedge_after=0.01)
+    assert not rests.resting(DEFAULT_WALK[0])
+    held.set()
+    assert eventually(lambda: rests.resting(DEFAULT_WALK[0]))
+    assert result.answer.model == DEFAULT_WALK[1][1]
+
+
+def test_a_loser_that_answers_later_is_not_demoted_for_being_slow():
+    import threading
+
+    held = threading.Event()
+    ask, _ = released_when({DEFAULT_WALK[0]: (held, None)})
+    chain.walk("text", None, SHIPPED, ask, chain.stamped, hedge_after=0.01)
+    held.set()
+    assert not rests.resting(DEFAULT_WALK[0])
+    assert rests.ready([DEFAULT_WALK[0], DEFAULT_WALK[1]]) == (DEFAULT_WALK[0], DEFAULT_WALK[1])

@@ -11,8 +11,8 @@
       ],
       "litellm": {
         "text": [
-          "gemini/gemini-3.1-flash-lite",
-          "gemini/gemini-3.5-flash-lite"
+          "gemini/gemini-3.5-flash-lite",
+          "gemini/gemini-3.1-flash-lite"
         ],
         "audio": [
           "gemini/gemini-3.1-flash-tts-preview"
@@ -29,7 +29,7 @@
       "params": {
         "text": {}
       },
-      "notes": "Two text models at 500 requests a day each, which is why both are listed rather than one: they are separate buckets, so the second is a genuine thousand-a-day rather than a spare. Speech is one model at 10 a day — enough for a handful of words, not for a batch. The tier allows a second speech model, `gemini-2.5-flash-preview-tts`, and it is deliberately not listed: it answers a short word with generated *text* often enough to be useless, which Gemini then refuses with a 400, and LiteLLM's speech bridge surfaces that as an IndexError rather than as a refusal — so the chain would read it as terminal and stop rather than falling through. Prompting it as a transcript instruction does not help. Worth revisiting when audio gets a caller. There is deliberately no `image` kind: on this tier every image model, Nano Banana included, is allowed 0 requests, so listing one would put a row in the chain that can only 429. Voice names do not carry across providers, so the row names one Gemini accepts; a caller that asks for a specific voice overrides it. Temperature is deliberately unset: LiteLLM recommends leaving Gemini 3+ at its default."
+      "notes": "Two text models at 500 requests a day each, which is why both are listed rather than one: they are separate buckets, so the second is a genuine thousand-a-day rather than a spare. 3.5 Flash Lite is listed first because it was measured steadier: on 2026-09-15 it answered every resolve in under a second and every compose in about 2.5 s, while 3.1 Flash Lite answered one call in three with a 503 \"high demand\" and took 23 s over a 90-token resolve. Speech is one model at 10 a day — enough for a handful of words, not for a batch. The tier allows a second speech model, `gemini-2.5-flash-preview-tts`, and it is deliberately not listed: it answers a short word with generated *text* often enough to be useless, which Gemini then refuses with a 400, and LiteLLM's speech bridge surfaces that as an IndexError rather than as a refusal — so the chain would read it as terminal and stop rather than falling through. Prompting it as a transcript instruction does not help. Worth revisiting when audio gets a caller. There is deliberately no `image` kind: on this tier every image model, Nano Banana included, is allowed 0 requests, so listing one would put a row in the chain that can only 429. Voice names do not carry across providers, so the row names one Gemini accepts; a caller that asks for a specific voice overrides it. Temperature is deliberately unset: LiteLLM recommends leaving Gemini 3+ at its default."
     },
     {
       "id": "vertex",

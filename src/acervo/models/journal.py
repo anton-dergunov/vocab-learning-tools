@@ -51,14 +51,22 @@ def answered(caller: str, provider: str, model: str, seconds: float) -> None:
     logger.info("%s %s:%s ok in %.2fs", caller, provider, model, seconds)
 
 
-def passed(caller: str, provider: str, model: str, reason: str, detail: str) -> None:
+def passed(caller: str, provider: str, model: str, reason: str, detail: str, seconds: float) -> None:
     """One pair that did not answer, and the reason the next one is being asked.
 
     At `warning`, because every one of these costs a call and some of them cost a minute. A run that
     is quietly walking the whole chain on every word should be visible at the default level rather
     than only to somebody who thought to turn logging up.
+
+    The duration is the part that answers "where did the forty seconds go": a 503 back in half a
+    second and a timeout at the bound are the same reason code and very different costs.
     """
-    logger.warning("%s %s:%s %s — %s", caller, provider, model, reason, detail)
+    logger.warning("%s %s:%s %s after %.2fs — %s", caller, provider, model, reason, seconds, detail)
+
+
+def late(caller: str, provider: str, model: str, outcome: str, seconds: float) -> None:
+    """A raced pair that finished after another had already answered. Its outcome changed nothing."""
+    logger.info("%s %s:%s late %s after %.2fs", caller, provider, model, outcome, seconds)
 
 
 def exhausted(caller: str, attempts: int, reasons: tuple[str, ...]) -> None:
@@ -74,7 +82,10 @@ def exhausted(caller: str, attempts: int, reasons: tuple[str, ...]) -> None:
 # away. Neither is necessary when the durations are right here.
 
 _OK = re.compile(r"^(?P<when>\S+ \S+) \w+ (?P<caller>\S+) (?P<pair>\S+:\S+) ok in (?P<seconds>[\d.]+)s")
-_BAD = re.compile(r"^(?P<when>\S+ \S+) \w+ (?P<caller>\S+) (?P<pair>\S+:\S+) (?P<reason>\S+) — ")
+_BAD = re.compile(
+    r"^(?P<when>\S+ \S+) \w+ (?P<caller>\S+) (?P<pair>\S+:\S+) (?P<reason>\S+)"
+    r"(?: after (?P<seconds>[\d.]+)s)? — "
+)
 
 
 @dataclass(frozen=True)
@@ -86,6 +97,8 @@ class Timing:
     answered: int
     failed: int
     seconds: tuple[float, ...]
+    lost: float = 0.0
+    """Seconds spent on attempts that did not answer — what a fall-through cost the person waiting."""
 
     def at(self, share: float) -> float:
         """The duration at a share of the calls, nearest-rank. `at(1.0)` is the slowest seen."""
@@ -99,11 +112,13 @@ class Timing:
 def summarise(lines: Iterable[str]) -> list[Timing]:
     """Every (caller, pair) in the log, slowest first by its worst call.
 
-    Failures are counted but contribute no duration: a call that timed out took exactly as long as
-    the bound allowed, so averaging it in would measure the bound rather than the provider.
+    Failures are counted and kept out of the percentiles: a call that timed out took exactly as long
+    as the bound allowed, so averaging it in would measure the bound rather than the provider. Their
+    durations are totalled apart, as `lost`, which is the number a latency complaint is really about.
     """
     answered: dict[tuple[str, str], list[float]] = {}
     failed: dict[tuple[str, str], int] = {}
+    lost: dict[tuple[str, str], float] = {}
     for line in lines:
         if match := _OK.match(line):
             key = (match["caller"], match["pair"])
@@ -111,10 +126,11 @@ def summarise(lines: Iterable[str]) -> list[Timing]:
         elif match := _BAD.match(line):
             key = (match["caller"], match["pair"])
             failed[key] = failed.get(key, 0) + 1
+            lost[key] = lost.get(key, 0.0) + float(match["seconds"] or 0)
     keys = set(answered) | set(failed)
     rows = [
         Timing(caller, pair, len(answered.get((caller, pair), ())), failed.get((caller, pair), 0),
-               tuple(answered.get((caller, pair), ())))
+               tuple(answered.get((caller, pair), ())), lost.get((caller, pair), 0.0))
         for caller, pair in keys
     ]
     return sorted(rows, key=lambda row: (row.at(1.0), row.answered), reverse=True)

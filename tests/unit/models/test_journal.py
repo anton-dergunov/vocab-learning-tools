@@ -99,7 +99,7 @@ def test_the_file_is_opened_once_and_creates_its_directory(tmp_path, monkeypatch
         assert sum(getattr(h, "acervo_call_log", False) for h in logger.handlers) == 1
 
         journal.passed("brief", "gemini-free", "m", "unusable",
-                       'got {"senses":[{"senseId":"s1"}]} AIzaSy-not-a-real-key-000')
+                       'got {"senses":[{"senseId":"s1"}]} AIzaSy-not-a-real-key-000', 1.5)
         for handler in logger.handlers:
             handler.flush()
         written = path.read_text(encoding="utf-8")
@@ -109,7 +109,7 @@ def test_the_file_is_opened_once_and_creates_its_directory(tmp_path, monkeypatch
                 handler.close()
                 logger.removeHandler(handler)
 
-    assert "brief gemini-free:m unusable" in written
+    assert "brief gemini-free:m unusable after 1.50s" in written
     assert "senseId" in written
 
 
@@ -186,3 +186,30 @@ def test_the_bounds_are_the_ones_the_measurements_support():
     assert call.SHORT_TIMEOUT_SECONDS < call.TIMEOUT_SECONDS
     assert call.TIMEOUT_SECONDS >= slowest_seen * 4
     assert call.SHORT_TIMEOUT_SECONDS >= 2.29 * 4
+
+
+def test_the_log_totals_what_failures_cost_the_person_waiting():
+    """A 503 back in half a second and a timeout at the bound share a reason code and nothing else."""
+    from acervo.models import journal
+
+    lines = [
+        "2026-09-15 15:12:47,476 WARNING resolve gemini-free:m unreachable after 30.01s — Timeout",
+        "2026-09-15 15:13:00,349 WARNING resolve gemini-free:m unavailable after 0.40s — 503",
+        "2026-09-15 15:13:02,328 INFO resolve gemini-free:m ok in 1.98s",
+        "2026-09-15 15:13:03,000 INFO resolve gemini-free:m late ok after 9.00s",
+    ]
+    (row,) = journal.summarise(lines)
+    assert (row.answered, row.failed) == (1, 2)
+    assert row.lost == pytest.approx(30.41)
+    assert row.at(1.0) == 1.98
+
+
+def test_a_raced_chain_names_its_failures_with_their_cost(written):
+    def ask(candidate):
+        raise ProviderUnavailable("unavailable", "503 high demand",
+                                  provider_id=candidate.row.id, model=candidate.model)
+
+    with pytest.raises(ChainExhausted):
+        chain.walk("text", [("gemini-free", "gemini/gemini-3.1-flash-lite")], SHIPPED,
+                   ask, chain.stamped, caller="compose", hedge_after=5)
+    assert "compose gemini-free:gemini/gemini-3.1-flash-lite unavailable after" in written.text

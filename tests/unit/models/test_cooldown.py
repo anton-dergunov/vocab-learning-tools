@@ -16,8 +16,8 @@ from acervo.models.errors import ProviderUnavailable
 from acervo.models.results import Answer, TextResult
 
 SHIPPED = load_catalogue()
-FIRST = ("gemini-free", "gemini/gemini-3.1-flash-lite")
-SECOND = ("gemini-free", "gemini/gemini-3.5-flash-lite")
+FIRST = ("gemini-free", "gemini/gemini-3.5-flash-lite")
+SECOND = ("gemini-free", "gemini/gemini-3.1-flash-lite")
 
 
 @pytest.fixture(autouse=True)
@@ -60,20 +60,35 @@ def test_when_everything_is_resting_the_chain_is_walked_as_written():
 
 
 def test_a_rest_expires_on_its_own(monkeypatch):
-    register = Rests()
-    register.note(FIRST, "unavailable")
-    assert register.resting(FIRST)
     clock = [0.0]
     monkeypatch.setattr("acervo.models.cooldown.time.monotonic", lambda: clock[0])
     register = Rests()
-    register.note(FIRST, "unavailable")
-    clock[0] = REST["unavailable"] + 1
+    register.note(FIRST, "rate_limited")
+    assert register.resting(FIRST)
+    clock[0] = REST["rate_limited"] + 1
     assert not register.resting(FIRST)
+
+
+def test_one_overloaded_answer_is_forgiven_and_the_second_in_a_row_rests():
+    """A "high demand" 503 lands on one request in three and the next is usually fine. Resting on the
+    first sent the second call of the same capture to the slower fallback."""
+    register = Rests()
+    assert register.note(FIRST, "unavailable") == 0.0
+    assert not register.resting(FIRST)
+    assert register.note(FIRST, "unavailable") == REST["unavailable"]
+    assert register.resting(FIRST)
+    assert register.note(FIRST, "unavailable") == REST["unavailable"] * 2
+
+
+def test_the_providers_own_delay_is_believed_even_on_a_forgiven_failure():
+    register = Rests()
+    assert register.note(FIRST, "unavailable", retry_after=12.0) == 12.0
 
 
 def test_a_rate_limit_rests_longer_than_a_hiccup():
     """An allowance refills on the provider's clock; a 5xx is usually over by the time you look."""
     register = Rests()
+    register.note(SECOND, "unavailable")
     assert register.note(FIRST, "rate_limited") > register.note(SECOND, "unavailable")
 
 

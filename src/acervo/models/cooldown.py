@@ -57,6 +57,14 @@ REST: dict[str, float] = {
 }
 LONGEST = 3600.0
 
+# How many failures in a row a pair is forgiven before it rests, by reason. **One 503 is noise, not a
+# state.** Gemini's "this model is currently experiencing high demand" arrives on one request in three
+# and the next request is usually fine — measured against the free tier, where the 503 came back in
+# under five seconds each time. Resting on the first one was the expensive mistake: capture makes two
+# calls a few seconds apart, so a 503 on the first demoted the model for the second, and the article
+# was written by the slower, weaker fallback. The second 503 in a row is a state, and rests as before.
+FORGIVEN: dict[str, int] = {"unavailable": 1}
+
 
 class Rests:
     """Which pairs are resting, and until when. Safe to share across threads."""
@@ -79,7 +87,10 @@ class Rests:
         with self._lock:
             streak = self._streak.get(pair, 0) + 1
             self._streak[pair] = streak
-            resting = retry_after if retry_after is not None else min(base * 2 ** (streak - 1), LONGEST)
+            counted = streak - FORGIVEN.get(reason, 0)
+            if counted <= 0 and retry_after is None:
+                return 0.0
+            resting = retry_after if retry_after is not None else min(base * 2 ** (counted - 1), LONGEST)
             self._until[pair] = time.monotonic() + resting
             return resting
 
