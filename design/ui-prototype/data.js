@@ -89,7 +89,8 @@ const LEXEMES = [
           { text: "<b>Pica</b> la cebolla bien fina antes de sofreírla.", translation: "<b>Chop</b> the onion very finely before frying it.",
             origin: "llm", modelId: "gemini-3-flash", approved: true, audio: false }
         ],
-        images: []
+        /* Being drawn right now, so the drawing state can be seen on the page and on a card. */
+        images: [{ drawing: true, anchor: 0 }]
       },
       {
         definition: "Comer una cantidad pequeña de algo, generalmente entre horas.",

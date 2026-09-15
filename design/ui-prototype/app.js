@@ -359,7 +359,12 @@ function clipLine(e) {
 }
 
 function pictureFrame(im) {
-  return `
+  /* `drawing` stands in for a picture the queue is drawing right now: the frame holds its place and
+     says so, the same on the page and on a card. */
+  return im.drawing ? `
+    <figure class="sense-image">
+      <button class="sense-image-frame is-pending is-busy" data-picture><span class="sense-image-empty">Drawing…</span></button>
+    </figure>` : `
     <figure class="sense-image">
       <button class="sense-image-frame" data-picture aria-label="Open the picture"><img src="${im.src}" alt="" loading="lazy"></button>
     </figure>`;
@@ -500,10 +505,7 @@ function masthead(x) {
       <div class="head-row">
         <div class="emoji-plate">${x.emoji || "\u{1F4C4}"}</div>
         <div class="head-text">
-          <div class="head-line">
-            <h1 class="headword">${esc(x.headword)}</h1>
-            ${say(x.headword, "always head")}
-          </div>
+          <div class="head-line"><h1 class="headword">${esc(x.headword)}</h1>${say(x.headword, "always head")}</div>
           ${x.reading ? `<div class="reading">${esc(x.reading)}</div>` : ""}
           <div class="pron-row">
             ${x.ipa ? `<span class="ipa">${esc(x.ipa)}</span>` : ""}
@@ -606,9 +608,10 @@ function renderArticle(x, opts) {
    meaning it illustrates. The picture is the part that gives way when a card is short of room; if a
    card still cannot fit — a very long sentence — that card alone scrolls, and nothing forbids it. */
 
-function cardExample(e) {
+function cardExample(e, quoted = false) {
   return `
     <div class="card-ex${isOwn(e) ? " own" : ""}${isClip(e) ? " clip-ex" : ""}">
+      ${quoted ? '<span class="card-quote" aria-hidden="true">“</span>' : ""}
       <p class="t">${spoken(e.text, say(e.text))}</p>
       ${e.translation ? `<p class="tr">${spoken(e.translation, sayTranslation(e.translation))}</p>` : ""}
       ${isOwn(e) ? '<span class="own-tag">your sentence</span>' : ""}
@@ -624,16 +627,22 @@ function cardsFor(x) {
     const anchored = picture && Number.isInteger(picture.anchor) ? picture.anchor : null;
     /* A picture goes on the card of the sentence it was drawn from — a clip's included, so a clip
        and its picture share a card. A picture drawn from the sense alone opens the sense. */
-    const pictureOn = (c) => Boolean(picture) && (anchored === null ? c === 0 : Boolean(items[c]) && items[c].at === anchored);
-    /* A sense with no picture at all opens on its emoji instead, so its first card is not a
-       definition floating over empty paper. It is the frame a picture would fill, and opens the
-       same dialog, where one can be drawn. */
-    const tile = !picture ? (s.emoji || x.emoji) : null;
+    const spotOn = (c) => (anchored === null ? c === 0 : Boolean(items[c]) && items[c].at === anchored);
+    /* The picture's spot holds the picture; a picture being drawn in the page's own frame; and a
+       sense with nothing drawn and nothing drawing its emoji instead of empty paper. */
+    const visualAt = (c) => !spotOn(c) ? ""
+      : picture && picture.drawing ? `<div class="card-frame">${pictureFrame(picture)}</div>`
+      : picture ? `<button class="card-pic" data-picture aria-label="Open the picture"><img src="${picture.src}" alt=""></button>`
+      : (s.emoji || x.emoji) ? `<button class="card-pic card-tile" data-picture aria-label="No picture yet — open to draw one"><span>${s.emoji || x.emoji}</span></button>`
+      : "";
     const glossLines = s.glosses.map((g) =>
       `<p class="card-gloss"><span class="lg">${esc(g.lang)}</span>${g.terms.map(esc).join(" · ")}</p>`).join("");
     const count = Math.max(items.length, 1);
     for (let c = 0; c < count; c++) {
       const item = items[c];
+      const visual = visualAt(c);
+      /* Only words: set as a quotation, with an ornament where a picture would be. */
+      const quoted = !visual && Boolean(item);
       cards.push({
         group: `s${i}`,
         chip: senseName(s) ? esc(senseName(s)) : String(i + 1),
@@ -642,10 +651,10 @@ function cardsFor(x) {
             <p class="card-def">${spoken(esc(s.definition), say(s.definition))}</p>
             ${glossLines}
           </div>
-          <div class="card-main">
-            ${pictureOn(c) ? `<button class="card-pic" data-picture aria-label="Open the picture"><img src="${picture.src}" alt=""></button>` : ""}
-            ${tile && c === 0 ? `<button class="card-pic card-tile" data-picture aria-label="No picture yet — open to draw one"><span>${tile}</span></button>` : ""}
-            ${item ? cardExample(item.e) : ""}
+          <div class="card-main${quoted ? " quoted" : ""}">
+            ${visual}
+            ${quoted ? '<span class="card-ornament" aria-hidden="true">⁂</span>' : ""}
+            ${item ? cardExample(item.e, quoted) : ""}
           </div>
           ${count > 1 ? `<span class="card-pos">${c + 1} / ${count}</span>` : ""}`
       });
@@ -673,8 +682,7 @@ function renderCards(x) {
       <header class="cards-head">
         <div class="cards-word">
           <span class="cw-emoji">${x.emoji || "\u{1F4C4}"}</span>
-          <h1 class="cw-headword">${esc(x.headword)}</h1>
-          ${say(x.headword, "always head")}
+          <div class="cw-line"><h1 class="cw-headword">${esc(x.headword)}</h1>${say(x.headword, "always head")}</div>
           ${x.reading ? `<span class="reading">${esc(x.reading)}</span>` : ""}
           ${x.ipa ? `<span class="ipa">${esc(x.ipa)}</span>` : ""}
         </div>
@@ -687,6 +695,8 @@ function renderCards(x) {
         <div class="cards-track" id="cardsTrack">
           ${cards.map((c, i) => `<article class="card" data-group="${c.group}" aria-label="Card ${i + 1} of ${cards.length}">${c.html}</article>`).join("")}
         </div>
+      </div>
+      <div class="cards-edges">
         <button class="cards-edge prev" data-step="-1" aria-label="Previous card">${ICON.back}</button>
         <button class="cards-edge next" data-step="1" aria-label="Next card">${ICON.back}</button>
       </div>

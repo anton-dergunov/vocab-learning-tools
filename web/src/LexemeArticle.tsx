@@ -418,18 +418,36 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
   const cards: Card[] = [];
   article.senses.forEach(({ sense, examples, images }, index) => {
     const items = orderedExamples(examples);
-    const picture = images.find((image) => imageStateOf(image) === "ready") ?? null;
-    const anchored = picture?.exampleId && items.some((example) => example.id === picture.exampleId)
-      ? picture.exampleId : null;
+    const record = images[0] ?? null;
+    const busy = pictures?.busy(sense.id) ?? false;
+    /* A picture goes on the card of the sentence it was drawn from — a clip's included — whatever
+       state it is in, so a picture being drawn appears where the finished one will. */
+    const anchored = record?.exampleId && items.some((example) => example.id === record.exampleId)
+      ? record.exampleId : null;
     const count = Math.max(items.length, 1);
     const name = senseName(sense);
+    const open = () => pictures?.open(sense.id, record);
     for (let position = 0; position < count; position += 1) {
       const example = items[position] ?? null;
-      const pictureHere = picture && (anchored ? example?.id === anchored : position === 0);
-      /* A sense with no picture to show opens on its emoji instead, so its first card is not a
-         definition floating over empty paper. It is the frame a picture would fill, and opens the
-         same dialog, where one can be drawn. */
-      const tile = !picture && position === 0 ? (sense.emoji ?? lexeme.emoji) : null;
+      const spot = anchored ? example?.id === anchored : position === 0;
+      const emoji = sense.emoji ?? lexeme.emoji;
+      /* What the picture's spot holds: the picture once drawn; the page's own frame while it is
+         pending, being drawn, failed or ruled out, so a card says "Drawing…" the way the page does;
+         and a sense with nothing drawn and nothing drawing opens on its emoji instead of empty
+         paper — the frame a picture would fill, opening the same dialog. */
+      const visual = !spot ? null
+        : record && imageStateOf(record) === "ready"
+          ? <CardPicture prompt={record} headword={lexeme.headword} busy={busy} onOpen={open} />
+        : record
+          ? <div className="card-frame"><SenseImage prompt={record} headword={lexeme.headword} busy={busy} onOpen={open} /></div>
+        : busy
+          ? <div className="card-frame"><EmptySenseImage busy onOpen={open} /></div>
+        : emoji
+          ? <EmojiTile emoji={emoji} onOpen={pictures ? open : undefined} />
+        : null;
+      /* A card that is only words is set as a quotation, with an ornament where a picture would be,
+         so the space reads as a margin rather than as something missing. */
+      const quoted = !visual && Boolean(example);
       const clip = example ? storedClipOf(example) : null;
       cards.push({
         group: `sense:${sense.id}`,
@@ -442,17 +460,11 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
               <span className="lg">{gloss.lang}</span>{gloss.terms.join(" · ")}
             </p>)}
           </div>
-          <div className="card-main">
-            {pictureHere && picture && <CardPicture
-              prompt={picture} headword={lexeme.headword}
-              busy={pictures?.busy(sense.id) ?? false}
-              onOpen={() => pictures?.open(sense.id, picture)}
-            />}
-            {tile && <EmojiTile
-              emoji={tile} busy={pictures?.busy(sense.id) ?? false}
-              onOpen={pictures ? () => pictures.open(sense.id, images[0] ?? null) : undefined}
-            />}
+          <div className={`card-main${quoted ? " quoted" : ""}`}>
+            {visual}
+            {quoted && <span className="card-ornament" aria-hidden="true">⁂</span>}
             {example && <div className={`card-ex${OWN_ORIGINS.has(example.origin) ? " own" : ""}${clip ? " clip-ex" : ""}`}>
+              {quoted && <span className="card-quote" aria-hidden="true">“</span>}
               <p className="t"><Spoken text={example.text} form={example.matchedForm}><Say onListen={onListen} /></Spoken></p>
               {example.translation && <p className="tr">
                 <Marked text={example.translation} form={example.matchedTranslationForm} />
@@ -530,8 +542,12 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
     <header className="cards-head">
       <div className="cards-word">
         <span className="cw-emoji" aria-hidden="true">{lexeme.emoji || "📄"}</span>
-        <h1 className="cw-headword">{lexeme.headword}</h1>
-        <Say head label={`Listen to ${lexeme.headword}`} onListen={onListen} />
+        {/* The word and its button share one inline line, where `vertical-align: middle` centres the
+            button on the word's lowercase letters rather than on the line box. */}
+        <div className="cw-line">
+          <h1 className="cw-headword">{lexeme.headword}</h1>
+          <Say head label={`Listen to ${lexeme.headword}`} onListen={onListen} />
+        </div>
         {lexeme.reading && <span className="reading">{lexeme.reading}</span>}
         {lexeme.ipa && <span className="ipa">{lexeme.ipa}</span>}
       </div>
@@ -557,6 +573,9 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
           data-card={index}
         >{card.body}</article>)}
       </div>
+    </div>
+    {/* Beside the column when there is margin for them, else a pair at the foot of the card. */}
+    <div className="cards-edges">
       <button type="button" className="cards-edge prev" aria-label="Previous card" disabled={at === 0} onClick={() => go(at - 1)}><BackIcon /></button>
       <button type="button" className="cards-edge next" aria-label="Next card" disabled={at >= cards.length - 1} onClick={() => go(at + 1)}><BackIcon /></button>
     </div>
@@ -774,6 +793,8 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, vie
           {/* Two lines beside the plate: the word with its play button, then how it sounds and what
               it is. Where it is filed trails that second line in small mono — it says something
               about the word, so it stays in view, but it should not cost a line of its own. */}
+          {/* Inline rather than flex: `vertical-align: middle` centres the button on the word's
+              lowercase letters, which is where the eye reads the word, at every size it wraps to. */}
           <div className="head-line">
             <h1 className={`headword${tint(head("headword"))}`}>
               <DiffText text={lexeme.headword} form={null} words={head("headword")?.words ?? null} />

@@ -110,31 +110,32 @@ export function SenseImage({ prompt, headword, busy, onOpen }: {
 /**
  * The same picture as a card shows it: as large as the card allows, with nothing around it.
  *
- * Only a picture that exists is drawn this way. One that is pending, failed or suppressed opens the
- * card on the sense's emoji instead (`EmojiTile`), because an empty frame with a status in it is a
- * worse first thing to see on a card than a glyph that means the word.
+ * Only a picture that exists is drawn this way. One that is pending, failed, suppressed or being
+ * drawn is shown in `SenseImage`'s own frame, so a card and the page say the same thing about it.
  */
 export function CardPicture({ prompt, headword, busy, onOpen }: {
   prompt: ImagePrompt; headword: string; busy: boolean; onOpen(): void;
 }) {
-  const { url } = usePicture(prompt.imageRef, prompt.revision);
+  const { url, error } = usePicture(prompt.imageRef, prompt.revision);
   return <button
     type="button" className="card-pic" onClick={onOpen}
     aria-label={prompt.prompt ? `Picture for ${headword}: ${prompt.prompt}` : `Picture for ${headword}`}
   >
-    {url && <img src={url} alt={prompt.prompt || ""} />}
+    {/* Still fetching, the spot says so quietly instead of being an unexplained gap. */}
+    {url ? <img src={url} alt={prompt.prompt || ""} /> : <span className="sense-image-empty">{error ?? "Loading…"}</span>}
     {busy && url && <span className="sense-image-working" role="status"><SyncIcon /><span>Redrawing…</span></span>}
   </button>;
 }
 
-/** A sense with no picture to show: its emoji, in the frame a picture would fill. */
-export function EmojiTile({ emoji, busy, onOpen }: { emoji: string; busy: boolean; onOpen?(): void }) {
+/**
+ * A sense with nothing drawn and nothing drawing: its emoji, in the frame a picture would fill.
+ * Work in progress is never shown here — that is the page's own frame, at the page's own size.
+ */
+export function EmojiTile({ emoji, onOpen }: { emoji: string; onOpen?(): void }) {
   return <button
-    type="button" className="card-pic card-tile" onClick={onOpen} disabled={!onOpen}
-    aria-label={busy ? "Drawing a picture" : "No picture yet"}
+    type="button" className="card-pic card-tile" onClick={onOpen} disabled={!onOpen} aria-label="No picture yet"
   >
     <span aria-hidden="true">{emoji}</span>
-    {busy && <span className="card-tile-status" role="status">Drawing…</span>}
   </button>;
 }
 

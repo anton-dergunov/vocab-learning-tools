@@ -82,6 +82,35 @@ describe("cards", () => {
     expect(within(first).getByText("your sentence")).toBeInTheDocument();
   });
 
+  it("shows a picture still being drawn in the page's own frame, not in place of the emoji", () => {
+    const graph = testGraph();
+    graph.imagePrompts[0] = { ...graph.imagePrompts[0], imageRef: null, attempts: 0 };
+    const busy: PictureSlot = { open: vi.fn(), busy: () => true };
+    render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} view="cards" onUnsupported={() => undefined} pictures={busy} />);
+    const itch = document.querySelector<HTMLElement>('[data-card="0"]')!;
+    expect(itch.querySelector(".card-frame .sense-image-frame")).not.toBeNull();
+    expect(within(itch).getByText("Drawing…")).toBeInTheDocument();
+    expect(itch.querySelector(".card-tile")).toBeNull();
+  });
+
+  it("sets a card that is only words as a quotation", () => {
+    const graph = testGraph();
+    graph.examples.push({
+      ...graph.examples.find((example) => example.id === "examplepicar010")!,
+      id: "examplepicar011", origin: "tatoeba", sourceAttestationId: null,
+      text: "La lana pica.", translation: "Wool itches.", matchedForm: "pica", matchedTranslationForm: "itches"
+    });
+    render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} view="cards" onUnsupported={() => undefined} pictures={pictures()} />);
+    const second = document.querySelector<HTMLElement>('[data-card="1"]')!;
+    expect(reads("La lana pica.", second)).toBe(true);
+    expect(second.querySelector(".card-main.quoted .card-quote")).not.toBeNull();
+    expect(second.querySelector(".card-ornament")).not.toBeNull();
+    // The picture stays on the card of the sentence it was drawn from.
+    expect(second.querySelector(".card-pic")).toBeNull();
+    // The arrows are outside the track, so they can move to the margins or to the foot of the card.
+    expect(document.querySelector(".cards-edges .cards-edge.next")).not.toBeNull();
+  });
+
   it("puts a picture on the card of the sentence it was drawn from, and an emoji where there is none", async () => {
     render(<LexemeArticle article={picar()} view="cards" onUnsupported={() => undefined} pictures={pictures()} />);
     const itch = document.querySelector<HTMLElement>('[data-card="0"]')!;

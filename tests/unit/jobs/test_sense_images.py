@@ -143,17 +143,21 @@ def test_the_learners_own_sentence_is_the_anchor():
     assert anchor["id"] == "e00000000000002"                                 # attestation beats llm
 
 
-def test_a_clip_never_anchors_a_picture():
-    """Sense two has one example and it is a clip, so the picture belongs to the sense instead.
+def test_a_clip_anchors_a_picture_when_it_is_the_only_sentence():
+    """Sense two has one example and it is a clip, so the picture is drawn from the clip's sentence.
 
-    Excluded rather than ranked last: ranking last still picks a clip when it is the only example,
-    and falling back to the sense is the wanted outcome rather than a worse one. A clip is real
-    footage of the situation, so drawing it re-renders what the learner is about to watch, and the
-    two are heading for separate full-screen surfaces where that would show the same thing twice.
+    A clip's sentence makes a good scene, and the picture and the clip share one card.
     """
     sense = build_articles(changes(), "es")[0].senses[1]
     assert [example["origin"] for example in sense.examples] == ["subtitle"]
-    assert anchor_for(sense) is None
+    assert anchor_for(sense)["origin"] == "subtitle"
+
+
+def test_a_written_sentence_outranks_a_clip():
+    sense = build_articles(changes(), "es")[0].senses[1]
+    written = {**sense.examples[0], "id": "e00000000000099", "origin": "tatoeba"}
+    richer = type(sense)(**{**sense.__dict__, "examples": [sense.examples[0], written]})
+    assert anchor_for(richer)["id"] == "e00000000000099"
 
 
 def test_a_generated_sentence_outranks_a_borrowed_one():
@@ -162,7 +166,7 @@ def test_a_generated_sentence_outranks_a_borrowed_one():
     from acervo.images.article import EXAMPLE_PREFERENCE
 
     assert EXAMPLE_PREFERENCE["llm"] < EXAMPLE_PREFERENCE["tatoeba"] < EXAMPLE_PREFERENCE["wiktionary"]
-    assert "subtitle" not in EXAMPLE_PREFERENCE
+    assert EXAMPLE_PREFERENCE["subtitle"] == max(EXAMPLE_PREFERENCE.values())
 
 
 def test_the_owners_topics_do_not_steer_the_picture():

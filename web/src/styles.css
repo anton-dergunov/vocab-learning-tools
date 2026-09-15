@@ -488,11 +488,16 @@ details.fold .fold-body { padding: 4px 0 18px; }
    and what changed is how much of it is on screen at once. */
 
 /* ── masthead ── */
-.head-line { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
-.head-line .headword { margin: 0; }
-/* Centring against the line box puts the button level with the ascenders; the eye reads the word's
-   x-height, which sits lower. */
-.head-line .say.head { margin-left: 4px; transform: translateY(4px); }
+/* One inline line, not a flex row. Centring the button on the line box put it level with the
+   ascenders, and a nudge in pixels was right at one size only; `vertical-align: middle` puts its centre
+   at the baseline plus half this font's x-height — the middle of the word's lowercase letters — at
+   every size the headword takes. */
+.head-line {
+  min-width: 0; text-wrap: balance;
+  font-family: var(--serif); font-weight: 700; font-size: clamp(34px, 6.5vw, 52px); line-height: 1.02;
+}
+.head-line .headword { display: inline; margin: 0; font-size: inherit; }
+.head-line .say.head { vertical-align: middle; margin: 0 0 0 .28em; }
 /* Baseline, not centre: a mono IPA, an italic serif and a small mono filing line only look level when
    their letters sit on one line. */
 .pron-row { align-items: baseline; column-gap: 14px; row-gap: 2px; margin-top: 8px; }
@@ -624,14 +629,15 @@ details.fold .fold-body { padding: 4px 0 18px; }
 
 .cards-head { flex: none; }
 .cards-word { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; }
-.cards-word .cw-emoji, .cards-word .say { align-self: center; }
+.cards-word .cw-emoji { align-self: center; }
+/* The word and its button as one inline line, for the same reason as the page's headword. */
+.cw-line { font-family: var(--serif); font-weight: 700; font-size: 30px; line-height: 1.05; }
+.cw-line .say.head { vertical-align: middle; margin: 0 0 0 .35em; }
 .cw-emoji {
   width: 40px; height: 40px; flex: none; display: grid; place-items: center; font-size: 22px;
   border-radius: 10px; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow);
 }
-.cw-headword {
-  position: relative; top: 2px; margin: 0; font-family: var(--serif); font-weight: 700; font-size: 30px; line-height: 1.05; letter-spacing: -.02em;
-}
+.cw-headword { display: inline; margin: 0; font-size: inherit; letter-spacing: -.02em; }
 .cards-word .say.head { width: 30px; height: 30px; }
 .cards-word .reading { margin: 0; font-size: 14px; }
 
@@ -691,6 +697,27 @@ details.fold .fold-body { padding: 4px 0 18px; }
 }
 .card-tile span { font-size: clamp(56px, 12vh, 104px); line-height: 1; }
 .card-tile:hover { border-color: var(--rule); }
+/* Still fetching a drawn picture: a quiet word in the spot, not an unexplained gap. */
+.card-pic .sense-image-empty { position: absolute; inset: 0; }
+/* A picture pending, being drawn, failed or ruled out: the page's own frame, square, shrinking with
+   the card like a picture does. */
+.card-frame { flex: 1 1 0; min-height: 150px; max-height: 420px; display: flex; justify-content: center; }
+.card-frame .sense-image { margin: 0; height: 100%; max-width: 100%; }
+.card-frame .sense-image-frame { height: 100%; width: auto; max-width: 100%; }
+/* A card that is only words, set as a quotation: an ornament where a picture would be and a hanging
+   quotation mark, so the space reads as a margin rather than as something missing. */
+.card-main.quoted { gap: clamp(20px, 7vh, 64px); }
+.card-ornament {
+  align-self: center; font-family: var(--serif); font-size: 28px; line-height: 1; letter-spacing: .3em;
+  color: var(--ink-3); opacity: .6; user-select: none; -webkit-user-select: none;
+}
+.card-quote {
+  display: block; height: .42em; margin: 0 0 6px -6px;
+  font-family: var(--serif); font-size: 84px; line-height: .8; color: var(--rule);
+  user-select: none; -webkit-user-select: none;
+}
+.card-main.quoted .card-ex { border-left: none; padding-left: 0; }
+
 .card-ex { flex: none; padding-left: 14px; border-left: 2px solid var(--rule); }
 .card-ex.own { border-left-color: var(--core); }
 .card-ex.clip-ex { border-left-style: dotted; }
@@ -707,21 +734,31 @@ details.fold .fold-body { padding: 4px 0 18px; }
   font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); letter-spacing: .06em;
 }
 
-/* Arrows for a mouse: faint at the edges, clearer as the pointer arrives. A touch screen swipes. */
+/* Arrows for a mouse. Where the column has margin beside it they sit there, faint until the pointer
+   arrives; where it does not, they are a pair at the foot of the card, so they never cover a word.
+   A touch screen swipes. */
+.cards { position: relative; }
+.cards-edges { flex: none; display: flex; justify-content: center; gap: 12px; padding-top: 8px; }
 .cards-edge {
-  position: absolute; top: 50%; transform: translateY(-50%);
   width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
   background: var(--surface); border: 1px solid var(--rule); color: var(--ink-2); box-shadow: var(--shadow);
-  opacity: .28; transition: opacity .15s;
+  opacity: .6; transition: opacity .15s;
 }
 .cards-edge svg { width: 18px; height: 18px; }
-.cards-edge.prev { left: -8px; }
-.cards-edge.next { right: -8px; }
 .cards-edge.next svg { transform: scaleX(-1); }
-.cards-stage:hover .cards-edge { opacity: .6; }
-.cards-stage .cards-edge:hover { opacity: 1; }
-.cards-edge:disabled { opacity: 0 !important; pointer-events: none; }
-@media (hover: none) { .cards-edge { display: none; } }
+.cards-edge:hover { opacity: 1; }
+.cards-edge:disabled { opacity: .25; pointer-events: none; }
+@container vp (min-width: 1040px) {
+  .cards-edges { display: contents; }
+  /* A little above the middle: beside where the sentence is read, not the geometric centre. */
+  .cards-edge { position: absolute; top: 42%; transform: translateY(-50%); opacity: .28; }
+  .cards-edge.prev { left: -72px; }
+  .cards-edge.next { right: -72px; }
+  .cards:hover .cards-edge { opacity: .6; }
+  .cards .cards-edge:hover { opacity: 1; }
+  .cards-edge:disabled { opacity: 0; }
+}
+@media (hover: none) { .cards-edges, .cards-edge { display: none; } }
 
 /* ══════════════════════════ external dictionaries ══════════════════════════
    Everything here is a word that is NOT yours. It shares the article's type and rhythm on purpose —
@@ -1976,6 +2013,11 @@ details.fold .fold-body { padding: 4px 0 18px; }
 }
 @container vp (max-width: 720px) {
   .app.article-open { grid-template-columns: minmax(0,1fr); }
+  /* On a phone the word is the whole screen: search, Add and settings are one Back away, and a row
+     of them above a word you are reading is a row of words you are not. A tablet keeps them. */
+  .app.article-open { grid-template-rows: 0 0 minmax(0,1fr); }
+  .app.article-open .topbar { display: none; }
+  .app.article-open .main .pane { padding-top: max(12px, env(safe-area-inset-top)); }
   /* One line per section heading: "01 · 🎭 theater", "✳ Where you met it". */
   .sec > .rail-l { margin-bottom: 8px; }
   /* The caret moves to the end of the line: a phone has no gutter left of the text to put it in. */
@@ -1986,10 +2028,9 @@ details.fold .fold-body { padding: 4px 0 18px; }
   .main.cards-on .pane { padding: 12px 16px 10px; }
   .main.cards-on .art-bar { margin-bottom: 8px; }
   .art-where { display: none; }
-  .cw-headword { font-size: 27px; }
+  .cw-line { font-size: 27px; }
   .card { padding-top: 12px; gap: 12px; }
   .card-ex .t { font-size: 20.5px; }
-  .head-line { gap: 10px; }
   .say.head { width: 28px; height: 28px; }
   .card-ex .tr { font-size: 16px; }
   .att.has-photo { grid-template-columns: 64px minmax(0,1fr); gap: 12px; }

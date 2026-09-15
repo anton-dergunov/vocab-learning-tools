@@ -402,6 +402,12 @@ by the same model.
 
 ### 14 · A clip never anchors a picture
 
+> **SUPERSEDED (September 2026): a clip now ranks last instead of being excluded.** In use, a clip's
+> sentence made a good scene, and the redesigned article puts a picture and its clip on one card
+> rather than on two full-screen surfaces. The order is `attestation`, `manual`, `llm`, `tatoeba`,
+> `wiktionary`, `subtitle`; a clip anchors only a sense with no other sentence. The reasoning below is
+> kept as the record of why it was first excluded.
+
 `src/acervo/images/article.py` ranks example origins for the image brief writer, and `subtitle`
 currently sits third — above `llm`, which is last. Left alone, the first real clip would become the
 preferred thing to illustrate.

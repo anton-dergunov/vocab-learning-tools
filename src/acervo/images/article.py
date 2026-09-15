@@ -16,32 +16,24 @@ __all__ = ["ArticleView", "SenseView", "anchor_for", "build_articles", "drawn_se
 # Which example a picture is drawn from, best first. A generated example outranks Tatoeba and
 # Wiktionary because it was written for *this* sense, in the vocabulary's own languages, carrying a
 # translation and both matched forms; the other two are chosen for neither and read worse.
-EXAMPLE_PREFERENCE = {"attestation": 0, "manual": 1, "llm": 2, "tatoeba": 3, "wiktionary": 4}
-
-# A clip never anchors a picture, and it is excluded rather than ranked last. Ranking it last would
-# still pick it when it is the only example, and falling back to the sense is the wanted outcome
-# rather than a worse one: the clip is real footage of the situation, so illustrating it re-renders
-# what the learner is about to watch, and the two are heading for separate full-screen surfaces
-# where one sentence drawn twice would show the same thing twice.
-UNANCHORABLE_ORIGINS = frozenset({"subtitle"})
+#
+# A clip ranks last rather than being excluded. It used to be excluded, on the theory that drawing
+# real footage re-renders what the learner is about to watch; in practice a clip's sentence makes a
+# good scene, and the picture and the clip share one card rather than two full-screen surfaces. So a
+# clip anchors only a sense that has no other sentence.
+EXAMPLE_PREFERENCE = {"attestation": 0, "manual": 1, "llm": 2, "tatoeba": 3, "wiktionary": 4, "subtitle": 5}
 
 
 def anchor_for(sense: SenseView) -> dict | None:
     """The example this sense's picture illustrates, or nothing — which is a supported state.
 
     Nothing means "the picture belongs to the sense": the brief writer invents the scene from the
-    definition and the glosses instead. That is the right answer for a sense with no examples and
-    for one whose only example is a clip.
+    definition and the glosses instead. That is the answer only for a sense with no examples at all.
     """
-    candidates = [
-        example
-        for example in sense.examples
-        if example.get("origin", "llm") not in UNANCHORABLE_ORIGINS
-    ]
-    if not candidates:
+    if not sense.examples:
         return None
     return min(
-        candidates,
+        sense.examples,
         key=lambda example: (
             EXAMPLE_PREFERENCE.get(example.get("origin", "llm"), 9),
             example.get("createdAt", ""),
