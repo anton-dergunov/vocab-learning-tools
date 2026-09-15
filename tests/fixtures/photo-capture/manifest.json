@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "coordinates": "normalised: x and y in [0, 1] from the top-left of the image as stored",
+  "truthShape": {
+    "lines": "transcription of the central, legible lines, top to bottom, exactly as printed",
+    "taps": [
+      {
+        "x": "number",
+        "y": "number",
+        "word": "the word under the tap, as printed",
+        "sentence": "the whole sentence it belongs to, joined across line breaks and hyphenation",
+        "unit": "the lexical unit a learner meant, which may be several words"
+      }
+    ]
+  },
+  "images": [
+    {
+      "file": "camera-01.jpg",
+      "kind": "camera",
+      "source": "book-history",
+      "notes": "Full page, dense text, curving at the bottom and softer toward the edges.",
+      "truth": null
+    },
+    {
+      "file": "camera-02.jpg",
+      "kind": "camera",
+      "source": "book-history",
+      "notes": "The same page as camera-01, taken a moment later: a check that two captures read the same.",
+      "truth": null
+    },
+    {
+      "file": "camera-03.jpg",
+      "kind": "camera",
+      "source": "book-history",
+      "notes": "Landscape, larger type, the last line cut off by the frame.",
+      "truth": null
+    },
+    {
+      "file": "camera-04.jpg",
+      "kind": "camera",
+      "source": "book-history",
+      "notes": "Close up, large type. Lines are cut off at the right edge and a fingertip is in frame.",
+      "truth": null
+    },
+    {
+      "file": "camera-05.jpg",
+      "kind": "camera",
+      "source": "book-tango",
+      "notes": "Full page, small type, footnotes, strong perspective.",
+      "truth": null
+    },
+    {
+      "file": "camera-06.jpg",
+      "kind": "camera",
+      "source": "book-tango",
+      "notes": "A closer framing of the passage in camera-05.",
+      "truth": null
+    },
+    {
+      "file": "camera-07.jpg",
+      "kind": "camera",
+      "source": "book-tango",
+      "notes": "Tilted page, italics, superscript note markers.",
+      "truth": null
+    },
+    {
+      "file": "camera-08.jpg",
+      "kind": "camera",
+      "source": "book-tango",
+      "notes": "Close up of one passage with lines cut off at the right edge and a section heading.",
+      "truth": null
+    },
+    {
+      "file": "camera-09.jpg",
+      "kind": "camera",
+      "source": "book-tango",
+      "notes": "The passage in camera-08, framed wider and tilted, with the start of each line cut off at the left.",
+      "truth": null
+    },
+    {
+      "file": "screen-01.png",
+      "kind": "screenshot",
+      "source": "sources/tangoba-clasificatorias.txt",
+      "notes": "Bold body text below a photograph.",
+      "truth": null
+    },
+    {
+      "file": "screen-02.png",
+      "kind": "screenshot",
+      "source": "sources/perfil-mundial-tango.txt",
+      "notes": "Serif headline and standfirst, a photograph with a caption, an advert.",
+      "truth": null
+    },
+    {
+      "file": "screen-03.png",
+      "kind": "screenshot",
+      "source": "sources/malba.txt",
+      "notes": "A floating browser control covers the ends of several lines.",
+      "truth": null
+    },
+    {
+      "file": "screen-04.png",
+      "kind": "screenshot",
+      "source": "sources/malba.txt",
+      "notes": "Body text, a contact box in white on grey, and a map with street labels.",
+      "truth": null
+    }
+  ]
+}
