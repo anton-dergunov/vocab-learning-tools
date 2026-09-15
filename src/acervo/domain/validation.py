@@ -37,6 +37,7 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
     },
     "senses": {
         "definition": (True, 2000), "definition_lang": (True, 35), "domain": (False, 120),
+        "emoji": (False, 32),
     },
     "attestations": {
         "text": (True, 5000), "translation": (False, 5000), "source_title": (False, 500),

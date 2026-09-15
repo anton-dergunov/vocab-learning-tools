@@ -35,6 +35,14 @@ const SESSION = {
 const DATASET = "dataset00000001";
 
 /** The server numbers every row it hands back; the cursor is the highest of them. */
+/**
+ * A sentence, found by its whole paragraph. Its last word shares a no-wrap span with the listen button
+ * so the button cannot wrap alone, which splits the text across two elements `getByText` reads
+ * separately.
+ */
+const sentence = (text: string) => (_: string, element: Element | null) =>
+  element?.tagName === "P" && element.textContent === text;
+
 function numberedGraph() {
   const graph = testGraph();
   let revision = 0;
@@ -127,11 +135,11 @@ function mockGarfioCapture() {
     draft: {
       id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null,
       ipa: null, pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "🪝",
-      topics: ["Travel"], status: "inbox", shortGloss: "hook", notes: [],
+      topics: ["Travel"], status: "active", shortGloss: "hook", notes: [],
       senses: [{
         id: "sense0000000091", order: 0, definition: "Gancho de metal curvo y puntiagudo.",
         definitionLang: "es", glosses: [{ lang: "en", terms: ["hook", "grappling hook"] }],
-        domain: null, images: [],
+        domain: null, emoji: null, images: [],
         examples: [{
           id: "example00000091", text: "El disfraz de pirata viene con un garfio.", textLang: "es",
           translation: "The pirate costume comes with a hook.", translationLang: "en",
@@ -139,8 +147,7 @@ function mockGarfioCapture() {
           origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
           videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
           clipRef: null, imageRef: null, audioRef: null,
-          note: null, matchedForm: "un garfio", matchedTranslationForm: "hook",
-          approved: false
+          note: null, matchedForm: "un garfio", matchedTranslationForm: "hook"
         }]
       }],
       attestations: [{
@@ -417,15 +424,13 @@ describe("Acervo application", () => {
     // `la balsa` is how a Spanish learner needs to see the word; `balsa` is how a dictionary is
     // keyed. Only the first was ever asked for, so every gendered noun missed.
     fireEvent.click(await screen.findByRole("button", { name: /la balsa/ }));
-    const details = (await screen.findByText("Other dictionaries")).closest("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
+    fireEvent.click((await screen.findByText("Other dictionaries")).closest("button")!);
     await waitFor(() => expect(lookupDictionaries)
       .toHaveBeenCalledWith("la balsa", "es", ["device", "server"], ["balsa"]));
     expect(await screen.findByText(/“la balsa” or “balsa”/)).toBeInTheDocument();
   });
 
-  it("looks a word up in the dictionaries only when the fold is opened", async () => {
+  it("looks a word up in the dictionaries only when their section is opened", async () => {
     signedIn();
     vi.mocked(lookupDictionaries).mockResolvedValue([]);
     await openList();
@@ -435,28 +440,47 @@ describe("Acervo application", () => {
     // Reading your own article must not quietly issue byte-range reads on the chance you are curious.
     expect(lookupDictionaries).not.toHaveBeenCalled();
 
-    const details = fold.closest("details") as HTMLDetailsElement;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
+    fireEvent.click(fold.closest("button")!);
     await waitFor(() => expect(lookupDictionaries)
       .toHaveBeenCalledWith("picar", "es", ["device", "server"], ["picar"]));
     expect(await screen.findByText(/No dictionary on this device or your server holds/))
       .toBeInTheDocument();
   });
 
-  it("opens the article with its senses, lineage, schedule and provenance", async () => {
+  it("opens the article with its senses, where you met it, and details folded away", async () => {
     signedIn();
     await openList();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     expect(await screen.findByRole("heading", { name: "picar" })).toBeInTheDocument();
     expect(screen.getByText("/piˈkaɾ/")).toBeInTheDocument();
-    expect(screen.getByText("Producir comezón.")).toBeInTheDocument();
-    expect(screen.getByText("Cortar en trozos pequeños.")).toBeInTheDocument();
-    expect(screen.getByText("unapproved")).toBeInTheDocument();
-    expect(screen.getByText(/Comiendo en un mercado/)).toBeInTheDocument();
-    expect(screen.getByText(/starts at 7:41/)).toBeInTheDocument();
-    expect(screen.getByText("cuidado que esa salsa pica un monton")).toBeInTheDocument();
+    // Plain words, not "v." — and no language code, because the vocabulary is already chosen.
+    expect(screen.getByText("verb")).toBeInTheDocument();
+    expect(screen.getByText(sentence("Producir comezón."))).toBeInTheDocument();
+    expect(screen.getByText(sentence("Cortar en trozos pequeños."))).toBeInTheDocument();
+    // Nothing on the reading surface about approval, models or where a clip starts.
+    expect(screen.queryByText("unapproved")).toBeNull();
+    expect(screen.queryByText(/starts at/)).toBeNull();
+    // A clip's title is made quiet by rule, and it is removed from its dialog rather than the page.
+    expect(screen.getByText(/comiendo en un mercado/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove this clip" })).toBeNull();
+    // Study state is a fact about the record, so it waits in Details until asked for.
+    expect(screen.queryByText("18.3")).toBeNull();
+    fireEvent.click(screen.getByText("Details").closest("button")!);
     expect(screen.getByText("18.3")).toBeInTheDocument();
+  });
+
+  it("shows a sentence you supplied once, in its sense, rather than again under where you met it", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    await screen.findByRole("heading", { name: "picar" });
+    const graph = repository.snapshot();
+    const linked = graph.examples.find((example) => example.sourceAttestationId && !example.deleted);
+    const attestation = graph.attestations.find((record) => record.id === linked?.sourceAttestationId);
+    expect(attestation).toBeTruthy();
+    expect(document.querySelector(`[data-record="${attestation!.id}"]`)).toBeNull();
+    expect(within(document.querySelector(`[data-record="${linked!.id}"]`) as HTMLElement)
+      .getByText("your sentence")).toBeInTheDocument();
   });
 
   it("projects the open record as YAML", async () => {
@@ -552,7 +576,7 @@ describe("Acervo application", () => {
     signedIn();
     await openList();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Listen to picar" }));
     expect(await screen.findByText("Audio is not wired up yet")).toBeInTheDocument();
   });
 
@@ -597,10 +621,10 @@ describe("Acervo application", () => {
     // The proposal arrives rendered, not serialized: reviewing a generated entry is reading the
     // thing you are about to get, in the component a stored entry uses.
     expect(await screen.findByRole("heading", { name: "el garfio" })).toBeInTheDocument();
-    expect(screen.getByText("Gancho de metal curvo y puntiagudo.")).toBeInTheDocument();
+    expect(screen.getByText(sentence("Gancho de metal curvo y puntiagudo."))).toBeInTheDocument();
     expect(screen.getByText("grappling hook")).toBeInTheDocument();
-    // Provenance is on the face of it, which is what makes the review worth doing.
-    expect(screen.getByText("attestation")).toBeInTheDocument();
+    // The one provenance worth reading while reviewing: which sentence is yours.
+    expect(screen.getByText("your sentence")).toBeInTheDocument();
     // Nothing is stored, so there is no id, revision or date to claim there is.
     expect(document.querySelector(".meta-foot")).toBeNull();
 
@@ -621,7 +645,8 @@ describe("Acervo application", () => {
 
     const saved = repository.snapshot();
     const lexeme = saved.lexemes.find((record) => record.headword === "el garfio");
-    expect(lexeme?.status).toBe("inbox");
+    // Reviewed before it was saved, so it is an ordinary word rather than an Inbox one.
+    expect(lexeme?.status).toBe("active");
     const attestation = saved.attestations.find((record) => record.lexemeId === lexeme?.id);
     const example = saved.examples.find((record) => record.text.startsWith("El disfraz"));
     // Provenance is the point: the sentence survives as its own record, and the example says so.
@@ -769,7 +794,7 @@ describe("Acervo application", () => {
     // Wrap and numbers describe this screen, not the vocabulary, so they live in settings rather
     // than as controls you step over on the way to the editor.
     const settings = within(await screen.findByRole("dialog", { name: /Settings/ }));
-    fireEvent.click(settings.getByRole("tab", { name: "Editor" }));
+    fireEvent.click(settings.getByRole("tab", { name: "Reading" }));
     fireEvent.click(settings.getByRole("checkbox", { name: /Show line numbers/ }));
     fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
 

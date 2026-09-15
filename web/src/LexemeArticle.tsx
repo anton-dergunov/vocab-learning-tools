@@ -1,22 +1,85 @@
-import { Fragment, useState } from "react";
+/**
+ * One article, two ways to read it.
+ *
+ * **Page** is the whole entry scrolled top to bottom, and is where the conversation lives: an edit
+ * that reorders senses needs every sense in view, and a proposal's marks are drawn here. **Cards**
+ * is one thing at a time, swiped left and right, for glancing at a word on a phone. Both draw from
+ * the same `Article` and neither has anything the other lacks except the ask dock and the marks.
+ *
+ * What used to sit under a sentence as a badge — origin, model, the picture's style, where a clip
+ * starts — is not on the reading surface. Nobody reads them while learning a word; your own sentence
+ * keeps one quiet tag, and what else is worth keeping is in Details.
+ */
+
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ClipDialog } from "./ClipDialog";
 import { storedClipOf, type StoredClip } from "./clips";
-import type { Example, Gloss, ImagePrompt } from "./domain";
-import { formatClock, formatDay } from "./format";
-import { DictionaryFold } from "./ExternalArticle";
+import type { Attestation, Example, Gloss, ImagePrompt, Lexeme, Sense } from "./domain";
+import type { ArticleView } from "./editorPreferences";
+import { formatDay } from "./format";
+import { DictionaryEntries } from "./ExternalArticle";
 import type { ExternalEntry } from "./externalEntries";
 import type { Change, Mark } from "./articleEdit";
-import { AskIcon, PlayIcon } from "./icons";
+import { AskIcon, BackIcon, BookIcon, CaretIcon, FilmIcon, InfoIcon, PlayIcon } from "./icons";
 import type { DiffPart } from "./wordDiff";
 import type { Article, ArticleSense } from "./selectors";
-import { EmptySenseImage, SenseImage } from "./SenseImage";
+import { CardPicture, EmojiTile, EmptySenseImage, SenseImage, imageStateOf } from "./SenseImage";
 
-const POS_LABEL: Record<string, string> = {
-  noun: "n.", verb: "v.", adj: "adj.", adv: "adv.", phrase: "phr.", idiom: "idiom", expression: "expr."
+/* Plain words rather than a grammarian's abbreviations: "noun, feminine", not "n. · f.". */
+const POS_WORD: Record<string, string> = {
+  noun: "noun", verb: "verb", adj: "adjective", adv: "adverb", phrase: "phrase", idiom: "idiom", expression: "expression"
 };
-const GENDER_LABEL: Record<string, string> = { feminine: "f.", masculine: "m.", common: "c.", neuter: "n." };
+const REGISTER_WORD: Record<string, string> = { colloquial: "informal", formal: "formal", slang: "slang", vulgar: "vulgar" };
 /** Origins that came out of your own reading rather than a corpus or a model. */
 const OWN_ORIGINS = new Set(["attestation", "manual"]);
+const AUDIO_PENDING = "Audio is not wired up yet";
+
+export function grammarWords(lexeme: Lexeme): string {
+  const bits = [(POS_WORD[lexeme.pos] ?? lexeme.pos) + (lexeme.gender ? `, ${lexeme.gender}` : "")];
+  if (lexeme.register && lexeme.register !== "neutral") bits.push(REGISTER_WORD[lexeme.register] ?? lexeme.register);
+  if (lexeme.dialect) bits.push(lexeme.dialect);
+  return bits.join(" · ");
+}
+
+/** Where the word is filed, as a quiet line rather than a row of chips. */
+function placeLine(article: Article): string {
+  const status = article.lexeme.status === "inbox" ? "Inbox" : article.lexeme.status === "learned" ? "Learned" : null;
+  return [status, article.topics.map((topic) => topic.name).join(", ")].filter(Boolean).join(" — ");
+}
+
+/**
+ * A video title is the loudest text a creator can write and the least useful thing on the page, so
+ * it is made quiet by rule rather than by taste: hashtags and emoji out, everything lower case.
+ */
+export function quietTitle(title: string): string {
+  return title
+    .replace(/#[\p{L}\p{N}_]+/gu, " ")
+    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}]/gu, "")
+    .replace(/\s*[|•]\s*/g, " · ")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s·:\-–—]+|[\s·:\-–—]+$/g, "")
+    .toLowerCase();
+}
+
+const isClip = (example: Example) => Boolean(example.videoRef);
+
+/** Written examples first, clips last: a clip is the least legible way to meet a sentence. */
+function orderedExamples(examples: Example[]): Example[] {
+  return [...examples.filter((example) => !isClip(example)), ...examples.filter(isClip)];
+}
+
+/**
+ * A sentence you supplied is shown once, in its sense. "Where you met it" keeps only the ones no
+ * example was drawn from — which is also where a photo of the page will go when photo capture keeps
+ * one.
+ */
+export function looseAttestations(article: Article): Attestation[] {
+  const used = new Set(article.senses.flatMap(({ examples }) =>
+    examples.map((example) => example.sourceAttestationId).filter(Boolean)));
+  return article.attestations.filter((attestation) => !used.has(attestation.id));
+}
+
+export const senseName = (sense: Sense) => sense.domain ? `${sense.emoji ? `${sense.emoji} ` : ""}${sense.domain}` : "";
 
 /** Renders the sentence with the matched surface form emphasised, without storing markup. */
 function Marked({ text, form }: { text: string; form: string | null }) {
@@ -34,7 +97,7 @@ const MARK_CLASS: Record<Mark, string> = {
    a stray bracket, and a minus pairs with the plus at a glance. The colour and the strikethrough
    are what actually carry it; the glyph is for when neither is available. */
 const MARK_GLYPH: Record<Mark, string> = {
-  added: "+", changed: "~", removed: "\u2212", moved: "\u2195"
+  added: "+", changed: "~", removed: "−", moved: "↕"
 };
 const marked = (mark: Mark | null) => (mark ? ` mark ${MARK_CLASS[mark]}` : "");
 
@@ -69,6 +132,40 @@ function DiffText({ text, form, words }: { text: string; form: string | null; wo
       </span>)}</>;
 }
 
+/** A small listen button after a sentence. */
+function Say({ label = "Listen", head = false, onListen }: { label?: string; head?: boolean; onListen(): void }) {
+  return <button
+    type="button" className={`say${head ? " always head" : ""}`} aria-label={label} onClick={onListen}
+  ><PlayIcon /></button>;
+}
+
+/**
+ * A sentence with its listen button glued to the last word.
+ *
+ * A button is a break opportunity on both sides, and one that wraps onto a line of its own reads as a
+ * stray control. So the last word and the button share a no-wrap span. Not an invisible joiner
+ * character: that becomes part of the sentence for everything that reads its text, a copy included.
+ * Left unglued while a proposal marks the words, and when the emphasised form straddles the last
+ * space, because either would have to be cut in two.
+ */
+function Spoken({ text, form, words = null, children }: {
+  text: string; form: string | null; words?: DiffPart[] | null; children: ReactNode;
+}) {
+  const space = text.trimEnd().lastIndexOf(" ");
+  const at = form ? text.indexOf(form) : -1;
+  const straddles = form !== null && at >= 0 && at <= space && at + form.length > space;
+  if (words || space < 0 || straddles) {
+    return <><DiffText text={text} form={form} words={words} />{children}</>;
+  }
+  const lead = text.slice(0, space + 1);
+  const tail = text.slice(space + 1);
+  const inLead = at >= 0 && at + (form?.length ?? 0) <= space;
+  return <>
+    <Marked text={lead} form={inLead ? form : null} />
+    <span className="say-tail"><Marked text={tail} form={inLead ? null : form} />{children}</span>
+  </>;
+}
+
 function AskAnchor({ ask, target }: { ask: AskSlot | null; target: AskTarget }) {
   if (!ask) return null;
   const on = ask.focused === target.id;
@@ -80,17 +177,6 @@ function AskAnchor({ ask, target }: { ask: AskSlot | null; target: AskTarget }) 
   ><AskIcon /></button>;
 }
 
-function GrammarLine({ article }: { article: Article }) {
-  const { lexeme } = article;
-  const bits = [POS_LABEL[lexeme.pos] ?? lexeme.pos];
-  if (lexeme.gender) bits.push(GENDER_LABEL[lexeme.gender] ?? lexeme.gender);
-  bits.push(lexeme.language);
-  if (lexeme.register && lexeme.register !== "neutral") bits.push(lexeme.register);
-  if (lexeme.dialect) bits.push(lexeme.dialect);
-  return <p className="gram">{bits.map((bit, index) =>
-    <Fragment key={bit}>{index > 0 && <span className="sep">·</span>}<span>{bit}</span></Fragment>)}</p>;
-}
-
 function GlossLine({ gloss }: { gloss: Gloss }) {
   return <div className="gloss-line">
     <span className="lg">{gloss.lang}</span>
@@ -99,10 +185,42 @@ function GlossLine({ gloss }: { gloss: Gloss }) {
   </div>;
 }
 
-function ExampleBlock({ example, onUnsupported, onPlayClip, clips, marks = null, ask = null,
-                       label = "" }: {
-  example: Example; onUnsupported(message: string): void; onPlayClip(clip: StoredClip): void;
-  clips: ClipSlot | null;
+/** Calm, but plainly a thing to press: an outlined pill with a film icon, in ink rather than teal. */
+function ClipLine({ clip, onPlay }: { clip: StoredClip; onPlay(): void }) {
+  const source = [clip.videoTitle ? quietTitle(clip.videoTitle) : null, clip.videoChannel?.toLowerCase() ?? null]
+    .filter(Boolean).join(" · ") || "clip";
+  return <button type="button" className="clip-line" onClick={onPlay} aria-label={`Play the clip: ${source}`}>
+    <span className="film"><FilmIcon /></span><span className="src">{source}</span>
+  </button>;
+}
+
+function OwnTag() {
+  return <span className="own-tag">your sentence</span>;
+}
+
+/* ── Page ───────────────────────────────────────────────────────────────── */
+
+/**
+ * A section of the page that folds on its own.
+ *
+ * Folded, it is one line — icon and name across the whole width — rather than the rail's stacked
+ * three, which is what a folded Details used to cost.
+ */
+function FoldingSection({ folded, onToggle, rail, className = "", record, children }: {
+  folded: boolean; onToggle(): void; rail: ReactNode; className?: string; record?: string; children: ReactNode;
+}) {
+  return <section className={`sec${folded ? " folded" : ""}${className}`} data-record={record}>
+    <div className="rail-l">
+      <button type="button" className="inner sec-toggle" aria-expanded={!folded} onClick={onToggle}>
+        <span className="caret" aria-hidden="true"><CaretIcon /></span>{rail}
+      </button>
+    </div>
+    {!folded && <div className="body">{children}</div>}
+  </section>;
+}
+
+function ExampleBlock({ example, onListen, onPlayClip, marks = null, ask = null, label = "" }: {
+  example: Example; onListen(): void; onPlayClip(example: Example): void;
   marks?: MarkSlot | null;
   ask?: AskSlot | null;
   label?: string;
@@ -111,147 +229,417 @@ function ExampleBlock({ example, onUnsupported, onPlayClip, clips, marks = null,
   const own = OWN_ORIGINS.has(example.origin);
   const clip = storedClipOf(example);
   /* A removed block is drawn where it was so nothing vanishes without being seen going — but its id
-     is a real record id, so every control has to go with it. "Remove this clip" on a ghost would
-     act on a record the proposal is already deleting. */
+     is a real record id, so every control has to go with it. */
   const gone = mark === "removed";
   const moved = (field: string) => marks?.field(example.id, field) ?? null;
-  return <div className={`ex ${own ? "own" : ""}${marked(mark)}`} data-record={example.id}>
+  return <div className={`ex${own ? " own" : ""}${clip ? " clip-ex" : ""}${marked(mark)}`} data-record={example.id}>
     <MarkGlyph mark={mark} />
-    <p className="t">
-      <DiffText text={example.text} form={example.matchedForm} words={moved("text")?.words ?? null} />
-    </p>
-    {example.translation &&
-      <p className="tr">
+    <div className="ex-text">
+      <p className="t">
+        <Spoken text={example.text} form={example.matchedForm} words={moved("text")?.words ?? null}>
+          {!gone && <Say onListen={onListen} />}
+        </Spoken>
+      </p>
+      {example.translation && <p className="tr">
         <DiffText
           text={example.translation} form={example.matchedTranslationForm}
           words={moved("translation")?.words ?? null}
         />
       </p>}
-    <div className="foot">
-      <span className={`prov ${own ? "own" : ""}`}>{example.origin}</span>
-      {example.modelId && <span className="label">{example.modelId}</span>}
-      {!example.approved && <span className="prov warnk">unapproved</span>}
-      {!gone && example.audioRef && <button className="play mini" onClick={() => onUnsupported("Audio is not wired up yet")}>
-        <PlayIcon />Play
-      </button>}
-      <span className="spacer" />
-      {!gone && <AskAnchor ask={ask} target={{ kind: "example", id: example.id, label }} />}
+      {own && <OwnTag />}
+      {example.note && <p className="tr ex-note">
+        ✎ <DiffText text={example.note} form={null} words={moved("note")?.words ?? null} />
+      </p>}
+      {clip && !gone && <ClipLine clip={clip} onPlay={() => onPlayClip(example)} />}
     </div>
-    {example.note && <p className="tr ex-note">
-      ✎ <DiffText text={example.note} form={null} words={moved("note")?.words ?? null} />
-    </p>}
-    {clip && !gone && <button className="clip" style={{ marginTop: 10 }} onClick={() => onPlayClip(clip)}>
-      <span className="pl"><PlayIcon /></span>
-      <span className="ti">{clip.videoTitle ?? "Clip"}
-        <span>
-          {clip.videoChannel ? `${clip.videoChannel} · ` : "clip · "}
-          starts at {formatClock(clip.videoStart)}
-        </span></span>
-    </button>}
-    {/* Removal is an ordinary tombstone, deliberately not a picture's `suppressed` field — and it
-        is safe only because the clip search is one-shot at save. The id is derived from the sense
-        and the segment, so a later re-search that chose the same segment would write at the
-        tombstone's id and bring it back; nothing re-searches, so nothing can. A rescan has to add
-        a suppression field before it ships, exactly as the image pipeline had to. */}
-    {clip && !gone && example.origin === "subtitle" && clips && <button
-      className="link-btn clip-remove"
-      onClick={() => clips.remove(example.id)}
-    >Remove this clip</button>}
+    {!gone && <AskAnchor ask={ask} target={{ kind: "example", id: example.id, label }} />}
   </div>;
 }
 
-/**
- * Where a picture goes: under the sentence it was drawn from, or under the sense when it names none.
- *
- * The record says which — `exampleId` is the anchor the brief writer chose — so the picture sits
- * beside the thing it illustrates rather than in a fold at the bottom of the sense. A sense with no
- * prompt row at all still shows a frame, so the article has one shape whether or not a word has been
- * through the pipeline.
- */
-function SenseSection({ entry, index, headword, pictures, clips, onUnsupported, onPlayClip,
+function SenseSection({ entry, index, headword, pictures, clips, folded, onToggle, onListen, onPlayClip,
                        marks = null, ask = null }: {
   entry: ArticleSense; index: number; headword: string;
   pictures: PictureSlot | null;
   clips: ClipSlot | null;
-  onUnsupported(message: string): void;
-  onPlayClip(clip: StoredClip): void;
+  folded: boolean; onToggle(): void;
+  onListen(): void;
+  onPlayClip(example: Example): void;
   marks?: MarkSlot | null;
   ask?: AskSlot | null;
 }) {
   const { sense, examples, images } = entry;
-  const anchored = new Map(images.filter((image) => image.exampleId).map((image) => [image.exampleId!, image]));
-  const loose = images.filter((image) => !image.exampleId);
-
-  const frame = (image: ImagePrompt) => pictures && <SenseImage
-    prompt={image}
-    headword={headword}
-    busy={pictures.busy(sense.id)}
-    onOpen={() => pictures.open(sense.id, image)}
-  />;
-
   const mark = marks?.of(sense.id) ?? null;
   const label = `sense ${index + 1}`;
   const moved = (field: string) => marks?.field(sense.id, field) ?? null;
   const wasAt = marks?.movedFrom(sense.id) ?? null;
+  const name = senseName(sense);
   /* A sense is a large block — definition, glosses, examples, a picture. Tinting all of it because
      its definition was reworded would claim its untouched examples changed too, so the tint goes on
      the line that moved and the sense keeps only its rail bar to say something in here did. */
-  return <section className={`sec${marked(mark)}`} data-record={sense.id}>
-    <div className="rail-l">
-      <div className="inner">
-        {/* The rail is not body text and has room, so the glyph sits in the flow here rather than
-            being positioned out of it — which is what `.sec .num .mark-glyph` overrides it to do. */}
-        <span className="num"><MarkGlyph mark={mark} />{String(index + 1).padStart(2, "0")}</span>
-        <span className={`label${tint(moved("domain"))}`}>
-          Sense{sense.domain && <><br />{sense.domain}</>}
-        </span>
-        {/* Where it came from, which is the only thing you need to check a reorder was the one you
-            asked for. */}
-        {mark === "moved" && wasAt && <span className="label mark-was">was {String(wasAt).padStart(2, "0")}</span>}
-      </div>
+  return <FoldingSection
+    folded={folded} onToggle={onToggle} className={marked(mark)} record={sense.id}
+    rail={<>
+      {/* The rail is not body text and has room, so the glyph sits in the flow here rather than
+          being positioned out of it — which is what `.sec .num .mark-glyph` overrides it to do. */}
+      <span className="num"><MarkGlyph mark={mark} />{String(index + 1).padStart(2, "0")}</span>
+      <span className={`label${tint(moved("domain") ?? moved("emoji"))}`}>{name || "Sense"}</span>
+      {/* Where it came from, which is the only thing you need to check a reorder was the one you
+          asked for. */}
+      {mark === "moved" && wasAt && <span className="label mark-was">was {String(wasAt).padStart(2, "0")}</span>}
+    </>}
+  >
+    <div className="sense-head">
+      <p className={`sense-def${tint(moved("definition"))}`}>
+        <Spoken text={sense.definition} form={null} words={moved("definition")?.words ?? null}>
+          {mark !== "removed" && <Say onListen={onListen} />}
+        </Spoken>
+      </p>
+      {mark !== "removed" && <AskAnchor ask={ask} target={{ kind: "sense", id: sense.id, label }} />}
     </div>
-    <div className="body">
-      <div className="sense-head">
-        <p className={`sense-def${tint(moved("definition"))}`}>
-          <DiffText text={sense.definition} form={null} words={moved("definition")?.words ?? null} />
-        </p>
-        {mark !== "removed" && <AskAnchor ask={ask} target={{ kind: "sense", id: sense.id, label }} />}
-      </div>
-      <div className={`glosses${tint(moved("glosses"))}`}>
-        {sense.glosses.map((gloss) => <GlossLine key={gloss.lang} gloss={gloss} />)}
-      </div>
-      {examples.map((example, position) => <Fragment key={example.id}>
-        <ExampleBlock example={example} onUnsupported={onUnsupported} onPlayClip={onPlayClip}
-          clips={clips} marks={marks} ask={ask}
-          label={`example ${position + 1} of sense ${index + 1}`} />
-        {anchored.has(example.id) && frame(anchored.get(example.id)!)}
-      </Fragment>)}
-      {loose.map((image) => <Fragment key={image.id}>{frame(image)}</Fragment>)}
-      {images.length === 0 && pictures && <EmptySenseImage
-        busy={pictures.busy(sense.id)}
-        onOpen={() => pictures.open(sense.id, null)}
-      />}
-      {/* A search in flight says so; a search that finished empty shows **nothing at all**. The
-          asymmetry with pictures is deliberate: a missing picture is a gap to fill, so it gets a
-          frame, while a missing clip is the expected outcome for most words and a permanent empty
-          frame on every sense of every word would be noise. */}
-      {clips?.searching && <p className="clip-waiting">Looking for a recorded example…</p>}
+    <div className={`glosses${tint(moved("glosses"))}`}>
+      {sense.glosses.map((gloss) => <GlossLine key={gloss.lang} gloss={gloss} />)}
     </div>
-  </section>;
+    {/* The picture leads its sense: it is the thing seen first, whichever sentence it was drawn
+        from. A sense with no prompt row still shows a frame, so every sense has one shape. */}
+    {pictures && images.map((image) => <SenseImage
+      key={image.id} prompt={image} headword={headword}
+      busy={pictures.busy(sense.id)} onOpen={() => pictures.open(sense.id, image)}
+    />)}
+    {images.length === 0 && pictures && <EmptySenseImage
+      busy={pictures.busy(sense.id)}
+      onOpen={() => pictures.open(sense.id, null)}
+    />}
+    {orderedExamples(examples).map((example, position) => <ExampleBlock
+      key={example.id} example={example} onListen={onListen} onPlayClip={onPlayClip}
+      marks={marks} ask={ask} label={`example ${position + 1} of sense ${index + 1}`}
+    />)}
+    {/* A search in flight says so; a search that finished empty shows **nothing at all**. The
+        asymmetry with pictures is deliberate: a missing picture is a gap to fill, so it gets a
+        frame, while a missing clip is the expected outcome for most words. */}
+    {clips?.searching && <p className="clip-waiting">Looking for a recorded example…</p>}
+  </FoldingSection>;
+}
+
+function AttestationBlock({ attestation, marks, onListen }: {
+  attestation: Attestation; marks: MarkSlot | null; onListen(): void;
+}) {
+  const mark = marks?.of(attestation.id) ?? null;
+  return <div className={`att${marked(mark)}`} data-record={attestation.id}>
+    <MarkGlyph mark={mark} />
+    <div className="att-text">
+      <p className="t">
+        <Spoken text={attestation.text} form={null} words={marks?.field(attestation.id, "text")?.words ?? null}>
+          <Say onListen={onListen} />
+        </Spoken>
+      </p>
+      {attestation.translation && <p className="tr">
+        <DiffText
+          text={attestation.translation} form={null}
+          words={marks?.field(attestation.id, "translation")?.words ?? null}
+        />
+      </p>}
+      <p className="src">
+        {attestation.sourceTitle && (attestation.sourceUrl
+          ? <a href={attestation.sourceUrl} target="_blank" rel="noreferrer">{attestation.sourceTitle}</a>
+          : <span>{attestation.sourceTitle}</span>)}
+        <span className="when">{formatDay(attestation.capturedAt)}</span>
+      </p>
+    </div>
+  </div>;
+}
+
+function NotesList({ notes, marks }: { notes: string[]; marks: MarkSlot | null }) {
+  return <ul className="notes">{notes.map((note, index) => {
+    /* Keyed by position, not by text. Text is not an identity — two identical notes shared a
+       React key, and a reworded one had no partner to diff against. */
+    const change = marks?.note(index) ?? null;
+    return <li key={index} className={marked(change?.mark ?? null).trim()} data-note={index}>
+      <MarkGlyph mark={change?.mark ?? null} />
+      <DiffText text={note} form={null} words={change?.words ?? null} />
+    </li>;
+  })}</ul>;
+}
+
+/** What is known about the record rather than about the word, which is why it starts folded. */
+function Details({ article }: { article: Article }) {
+  const { lexeme, study } = article;
+  const models = [...new Set([
+    ...article.senses.flatMap(({ examples, images }) => [
+      ...examples.map((example) => example.modelId),
+      ...images.map((image) => image.imageModelId)
+    ])
+  ].filter((model): model is string => Boolean(model)))];
+  return <>
+    <dl className="facts">
+      <div><dt>id</dt><dd>{lexeme.id}</dd></div>
+      <div><dt>added</dt><dd>{formatDay(lexeme.createdAt)}</dd></div>
+      <div><dt>edited</dt><dd>{formatDay(lexeme.editedAt)}</dd></div>
+      <div><dt>rev</dt><dd>{lexeme.revision}</dd></div>
+      {models.length > 0 && <div className="wide"><dt>made with</dt><dd>{models.join(", ")}</dd></div>}
+    </dl>
+    {study && <div className="stats">
+      <div className="stat"><div className="label">Stability</div><div className="v">{study.stability}<small> d</small></div></div>
+      <div className="stat"><div className="label">Difficulty</div><div className="v">{study.difficulty}<small>/10</small></div></div>
+      <div className="stat"><div className="label">Retrievability</div><div className="v">{Math.round(study.retrievability * 100)}<small>%</small></div></div>
+      <div className="stat"><div className="label">Reps · lapses</div><div className="v">{study.reps}<small> · {study.lapses}</small></div></div>
+      <div className="stat"><div className="label">Last review</div><div className="v" style={{ fontSize: 14 }}>{formatDay(study.lastReview)}</div></div>
+    </div>}
+  </>;
+}
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+
+interface Card {
+  group: string;
+  chip: string;
+  aside: boolean;
+  body: ReactNode;
 }
 
 /**
- * `meta` off drops the storage footer, which is what an unsaved proposal wants: id, added, edited
- * and rev are facts about a stored record, and a generated entry under review has none of them yet.
- * Everything above it is identical, because a proposal and the entry it becomes are the same thing.
- */
-/**
- * How a picture is reached and whether one is being drawn — both of which only the caller knows.
+ * One sense at a time, and inside a sense one sentence at a time.
  *
- * Absent for an unsaved proposal: `articleFromDraft`'s placeholder ids are deliberately not valid
- * record ids, so there is nothing a control could act on. The frames disappear rather than
- * offering buttons that cannot work.
+ * The definition and its gloss stay at the top of every card of their sense, because a sentence is
+ * only worth reading against the meaning it illustrates. A picture goes on the card of the sentence
+ * it was drawn from — a clip's included — and one drawn from the sense alone opens the sense. The
+ * picture is the part that gives way when a card is short of room; a card whose words alone do not
+ * fit scrolls on its own, as the exception, and nothing forbids it.
  */
+function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: {
+  article: Article; pictures: PictureSlot | null;
+  onListen(): void; onPlayClip(example: Example): void;
+  onReference?(entry: ExternalEntry | null): void;
+}) {
+  const { lexeme } = article;
+  const track = useRef<HTMLDivElement | null>(null);
+  const nav = useRef<HTMLElement | null>(null);
+  const [at, setAt] = useState(0);
+
+  const cards: Card[] = [];
+  article.senses.forEach(({ sense, examples, images }, index) => {
+    const items = orderedExamples(examples);
+    const picture = images.find((image) => imageStateOf(image) === "ready") ?? null;
+    const anchored = picture?.exampleId && items.some((example) => example.id === picture.exampleId)
+      ? picture.exampleId : null;
+    const count = Math.max(items.length, 1);
+    const name = senseName(sense);
+    for (let position = 0; position < count; position += 1) {
+      const example = items[position] ?? null;
+      const pictureHere = picture && (anchored ? example?.id === anchored : position === 0);
+      /* A sense with no picture to show opens on its emoji instead, so its first card is not a
+         definition floating over empty paper. It is the frame a picture would fill, and opens the
+         same dialog, where one can be drawn. */
+      const tile = !picture && position === 0 ? (sense.emoji ?? lexeme.emoji) : null;
+      const clip = example ? storedClipOf(example) : null;
+      cards.push({
+        group: `sense:${sense.id}`,
+        chip: name || String(index + 1),
+        aside: false,
+        body: <>
+          <div className="card-sense">
+            <p className="card-def"><Spoken text={sense.definition} form={null}><Say onListen={onListen} /></Spoken></p>
+            {sense.glosses.map((gloss) => <p key={gloss.lang} className="card-gloss">
+              <span className="lg">{gloss.lang}</span>{gloss.terms.join(" · ")}
+            </p>)}
+          </div>
+          <div className="card-main">
+            {pictureHere && picture && <CardPicture
+              prompt={picture} headword={lexeme.headword}
+              busy={pictures?.busy(sense.id) ?? false}
+              onOpen={() => pictures?.open(sense.id, picture)}
+            />}
+            {tile && <EmojiTile
+              emoji={tile} busy={pictures?.busy(sense.id) ?? false}
+              onOpen={pictures ? () => pictures.open(sense.id, images[0] ?? null) : undefined}
+            />}
+            {example && <div className={`card-ex${OWN_ORIGINS.has(example.origin) ? " own" : ""}${clip ? " clip-ex" : ""}`}>
+              <p className="t"><Spoken text={example.text} form={example.matchedForm}><Say onListen={onListen} /></Spoken></p>
+              {example.translation && <p className="tr">
+                <Marked text={example.translation} form={example.matchedTranslationForm} />
+              </p>}
+              {OWN_ORIGINS.has(example.origin) && <OwnTag />}
+              {clip && <ClipLine clip={clip} onPlay={() => onPlayClip(example)} />}
+            </div>}
+          </div>
+          {count > 1 && <span className="card-pos">{position + 1} / {count}</span>}
+        </>
+      });
+    }
+  });
+  if (lexeme.notes.length) cards.push({
+    group: "notes", chip: "✎ Notes", aside: true,
+    body: <><h2 className="card-title">Notes</h2><div className="card-main top"><NotesList notes={lexeme.notes} marks={null} /></div></>
+  });
+  const met = looseAttestations(article);
+  if (met.length) cards.push({
+    group: "met", chip: "✳ Met it", aside: true,
+    body: <><h2 className="card-title">Where you met it</h2><div className="card-main top">
+      {met.map((attestation) => <AttestationBlock key={attestation.id} attestation={attestation} marks={null} onListen={onListen} />)}
+    </div></>
+  });
+  const dictionaryAt = cards.length;
+  cards.push({
+    group: "dict", chip: "Dictionaries", aside: true,
+    body: <><h2 className="card-title">Other dictionaries</h2><div className="card-main top">
+      {/* Mounted only once the card is reached: reaching it is the gesture that asks. */}
+      {at === dictionaryAt && <DictionaryEntries
+        headword={lexeme.headword} lemma={lexeme.lemma} language={lexeme.language} onLoaded={onReference} />}
+    </div></>
+  });
+  cards.push({
+    group: "details", chip: "Details", aside: true,
+    body: <><h2 className="card-title">Details</h2><div className="card-main top"><Details article={article} /></div></>
+  });
+
+  const groups = cards
+    .map((card, index) => ({ ...card, first: index }))
+    .filter((card, index, all) => all.findIndex((other) => other.group === card.group) === index);
+  const current = cards[Math.min(at, cards.length - 1)]?.group;
+
+  const go = useCallback((index: number) => {
+    const element = track.current;
+    if (!element) return;
+    const to = Math.max(0, Math.min(index, element.children.length - 1));
+    element.scrollTo({ left: to * element.clientWidth, behavior: "smooth" });
+  }, []);
+
+  // A different word starts at its first card.
+  useLayoutEffect(() => {
+    setAt(0);
+    if (track.current) track.current.scrollLeft = 0;
+  }, [lexeme.id]);
+
+  useEffect(() => {
+    const chip = nav.current?.querySelector<HTMLElement>(".cards-chip.on");
+    if (!chip || !nav.current || typeof nav.current.scrollTo !== "function") return;
+    nav.current.scrollTo({ left: chip.offsetLeft - (nav.current.clientWidth - chip.offsetWidth) / 2, behavior: "smooth" });
+  }, [current]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (isTyping(event.target)) return;
+      event.preventDefault();
+      go(at + (event.key === "ArrowRight" ? 1 : -1));
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [at, go]);
+
+  return <div className="cards">
+    <header className="cards-head">
+      <div className="cards-word">
+        <span className="cw-emoji" aria-hidden="true">{lexeme.emoji || "📄"}</span>
+        <h1 className="cw-headword">{lexeme.headword}</h1>
+        <Say head label={`Listen to ${lexeme.headword}`} onListen={onListen} />
+        {lexeme.reading && <span className="reading">{lexeme.reading}</span>}
+        {lexeme.ipa && <span className="ipa">{lexeme.ipa}</span>}
+      </div>
+      <nav className="cards-nav" aria-label="Senses and sections" ref={nav}>
+        {groups.map((group) => <button
+          key={group.group} type="button"
+          className={`cards-chip${group.group === current ? " on" : ""}${group.aside ? " aside" : ""}`}
+          aria-current={group.group === current}
+          onClick={() => go(group.first)}
+        >{group.chip}</button>)}
+      </nav>
+    </header>
+    <div className="cards-stage">
+      <div
+        className="cards-track" ref={track}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          setAt(Math.round(element.scrollLeft / Math.max(element.clientWidth, 1)));
+        }}
+      >
+        {cards.map((card, index) => <article
+          key={`${card.group}:${index}`} className="card" aria-label={`Card ${index + 1} of ${cards.length}`}
+          data-card={index}
+        >{card.body}</article>)}
+      </div>
+      <button type="button" className="cards-edge prev" aria-label="Previous card" disabled={at === 0} onClick={() => go(at - 1)}><BackIcon /></button>
+      <button type="button" className="cards-edge next" aria-label="Next card" disabled={at >= cards.length - 1} onClick={() => go(at + 1)}><BackIcon /></button>
+    </div>
+  </div>;
+}
+
+/* ── reading helpers shared by both views ───────────────────────────────── */
+
+function isTyping(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable], .cm-editor"));
+}
+
+/**
+ * Select all selects the word, not the application around it.
+ *
+ * Copying an article somewhere else is worth keeping; the top bar, the Add button and the dock are
+ * not part of it. In Cards it is the card on screen.
+ */
+function useSelectAll(root: React.RefObject<HTMLElement | null>, view: ArticleView) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "a") return;
+      if (isTyping(event.target) || !root.current) return;
+      const target = view === "cards"
+        ? cardOnScreen(root.current) ?? root.current
+        : root.current;
+      event.preventDefault();
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [root, view]);
+}
+
+function cardOnScreen(root: HTMLElement): HTMLElement | null {
+  const track = root.querySelector<HTMLElement>(".cards-track");
+  if (!track) return null;
+  const index = Math.round(track.scrollLeft / Math.max(track.clientWidth, 1));
+  return track.children[index] as HTMLElement | undefined ?? null;
+}
+
+/**
+ * Listen to whatever is selected, in the language the article is in.
+ *
+ * A floating button above the selection, because a play button on every phrase would be noise and a
+ * selection is already the gesture for "this bit".
+ */
+function SelectionListen({ root, onListen }: { root: React.RefObject<HTMLElement | null>; onListen(): void }) {
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  useEffect(() => {
+    const onChange = () => {
+      const selection = window.getSelection();
+      const text = selection && !selection.isCollapsed ? selection.toString().trim() : "";
+      if (!text || !root.current || !selection?.anchorNode || !root.current.contains(selection.anchorNode)
+          || selection.rangeCount === 0) {
+        setAt(null);
+        return;
+      }
+      const box = selection.getRangeAt(0).getBoundingClientRect?.();
+      if (!box) { setAt(null); return; }
+      setAt({
+        left: Math.min(Math.max(box.left + box.width / 2, 60), window.innerWidth - 60),
+        top: Math.max(box.top, 70)
+      });
+    };
+    document.addEventListener("selectionchange", onChange);
+    return () => document.removeEventListener("selectionchange", onChange);
+  }, [root]);
+  if (!at) return null;
+  return <button
+    type="button" className="sel-say" style={{ left: at.left, top: at.top }}
+    // Pressing it must not collapse the selection it is about to read.
+    onMouseDown={(event) => event.preventDefault()}
+    onClick={onListen}
+  ><PlayIcon /><span>Listen</span></button>;
+}
+
+/* ── slots the caller supplies ──────────────────────────────────────────── */
+
 /**
  * Whether a clip search is in flight, and how a clip is taken off the page.
  *
@@ -319,44 +707,88 @@ export interface PictureSlot {
   busy(senseId: string): boolean;
 }
 
-export default function LexemeArticle({ article, onUnsupported, meta = true, pictures = null,
+/**
+ * `meta` off drops Details and Other dictionaries, which is what an unsaved proposal wants: id,
+ * added, edited and rev are facts about a stored record, and checking a dictionary is a thing you do
+ * to an entry you have. Everything above them is identical, because a proposal and the entry it
+ * becomes are the same thing.
+ */
+export default function LexemeArticle({ article, onUnsupported, meta = true, view = "page", pictures = null,
                                        clips = null, marks = null, ask = null,
                                        onReference }: {
   article: Article; onUnsupported(message: string): void; meta?: boolean;
+  /** Cards never carries marks or the ask anchors: a proposal is reviewed on the page. */
+  view?: ArticleView;
   pictures?: PictureSlot | null;
   clips?: ClipSlot | null;
   marks?: MarkSlot | null;
   ask?: AskSlot | null;
-  /** What the dictionary fold has loaded, so a question can be asked against what is on screen. */
+  /** What the dictionary section has loaded, so a question can be asked against what is on screen. */
   onReference?(entry: ExternalEntry | null): void;
 }) {
-  const { lexeme, topics, senses, attestations, study } = article;
+  const { lexeme, senses } = article;
+  const root = useRef<HTMLDivElement | null>(null);
   /* The dialog lives here rather than being handed down from `App`, unlike the picture slot: a
      picture is drawn through a queue somebody else owns, while a clip is only fetched and played.
      That also gives the Add view's preview a working clip button for nothing. */
-  const [playing, setPlaying] = useState<StoredClip | null>(null);
+  const [playing, setPlaying] = useState<Example | null>(null);
+  const playingClip = playing ? storedClipOf(playing) : null;
+  /* Every section folds on its own, remembered per word for as long as the article is open. */
+  const [folds, setFolds] = useState<Record<string, boolean>>({});
+  const listen = useCallback(() => onUnsupported(AUDIO_PENDING), [onUnsupported]);
+  useSelectAll(root, view);
+
+  const key = (part: string) => `${lexeme.id}:${part}`;
+  const isFolded = (part: string, byDefault: boolean) => folds[key(part)] ?? byDefault;
+  const toggle = (part: string, byDefault: boolean) =>
+    setFolds((current) => ({ ...current, [key(part)]: !(current[key(part)] ?? byDefault) }));
+
   const head = (field: string) => marks?.field(lexeme.id, field) ?? null;
-  return <>
+  const place = placeLine(article);
+  const met = looseAttestations(article);
+  const dialog = playing && playingClip && <ClipDialog
+    stored={playingClip}
+    headword={lexeme.headword}
+    glossLang={article.glossLangs[0] ?? null}
+    onClose={() => setPlaying(null)}
+    /* Removing a clip belongs to the clip, where you have just watched it — not under every one on
+       the page. Only a stored subtitle example can be removed; a proposal's has no real id. */
+    onRemove={clips && playing.origin === "subtitle"
+      ? () => { clips.remove(playing.id); setPlaying(null); }
+      : undefined}
+  />;
+
+  if (view === "cards") {
+    return <div className="article-root cards-root" ref={root}>
+      <ArticleCards article={article} pictures={pictures} onListen={listen} onPlayClip={setPlaying} onReference={onReference} />
+      <SelectionListen root={root} onListen={listen} />
+      {dialog}
+    </div>;
+  }
+
+  return <div className="article-root" ref={root}>
     <div className="masthead" data-record={lexeme.id}>
       <div className="head-row">
         <div className={`emoji-plate${tint(head("emoji"))}`}>{lexeme.emoji || "📄"}</div>
         <div className="head-text">
-          <h1 className={`headword${tint(head("headword"))}`}>
-            <DiffText text={lexeme.headword} form={null} words={head("headword")?.words ?? null} />
-          </h1>
+          {/* Two lines beside the plate: the word with its play button, then how it sounds and what
+              it is. Where it is filed trails that second line in small mono — it says something
+              about the word, so it stays in view, but it should not cost a line of its own. */}
+          <div className="head-line">
+            <h1 className={`headword${tint(head("headword"))}`}>
+              <DiffText text={lexeme.headword} form={null} words={head("headword")?.words ?? null} />
+            </h1>
+            <Say head label={`Listen to ${lexeme.headword}`} onListen={listen} />
+          </div>
           {lexeme.reading && <div className={`reading${tint(head("reading"))}`}>{lexeme.reading}</div>}
           <div className="pron-row">
             {lexeme.ipa && <span className={`ipa${tint(head("ipa"))}`}>{lexeme.ipa}</span>}
-            <button className="play" onClick={() => onUnsupported("Audio is not wired up yet")}><PlayIcon />Listen</button>
-          </div>
-          <div className={tint(head("pos") ?? head("gender") ?? head("register") ?? head("dialect"))}>
-            <GrammarLine article={article} />
+            <span className={`gram${tint(head("pos") ?? head("gender") ?? head("register") ?? head("dialect"))}`}>
+              {grammarWords(lexeme)}
+            </span>
+            {place && <span className={`place${tint(head("topics") ?? head("status"))}`}>{place}</span>}
           </div>
         </div>
-      </div>
-      <div className={`chips${tint(head("topics") ?? head("status"))}`}>
-        <span className={`chip status ${lexeme.status === "inbox" ? "inbox" : ""}`}>{lexeme.status}</span>
-        {topics.map((topic) => <span key={topic.id} className="chip">{topic.icon ?? "📌"} {topic.name}</span>)}
       </div>
     </div>
 
@@ -370,86 +802,41 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, pic
         clips={clips}
         marks={marks}
         ask={ask}
-        onUnsupported={onUnsupported}
+        folded={isFolded(`sense:${entry.sense.id}`, false)}
+        onToggle={() => toggle(`sense:${entry.sense.id}`, false)}
+        onListen={listen}
         onPlayClip={setPlaying}
       />)}
 
-    {attestations.length > 0 && <section className="sec">
-      <div className="rail-l"><div className="inner"><span className="num">✳</span><span className="label">Where you<br />met it</span></div></div>
-      <div className="body">
-        {attestations.map((attestation) => <div
-          key={attestation.id}
-          className={`att${marked(marks?.of(attestation.id) ?? null)}`}
-          data-record={attestation.id}
-        >
-          <MarkGlyph mark={marks?.of(attestation.id) ?? null} />
-          <p className="t">
-            <DiffText
-              text={attestation.text} form={null}
-              words={marks?.field(attestation.id, "text")?.words ?? null}
-            />
-          </p>
-          {attestation.translation && <p className="tr">
-            <DiffText
-              text={attestation.translation} form={null}
-              words={marks?.field(attestation.id, "translation")?.words ?? null}
-            />
-          </p>}
-          <div className="src">
-            <span className="prov">{attestation.sourceKind}</span>
-            {attestation.sourceTitle && (attestation.sourceUrl
-              ? <a href={attestation.sourceUrl} target="_blank" rel="noreferrer">{attestation.sourceTitle}</a>
-              : <span>{attestation.sourceTitle}</span>)}
-            <span className="when">{formatDay(attestation.capturedAt)}</span>
-          </div>
-        </div>)}
-      </div>
-    </section>}
+    {/* Notes, then where you met it, then the two things you open on purpose. */}
+    {lexeme.notes.length > 0 && <FoldingSection
+      folded={isFolded("notes", false)} onToggle={() => toggle("notes", false)}
+      rail={<><span className="num">✎</span><span className="label">Notes</span></>}
+    ><NotesList notes={lexeme.notes} marks={marks} /></FoldingSection>}
 
-    {lexeme.notes.length > 0 && <section className="sec">
-      <div className="rail-l"><div className="inner"><span className="num">✎</span><span className="label">Notes</span></div></div>
-      <div className="body"><ul className="notes">{lexeme.notes.map((note, index) => {
-        /* Keyed by position, not by text. Text is not an identity — two identical notes shared a
-           React key, and a reworded one had no partner to diff against. */
-        const change = marks?.note(index) ?? null;
-        return <li key={index} className={marked(change?.mark ?? null).trim()} data-note={index}>
-          <MarkGlyph mark={change?.mark ?? null} />
-          <DiffText text={note} form={null} words={change?.words ?? null} />
-        </li>;
-      })}</ul></div>
-    </section>}
+    {met.length > 0 && <FoldingSection
+      folded={isFolded("met", false)} onToggle={() => toggle("met", false)}
+      rail={<><span className="num">✳</span><span className="label">Where you met it</span></>}
+    >
+      {met.map((attestation) =>
+        <AttestationBlock key={attestation.id} attestation={attestation} marks={marks} onListen={listen} />)}
+    </FoldingSection>}
 
-    {study && <section className="sec">
-      <div className="rail-l"><div className="inner"><span className="num">◷</span><span className="label">Study<br />{study.system}</span></div></div>
-      <div className="body">
-        <div className="stats">
-          <div className="stat"><div className="label">Stability</div><div className="v">{study.stability}<small> d</small></div></div>
-          <div className="stat"><div className="label">Difficulty</div><div className="v">{study.difficulty}<small>/10</small></div></div>
-          <div className="stat"><div className="label">Retrievability</div><div className="v">{Math.round(study.retrievability * 100)}<small>%</small></div></div>
-          <div className="stat"><div className="label">Reps · lapses</div><div className="v">{study.reps}<small> · {study.lapses}</small></div></div>
-          <div className="stat"><div className="label">Last review</div><div className="v" style={{ fontSize: 14 }}>{formatDay(study.lastReview)}</div></div>
-        </div>
-      </div>
-    </section>}
+    {meta && <FoldingSection
+      folded={isFolded("dict", true)} onToggle={() => toggle("dict", true)}
+      rail={<><span className="num"><BookIcon /></span><span className="label">Other dictionaries</span></>}
+    >
+      {/* Mounted only when unfolded, and mounting is what looks the word up. */}
+      <DictionaryEntries
+        headword={lexeme.headword} lemma={lexeme.lemma} language={lexeme.language} onLoaded={onReference} />
+    </FoldingSection>}
 
-    {/* Tied to `meta` for the same reason the footer is: a proposal under review is not a stored
-        word, and checking it against a dictionary is a thing you do to an entry you have. */}
-    {meta && <DictionaryFold
-      headword={lexeme.headword} lemma={lexeme.lemma} language={lexeme.language}
-      onLoaded={onReference} />}
+    {meta && <FoldingSection
+      folded={isFolded("details", true)} onToggle={() => toggle("details", true)}
+      rail={<><span className="num"><InfoIcon /></span><span className="label">Details</span></>}
+    ><Details article={article} /></FoldingSection>}
 
-    {meta && <div className="meta-foot">
-      <span>id <b>{lexeme.id}</b></span>
-      <span>added <b>{formatDay(lexeme.createdAt)}</b></span>
-      <span>edited <b>{formatDay(lexeme.editedAt)}</b></span>
-      <span>rev <b>{lexeme.revision}</b></span>
-    </div>}
-
-    {playing && <ClipDialog
-      stored={playing}
-      headword={lexeme.headword}
-      glossLang={article.glossLangs[0] ?? null}
-      onClose={() => setPlaying(null)}
-    />}
-  </>;
+    <SelectionListen root={root} onListen={listen} />
+    {dialog}
+  </div>;
 }

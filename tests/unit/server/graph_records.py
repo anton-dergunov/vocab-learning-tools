@@ -45,7 +45,7 @@ def lexeme(**overrides: Any) -> dict[str, Any]:
 def sense(lexeme_id: str, **overrides: Any) -> dict[str, Any]:
     return {
         "id": new_record_id(), "lexemeId": lexeme_id, "definition": "Cortar en trozos.",
-        "definitionLang": "es", "glosses": [{"lang": "en", "terms": ["to chop"]}], "domain": None,
+        "definitionLang": "es", "glosses": [{"lang": "en", "terms": ["to chop"]}], "domain": None, "emoji": None,
         "order": 0, **stamp(), **overrides,
     }
 
@@ -65,7 +65,7 @@ def example(sense_id: str, **overrides: Any) -> dict[str, Any]:
         "sourceAttestationId": None, "modelId": "stub-model", "videoRef": None, "videoTitle": None,
         "videoChannel": None, "videoStart": None, "videoEnd": None, "clipRef": None,
         "imageRef": None, "audioRef": None, "note": None, "matchedForm": None,
-        "matchedTranslationForm": None, "approved": False, **stamp(), **overrides,
+        "matchedTranslationForm": None, **stamp(), **overrides,
     }
 
 

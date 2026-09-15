@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { DictionaryArticle } from "./dictionary";
 import { lookup } from "./dictionaries";
 import { CaretIcon } from "./icons";
@@ -258,57 +258,59 @@ export default function ExternalArticle({ entry, onAdd, busy = false }: {
 /**
  * What the dictionaries say about a word that is already yours.
  *
- * Read-only, and with no "add" — you have it. It looks nothing up until it is opened: an article
- * you are reading should not be quietly issuing byte-range reads on the chance you are curious, and
- * on a phone that chance is mostly no.
+ * Read-only, and with no "add" — you have it. It looks nothing up until it is shown: an article you
+ * are reading should not be quietly issuing byte-range reads on the chance you are curious, and on a
+ * phone that chance is mostly no. So the article mounts this only when its section is unfolded or
+ * its card is reached, and mounting is what asks.
  */
-export function DictionaryFold({ headword, lemma, language, onLoaded }: {
+export function DictionaryEntries({ headword, lemma, language, onLoaded }: {
   headword: string; lemma: string; language: string;
   /**
-   * What this fold has on screen, reported upward so a question can be asked against it.
+   * What is on screen, reported upward so a question can be asked against it.
    *
-   * Only what is actually open: closed, nothing is loaded and nothing is reported, which is the
+   * Only what is actually shown: unmounted, nothing is loaded and nothing is reported, which is the
    * honest answer. Chat sends the dictionary text as read-only context, never as something it may
    * propose changing.
    */
   onLoaded?(entry: ExternalEntry | null): void;
 }) {
-  const [state, setState] = useState<"closed" | "loading" | "ready" | "failed">("closed");
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [entry, setEntry] = useState<ExternalEntry | null>(null);
   const spellings = [...new Set([headword.trim(), lemma.trim()].filter(Boolean))];
 
-  function open(isOpen: boolean) {
-    if (!isOpen || state !== "closed") return;
+  useEffect(() => {
+    let live = true;
     setState("loading");
     // Only what is at hand: this is a footnote on a word you already have, which is not a reason to
     // spend an online source's rate limit. Both spellings, because a dictionary is keyed on the
     // lemma and Acervo's headword keeps the article that tells a learner the gender.
     void lookup(headword, language, ["device", "server"], [lemma])
       .then((results) => {
+        if (!live) return;
         const found = externalEntryOf(headword, results);
         setEntry(found);
         setState("ready");
         onLoaded?.(found);
       })
-      .catch(() => setState("failed"));
-  }
+      .catch(() => { if (live) setState("failed"); });
+    return () => {
+      live = false;
+      onLoaded?.(null);
+    };
+    // `onLoaded` is a setter from the caller and deliberately not a reason to look the word up again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headword, lemma, language]);
 
-  return <details className="fold ext-fold-article" onToggle={(event) => open(event.currentTarget.open)}>
-    <summary>
-      <span className="caret"><CaretIcon /></span>
-      <span className="label">Other dictionaries</span>
-    </summary>
-    <div className="fold-body">
-      {state === "loading" && <p className="ext-status">Looking through your dictionaries…</p>}
-      {state === "failed" && <p className="ext-status">Your dictionaries could not be read just now.</p>}
-      {state === "ready" && (entry?.sections.length
-        ? entry.sections.map((section) =>
-            <Section key={section.dictionaryId} section={section} entry={entry} />)
-        : <p className="ext-status">
-            No dictionary on this device or your server holds{" "}
-            {spellings.map((spelling, index) =>
-              <Fragment key={spelling}>{index > 0 && " or "}“{spelling}”</Fragment>)}.
-          </p>)}
-    </div>
-  </details>;
+  return <div className="ext-fold-article">
+    {state === "loading" && <p className="ext-status">Looking through your dictionaries…</p>}
+    {state === "failed" && <p className="ext-status">Your dictionaries could not be read just now.</p>}
+    {state === "ready" && (entry?.sections.length
+      ? entry.sections.map((section) =>
+          <Section key={section.dictionaryId} section={section} entry={entry} />)
+      : <p className="ext-status">
+          No dictionary on this device or your server holds{" "}
+          {spellings.map((spelling, index) =>
+            <Fragment key={spelling}>{index > 0 && " or "}“{spelling}”</Fragment>)}.
+        </p>)}
+  </div>;
 }

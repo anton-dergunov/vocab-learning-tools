@@ -31,3 +31,7 @@ export const AskIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1
 export const ChevronIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2.2} strokeLinejoin="round" aria-hidden="true"><path d="M5 15l7-7 7 7" /></svg>;
 /** Sending a turn. */
 export const SendIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2} strokeLinejoin="round" aria-hidden="true"><path d="M4 12h14" /><path d="M13 6l6 6-6 6" /></svg>;
+/** A clip, drawn as a strip of film: a play triangle alone reads as "audio". */
+export const FilmIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.7} strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 9h17M3.5 15h17M7.5 5v4M12 5v4M16.5 5v4M7.5 15v4M12 15v4M16.5 15v4" /></svg>;
+/** The article's details: what is known about the record rather than about the word. */
+export const InfoIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5" /><path d="M12 7.6v.1" /></svg>;

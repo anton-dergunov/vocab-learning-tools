@@ -24,7 +24,8 @@ Return one JSON object and nothing else. No prose, no code fences.
   "senses": [
     {
       "definition": "Traje que se usa para parecer otra persona o un personaje.",
-      "domain": null,
+      "domain": "costume",
+      "emoji": "🎭",
       "glosses": [{ "lang": "en", "terms": ["costume", "disguise"] }],
       "examples": [
         {
@@ -71,9 +72,15 @@ Field rules:
 - `definition` is written IN THE LANGUAGE YOU ARE TOLD TO DEFINE SENSES IN — usually the language
   of the word itself, but not always, so read the instruction rather than assuming. Write it in the
   style of a learner's dictionary: plain, short, using simpler words than the one being defined.
-- `domain` is the field a word belongs to when it is specialist — medicine, law, cooking, grammar —
-  and `null` for an ordinary word, which is most of them. It is a label read at a glance rather
-  than prose, so write it in the first language you are asked to gloss into.
+- `domain` is ONE word, occasionally two, naming what this meaning is about — the label a learner
+  taps to jump to it. For `la obra`: `art`, `theater`, `construction`. For `picar`: `itch`, `spicy`,
+  `chop`, `snack`, `bite`. Give one to EVERY sense, including the only sense of a word
+  (`animarse` — `courage`), and make the labels of one word's senses clearly different from each
+  other. Lower case, no punctuation. Write it in the FIRST language you are asked to gloss into.
+  `null` only when no short label says anything true.
+- `emoji` for a sense depicts THAT meaning, the way the word's `emoji` depicts the word: `🎨`, `🎭`,
+  `🏗️` for the three senses of `la obra`. One emoji. Prefer a different one for each sense of a
+  word; `null` only when nothing remotely fits.
 - `glosses` carry the translations, one group per language you are asked to gloss into. Every
   requested language must be present. `terms` is a short list, most common first.
 - One sense per genuinely distinct meaning. Do not split shades of the same meaning into two

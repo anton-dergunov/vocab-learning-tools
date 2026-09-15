@@ -46,7 +46,6 @@ export interface ExampleDraft {
   note: string | null;
   matchedForm: string | null;
   matchedTranslationForm: string | null;
-  approved: boolean;
 }
 
 /**
@@ -77,6 +76,7 @@ export interface SenseDraft {
   definitionLang: string;
   glosses: Gloss[];
   domain: string | null;
+  emoji: string | null;
   examples: ExampleDraft[];
   images: ImagePromptDraft[];
 }
@@ -162,8 +162,7 @@ function exampleFields(example: ExampleDraft): Plain {
     audioRef: example.audioRef,
     note: example.note,
     matchedForm: example.matchedForm,
-    matchedTranslationForm: example.matchedTranslationForm,
-    approved: example.approved
+    matchedTranslationForm: example.matchedTranslationForm
   });
 }
 
@@ -242,8 +241,7 @@ function exampleDraft(example: Example): ExampleDraft {
     audioRef: example.audioRef,
     note: example.note,
     matchedForm: example.matchedForm,
-    matchedTranslationForm: example.matchedTranslationForm,
-    approved: example.approved
+    matchedTranslationForm: example.matchedTranslationForm
   };
 }
 
@@ -286,6 +284,7 @@ export function draftFor(article: Article): ArticleDraft {
       definitionLang: sense.definitionLang,
       glosses: sense.glosses.map((gloss) => ({ lang: gloss.lang, terms: [...gloss.terms] })),
       domain: sense.domain,
+      emoji: sense.emoji,
       examples: examples.map(exampleDraft),
       images: senseImages.map(promptDraft)
     })),
@@ -336,6 +335,7 @@ export function yamlForDraft(draft: ArticleDraft, study: StudyState | null = nul
       definition: sense.definition,
       definitionLang: sense.definitionLang,
       domain: sense.domain,
+      emoji: sense.emoji,
       glosses: sense.glosses.map((gloss) => ({ lang: gloss.lang, terms: gloss.terms })),
       examples: sense.examples.map(exampleFields),
       imagePrompts: sense.images.map(promptFields)
@@ -542,14 +542,14 @@ class Reader {
 export const EXAMPLE_KEYS = [
   "id", "text", "textLang", "translation", "translationLang", "origin", "sourceAttestationId",
   "modelId", "videoRef", "videoTitle", "videoChannel", "videoStart", "videoEnd", "clipRef",
-  "imageRef", "audioRef", "note", "matchedForm", "matchedTranslationForm", "approved"
+  "imageRef", "audioRef", "note", "matchedForm", "matchedTranslationForm"
 ];
 export const PROMPT_KEYS = [
   "id", "exampleId", "prompt", "styleId", "seed", "modelId", "promptVersion", "imageRef",
   "imageModelId"
 ];
 export const SENSE_KEYS = [
-  "id", "order", "definition", "definitionLang", "domain", "glosses", "examples", "imagePrompts"
+  "id", "order", "definition", "definitionLang", "domain", "emoji", "glosses", "examples", "imagePrompts"
 ];
 export const ATTESTATION_KEYS = [
   "id", "text", "translation", "sourceKind", "sourceTitle", "sourceUrl", "capturedAt"
@@ -584,8 +584,7 @@ function readExample(reader: Reader, raw: unknown, path: string, textLang: strin
     audioRef: reader.optional(fields.audioRef, `${path}.audioRef`),
     note: reader.optional(fields.note, `${path}.note`),
     matchedForm: reader.optional(fields.matchedForm, `${path}.matchedForm`),
-    matchedTranslationForm: reader.optional(fields.matchedTranslationForm, `${path}.matchedTranslationForm`),
-    approved: reader.boolean(fields.approved, `${path}.approved`, true)
+    matchedTranslationForm: reader.optional(fields.matchedTranslationForm, `${path}.matchedTranslationForm`)
   };
 }
 
@@ -657,7 +656,8 @@ export function parseArticle(text: string): ArticleDraft {
     dialect: reader.optional(fields.dialect, "dialect"),
     emoji: reader.optional(fields.emoji, "emoji"),
     topics: reader.strings(fields.topics, "topics"),
-    status: reader.choice(fields.status, "status", LEXEME_STATUSES, "inbox"),
+    // A document someone typed or reviewed is an ordinary word; the Inbox holds what arrived unread.
+    status: reader.choice(fields.status, "status", LEXEME_STATUSES, "active"),
     shortGloss: reader.optional(fields.shortGloss, "shortGloss"),
     notes: reader.strings(fields.notes, "notes"),
     senses: reader.list(fields.senses, "senses").flatMap((item, index) => {
@@ -672,6 +672,7 @@ export function parseArticle(text: string): ArticleDraft {
         definitionLang: reader.text(sense.definitionLang, `${where}.definitionLang`, language) || language,
         glosses: readGlosses(reader, sense.glosses, `${where}.glosses`),
         domain: reader.optional(sense.domain, `${where}.domain`),
+        emoji: reader.optional(sense.emoji, `${where}.emoji`),
         examples: reader.list(sense.examples, `${where}.examples`)
           .map((example, position) => readExample(reader, example, `${where}.examples[${position}]`, language))
           .filter((example): example is ExampleDraft => example !== null),
@@ -718,7 +719,7 @@ lemma: ""              # leave empty to reuse the headword
 pos: noun              # noun verb adj adv phrase idiom expression
 register: neutral      # neutral formal colloquial slang vulgar
 emoji: ""
-status: inbox
+status: active
 topics: []             # existing topic names, e.g. [Food, Travel]
 shortGloss: null       # null = derived from the first gloss below
 notes: []
@@ -726,6 +727,8 @@ senses:
   - order: 0
     definition: ""     # in the target language
     definitionLang: es
+    domain: ""         # one word for this meaning, e.g. cooking
+    emoji: ""
     glosses:
       - { lang: en, terms: [""] }
     examples:
@@ -733,6 +736,5 @@ senses:
         translation: ""
         translationLang: en
         origin: manual
-        approved: true
 attestations: []       # the sentence you actually met it in, verbatim
 `;

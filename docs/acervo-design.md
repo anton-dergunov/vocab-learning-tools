@@ -152,7 +152,8 @@ deferred to §04.
 | `definition` | string | In the **target** language. Longman/COBUILD style — pins the sense precisely. |
 | `definitionLang` | BCP-47 | Usually equals the lexeme's language; a field, not an assumption. |
 | `glosses[]` | `{lang, terms[]}[]` | **An array, not one language.** `[{en:["column","spine"]},{ru:["колонна"]}]`. |
-| `domain` | string? | medicine · law · cooking. Comes free from Wiktextract. |
+| `domain` | string? | One word naming what this meaning is about — art · theater · construction — on every sense, in the first gloss language. What the article's sense selector shows. |
+| `emoji` | string? | This meaning's own emoji, beside the word's: 🎨 · 🎭 · 🏗️ for the senses of *la obra*. |
 | `order` | int | Sense ordering is information — put the common one first. |
 
 Both halves are kept, and neither is privileged. They do different jobs: the target-language
@@ -197,7 +198,7 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
 - `example` — `senseId · text · textLang · translation · translationLang ·
   origin(attestation|llm|tatoeba|subtitle|wiktionary|manual) · sourceAttestationId · modelId ·
   videoRef · videoTitle · videoChannel · videoStart · videoEnd · clipRef · imageRef · audioRef ·
-  note · matchedForm · matchedTranslationForm · approved`. `origin` plus `modelId` on every row is
+  note · matchedForm · matchedTranslationForm`. `origin` plus `modelId` on every row is
   what makes bulk regeneration safe; **`sourceAttestationId`** is what lets an example be cleaned up
   and still point at the messy original you actually captured. `videoTitle`, `videoChannel`,
   `videoStart` and `videoEnd` (seconds) are what turn a bare `videoRef` into the citable clip the
@@ -336,8 +337,7 @@ Raw versus cleaned — both kept, lineage explicit:
   "sourceAttestationId": "attest000000001",
   "modelId": "gemini-3-flash",
   "imageRef": null,
-  "audioRef": "sha256:9c1e…",
-  "approved": true
+  "audioRef": "sha256:9c1e…"
 }
 ```
 
@@ -692,13 +692,17 @@ fully determined by the word plus the sentence, and nothing you learn next week 
 entry should say — so there is no reason to defer it.
 
 ```
-captured → processing → unapproved → active
-                            │
-                            └── suppressed
+captured → processing → review → active            (you added it: you read it before saving)
+captured → processing → inbox  → active            (it arrived unattended: an ingestion script)
+                          │
+                          └── suppressed
 ```
 
-By the time you open the app the article is built and waiting. Review is a fast approve/edit pass,
-not a triage session. Add **"regenerate with a note"** — a free-text nudge that re-runs generation in
+By the time you open the app the article is built and waiting. Review is reading the rendered entry
+and saving it, not a triage session, and what you have read is not marked as unread afterwards: an
+entry you saved from the Add view is an ordinary word. The Inbox holds only what arrived without
+anyone reading it. Review is of the whole entry — a missed sense is the real risk, not one example —
+so there is no approval flag on individual records. Add **"regenerate with a note"** — a free-text nudge that re-runs generation in
 seconds. Small feature, large effect on whether you trust the automatic path.
 
 > **WHY "GIVE AN LLM AN ARTICLE AND ASK FOR THE INTERESTING WORDS" FAILED**

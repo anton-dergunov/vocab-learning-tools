@@ -130,7 +130,6 @@ describe("provenance, which the applier derives and the model never sets", () =>
     expect([...ids]).toContain(added.id);
     // Reviewing the rendered article *is* the approve gesture, so nothing lands wearing a chip
     // saying it has not been looked at.
-    expect(added.approved).toBe(true);
   });
 
   it("resolves a ref, so a sentence you supplied becomes an attestation the example names", () => {
@@ -236,7 +235,6 @@ describe("the round trip", () => {
     const added = reparsed.senses[0].examples.at(-1)!;
     expect(added.text).toBe("Me pica la espalda.");
     expect(added.origin).toBe("llm");
-    expect(added.approved).toBe(true);
   });
 });
 

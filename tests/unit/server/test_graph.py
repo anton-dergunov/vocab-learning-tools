@@ -364,7 +364,7 @@ def test_a_clip_title_left_behind_by_another_writer_is_still_not_shown():
         "origin": "llm", "source_attestation": None, "model_id": "", "video_ref": "",
         "video_title": "A cooking show", "video_channel": "Easy Spanish", "video_start": 42,
         "video_end": 48, "clip_ref": "seg_1f4c9a2b7e6d5c3a0b91", "image_ref": "", "audio_ref": "",
-        "note": "", "matched_form": "", "matched_translation_form": "", "approved": False,
+        "note": "", "matched_form": "", "matched_translation_form": "",
         "deleted": False, "created_at": "2026-01-01T00:00:00.000Z",
         "edited_at": "2026-01-01T00:00:00.000Z", "edited_by": "job00000000001", "revision": 1,
     }
@@ -399,6 +399,19 @@ def test_an_attestation_example_needs_a_source_that_shares_the_owner_and_the_lex
     )
     assert wrong_word.status_code == 400
     assert "same lexeme" in wrong_word.json()["error"]["message"]
+
+
+def test_a_sense_keeps_its_label_and_its_own_emoji(server):
+    changes, word, *_ = article()
+    labelled = sense(word["id"], domain="theater", emoji="\U0001F3AD")
+    changes["senses"] = [labelled]
+    changes["examples"] = []
+    assert server.push(changes).status_code == 200
+    pulled = next(row for row in server.pull().json()["data"]["changes"]["senses"] if row["id"] == labelled["id"])
+    assert pulled["domain"] == "theater"
+    assert pulled["emoji"] == "\U0001F3AD"
+    # An example no longer carries an approval nothing ever set.
+    assert all("approved" not in row for row in server.pull().json()["data"]["changes"]["examples"])
 
 
 def test_a_sense_belonging_to_another_owners_lexeme_is_refused(server, other):

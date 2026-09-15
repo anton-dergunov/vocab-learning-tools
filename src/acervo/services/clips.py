@@ -30,9 +30,7 @@ from acervo.services.models import chain_for, refusal
 from acervo.services.prompts import prompt_text
 from acervo.settings import Settings
 
-# What a chosen clip is written as. `approved: false` because it is an example a model produced,
-# like every other one — the badge already renders, and clips stay out of the way of the
-# approved/unapproved surface, which is due a redesign of its own.
+# What a chosen clip is written as: an ordinary example whose origin says it was spoken.
 CLIP_ORIGIN = "subtitle"
 
 # How many whole-chain walks a *request* is worth, as in `services/images.py` and for the same
@@ -246,7 +244,6 @@ def _clip_row(selection: Selection, held: dict[str, dict], article: ArticleView,
         "note": None,
         "matchedForm": matched or None,
         "matchedTranslationForm": selection.matched_translation_form,
-        "approved": False,
         # A tombstoned row is revived rather than left dead: the id is derived from the pair, so
         # there is no other row this clip could ever occupy.
         "deleted": False,

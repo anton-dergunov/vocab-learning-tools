@@ -56,7 +56,6 @@ senses:
         text: El disfraz de pirata viene con un garfio.
         translation: The pirate costume comes with a hook.
         origin: llm
-        approved: true
 """
 
 NEIGHBOURS = [

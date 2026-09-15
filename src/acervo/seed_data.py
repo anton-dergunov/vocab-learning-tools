@@ -107,7 +107,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
              "examples": [
                  {"key": "cenar", "text": "Vamos a picar algo antes de cenar.",
                   "translation": "Let’s have a nibble before dinner.",
-                  "origin": "llm", "model_id": "demo-model", "approved": False,
+                  "origin": "llm", "model_id": "demo-model",
                   "matched": "picar", "matched_translation": "nibble",
                   "note": "Waiting for review — check whether “nibble” reads as too British."},
              ]},
@@ -263,7 +263,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
              "examples": [
                  {"key": "canela", "text": "Espolvoreé canela sobre el pastel.",
                   "translation": "I sprinkled cinnamon on the cake.",
-                  "origin": "attestation", "attestation": "canela", "approved": False,
+                  "origin": "attestation", "attestation": "canela",
                   "model_id": "demo-model", "matched": "Espolvoreé", "matched_translation": "sprinkled"},
              ]},
         ],
@@ -498,7 +498,8 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
             records.append(("senses", {
                 "id": sense_id, **base, "lexeme": lexeme_id, "definition": sense["definition"],
                 "definition_lang": sense.get("definition_lang", entry["language"]),
-                "glosses": sense["glosses"], "domain": sense.get("domain", ""), "sense_order": order,
+                "glosses": sense["glosses"], "domain": sense.get("domain", ""),
+                "emoji": sense.get("emoji", ""), "sense_order": order,
             }))
             for example in sense["examples"]:
                 title, channel, start, end = example.get("video", ("", "", 0, 0))
@@ -520,7 +521,6 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
                     "image_ref": "", "audio_ref": f"audio/{key}-{example['key']}.mp3" if example.get("audio") else "",
                     "note": example.get("note", ""), "matched_form": example.get("matched", ""),
                     "matched_translation_form": example.get("matched_translation", ""),
-                    "approved": example.get("approved", True),
                 }))
             for image in sense.get("images", ()):
                 records.append(("image_prompts", {

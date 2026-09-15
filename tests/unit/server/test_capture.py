@@ -36,6 +36,7 @@ ARTICLE = {
     "senses": [
         {
             "definition": "Gancho de metal curvo.",
+            "domain": "tools", "emoji": "\U0001FA9D",
             "glosses": [{"lang": "en", "terms": ["hook"]}],
             "examples": [
                 {
@@ -214,7 +215,11 @@ def test_it_builds_a_draft_keeping_the_learners_sentence_as_an_attestation_the_e
     draft = seeded.capture().json()["data"]["draft"]
 
     assert draft["id"] is None
-    assert draft["status"] == "inbox"
+    # Reviewed in the interface before it is saved, so it is not an Inbox word.
+    assert draft["status"] == "active"
+    # Every sense carries a one-word label and an emoji of its own.
+    assert draft["senses"][0]["domain"] == "tools"
+    assert draft["senses"][0]["emoji"] == "\U0001FA9D"
     assert draft["headword"] == "el garfio"
     assert draft["gender"] == "masculine"
     # A topic the account does not have is dropped rather than invented: saving would refuse it.
@@ -309,6 +314,7 @@ def test_it_applies_the_draft_through_the_ordinary_write_path_when_asked(seeded)
     changes = seeded.pull().json()["data"]["changes"]
     created = next(row for row in changes["lexemes"] if row["id"] == body["applied"]["lexemeId"])
     assert created["headword"] == "el garfio"
+    # Nobody reviewed it, which is what the Inbox holds.
     assert created["status"] == "inbox"
     # Numbered by the one allocator, which is what makes it visible to a cursor pull at all.
     assert created["revision"] > 0

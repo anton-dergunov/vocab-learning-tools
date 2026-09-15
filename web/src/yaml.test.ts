@@ -69,6 +69,19 @@ describe("reading YAML back", () => {
     expect(clip.clipRef).toBe("seg_7c3d18e5b04a92f6de27");
   });
 
+  it("carries a sense's emoji through the document", () => {
+    const document = yamlFor(articleFor(testGraph(), "lexemepicar0001")!);
+    expect(parseArticle(document).senses.find((sense) => sense.domain === "cooking")!.emoji).toBe("🔪");
+  });
+
+  it("reads a document that states no status as an ordinary word, not an Inbox one", () => {
+    // The Inbox holds what arrived without anyone reading it. A document is typed or reviewed.
+    expect(parseArticle(YAML_TEMPLATE.replace("status: active\n", "").replace('headword: ""', "headword: casa")
+      .replace('lemma: ""              # leave empty to reuse the headword', "lemma: casa")
+      .replace('definition: ""     # in the target language', "definition: Edificio.")
+      .replace('terms: [""]', "terms: [house]").replace('- text: ""', "- text: Mi casa.")).status).toBe("active");
+  });
+
   it("refuses a clip field the format does not know, rather than dropping it", () => {
     // `EXAMPLE_KEYS` is a closed allow-list, which is what makes a forgotten field an error.
     const document = yamlFor(articleFor(testGraph(), "lexemepicar0001")!)
@@ -219,14 +232,14 @@ describe("the new-entry template", () => {
       topics: ["Travel"], status: "inbox", shortGloss: "hook", notes: ["Not the same as el gancho."],
       senses: [{
         id: "sense0000000091", order: 0, definition: "Gancho de metal curvo.", definitionLang: "es",
-        glosses: [{ lang: "en", terms: ["hook"] }], domain: null, images: [],
+        glosses: [{ lang: "en", terms: ["hook"] }], domain: null, emoji: null, images: [],
         examples: [{
           id: "example00000091", text: "El disfraz de pirata viene con un garfio.", textLang: "es",
           translation: "The pirate costume comes with a hook.", translationLang: "en",
           origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
           videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
           clipRef: null, imageRef: null, audioRef: null,
-          note: null, matchedForm: "un garfio", matchedTranslationForm: "hook", approved: false
+          note: null, matchedForm: "un garfio", matchedTranslationForm: "hook"
         }]
       }],
       attestations: [{

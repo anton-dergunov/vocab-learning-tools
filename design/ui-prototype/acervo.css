@@ -395,6 +395,9 @@ input, textarea { font: inherit; color: inherit; }
   font-size: 15.5px; color: var(--ink-2); padding-left: 15px; position: relative; line-height: 1.55;
 }
 .notes li::before { content: "—"; position: absolute; left: 0; color: var(--ink-3); }
+/* Notes end on bare text rather than on a padded block, so they need their own room before the rule. */
+.sec .body > .notes { padding-bottom: 18px; }
+.sec .body > .att:last-child { margin-bottom: 14px; }
 
 /* ── collapsibles: media, clip, study ── */
 details.fold { border-top: 1px solid var(--rule-soft); }
@@ -486,6 +489,9 @@ details.fold .fold-body { padding: 4px 0 18px; }
 /* ── masthead ── */
 .head-line { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
 .head-line .headword { margin: 0; }
+/* Centring against the line box puts the button level with the ascenders; the eye reads the word's
+   x-height, which sits lower. */
+.head-line .say.head { margin-left: 4px; transform: translateY(4px); }
 /* Baseline, not centre: a mono IPA, an italic serif and a small mono filing line only look level when
    their letters sit on one line. */
 .pron-row { align-items: baseline; column-gap: 14px; row-gap: 2px; margin-top: 8px; }
@@ -623,7 +629,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
   border-radius: 10px; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow);
 }
 .cw-headword {
-  margin: 0; font-family: var(--serif); font-weight: 700; font-size: 30px; line-height: 1.05; letter-spacing: -.02em;
+  position: relative; top: 2px; margin: 0; font-family: var(--serif); font-weight: 700; font-size: 30px; line-height: 1.05; letter-spacing: -.02em;
 }
 .cards-word .say.head { width: 30px; height: 30px; }
 .cards-word .reading { margin: 0; font-size: 14px; }

@@ -156,6 +156,7 @@ def _project_sense(row: Mapping[str, Any]) -> dict[str, Any]:
         "definitionLang": row["definition_lang"],
         "glosses": to_list(row["glosses"]),
         "domain": text_or_none(row["domain"]),
+        "emoji": text_or_none(row["emoji"]),
         "order": to_int(row["sense_order"]),
     }
 
@@ -167,6 +168,7 @@ def _assign_sense(value: Mapping[str, Any]) -> dict[str, Any]:
         "definition_lang": trimmed(value.get("definitionLang")),
         "glosses": to_list(value.get("glosses")),
         "domain": trimmed(value.get("domain")),
+        "emoji": trimmed(value.get("emoji")),
         "sense_order": to_int(value.get("order")),
     }
 
@@ -220,7 +222,6 @@ def _project_example(row: Mapping[str, Any]) -> dict[str, Any]:
         "note": text_or_none(row["note"]),
         "matchedForm": text_or_none(row["matched_form"]),
         "matchedTranslationForm": text_or_none(row["matched_translation_form"]),
-        "approved": bool(row["approved"]),
     }
 
 
@@ -247,7 +248,6 @@ def _assign_example(value: Mapping[str, Any]) -> dict[str, Any]:
         "note": trimmed(value.get("note")),
         "matched_form": trimmed(value.get("matchedForm")),
         "matched_translation_form": trimmed(value.get("matchedTranslationForm")),
-        "approved": to_bool(value.get("approved")),
     }
 
 

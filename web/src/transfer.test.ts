@@ -303,6 +303,45 @@ describe("reading a bundle", () => {
     expect(clip.clipRef).toBeNull();
   });
 
+  it("reads a version 8 bundle, dropping the approval nothing ever set", () => {
+    // Version 9 removed an example's `approved` and added an optional emoji to a sense. Every older
+    // word file carries the first, which the reader now refuses as unknown, so this is the one step
+    // that rewrites text: the line goes. It carried no information, so there is nothing to keep.
+    const older = [
+      "language: es",
+      "headword: picar",
+      "lemma: picar",
+      "pos: verb",
+      "status: active",
+      "senses:",
+      "  - order: 0",
+      "    definition: Producir comezón.",
+      "    definitionLang: es",
+      "    glosses:",
+      "      - {lang: en, terms: [to itch]}",
+      "    examples:",
+      "      - text: Me pica la nariz.",
+      "        textLang: es",
+      "        origin: manual",
+      "        approved: false",
+      ""
+    ].join("\n");
+
+    const files = bundle()
+      .filter((file) => !file.path.endsWith(".yaml") || file.path === MANIFEST_FILE
+        || file.path === VOCABULARIES_FILE || file.path === TOPICS_FILE)
+      .map((file) => file.path === MANIFEST_FILE
+        ? { ...file, text: file.text.replace(`schemaVersion: ${SCHEMA_VERSION}`, "schemaVersion: 8") }
+        : file)
+      .concat([{ path: "es/picar.yaml", text: older }]);
+
+    const plan = readBundle(files);
+    expect(plan.problems).toEqual([]);
+    const sense = plan.articles.find((article) => article.path === "es/picar.yaml")!.draft.senses[0];
+    expect(sense.examples[0].text).toBe("Me pica la nariz.");
+    expect(sense.emoji).toBeNull();
+  });
+
   it("refuses a bundle from another schema version, naming both", () => {
     const files = bundle().map((file) => file.path === MANIFEST_FILE
       ? { ...file, text: file.text.replace(`schemaVersion: ${SCHEMA_VERSION}`, "schemaVersion: 4") }

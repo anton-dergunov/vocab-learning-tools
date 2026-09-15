@@ -461,6 +461,7 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
         definitionLang: senseDraft.definitionLang,
         glosses: senseDraft.glosses,
         domain: senseDraft.domain,
+        emoji: senseDraft.emoji,
         order: senseDraft.order
       };
       return {
@@ -486,8 +487,7 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
           audioRef: example.audioRef,
           note: example.note,
           matchedForm: example.matchedForm,
-          matchedTranslationForm: example.matchedTranslationForm,
-          approved: example.approved
+          matchedTranslationForm: example.matchedTranslationForm
         })),
         images: promptsOf(senseDraft.images, senseId, `senseImage:${senseIndex}`)
       };

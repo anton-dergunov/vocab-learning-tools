@@ -58,27 +58,27 @@ export function testGraph(): VocabularyGraph {
     senses: [
       {
         id: "sensepicaritch0", lexemeId: "lexemepicar0001", definition: "Producir comezón.",
-        definitionLang: "es", glosses: [{ lang: "en", terms: ["to itch"] }], domain: null, order: 0,
+        definitionLang: "es", glosses: [{ lang: "en", terms: ["to itch"] }], domain: null, emoji: null, order: 0,
         ...sync("02-11")
       },
       {
         id: "sensepicarchop0", lexemeId: "lexemepicar0001", definition: "Cortar en trozos pequeños.",
         definitionLang: "es", glosses: [{ lang: "en", terms: ["to chop", "to dice"] }],
-        domain: "cooking", order: 1, ...sync("02-11")
+        domain: "cooking", emoji: "🔪", order: 1, ...sync("02-11")
       },
       {
         id: "sensebalsaraft0", lexemeId: "lexemebalsa0001", definition: "Embarcación plana.",
-        definitionLang: "es", glosses: [{ lang: "en", terms: ["raft"] }], domain: null, order: 0,
+        definitionLang: "es", glosses: [{ lang: "en", terms: ["raft"] }], domain: null, emoji: null, order: 0,
         ...sync("01-22")
       },
       {
         id: "senseespolvor10", lexemeId: "lexemeespolv001", definition: "Esparcir polvo sobre algo.",
-        definitionLang: "es", glosses: [{ lang: "en", terms: ["to sprinkle"] }], domain: "cooking",
+        definitionLang: "es", glosses: [{ lang: "en", terms: ["to sprinkle"] }], domain: "cooking", emoji: null,
         order: 0, ...sync("08-27")
       },
       {
         id: "senseturmoil010", lexemeId: "lexemeturmoil01", definition: "A state of great confusion.",
-        definitionLang: "en", glosses: [{ lang: "ru", terms: ["суматоха", "смятение"] }], domain: null,
+        definitionLang: "en", glosses: [{ lang: "ru", terms: ["суматоха", "смятение"] }], domain: null, emoji: null,
         order: 0, ...sync("02-25")
       }
     ],
@@ -96,7 +96,7 @@ export function testGraph(): VocabularyGraph {
         sourceAttestationId: "attestpicar0010", modelId: null, videoRef: null, videoTitle: null,
         videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
         imageRef: null, audioRef: "audio/picar.mp3", note: null,
-        matchedForm: "pica", matchedTranslationForm: "itches", approved: true, ...sync("02-11")
+        matchedForm: "pica", matchedTranslationForm: "itches", ...sync("02-11")
       },
       {
         // A clip, so its id is derived from its sense and the segment it quotes rather than drawn
@@ -110,7 +110,7 @@ export function testGraph(): VocabularyGraph {
         videoChannel: "Easy Spanish", videoStart: 461, videoEnd: 468,
         clipRef: "seg_7c3d18e5b04a92f6de27",
         imageRef: null, audioRef: null, note: null, matchedForm: "Pica",
-        matchedTranslationForm: "Chop", approved: false, ...sync("02-11")
+        matchedTranslationForm: "Chop", ...sync("02-11")
       },
       {
         id: "examplebalsa010", senseId: "sensebalsaraft0", text: "Cruzaron el río en una balsa.",
@@ -118,7 +118,7 @@ export function testGraph(): VocabularyGraph {
         origin: "llm", sourceAttestationId: null, modelId: "demo-model", videoRef: null,
         videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
         imageRef: null, audioRef: null, note: null,
-        matchedForm: null, matchedTranslationForm: null, approved: true, ...sync("01-22")
+        matchedForm: null, matchedTranslationForm: null, ...sync("01-22")
       }
     ],
     imagePrompts: [

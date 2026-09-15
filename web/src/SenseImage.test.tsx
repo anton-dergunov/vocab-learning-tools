@@ -19,19 +19,11 @@ function shown(record: ImagePrompt, busy = false) {
 
 afterEach(() => { vi.clearAllMocks(); });
 
-describe("what a picture's caption claims", () => {
-  it("names the style that drew it", () => {
+describe("what a picture says about itself", () => {
+  it("shows the picture with no caption, leaving the style to the dialog", () => {
     shown(prompt({ styleId: "baroque-chiaroscuro", imageModelId: "painter" }));
-    expect(screen.getByText("baroque-chiaroscuro")).toBeTruthy();
-  });
-
-  it("says a picture is yours instead of naming a style it was never drawn in", () => {
-    // The record keeps its `styleId` on purpose — the brief and style are what a later Draw works
-    // from — so the caption is the only thing that can stop it reading as a description of *this*
-    // picture. "baroque-chiaroscuro yours" was the record leaking through.
-    shown(prompt({ styleId: "baroque-chiaroscuro", imageModelId: null }));
-    expect(screen.getByText("your own picture")).toBeTruthy();
     expect(screen.queryByText("baroque-chiaroscuro")).toBeNull();
+    expect(document.querySelector("figcaption")).toBeNull();
   });
 
   it("knows a supplied picture from a drawn one by the absence of a rendering model", () => {

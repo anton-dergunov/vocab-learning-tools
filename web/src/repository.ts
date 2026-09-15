@@ -9,7 +9,7 @@ import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase,
 import { clipExampleId, imagePromptId, newDeviceId, newId, nowInstant } from "./ids";
 import type { ArticleDraft, ImagePromptDraft } from "./yaml";
 
-export const LOCAL_SCHEMA_VERSION = 8;
+export const LOCAL_SCHEMA_VERSION = 9;
 
 const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
@@ -448,6 +448,7 @@ export class LocalAcervoRepository implements AcervoRepository {
         definitionLang: sense.definitionLang,
         glosses: sense.glosses,
         domain: sense.domain,
+        emoji: sense.emoji,
         order: sense.order,
         ...this.stamp(existing)
       } as Sense);
@@ -484,7 +485,6 @@ export class LocalAcervoRepository implements AcervoRepository {
           note: example.note,
           matchedForm: example.matchedForm,
           matchedTranslationForm: example.matchedTranslationForm,
-          approved: example.approved,
           ...this.stamp(current)
         } as Example);
       });

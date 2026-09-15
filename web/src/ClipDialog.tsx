@@ -41,12 +41,17 @@ const SpeechClipPlayer = lazy(async () =>
   ({ default: (await import("@spoken-usage-retrieval/react/player")).SpeechClipPlayer })
 );
 
-export function ClipDialog({ stored, headword, glossLang, onClose }: {
+export function ClipDialog({ stored, headword, glossLang, onClose, onRemove }: {
   stored: StoredClip;
   headword: string;
   /** What the player's target text is asked for in. The vocabulary's first gloss language. */
   glossLang: string | null;
   onClose(): void;
+  /**
+   * Taking the clip off the word. Here rather than under the clip in the article: you decide a clip
+   * is wrong having watched it, and a remove link under every clip was noise on every read.
+   */
+  onRemove?(): void;
 }) {
   const [view, setView] = useState<ClipView | null>(null);
   const [translation, setTranslation] = useState<TranslationJob | null>(null);
@@ -175,6 +180,13 @@ export function ClipDialog({ stored, headword, glossLang, onClose }: {
         />}
 
         {view && !view.clip && <Stored stored={stored} unreachable={view.unreachable} />}
+
+        {onRemove && <p className="clip-dialog-actions">
+          {/* An ordinary tombstone, deliberately not a picture's `suppressed` field — and safe only
+              because the clip search is one-shot at save. The id is derived from the sense and the
+              segment, so a later re-search that chose the same segment would bring it back. */}
+          <button type="button" className="link-btn clip-remove" onClick={onRemove}>Remove this clip</button>
+        </p>}
       </div>
     </section>
   </div>;

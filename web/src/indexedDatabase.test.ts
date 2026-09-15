@@ -28,7 +28,7 @@ describe("IndexedDB Acervo repository", () => {
       lexemes: [{ id: "lexeme000000001", ...lexemeInput, topicIds: ["topic0000000001"], ...sync }],
       senses: [{
         id: "sense0000000001", lexemeId: "lexeme000000001", definition: "Una embarcación sencilla.",
-        definitionLang: "es", glosses: [{ lang: "en", terms: ["raft"] }], domain: null, order: 0, ...sync
+        definitionLang: "es", glosses: [{ lang: "en", terms: ["raft"] }], domain: null, emoji: null, order: 0, ...sync
       }]
     });
 

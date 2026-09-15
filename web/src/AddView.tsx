@@ -339,7 +339,7 @@ export default function AddView({
         <p className="hint">
           Built from the dictionary entry you were reading, which is sent as reference only — its
           example sentences are the dictionary's, not places you met the word, so none of them is
-          kept as an attestation. The entry lands in <b>Inbox</b> for review.
+          kept as an attestation. You read the entry before it is saved.
         </p>
         {/* Shown rather than merely described. What is sent to a model on someone's behalf should
             be readable by them first, and "it carries some context" is not the same as saying so. */}
@@ -354,8 +354,8 @@ export default function AddView({
         </details>
       </> : <p className="hint">
         Share the whole sentence — the word is picked out for you unless you name it above, and the
-        sentence is kept as the place you met it. The entry is built for review and lands in{" "}
-        <b>Inbox</b>.{!untouched && " Processing again replaces the draft you have."}
+        sentence is kept as the place you met it. You read the entry before it is saved.
+        {!untouched && " Processing again replaces the draft you have."}
       </p>}
 
       <details className="fold capture-fold">

@@ -27,7 +27,7 @@ describe("the Acervo repository", () => {
       lexemes: [{ id: "lexeme000000001", ...lexemeInput, topicIds: ["topic0000000001"], ...sync }],
       senses: [{
         id: "sense0000000001", lexemeId: "lexeme000000001", definition: "Perder el conocimiento.",
-        definitionLang: "es", glosses: [{ lang: "en", terms: ["to faint"] }], domain: null, order: 0, ...sync
+        definitionLang: "es", glosses: [{ lang: "en", terms: ["to faint"] }], domain: null, emoji: null, order: 0, ...sync
       }]
     });
     expect(repository.snapshot().topics).toHaveLength(1);
@@ -46,7 +46,7 @@ describe("the Acervo repository", () => {
     };
     await expect(repository.writeGraph({ senses: [{
       id: "sense0000000001", lexemeId: "missing00000001", definition: "Missing", definitionLang: "en",
-      glosses: [{ lang: "en", terms: ["missing"] }], domain: null, order: 0, ...sync
+      glosses: [{ lang: "en", terms: ["missing"] }], domain: null, emoji: null, order: 0, ...sync
     }] })).rejects.toThrow("missing lexeme");
     expect((await database.read()).senses).toEqual([]);
   });
@@ -60,7 +60,7 @@ describe("the Acervo repository", () => {
     const lexeme = await repository.saveLexeme({ ...lexemeInput, topicIds: [topic.id] }, "lexeme000000001");
     const sense = await repository.saveSense({
       lexemeId: lexeme.id, definition: "Perder brevemente el conocimiento.", definitionLang: "es",
-      glosses: [{ lang: "en", terms: ["to faint", "to pass out"] }], domain: "health", order: 0
+      glosses: [{ lang: "en", terms: ["to faint", "to pass out"] }], domain: "health", emoji: null, order: 0
     }, "sense0000000001");
     const attestation = await repository.saveAttestation({
       lexemeId: lexeme.id, text: "Se desmayó durante la clase.", translation: null, sourceUrl: null,
@@ -71,7 +71,7 @@ describe("the Acervo repository", () => {
       translationLang: "en", origin: "attestation", sourceAttestationId: attestation.id, modelId: null,
       videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
       clipRef: null, imageRef: null, audioRef: null, note: null,
-      matchedForm: null, matchedTranslationForm: null, approved: true
+      matchedForm: null, matchedTranslationForm: null
     }, "example00000001");
     expect(repository.snapshot()).toMatchObject({ ready: true, ownerId: "owner0000000001" });
     // Every stored record carries the revision the server allocated, never a locally invented one.
@@ -87,7 +87,7 @@ describe("the Acervo repository", () => {
     repository.attachRemote(fakeRemote());
     await expect(repository.saveSense({
       lexemeId: "missing00000001", definition: "Missing", definitionLang: "en",
-      glosses: [{ lang: "en", terms: ["missing"] }], domain: null, order: 0
+      glosses: [{ lang: "en", terms: ["missing"] }], domain: null, emoji: null, order: 0
     })).rejects.toThrow("missing lexeme");
     await expect(repository.saveLexeme({ ...lexemeInput, language: "zh-Hans", headword: "图书馆", lemma: "图书馆" }))
       .rejects.toThrow("require a reading");
@@ -104,7 +104,7 @@ describe("the Acervo repository", () => {
     const lexeme = await repository.saveLexeme(lexemeInput, "lexeme000000001");
     await repository.saveSense({
       lexemeId: lexeme.id, definition: "Perder el conocimiento.", definitionLang: "es",
-      glosses: [{ lang: "en", terms: ["faint"] }], domain: null, order: 0
+      glosses: [{ lang: "en", terms: ["faint"] }], domain: null, emoji: null, order: 0
     }, "sense0000000001");
     await repository.delete("lexemes", lexeme.id);
     expect(repository.snapshot().lexemes[0].deleted).toBe(true);
@@ -221,14 +221,14 @@ describe("saving an article edited as YAML", () => {
     await repository.saveLexeme({ ...lexemeInput, topicIds: ["topic0000000001"] }, "lexeme000000001");
     await repository.saveSense({
       lexemeId: "lexeme000000001", definition: "Perder el conocimiento.", definitionLang: "es",
-      glosses: [{ lang: "en", terms: ["to faint"] }], domain: null, order: 0
+      glosses: [{ lang: "en", terms: ["to faint"] }], domain: null, emoji: null, order: 0
     }, "sense0000000001");
     await repository.saveExample({
       senseId: "sense0000000001", text: "Me desmayé.", textLang: "es", translation: "I fainted.",
       translationLang: "en", origin: "manual", sourceAttestationId: null, modelId: null,
       videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
       clipRef: null, imageRef: null, audioRef: null,
-      note: null, matchedForm: null, matchedTranslationForm: null, approved: true
+      note: null, matchedForm: null, matchedTranslationForm: null
     }, "example00000001");
     const draft = () => parseArticle(yamlFor(articleFor(repository.snapshot(), "lexeme000000001")!));
     return { database, repository, remote, draft };
@@ -241,7 +241,7 @@ describe("saving an article edited as YAML", () => {
     article.senses[0].examples[0].id = null;          // replaced rather than edited
     article.senses.push({
       id: null, order: 1, definition: "Sentir una emoción intensa.", definitionLang: "es",
-      glosses: [{ lang: "en", terms: ["to swoon"] }], domain: null, examples: [], images: []
+      glosses: [{ lang: "en", terms: ["to swoon"] }], domain: null, emoji: null, examples: [], images: []
     });
     const before = remote.sent.length;
     await repository.saveArticle(article);
@@ -285,7 +285,7 @@ describe("saving an article edited as YAML", () => {
       sourceAttestationId: null, modelId: null, videoRef: "https://youtu.be/od_YtGbRC48",
       videoTitle: "Informe semanal", videoChannel: "DW Español", videoStart: 252, videoEnd: 258,
       clipRef: "seg_4b1c7d2e9a350f68cd41", imageRef: null, audioRef: null, note: null,
-      matchedForm: null, matchedTranslationForm: null, approved: false
+      matchedForm: null, matchedTranslationForm: null
     });
     await repository.saveArticle(clipped);
 
@@ -304,13 +304,13 @@ describe("saving an article edited as YAML", () => {
     const added = draft();
     added.senses.push({
       id: null, order: 1, definition: "Sentir una emoción intensa.", definitionLang: "es",
-      glosses: [{ lang: "en", terms: ["to swoon"] }], domain: null, images: [],
+      glosses: [{ lang: "en", terms: ["to swoon"] }], domain: null, emoji: null, images: [],
       examples: [{
         id: null, text: "Casi me desmayo de la emoción.", textLang: "es", translation: null,
         translationLang: null, origin: "manual", sourceAttestationId: null, modelId: null,
         videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
         clipRef: null, imageRef: null, audioRef: null,
-        note: null, matchedForm: null, matchedTranslationForm: null, approved: true
+        note: null, matchedForm: null, matchedTranslationForm: null
       }]
     });
     await repository.saveArticle(added);
@@ -356,14 +356,14 @@ describe("saving an article edited as YAML", () => {
       topics: ["Health"], status: "inbox", shortGloss: "hook", notes: [], images: [],
       senses: [{
         id: "sense0000000091", order: 0, definition: "Gancho de metal curvo.", definitionLang: "es",
-        glosses: [{ lang: "en", terms: ["hook"] }], domain: null, images: [],
+        glosses: [{ lang: "en", terms: ["hook"] }], domain: null, emoji: null, images: [],
         examples: [{
           id: "example00000091", text: "Viene con un garfio.", textLang: "es",
           translation: "It comes with a hook.", translationLang: "en", origin: "attestation",
           sourceAttestationId: "attest000000091", modelId: null, videoRef: null, videoTitle: null,
           videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
           imageRef: null, audioRef: null, note: null, matchedForm: null,
-          matchedTranslationForm: null, approved: false
+          matchedTranslationForm: null
         }]
       }],
       attestations: [{
@@ -407,7 +407,7 @@ describe("saving an article edited as YAML", () => {
       origin: "attestation", sourceAttestationId: "attest000000077", modelId: null,
       videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
       clipRef: null, imageRef: null, audioRef: null, note: null,
-      matchedForm: null, matchedTranslationForm: null, approved: true
+      matchedForm: null, matchedTranslationForm: null
     });
     await repository.saveArticle(article, new Set(["attest000000077"]));
     const stored = articleFor(repository.snapshot(), article.id!)!;

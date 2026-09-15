@@ -147,7 +147,6 @@ def test_a_chosen_clip_becomes_an_example_carrying_the_segment_it_quotes(server,
     assert clip["translationLang"] == "en"
     assert clip["matchedTranslationForm"] == "itching"
     # Like every other example a model produced.
-    assert clip["approved"] is False
     assert clip["modelId"]
 
 

@@ -22,6 +22,7 @@ import {
   type ExternalEntry, type ExternalRow, type RawHit
 } from "./externalEntries";
 import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
+import { useDefaultArticleView, type ArticleView } from "./editorPreferences";
 import LexemeArticle, {
   type AskSlot, type AskTarget, type ClipSlot, type MarkSlot, type PictureSlot
 } from "./LexemeArticle";
@@ -153,6 +154,10 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("read");
+  /* Which view an article is read in. The device's default comes from Settings; the switch above an
+     article overrides it for this sitting and no longer. */
+  const defaultView = useDefaultArticleView();
+  const [viewChoice, setViewChoice] = useState<ArticleView | null>(null);
   const [problems, setProblems] = useState<YamlProblem[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -339,8 +344,14 @@ export default function App() {
     document.title = article ? `${article.lexeme.headword} — Acervo` : "Acervo";
   }, [article]);
 
+  /* A proposal is reviewed on the page — its marks and the conversation that made it live there — so
+     one being live overrides the choice rather than being hidden behind a card. */
+  const view: ArticleView = proposal ? "page" : viewChoice ?? defaultView;
+  const reading = mode === "read";
+  const carding = Boolean(article) && reading && view === "cards" && !external;
+
   /** The conversation has taken the pane, so the article is not drawn. */
-  const asking = askDetent === "full" && mode === "read" && Boolean(article || external);
+  const asking = askDetent === "full" && reading && Boolean(external || (article && view === "page"));
 
   /* `.main.composing` sets `overflow: hidden`, which clamps `scrollTop` to zero — so the offset is
      parked on the way into `full` and put back on the way out. Four lines, and the alternative was
@@ -948,7 +959,8 @@ export default function App() {
 
   return <>
     <div className="viewport" onClick={() => { setLangMenu(false); setScopeMenu(false); }}>
-      <div className="app">
+      {/* Reading a word on a phone or a tablet does not need the topic rail beside it. */}
+      <div className={`app${(article || external) && !addTab ? " article-open" : ""}`}>
         <div className="brand"><span className="mark">A.</span></div>
 
         <header className="topbar">
@@ -1041,7 +1053,7 @@ export default function App() {
         {/* Composing replaces the list rather than covering it: the entry you are writing is the
             work, the list behind it is not, and a bounded column is the only shape that keeps a
             title and a save button on screen at every window size. */}
-        <main className={`main ${composing ? "composing" : ""}`} ref={main}>
+        <main className={`main ${composing ? "composing" : ""}${carding && !composing ? " cards-on" : ""}`} ref={main}>
           {addTab ? <AddView
             // A seed is a fresh composition, not a prop change: remounting is what makes "add this
             // word, then that one" start clean rather than editing the previous draft.
@@ -1083,10 +1095,17 @@ export default function App() {
             />}
             {article && <div className="art-bar">
               <button className="icon-btn" aria-label="Back to the list" onClick={() => { setOpenId(null); setProposal(null); }}><BackIcon /></button>
-              <span className="label">{topicLabel}</span>
+              <span className="label art-where">{topicLabel}</span>
               <span className="spacer" />
               <div className="seg">
-                <button className={mode === "read" ? "on" : ""} onClick={() => setMode("read")}>Read</button>
+                <button className={reading && view === "page" ? "on" : ""} onClick={() => { setViewChoice("page"); setMode("read"); }}>Page</button>
+                <button
+                  className={reading && view === "cards" ? "on" : ""}
+                  // Cards has nowhere to draw a proposal's marks, so it waits until one is saved or discarded.
+                  disabled={Boolean(proposal)}
+                  title={proposal ? "Save or discard the proposed changes first" : undefined}
+                  onClick={() => { setViewChoice("cards"); setMode("read"); }}
+                >Cards</button>
                 <button className={mode !== "read" ? "on" : ""} onClick={() => setMode("yaml")}>YAML</button>
               </div>
               {/* The escape hatch. Hand-editing drops a live proposal: the editor is the document of
@@ -1106,7 +1125,7 @@ export default function App() {
                   external={externalSearch}
                 />
               : mode === "read" ? <LexemeArticle
-                  article={article} onUnsupported={notify} pictures={pictures} clips={clips}
+                  article={article} view={view} onUnsupported={notify} pictures={pictures} clips={clips}
                   marks={markSlot} ask={askSlot} onReference={setReference}
                 />
               // Editing is a composer above, so only reading and the read-only projection get here.
@@ -1124,7 +1143,8 @@ export default function App() {
                 article and on an external entry; never inside AddView, which replaces the pane
                 rather than sharing it. Hidden entirely when the server has no model — the capture
                 surface already knows how to say that. */}
-            {snapshot && (article || external) && mode === "read" && captureHealth?.available !== false
+            {/* Not in Cards: a conversation edits the whole entry, and needs the whole entry in view. */}
+            {snapshot && (external || (article && view === "page")) && mode === "read" && captureHealth?.available !== false
               && <AskDock
                 key={subjectKey ?? "none"}
                 headword={article ? article.lexeme.headword : external!.word}

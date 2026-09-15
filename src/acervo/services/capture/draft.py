@@ -137,7 +137,6 @@ def draft_from(
                     "matchedTranslationForm": matched_translation
                     if matched_translation and translation and matched_translation in translation
                     else None,
-                    "approved": False,
                 }
             )
 
@@ -149,6 +148,7 @@ def draft_from(
                 "definitionLang": language_or_none(raw.get("definitionLang")) or vocabulary["definitionLang"],
                 "glosses": glosses,
                 "domain": trimmed(raw.get("domain")) or None,
+                "emoji": trimmed(raw.get("emoji"))[:32] or None,
                 "examples": examples,
                 "images": [],
             }
@@ -186,7 +186,9 @@ def draft_from(
         "topics": [
             topic_names[name.lower()] for name in text_list(answer.get("topics")) if name.lower() in topic_names
         ],
-        "status": "inbox",
+        # A draft is a proposal a person reads before saving, so saving it files an ordinary word. The
+        # Inbox is for what arrived without anyone reading it, which `apply_draft` decides.
+        "status": "active",
         "shortGloss": trimmed(answer.get("shortGloss")) or None,
         "notes": text_list(answer.get("notes")),
         "senses": senses,

@@ -124,7 +124,7 @@ What `set` may change, and nothing else:
 | Target | Fields |
 | --- | --- |
 | `lexeme` | `headword` `lemma` `reading` `ipa` `pos` `gender` `register` `dialect` `emoji` `shortGloss` `notes` `topics` `status` |
-| `sense:…` | `definition` `definitionLang` `domain` `glosses` |
+| `sense:…` | `definition` `definitionLang` `domain` `emoji` `glosses` |
 | `example:…` | `text` `translation` `note` `matchedForm` `matchedTranslationForm` |
 | `attestation:…` | `text` `translation` `sourceTitle` `sourceUrl` `sourceKind` |
 
@@ -165,7 +165,7 @@ lesson, unknown.
 
 ## Provenance, which you do not set
 
-Do not set `origin`, `modelId`, `sourceAttestationId` or `approved` on an example. Acervo derives
+Do not set `origin`, `modelId` or `sourceAttestationId` on an example. Acervo derives
 them from which operation you used: an example you wrote is a generated one, and an example drawn
 from a sentence the learner supplied is an attestation and names it. There is no field meaning "a
 person wrote this", and you do not get one.

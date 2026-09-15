@@ -12,7 +12,10 @@ import { syncEngine, type SyncStatus } from "./sync";
 import { SyncPanel } from "./SyncStatus";
 import { ExportPanel, ImportPanel } from "./TransferPanel";
 import { appVersionLabel } from "./version";
-import { editorPreferences, setEditorPreference, type EditorPreferences } from "./editorPreferences";
+import {
+  articleViewPreference, editorPreferences, setArticleViewPreference, setEditorPreference,
+  type ArticleViewPreference, type EditorPreferences
+} from "./editorPreferences";
 
 /** Typing the word is the point: this is the one action that cannot be undone by re-syncing. */
 const CONFIRMATION = "DELETE";
@@ -54,6 +57,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
   const [releaseError, setReleaseError] = useState(false);
   const [page, setPage] = useState<Page>(opensOn ?? "general");
   const [editor, setEditor] = useState(editorPreferences);
+  const [articleView, setArticleView] = useState(articleViewPreference);
 
   function changeEditor(name: keyof EditorPreferences, value: boolean) {
     setEditorPreference(name, value);
@@ -113,7 +117,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
     { id: "images", label: "Pictures" },
     { id: "clips", label: "Clips" },
     { id: "dictionaries", label: "Dictionaries" },
-    { id: "editor", label: "Editor" },
+    { id: "editor", label: "Reading" },
     { id: "sync", label: "Sync" },
     { id: "data", label: "Data" }
   ];
@@ -164,6 +168,27 @@ export default function Settings({ update, email, status, snapshot, language, ca
         </>}
 
         {page === "editor" && <section className="config-section">
+          <h3>Articles</h3>
+          <p className="config-help">
+            How a word opens. Page is the whole entry, scrolled, and is where you can ask about it and
+            edit it. Cards shows one meaning and one sentence at a time, swiped left and right. This
+            describes this device, not your vocabulary.
+          </p>
+          <div className="config-choices" role="radiogroup" aria-label="Open articles in">
+            {([
+              ["auto", "Depends on the device", "Cards on a touch screen, Page with a mouse or trackpad."],
+              ["page", "Page", "Always the whole entry."],
+              ["cards", "Cards", "Always one thing at a time."]
+            ] as [ArticleViewPreference, string, string][]).map(([value, title, help]) =>
+              <label key={value} className="config-switch">
+                <input
+                  type="radio" name="article-view" value={value} checked={articleView === value}
+                  onChange={() => { setArticleViewPreference(value); setArticleView(value); }}
+                />
+                <span><strong>{title}</strong><span>{help}</span></span>
+              </label>)}
+          </div>
+
           <h3>YAML editor</h3>
           <p className="config-help">
             How entries are shown when you read or edit them as YAML. These describe this device,

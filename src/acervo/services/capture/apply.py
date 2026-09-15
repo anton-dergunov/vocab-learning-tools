@@ -37,7 +37,9 @@ def apply_draft(owner: str, device: str, draft: dict[str, Any], topics: list[dic
             "dialect": draft["dialect"],
             "emoji": draft["emoji"],
             "topicIds": [topic_ids[name.lower()] for name in draft["topics"] if name.lower() in topic_ids],
-            "status": draft["status"],
+            # Applied with nobody reviewing it — an ingestion script, a headless transport — which is
+            # exactly what the Inbox is for.
+            "status": "inbox",
             "shortGloss": draft["shortGloss"],
             "notes": draft["notes"],
             **stamp,
@@ -56,6 +58,7 @@ def apply_draft(owner: str, device: str, draft: dict[str, Any], topics: list[dic
                 "definitionLang": sense["definitionLang"],
                 "glosses": sense["glosses"],
                 "domain": sense["domain"],
+                "emoji": sense["emoji"],
                 "order": sense["order"],
                 **stamp,
             }

@@ -334,6 +334,11 @@ export interface BundlePlan {
  * are versions being *accepted*, which is the cheapest form the exception takes and the one to
  * prefer.
  *
+ * Version 9 added an optional `emoji` to a sense, which an older file simply lacks, and removed an
+ * example's `approved`, which every older file carries and the reader now refuses as unknown. That
+ * is the one rewrite here: the line is dropped from each word file. It carried no information —
+ * nothing ever set it true — so there is nothing to carry forward.
+ *
  * `clipsSearchedAt` is deliberately not in the format at all. It is state the server keeps, like a
  * picture's attempt counter, so an imported word arrives never-consulted and the sweep finds it —
  * which is the right answer for a word that has just changed accounts.
@@ -342,10 +347,15 @@ export interface BundlePlan {
  * the sentence it illustrates and does not get an anchor invented for it — matching by position or
  * by text would be a guess, and a wrong anchor puts the picture under the wrong sentence.
  */
-const READABLE = new Set([SCHEMA_VERSION, 7, 6]);
+const READABLE = new Set([SCHEMA_VERSION, 8, 7, 6]);
 
 function upgradeBundle(files: BundleFile[], from: number): BundleFile[] {
-  if (READABLE.has(from)) return files;
+  if (from === SCHEMA_VERSION) return files;
+  if (READABLE.has(from)) {
+    return files.map((file) => isWordFile(file.path)
+      ? { ...file, text: file.text.replace(/^[ \t]*approved:[ \t]*(?:true|false)[ \t]*\r?\n/gm, "") }
+      : file);
+  }
   throw new Error(
     `This bundle was exported from schema version ${from} and Acervo now uses version ${SCHEMA_VERSION}. `
     + "Convert its YAML files to the current shape and import it again."

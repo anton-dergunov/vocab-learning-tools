@@ -80,7 +80,6 @@ def test_demo_graph_exercises_the_fields_the_interface_shows():
     examples = by_collection("examples")
     assert any(record["video_title"] and record["video_start"] for record in examples)
     assert any(record["audio_ref"] for record in examples)
-    assert any(not record["approved"] for record in examples)
     assert any(record["note"] for record in examples)
     assert by_collection("image_prompts")
 

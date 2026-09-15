@@ -102,16 +102,40 @@ export function SenseImage({ prompt, headword, busy, onOpen }: {
         <span>Redrawing…</span>
       </span>}
     </button>
-    <figcaption className="cap">
-      {/* Either the style or "yours", never both. The style says how the picture was *drawn*, so on
-          one the owner attached it is simply untrue — and the record keeps its `styleId` on purpose,
-          because the brief and style are what a later Draw would work from. A caption reading
-          "baroque-chiaroscuro yours" was the record leaking through as a description. */}
-      {yours(prompt)
-        ? <span className="label">your own picture</span>
-        : prompt.styleId && <span className="label">{prompt.styleId}</span>}
-    </figcaption>
+    {/* No caption. The style is how a picture was drawn, which nobody reads while learning a word;
+        the picture's dialog says it, and says "your own picture" for one the owner attached. */}
   </figure>;
+}
+
+/**
+ * The same picture as a card shows it: as large as the card allows, with nothing around it.
+ *
+ * Only a picture that exists is drawn this way. One that is pending, failed or suppressed opens the
+ * card on the sense's emoji instead (`EmojiTile`), because an empty frame with a status in it is a
+ * worse first thing to see on a card than a glyph that means the word.
+ */
+export function CardPicture({ prompt, headword, busy, onOpen }: {
+  prompt: ImagePrompt; headword: string; busy: boolean; onOpen(): void;
+}) {
+  const { url } = usePicture(prompt.imageRef, prompt.revision);
+  return <button
+    type="button" className="card-pic" onClick={onOpen}
+    aria-label={prompt.prompt ? `Picture for ${headword}: ${prompt.prompt}` : `Picture for ${headword}`}
+  >
+    {url && <img src={url} alt={prompt.prompt || ""} />}
+    {busy && url && <span className="sense-image-working" role="status"><SyncIcon /><span>Redrawing…</span></span>}
+  </button>;
+}
+
+/** A sense with no picture to show: its emoji, in the frame a picture would fill. */
+export function EmojiTile({ emoji, busy, onOpen }: { emoji: string; busy: boolean; onOpen?(): void }) {
+  return <button
+    type="button" className="card-pic card-tile" onClick={onOpen} disabled={!onOpen}
+    aria-label={busy ? "Drawing a picture" : "No picture yet"}
+  >
+    <span aria-hidden="true">{emoji}</span>
+    {busy && <span className="card-tile-status" role="status">Drawing…</span>}
+  </button>;
 }
 
 function placeholderFor(state: ImageState, prompt: ImagePrompt): string {

@@ -100,6 +100,8 @@ export interface Sense extends SyncFields, OwnedFields {
   definitionLang: string;
   glosses: Gloss[];
   domain: string | null;
+  /** The sense's own emoji, beside the word's: what the article's sense selector shows. */
+  emoji: string | null;
   order: number;
 }
 
@@ -136,7 +138,6 @@ export interface Example extends SyncFields, OwnedFields {
   note: string | null;
   matchedForm: string | null;
   matchedTranslationForm: string | null;
-  approved: boolean;
 }
 
 /**
@@ -324,6 +325,7 @@ export function validateGraph(graph: VocabularyGraph): void {
     language(record.definitionLang, "Definition language");
     invariant(Number.isSafeInteger(record.order) && record.order >= 0, "Sense order is invalid.");
     optionalString(record.domain, "Sense domain");
+    optionalString(record.emoji, "Sense emoji");
     invariant(Array.isArray(record.glosses) && record.glosses.length > 0, "A sense requires at least one gloss group.");
     const glossLanguages = new Set<string>();
     record.glosses.forEach((gloss) => {
@@ -388,7 +390,6 @@ export function validateGraph(graph: VocabularyGraph): void {
       invariant(record.translation, "A matched translation form requires a translation.");
       invariant(record.translation.includes(record.matchedTranslationForm), "The matched translation form must occur in the translation.");
     }
-    invariant(typeof record.approved === "boolean", "Example approval is invalid.");
     examples.set(record.id, record);
   });
 

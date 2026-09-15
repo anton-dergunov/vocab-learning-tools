@@ -116,7 +116,7 @@ const LEXEME_FIELDS: Record<string, Coerce> = {
   status: { choice: LEXEME_STATUSES }
 };
 const SENSE_FIELDS: Record<string, Coerce> = {
-  definition: "text", definitionLang: "text", domain: "textOrNull", glosses: "glosses"
+  definition: "text", definitionLang: "text", domain: "textOrNull", emoji: "textOrNull", glosses: "glosses"
 };
 const EXAMPLE_FIELDS: Record<string, Coerce> = {
   text: "text", translation: "textOrNull", note: "textOrNull",
@@ -373,6 +373,7 @@ function newSense(
       ?? draft.senses[0]?.definitionLang ?? draft.language,
     glosses: (fields.glosses as Gloss[] | undefined) ?? [],
     domain: (fields.domain as string | null | undefined) ?? null,
+    emoji: (fields.emoji as string | null | undefined) ?? null,
     examples: examples.map((item) =>
       newExample(item as Record<string, unknown>, draft, context, null, new Map(), minted)),
     images: []
@@ -418,10 +419,7 @@ function newExample(
     clipRef: null, imageRef: null, audioRef: null,
     note: (fields.note as string | null | undefined) ?? null,
     matchedForm: (fields.matchedForm as string | null | undefined) ?? null,
-    matchedTranslationForm: (fields.matchedTranslationForm as string | null | undefined) ?? null,
-    /* Reviewing a proposal *is* the approve gesture: you read the example in the rendered article
-       and pressed Save changes. Nothing lands wearing a chip that says you have not looked at it. */
-    approved: true
+    matchedTranslationForm: (fields.matchedTranslationForm as string | null | undefined) ?? null
   };
   realign(example, context);
   return example;

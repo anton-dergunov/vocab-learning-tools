@@ -49,3 +49,44 @@ export function useEditorPreferences(): EditorPreferences {
   }, []);
   return preferences;
 }
+
+/**
+ * Which view an article opens in, remembered per device for the same reason as the editor's.
+ *
+ * `auto` is Cards where a word is glanced at — a touch screen, which cannot hover — and Page where
+ * there is a pointer. The switch above an article changes the view for that sitting, not this.
+ */
+export type ArticleViewPreference = "auto" | "page" | "cards";
+export type ArticleView = "page" | "cards";
+
+const ARTICLE_VIEW_KEY = "acervo-article-view";
+
+export function articleViewPreference(): ArticleViewPreference {
+  try {
+    const stored = localStorage.getItem(ARTICLE_VIEW_KEY);
+    return stored === "page" || stored === "cards" ? stored : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+export function setArticleViewPreference(value: ArticleViewPreference): void {
+  try { localStorage.setItem(ARTICLE_VIEW_KEY, value); } catch { /* a preference, not data */ }
+  window.dispatchEvent(new CustomEvent(PREFERENCES_EVENT));
+}
+
+export function defaultArticleView(preference: ArticleViewPreference = articleViewPreference()): ArticleView {
+  if (preference !== "auto") return preference;
+  const touch = typeof window.matchMedia === "function" && window.matchMedia("(hover: none)").matches;
+  return touch ? "cards" : "page";
+}
+
+export function useDefaultArticleView(): ArticleView {
+  const [view, setView] = useState(() => defaultArticleView());
+  useEffect(() => {
+    const refresh = () => setView(defaultArticleView());
+    window.addEventListener(PREFERENCES_EVENT, refresh);
+    return () => window.removeEventListener(PREFERENCES_EVENT, refresh);
+  }, []);
+  return view;
+}

@@ -233,6 +233,8 @@ senses = Table(
     Column("definition_lang", String(35), nullable=False),
     Column("glosses", JSON, nullable=False, default=list),
     Column("domain", String(120), nullable=False, default=""),
+    # The sense's own picture-in-a-glyph, beside the word's: what the article's sense selector shows.
+    Column("emoji", String(32), nullable=False, default=""),
     Column("sense_order", Integer, nullable=False, default=0),
     *_sync_fields(),
     Index("idx_senses_owner_revision", "owner", "revision"),
@@ -284,7 +286,6 @@ examples = Table(
     Column("note", String(2000), nullable=False, default=""),
     Column("matched_form", String(240), nullable=False, default=""),
     Column("matched_translation_form", String(240), nullable=False, default=""),
-    Column("approved", Boolean, nullable=False, default=False),
     *_sync_fields(),
     Index("idx_examples_owner_revision", "owner", "revision"),
     Index("idx_examples_owner_sense", "owner", "sense"),
