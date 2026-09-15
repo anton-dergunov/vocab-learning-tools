@@ -1,6 +1,17 @@
 /* Acervo — prototype fixture data.
    Shapes follow web/src/domain.ts so the mock-up can be wired to the real
-   repository later without reshaping the view layer. Content is illustrative. */
+   repository later without reshaping the view layer. Content is illustrative, except `la obra` and
+   `animarse`, which are copied from a real account to judge the article redesign against.
+
+   Three things here are ahead of the schema on purpose, for the article redesign spike:
+   - a sense carries an `emoji`, and its `domain` is a one-word label for *every* sense rather than
+     only for specialist ones;
+   - a picture names the example it was drawn from as `anchor`, an index into `examples` (the
+     application's `ImagePrompt.exampleId`); no anchor means it was drawn from the sense alone;
+   - an example drawn from an attestation names it as `sourceAttestationId`, so the article can show
+     that sentence once instead of twice.
+   An example with a `clip` is a subtitle example: the sentence is the corpus's, the clip is where it
+   was said. `approved` is gone from the picture because it carried no information. */
 
 const LANGUAGES = [
   { code: "es",      flag: "\u{1F1EA}\u{1F1F8}", name: "Spanish",             definitionLang: "es", glossLangs: ["en"], notesLang: "en" },
@@ -43,32 +54,37 @@ const LEXEMES = [
         definition: "Producir una sensación de comezón o escozor en alguna parte del cuerpo.",
         definitionLang: "es",
         glosses: [{ lang: "en", terms: ["to itch", "to feel prickly"] }],
-        domain: null,
+        domain: "itch", emoji: "\u{1F927}",
         examples: [
           { text: "Me <b>pica</b> la nariz, creo que voy a estornudar.", translation: "My nose <b>itches</b>, I think I’m going to sneeze.",
             origin: "attestation", modelId: "gemini-3-flash", approved: true, audio: true },
           { text: "La lana de este jersey <b>pica</b> muchísimo.", translation: "The wool of this jumper <b>is</b> really <b>itchy</b>.",
-            origin: "tatoeba", modelId: null, approved: true, audio: true }
+            origin: "tatoeba", modelId: null, approved: true, audio: true },
+          /* Deliberately too long for a phone card, so the one card that has to scroll can be seen
+             scrolling on its own. */
+          { text: "Cuando era pequeño y pasábamos los veranos en el pueblo de mis abuelos, la hierba seca del campo me <b>picaba</b> tanto en las piernas que volvía a casa rascándome sin parar, y mi abuela, sin decir nada, me ponía un poco de aceite de oliva y me mandaba a la cama.",
+            translation: "When I was little and we spent the summers in my grandparents’ village, the dry grass in the fields <b>made</b> my legs <b>itch</b> so much that I came home scratching nonstop, and my grandmother, without a word, would rub a little olive oil on them and send me to bed.",
+            origin: "llm", modelId: "gemini-3-flash", approved: true, audio: false }
         ],
-        images: [{ src: "img/sense-a.webp", style: "flat-vector", prompt: "A hand hovering near an itchy nose, flat vector, bold shapes, limited palette, no text" }]
+        images: [{ src: "img/sense-a.webp", style: "flat-vector", prompt: "A hand hovering near an itchy nose, flat vector, bold shapes, limited palette, no text", anchor: 0 }]
       },
       {
         definition: "Dicho de un alimento: producir una sensación ardiente en la boca.",
         definitionLang: "es",
         glosses: [{ lang: "en", terms: ["to be spicy", "to be hot"] }],
-        domain: "cooking",
+        domain: "spicy", emoji: "\u{1F336}️",
         examples: [
           { text: "¿Te <b>pica</b> mucho la salsa?", translation: "Is the sauce very <b>spicy</b> for you?",
-            origin: "subtitle", modelId: null, approved: true, audio: true,
-            clip: { title: "Easy Spanish — Comiendo en un mercado de Ciudad de México", at: "7:41" } }
+            origin: "subtitle", modelId: "gemini-3.1-flash-lite", approved: true, audio: true,
+            clip: { title: "Comiendo en un mercado de Ciudad de México 🌮🔥 #mexico #streetfood", channel: "Easy Spanish", at: "7:41" } }
         ],
-        images: [{ src: "img/sense-d.webp", style: "storybook", prompt: "A chilli pepper glowing on a spoon of red sauce, soft storybook gouache, warm light, no text" }]
+        images: [{ src: "img/sense-d.webp", style: "storybook", prompt: "A chilli pepper glowing on a spoon of red sauce, soft storybook gouache, warm light, no text", anchor: 0 }]
       },
       {
         definition: "Cortar algo en trozos muy pequeños con un cuchillo.",
         definitionLang: "es",
         glosses: [{ lang: "en", terms: ["to chop", "to mince", "to dice"] }],
-        domain: "cooking",
+        domain: "chop", emoji: "\u{1F52A}",
         examples: [
           { text: "<b>Pica</b> la cebolla bien fina antes de sofreírla.", translation: "<b>Chop</b> the onion very finely before frying it.",
             origin: "llm", modelId: "gemini-3-flash", approved: true, audio: false }
@@ -79,7 +95,7 @@ const LEXEMES = [
         definition: "Comer una cantidad pequeña de algo, generalmente entre horas.",
         definitionLang: "es",
         glosses: [{ lang: "en", terms: ["to nibble", "to snack"] }],
-        domain: null,
+        domain: "snack", emoji: "\u{1F968}",
         examples: [
           { text: "Vamos a <b>picar</b> algo antes de cenar.", translation: "Let’s <b>have a nibble</b> before dinner.",
             origin: "llm", modelId: "gemini-3-flash", approved: false, audio: false, note: "Waiting for review — check whether “nibble” reads as too British." }
@@ -90,7 +106,7 @@ const LEXEMES = [
         definition: "Dicho de un insecto o de un ave: morder o herir con el pico o el aguijón.",
         definitionLang: "es",
         glosses: [{ lang: "en", terms: ["to bite", "to sting"] }],
-        domain: null,
+        domain: "bite", emoji: "\u{1F99F}",
         examples: [
           { text: "Me <b>picaron</b> los mosquitos toda la noche.", translation: "The mosquitoes <b>bit</b> me all night.",
             origin: "tatoeba", modelId: null, approved: true, audio: true }
@@ -102,9 +118,106 @@ const LEXEMES = [
       { text: "cuidado que esa salsa pica un monton eh", translation: null,
         sourceKind: "conversation", sourceTitle: "WhatsApp — grupo del curso", sourceUrl: null, capturedAt: "11 Feb 2026" },
       { text: "Se pican las verduras en dados de un centimetro y se reservan.", translation: "The vegetables are diced into one-centimetre cubes and set aside.",
-        sourceKind: "web", sourceTitle: "Receta — pisto manchego, El Comidista", sourceUrl: "https://example.com/pisto", capturedAt: "3 Mar 2026" }
+        sourceKind: "web", sourceTitle: "Receta — pisto manchego, El Comidista", sourceUrl: "https://example.com/pisto", capturedAt: "3 Mar 2026",
+        /* Photo capture (docs/plans/photo-capture.md) will keep the picture a sentence was read
+           from. Drawn here only so the section is designed with room for one. */
+        photo: "img/met-photo.jpg" }
     ],
     study: { system: "anki", reps: 21, lapses: 4, stability: 18.3, difficulty: 8.4, retrievability: 0.71, lastReview: "22 Aug 2026" }
+  },
+
+  /* ── copied from a real account, 15 Sep 2026 ── */
+  {
+    id: "3vu6u4sqccfs6fl", language: "es",
+    headword: "la obra", lemma: "obra", reading: null,
+    pos: "noun", gender: "feminine", register: "neutral", dialect: null,
+    emoji: "\u{1F3AD}", topics: [],
+    status: "inbox", shortGloss: "work; play; construction site",
+    ipa: "/la ˈoβɾa/",
+    notes: [
+      "This word has a very broad meaning depending on the context. It can refer to a 'work of art' (una obra de arte), a 'theatrical play' (una obra de teatro), or physical construction work.",
+      "When referring to construction, it often implies the physical site where building is happening, e.g., 'el arquitecto está en la obra'."
+    ],
+    createdAt: "2026-09-13", editedAt: "2026-09-13", revision: 660,
+    imageModelId: "vertex_ai/gemini-3.1-flash-lite-image",
+    senses: [
+      {
+        definition: "Cosa hecha o producida por un agente; especialmente una creación artística o literaria.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["work", "piece"] }],
+        domain: "art", emoji: "\u{1F3A8}",
+        examples: [
+          { text: "A ella solo le queda la satisfacción de que vinieron a admirar su trabajo, sus no horas, no días, no semanas, sus años de trabajo invertidos en esta masiva <b>obra</b> de arte.",
+            translation: "She only has the satisfaction that they came to admire her work, not her hours, not her days, not her weeks, but her years of work invested in this massive <b>work</b> of art.",
+            origin: "subtitle", modelId: "gemini/gemini-3.1-flash-lite", audio: true,
+            clip: { title: "En este pueblo humanos tienen prohibido vivir 🚫", channel: "Luisito Comunica", at: "19:39" } }
+        ],
+        /* Drawn from the sense alone, although the sense has a clip. */
+        images: [{ src: "img/obra-art.webp", style: "oil-painting" }]
+      },
+      {
+        definition: "Representación teatral de un texto dramático.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["play"] }],
+        domain: "theater", emoji: "\u{1F3AD}",
+        examples: [
+          { text: "Nosotros veníamos con una <b>obra</b> que se llamaba Lado del amor, que la había ido muy bien, con una gira muy exitosa.",
+            translation: "We were touring a <b>play</b> called Lado del amor, which had gone very well, with a very successful tour.",
+            origin: "subtitle", modelId: "gemini/gemini-3.1-flash-lite", audio: true,
+            clip: { title: "#ANTESQUENADIE | TERAPIA CON GABRIEL ROLÓN: PONER LÍMITES, AMOR ETERNO Y TOMAR DECISIONES", channel: "LUZU TV", at: "44:55" } }
+        ],
+        /* Drawn from the clip's sentence: a picture can belong to a clip. */
+        images: [{ src: "img/obra-theater.webp", style: "baroque-chiaroscuro", anchor: 0 }]
+      },
+      {
+        definition: "Conjunto de trabajos realizados para construir un edificio o una infraestructura.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["construction", "building site"] }],
+        domain: "construction", emoji: "\u{1F3D7}️",
+        examples: [],
+        images: [{ src: "img/obra-construction.webp", style: "gouache-poster" }]
+      }
+    ],
+    attestations: [],
+    study: null
+  },
+
+  {
+    id: "9tmbiepw0yjey3j", language: "es",
+    headword: "animarse", lemma: "animarse", reading: null,
+    pos: "verb", gender: null, register: "neutral", dialect: null,
+    emoji: "\u{1F9D7}", topics: [],
+    status: "inbox", shortGloss: "to dare; to be up for",
+    ipa: "/a.niˈmaɾ.se/",
+    notes: [
+      "Used to express having the courage or the willingness to take on an activity, especially when it involves some risk, difficulty, or hesitation.",
+      "Commonly followed by 'a' + infinitive."
+    ],
+    createdAt: "2026-09-13", editedAt: "2026-09-13", revision: 674,
+    imageModelId: "vertex_ai/gemini-3.1-flash-lite-image",
+    senses: [
+      {
+        definition: "Tener el valor o la disposición necesaria para hacer algo.",
+        definitionLang: "es",
+        glosses: [{ lang: "en", terms: ["to dare", "to be up for", "to build up the courage"] }],
+        /* Stored with no domain: the prompt reserves it for specialist words today. */
+        domain: "courage", emoji: "\u{1F4AA}",
+        examples: [
+          { text: "¿Te <b>animás</b> a comer en una casa de desconocidos?", translation: "Do you <b>dare</b> to eat at a stranger's house?",
+            origin: "attestation", sourceAttestationId: "2ct6z7ypkoucc0w", modelId: null, audio: true },
+          { text: "y ella te lo supo demostrar acá, que esa motivación y el <b>animarse</b> a supuestamente a esa altura de su vida hizo que hoy esté, no sé, más inspirada y más fuerte.",
+            translation: "And she knew how to show you here, that that motivation and <b>daring</b> to do so at that stage of her life meant that today she is, I don't know, more inspired and stronger.",
+            origin: "subtitle", modelId: "gemini/gemini-3.1-flash-lite", audio: true,
+            clip: { title: "#NADIEDICENADA | CONOCEMOS A MARTA, LA SEÑORA QUE ESTÁ POR CUMPLIR 101 AÑOS", channel: "LUZU TV", at: "27:14" } }
+        ],
+        images: [{ src: "img/animarse.webp", style: "anime-cel", anchor: 0 }]
+      }
+    ],
+    attestations: [
+      { id: "2ct6z7ypkoucc0w", text: "¿Te animás a comer en una casa de desconocidos?", translation: "Do you dare to eat at a stranger's house?",
+        sourceKind: "unknown", sourceTitle: null, sourceUrl: null, capturedAt: "13 Sep 2026" }
+    ],
+    study: null
   },
 
   {
@@ -121,21 +234,21 @@ const LEXEMES = [
         definition: "Perder el sentido y el conocimiento de forma temporal.",
         definitionLang: "es",
         glosses: [{ lang: "en", terms: ["to faint", "to pass out"] }],
-        domain: "medicine",
+        domain: "faint", emoji: "\u{1F635}",
         examples: [
           { text: "Me <b>desmayé</b> cuando vi a la aterradora criatura.", translation: "I <b>fainted</b> when I saw the terrifying creature.",
-            origin: "attestation", modelId: null, approved: true, audio: true },
+            origin: "attestation", sourceAttestationId: "att-desmayarse", modelId: null, approved: true, audio: true },
           { text: "Se <b>desmayó</b> en pleno directo, delante de las cámaras.", translation: "She <b>passed out</b> live on air, in front of the cameras.",
             origin: "subtitle", modelId: null, approved: true, audio: true,
-            clip: { title: "DW Español — Informe semanal", at: "4:12" } }
+            clip: { title: "INFORME SEMANAL | Lo que pasó esta semana 📺", channel: "DW Español", at: "4:12" } }
         ],
-        images: [{ src: "img/sense-c.webp", style: "retro-futurist", prompt: "A figure swooning backwards, stars circling, 1970s sci-fi paperback, muted print palette, no text" }]
+        images: [{ src: "img/sense-c.webp", style: "retro-futurist", prompt: "A figure swooning backwards, stars circling, 1970s sci-fi paperback, muted print palette, no text", anchor: 1 }]
       },
       {
         definition: "Quedar sobrecogido por una emoción muy intensa.",
         definitionLang: "es",
         glosses: [{ lang: "en", terms: ["to be overcome", "to swoon"] }],
-        domain: null,
+        domain: "emotion", emoji: "\u{1F60D}",
         examples: [
           { text: "Casi me <b>desmayo</b> de la emoción.", translation: "I almost <b>swooned</b> with excitement.",
             origin: "tatoeba", modelId: null, approved: true, audio: false }
@@ -144,7 +257,7 @@ const LEXEMES = [
       }
     ],
     attestations: [
-      { text: "Me desmaye cuando vi a la aterradora criatura", translation: null,
+      { id: "att-desmayarse", text: "Me desmaye cuando vi a la aterradora criatura", translation: null,
         sourceKind: "book", sourceTitle: "Cuentos de la selva — Horacio Quiroga", sourceUrl: null, capturedAt: "14 Jan 2026" }
     ],
     study: { system: "anki", reps: 14, lapses: 1, stability: 96.4, difficulty: 4.1, retrievability: 0.93, lastReview: "19 Aug 2026" }
@@ -199,13 +312,13 @@ const LEXEMES = [
         domain: null,
         examples: [
           { text: "Espero <b>que se mejoren</b> pronto. Un abrazo a toda la familia.", translation: "I hope <b>you get better</b> soon. A hug to the whole family.",
-            origin: "attestation", modelId: "gemini-3-flash", approved: true, audio: true }
+            origin: "attestation", sourceAttestationId: "att-mejoren", modelId: "gemini-3-flash", approved: true, audio: true }
         ],
         images: []
       }
     ],
     attestations: [
-      { text: "espero que se mejoren pronto un abrazo a toda la familia", translation: null,
+      { id: "att-mejoren", text: "espero que se mejoren pronto un abrazo a toda la familia", translation: null,
         sourceKind: "conversation", sourceTitle: "WhatsApp — grupo del curso", sourceUrl: null, capturedAt: "30 Jan 2026" }
     ],
     study: { system: "anki", reps: 26, lapses: 0, stability: 402.7, difficulty: 2.8, retrievability: 0.97, lastReview: "2 Aug 2026" }
@@ -248,7 +361,7 @@ const LEXEMES = [
       glosses: [{ lang: "en", terms: ["to work", "to graft", "to slog"] }],
       domain: null,
       examples: [{ text: "Lleva <b>currando</b> desde las siete de la mañana.", translation: "He’s been <b>working</b> since seven in the morning.",
-        origin: "subtitle", modelId: null, approved: true, audio: true, clip: { title: "RTVE — Aquí la tierra", at: "12:03" } }],
+        origin: "subtitle", modelId: null, approved: true, audio: true, clip: { title: "Aquí la Tierra - 12/03/2026", channel: "RTVE", at: "12:03" } }],
       images: []
     }],
     attestations: [],
@@ -270,10 +383,10 @@ const LEXEMES = [
       glosses: [{ lang: "en", terms: ["to sprinkle", "to dust"] }],
       domain: "cooking",
       examples: [{ text: "<b>Espolvoreé</b> canela sobre el pastel.", translation: "I <b>sprinkled</b> cinnamon on the cake.",
-        origin: "attestation", modelId: "gemini-3-flash", approved: false, audio: false }],
+        origin: "attestation", sourceAttestationId: "att-espolvorear", modelId: "gemini-3-flash", approved: false, audio: false }],
       images: []
     }],
-    attestations: [{ text: "Espolvoree canela sobre el pastel.", translation: "I sprinkled cinnamon on the cake.",
+    attestations: [{ id: "att-espolvorear", text: "Espolvoree canela sobre el pastel.", translation: "I sprinkled cinnamon on the cake.",
       sourceKind: "unknown", sourceTitle: null, sourceUrl: null, capturedAt: "27 Aug 2026" }],
     study: null
   },

@@ -302,7 +302,8 @@ input, textarea { font: inherit; color: inherit; }
 .seg button.on { background: var(--surface); color: var(--core); box-shadow: 0 1px 2px rgba(19,34,32,.08); font-weight: 600; }
 
 .masthead { border-bottom: 2px solid var(--ink); padding-bottom: 20px; }
-.head-row { display: flex; gap: 18px; align-items: flex-start; }
+/* Centred, so the plate sits against the headword block as a whole rather than hanging off its top. */
+.head-row { display: flex; gap: 18px; align-items: center; }
 .emoji-plate {
   flex: none; width: 74px; height: 74px; border-radius: 14px;
   display: grid; place-items: center; font-size: 40px; line-height: 1;
@@ -326,6 +327,7 @@ input, textarea { font: inherit; color: inherit; }
 .play svg { width: 13px; height: 13px; color: var(--core); }
 .play:hover { border-color: var(--core); color: var(--ink); }
 .play.playing { background: var(--core-soft); border-color: var(--core); color: var(--core); }
+.play, .say, .ask-anchor, .sec-toggle .caret, .cards-edge, .clip-line .pl { user-select: none; -webkit-user-select: none; }
 .play.mini { height: 22px; padding: 0 7px; border-radius: 5px; }
 .play.mini svg { width: 11px; height: 11px; }
 
@@ -343,7 +345,7 @@ input, textarea { font: inherit; color: inherit; }
 
 /* ── article sections, editorial rail ── */
 .sec {
-  display: grid; grid-template-columns: 92px minmax(0,1fr); gap: 0 28px;
+  display: grid; grid-template-columns: 104px minmax(0,1fr); gap: 0 24px;
   padding: 34px 0 6px; border-top: 1px solid var(--rule-soft);
 }
 .sec:first-of-type { border-top: none; }
@@ -360,7 +362,8 @@ input, textarea { font: inherit; color: inherit; }
   font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
   color: var(--core); background: var(--core-soft); border-radius: 3px; padding: 2px 6px; flex: none;
 }
-.gloss-line .tm { font-size: 16px; color: var(--ink); }
+.gloss-line { flex-wrap: nowrap; }
+.gloss-line .tm { font-size: 16px; color: var(--ink); flex: 1 1 auto; min-width: 0; }
 .gloss-line .tm b { font-weight: 600; }
 
 .ex { padding: 11px 0 11px 14px; border-left: 2px solid var(--rule); }
@@ -474,6 +477,215 @@ details.fold .fold-body { padding: 4px 0 18px; }
 }
 .meta-foot span { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); letter-spacing: .04em; }
 .meta-foot span b { color: var(--ink-2); font-weight: 500; }
+
+
+/* ══════════════════════════ article redesign spike ══════════════════════════
+   Page and Cards (see app.js). The design language is unchanged — the same faces, sizes and rules —
+   and what changed is how much of it is on screen at once. */
+
+/* ── masthead ── */
+.pron-row .gram { margin: 0; font-size: 15px; }
+.place { margin: 12px 0 0; font-size: 14px; color: var(--ink-3); }
+
+/* ── foldable sections ── */
+.sec-toggle {
+  display: block; width: 100%; padding: 0; text-align: left; cursor: pointer; position: relative;
+}
+.sec-toggle .caret {
+  position: absolute; left: -17px; top: 2px; color: var(--ink-3);
+  display: grid; place-items: center; opacity: .45; transition: transform .16s ease, opacity .12s;
+  transform: rotate(90deg);
+}
+.sec-toggle .caret svg { width: 11px; height: 11px; }
+.sec-toggle:hover .caret, .sec-toggle:focus-visible .caret { opacity: 1; }
+.sec-toggle:hover .label { color: var(--ink); }
+.sec.folded .sec-toggle .caret { transform: none; opacity: .8; }
+.sec.folded > .body { display: none; }
+.sec.folded { padding-bottom: 18px; }
+.sec .num svg { width: 13px; height: 13px; }
+
+/* ── listen ──
+   A small outlined circle after a sentence. Always there on a touch screen, which cannot hover; on
+   a desktop it appears when the pointer is on its line, so a page of sentences is not a page of
+   buttons. The preview frames count as touch screens. */
+.say {
+  display: inline-grid; place-items: center; vertical-align: 2px;
+  width: 22px; height: 22px; margin-left: 7px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--rule); background: transparent; color: var(--ink-3);
+  transition: opacity .12s, color .12s, border-color .12s;
+}
+.say svg { width: 9px; height: 9px; margin-left: 1px; }
+.say:hover { color: var(--core); border-color: var(--core); }
+.say.playing { color: var(--core); border-color: var(--core); background: var(--core-soft); }
+.tr .say { width: 20px; height: 20px; vertical-align: 1px; }
+@media (hover: hover) {
+  .say:not(.always) { opacity: 0; }
+  .sense-def:hover .say, .t:hover .say, .tr:hover .say, .card-def:hover .say,
+  .say:focus-visible, .say.playing { opacity: 1; }
+  body.phone .say, body.tablet .say { opacity: 1; }
+}
+
+/* ── examples and clips ──
+   The ask anchor has a column of its own, so showing it on hover never moves a word. */
+.ex { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 0 10px; align-items: start; }
+.ex .ask-anchor { margin-top: 3px; }
+.ex .ex-text { min-width: 0; }
+.say-tail { white-space: nowrap; }
+.own-hint { margin: 5px 0 0; font-size: 12px; color: var(--core); letter-spacing: .01em; }
+.own-hint::before { content: "✳ "; }
+.ex.clip-ex { border-left-style: dotted; }
+.clip-line {
+  display: flex; align-items: center; gap: 9px; margin-top: 9px; padding: 0; max-width: 100%;
+  text-align: left; color: var(--ink-3);
+}
+.clip-line .pl {
+  width: 26px; height: 26px; flex: none; border-radius: 50%;
+  background: var(--core-soft); color: var(--core); display: grid; place-items: center;
+}
+.clip-line .pl svg { width: 11px; height: 11px; margin-left: 1px; }
+.clip-line .src {
+  font-family: var(--mono); font-size: 11px; line-height: 1.4; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.clip-line:hover .src { color: var(--ink-2); }
+.clip-line:hover .pl { background: var(--core); color: var(--on-core); }
+
+/* The picture leads its sense, centred, with nothing under it. */
+.sec .body > .sense-image { margin: 6px auto 4px; width: 100%; }
+
+/* ── where you met it ── */
+.att .src { margin-top: 8px; font-size: 13px; color: var(--ink-3); gap: 10px; }
+.att .t .say { margin-left: 7px; }
+.att.has-photo { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 14px; align-items: start; }
+.att-photo {
+  padding: 0; width: 88px; aspect-ratio: 3 / 4; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--rule); background: var(--surface-2);
+}
+.att-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.att-text { min-width: 0; }
+
+/* ── details ── */
+.facts { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; }
+.facts div { display: flex; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: .03em; }
+.facts div.wide { flex-basis: 100%; }
+.facts dt { color: var(--ink-3); }
+.facts dd { margin: 0; color: var(--ink-2); font-weight: 500; overflow-wrap: anywhere; }
+
+/* ── listen to a selection ── */
+.sel-say {
+  position: fixed; z-index: 95; transform: translate(-50%, calc(-100% - 8px));
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px;
+  border-radius: 999px; background: var(--ink); color: var(--paper); box-shadow: var(--shadow);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+}
+.sel-say svg { width: 11px; height: 11px; }
+.sel-say[hidden] { display: none; }
+.sel-say.playing { background: var(--core); color: var(--on-core); }
+
+/* ══ Cards ══
+   The pane stops scrolling and becomes a column: the article bar, the word, the selector, then a
+   track of full-width cards snapped left to right. A card is itself a column whose picture is the
+   part that gives way; a card whose words alone overflow scrolls on its own, as the exception. */
+.main.cards-on { overflow: hidden; }
+.main.cards-on .pane { height: 100%; display: flex; flex-direction: column; padding-bottom: 14px; }
+.main.cards-on .art-bar { margin-bottom: 10px; flex: none; }
+.main.cards-on #pane { flex: 1; min-height: 0; }
+.cards { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+
+.cards-head { flex: none; }
+.cards-word { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.cw-emoji {
+  width: 40px; height: 40px; flex: none; display: grid; place-items: center; font-size: 22px;
+  border-radius: 10px; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow);
+}
+.cw-headword {
+  margin: 0; font-family: var(--serif); font-weight: 700; font-size: 30px; line-height: 1.05; letter-spacing: -.02em;
+}
+.cards-word .say { margin-left: 0; width: 26px; height: 26px; }
+.cards-word .say svg { width: 10px; height: 10px; }
+.cards-word .reading { margin: 0; font-size: 14px; }
+
+.cards-nav {
+  position: relative; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  margin: 12px -2px 0; padding: 2px 2px 12px; border-bottom: 2px solid var(--ink);
+}
+.cards-nav::-webkit-scrollbar { display: none; }
+.cards-chip {
+  flex: none; padding: 4px 11px; border-radius: 999px; white-space: nowrap;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); border: 1px solid var(--rule-soft); background: var(--paper);
+}
+.cards-chip:hover { color: var(--ink); }
+.cards-chip.on { background: var(--core-soft); color: var(--core); border-color: transparent; font-weight: 600; }
+.cards-chip.aside { border-style: dashed; }
+.cards-chip.aside.on { border-style: solid; }
+
+.cards-stage { position: relative; flex: 1; min-height: 0; }
+.cards-track {
+  height: 100%; display: flex; overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.cards-track::-webkit-scrollbar { display: none; }
+.card {
+  position: relative; flex: 0 0 100%; min-width: 0; height: 100%;
+  scroll-snap-align: start; scroll-snap-stop: always;
+  overflow-y: auto; overscroll-behavior-y: contain;
+  display: flex; flex-direction: column; gap: 14px; padding: 16px 2px 8px;
+}
+.card-sense { flex: none; }
+.card-def { margin: 0; font-family: var(--serif); font-size: 19px; line-height: 1.4; }
+.card-gloss { margin: 6px 0 0; font-size: 17px; font-weight: 600; color: var(--ink); }
+.card-gloss .lg {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 400;
+  color: var(--core); background: var(--core-soft); border-radius: 3px; padding: 2px 6px; margin-right: 8px; vertical-align: 2px;
+}
+/* The body of a card sits in the middle of what is left, so a card with one short sentence reads as
+   a card rather than as the top of a page. */
+/* `safe`, so a card whose contents outgrow it overflows downward and scrolls, rather than being
+   centred off its own top edge and over the definition. */
+.card-main { flex: 1 0 auto; display: flex; flex-direction: column; justify-content: safe center; gap: 16px; }
+.card-main.top { justify-content: flex-start; }
+.card-pic {
+  position: relative; flex: 1 1 0; min-height: 150px; max-height: 420px; padding: 0; width: 100%;
+}
+.card-pic img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  filter: drop-shadow(0 8px 18px rgba(19,34,32,.18));
+}
+.card-pic img { border-radius: 10px; }
+.card-ex { flex: none; padding-left: 14px; border-left: 2px solid var(--rule); }
+.card-ex.own { border-left-color: var(--core); }
+.card-ex.clip-ex { border-left-style: dotted; }
+.card-ex .t { margin: 0; font-family: var(--serif); font-size: 22px; line-height: 1.42; }
+.card-ex .t b { font-weight: 700; }
+.card-ex .tr { margin: 6px 0 0; font-family: var(--serif); font-style: italic; font-size: 17px; line-height: 1.45; color: var(--ink-3); }
+.card-ex .clip-line { margin-top: 12px; }
+.card-title { margin: 0; font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); }
+.card .notes li { font-size: 17px; }
+/* In the flow and sticky, so it stays at the foot of a card that has to scroll. */
+.card-pos {
+  position: sticky; bottom: -8px; align-self: flex-end; flex: none; margin-top: -10px;
+  padding: 2px 4px 0 10px; background: var(--paper);
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); letter-spacing: .06em;
+}
+
+/* Arrows for a mouse: faint at the edges, clearer as the pointer arrives. A touch screen swipes. */
+.cards-edge {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface); border: 1px solid var(--rule); color: var(--ink-2); box-shadow: var(--shadow);
+  opacity: .28; transition: opacity .15s;
+}
+.cards-edge svg { width: 18px; height: 18px; }
+.cards-edge.prev { left: -8px; }
+.cards-edge.next { right: -8px; }
+.cards-edge.next svg { transform: scaleX(-1); }
+.cards-stage:hover .cards-edge { opacity: .6; }
+.cards-stage .cards-edge:hover { opacity: 1; }
+.cards-edge:disabled { opacity: 0 !important; pointer-events: none; }
+/* The preview frames stand in for touch screens, which swipe. */
+@media (hover: none) { .cards-edge { display: none; } }
+body.phone .cards-edge, body.tablet .cards-edge { display: none; }
 
 /* ══════════════════════════ external dictionaries ══════════════════════════
    Everything here is a word that is NOT yours. It shares the article's type and rhythm on purpose —
@@ -1513,3 +1725,29 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 .activity-list > li > span { font-size: 11.5px; color: var(--ink-3); }
 .activity-list li.failed strong { color: var(--warn); }
 .activity-error { flex-basis: 100%; color: var(--warn); }
+
+/* ══ article redesign spike: narrow and tablet ══ */
+/* Reading a word does not need the topic strip or the rail beside it on a phone or a tablet. */
+@container vp (max-width: 900px) {
+  .app.article-open { grid-template-columns: 0 minmax(0,1fr); }
+  .app.article-open .rail, .app.article-open .brand { display: none; }
+}
+@container vp (max-width: 720px) {
+  .app.article-open { grid-template-columns: minmax(0,1fr); }
+  /* One line per section heading: "01 · 🎭 theater", "✳ Where you met it". */
+  .sec > .rail-l { margin-bottom: 8px; }
+  /* The caret moves to the end of the line: a phone has no gutter left of the text to put it in. */
+  .sec-toggle { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; }
+  .sec-toggle .caret { position: static; order: 9; align-self: center; }
+  .sec .num { margin: 0; }
+  .sec.folded { padding-bottom: 14px; }
+  .main.cards-on .pane { padding: 12px 16px 10px; }
+  .main.cards-on .art-bar { margin-bottom: 8px; }
+  .art-where { display: none; }
+  .cw-headword { font-size: 27px; }
+  .card { padding-top: 12px; gap: 12px; }
+  .card-ex .t { font-size: 20.5px; }
+  .card-ex .tr { font-size: 16px; }
+  .att.has-photo { grid-template-columns: 64px minmax(0,1fr); gap: 12px; }
+  .att-photo { width: 64px; }
+}
