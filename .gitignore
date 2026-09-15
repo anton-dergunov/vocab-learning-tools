@@ -59,3 +59,12 @@ Caddyfile
 # account and project it may spend.
 /experiments/photo-capture/runs/
 /experiments/photo-capture/.env
+
+# The pronunciation encoding test: its audio, and the key that says which file was which. The
+# write-up keeps the numbers; twenty WAVs of the same four sentences are not worth a repository.
+/experiments/pronunciation-encoding/out/
+
+# The clip-translation runs: 350-odd raw model replies per run. Every number the experiment claims
+# is in its README, and re-scoring an existing run is free, so the archive is not worth a
+# repository — the same call photo-capture/runs/ made.
+/experiments/clip-translation/runs/
