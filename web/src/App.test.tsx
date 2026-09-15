@@ -572,6 +572,17 @@ describe("Acervo application", () => {
     expect(repository.snapshot().vocabularies.filter((entry) => !entry.deleted)).toHaveLength(2);
   });
 
+  it("offers editing only from the YAML view, and switches views from the article menu", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    await screen.findByRole("heading", { name: "picar" });
+    expect(screen.queryByRole("button", { name: "Edit as YAML" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Article menu" }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "YAML" }));
+    expect(await screen.findByRole("button", { name: "Edit as YAML" })).toBeInTheDocument();
+  });
+
   it("says plainly which actions are not connected yet", async () => {
     signedIn();
     await openList();
@@ -603,7 +614,7 @@ describe("Acervo application", () => {
     // Nothing was generated and nothing was written; the entry it already has is one tap away.
     expect(capture).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "picar" }));
-    expect(await screen.findByRole("button", { name: "Edit as YAML" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "picar" })).toBeInTheDocument();
   });
 
   it("captures a sentence, reviews the generated entry as an article and saves it", async () => {
@@ -712,7 +723,7 @@ describe("Acervo application", () => {
     await openList();
     acceptWrites();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await editAsYaml();
     await waitForEditor();
 
     replaceInEditor("emoji: 🌶️", "emoji: 🫠");
@@ -728,7 +739,7 @@ describe("Acervo application", () => {
     await openList();
     acceptWrites();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await editAsYaml();
     await waitForEditor();
 
     replaceInEditor("pos: verb", "pos: preposition");
@@ -760,7 +771,7 @@ describe("Acervo application", () => {
     signedIn();
     await openList();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await editAsYaml();
 
     // Same shell as Add, so the Save button cannot scroll away on a long entry.
     const editor = within(await screen.findByRole("region", { name: /Edit picar/ }));
@@ -776,7 +787,7 @@ describe("Acervo application", () => {
     signedIn();
     await openList();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await editAsYaml();
     await waitForEditor();
 
     // Wrapping is the default: these documents are prose, and a clipped definition was unreadable
@@ -799,7 +810,7 @@ describe("Acervo application", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
 
     fireEvent.click(await screen.findByRole("button", { name: /picar/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await editAsYaml();
     await waitForEditor();
     // The editor draws a number per line and keeps it beside a line that wraps — which is the
     // reason numbers are worth offering at all.
@@ -838,7 +849,7 @@ describe("Acervo application", () => {
     vi.spyOn(backendSession, "pushGraph")
       .mockRejectedValue(new AcervoApiError("This entry was changed somewhere else.", 409, "stale_record"));
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
+    await editAsYaml();
     await waitForEditor();
 
     replaceInEditor("headword: picar", "headword: picarse");
@@ -987,6 +998,12 @@ function mockChat(reply: string, proposal: unknown = null) {
     proposal: proposal as never, capture: null, modelId: "gemini-3.1-flash-lite"
   });
   return chat;
+}
+
+/** Editing is offered from the YAML view, where the document is. */
+async function editAsYaml() {
+  fireEvent.click(await screen.findByRole("button", { name: "YAML" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit as YAML" }));
 }
 
 async function openPicar() {

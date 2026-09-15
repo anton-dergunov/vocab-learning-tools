@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AcervoApiError, backendSession, type ImagePromptRow } from "./api";
-import { enrichment } from "./enrichment";
+import { enrichment, senseIsBusy, type EnrichmentJob } from "./enrichment";
 import { repository } from "./repository";
 import { syncEngine } from "./sync";
 import { TEST_OWNER, testGraph } from "./testGraph";
@@ -419,5 +419,32 @@ describe("finding clips for a word that was just saved", () => {
     expect(job?.kind).toBe("clip");
     expect(job?.senseId).toBeNull();      // one search covers every sense of the word
     expect(job?.error).toBeUndefined();
+  });
+});
+
+describe("which sense a picture job makes busy", () => {
+  const job = (overrides: Partial<EnrichmentJob>): EnrichmentJob => ({
+    id: "j", kind: "image", lexemeId: "lexemepicar0001", senseId: null, label: "picar",
+    phase: "brief" as EnrichmentJob["phase"], startedAt: 0, ...overrides
+  });
+  const idle = { active: null, waiting: [] };
+
+  it("counts a brief for the whole word only for senses that still need a picture", () => {
+    const briefing = { active: job({}), waiting: [] };
+    expect(senseIsBusy(briefing, "lexemepicar0001", "s1", null)).toBe(true);
+    expect(senseIsBusy(briefing, "lexemepicar0001", "s1", { imageRef: null, suppressed: false })).toBe(true);
+    // A removed picture is not being briefed, and neither is one already drawn.
+    expect(senseIsBusy(briefing, "lexemepicar0001", "s1", { imageRef: null, suppressed: true })).toBe(false);
+    expect(senseIsBusy(briefing, "lexemepicar0001", "s1", { imageRef: "images/a.webp", suppressed: false })).toBe(false);
+  });
+
+  it("always counts work aimed at the sense itself", () => {
+    const drawing = { active: null, waiting: [{ lexemeId: "lexemepicar0001", senseId: "s1", label: "picar" }] };
+    expect(senseIsBusy(drawing, "lexemepicar0001", "s1", { imageRef: null, suppressed: true })).toBe(true);
+    expect(senseIsBusy(idle, "lexemepicar0001", "s1", null)).toBe(false);
+  });
+
+  it("never reads clip work as picture work", () => {
+    expect(senseIsBusy({ active: job({ kind: "clip" }), waiting: [] }, "lexemepicar0001", "s1", null)).toBe(false);
   });
 });

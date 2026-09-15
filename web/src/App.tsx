@@ -21,7 +21,7 @@ import {
   externalEntryOf, EXTERNAL_ROW_LIMIT, mergeHits, referenceTextOf,
   type ExternalEntry, type ExternalRow, type RawHit
 } from "./externalEntries";
-import { BackIcon, GearIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
+import { BackIcon, GearIcon, MoreIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
 import { useDefaultArticleView, type ArticleView } from "./editorPreferences";
 import LexemeArticle, {
   type AskSlot, type AskTarget, type ClipSlot, type MarkSlot, type PictureSlot
@@ -48,7 +48,7 @@ import SignIn from "./SignIn";
 import { setSearchScope, useSearchScope, type SearchScope } from "./searchScope";
 import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
-import { enrichment } from "./enrichment";
+import { enrichment, senseIsBusy } from "./enrichment";
 import { ImageDialog } from "./ImageDialog";
 import { clearPictures, forget } from "./media";
 import { SyncChip } from "./SyncStatus";
@@ -197,6 +197,7 @@ export default function App() {
   const [addTab, setAddTab] = useState<AddTab | null>(null);
   const [addSeed, setAddSeed] = useState<CaptureSeed | null>(null);
   const [langMenu, setLangMenu] = useState(false);
+  const [articleMenu, setArticleMenu] = useState(false);
   const [scopeMenu, setScopeMenu] = useState(false);
 
   /* What the dictionaries answered, and what is still being asked. Kept beside the search rather
@@ -444,16 +445,10 @@ export default function App() {
       // Only what this device is doing right now. Work the server's sweep is doing shows as a
       // sense that is still blank, and turns into a picture on the next pull — there is no job
       // store to ask, and deliberately none to build.
-      busy: (senseId) => {
-        if (replacing.has(senseId)) return true;
-        if (enrichmentStatus.waiting.some((item) =>
-          item.senseId === senseId || (item.senseId === null && item.lexemeId === article.lexeme.id)
-        )) return true;
-        const active = enrichmentStatus.active;
-        if (!active || active.lexemeId !== article.lexeme.id) return false;
-        // A brief covers every sense at once, so all of them are working; a render names one.
-        return active.senseId === null || active.senseId === senseId;
-      }
+      busy: (senseId) => replacing.has(senseId) || senseIsBusy(
+        enrichmentStatus, article.lexeme.id, senseId,
+        article.senses.find((entry) => entry.sense.id === senseId)?.images[0] ?? null
+      )
     };
   }, [article, mode, enrichmentStatus.active, enrichmentStatus.waiting, replacing]);
 
@@ -958,7 +953,7 @@ export default function App() {
   const topicIcon = topic === "all" ? "📖" : topic === "inbox" ? "📥" : currentTopic?.icon ?? "📌";
 
   return <>
-    <div className="viewport" onClick={() => { setLangMenu(false); setScopeMenu(false); }}>
+    <div className="viewport" onClick={() => { setLangMenu(false); setScopeMenu(false); setArticleMenu(false); }}>
       {/* Reading a word on a phone or a tablet does not need the topic rail beside it. */}
       <div className={`app${(article || external) && !addTab ? " article-open" : ""}`}>
         <div className="brand"><span className="mark">A.</span></div>
@@ -1093,11 +1088,19 @@ export default function App() {
               onDiscard={() => setProposal(null)}
               onSave={() => void saveProposal()}
             />}
-            {article && <div className="art-bar">
+            {article && <div className={`art-bar${carding ? " carding" : ""}`}>
               <button className="icon-btn" aria-label="Back to the list" onClick={() => { setOpenId(null); setProposal(null); }}><BackIcon /></button>
               <span className="label art-where">{topicLabel}</span>
+              {/* On a phone in Cards the word is the toolbar's title, which is what gives the card below
+                  its room; wider screens set it under the toolbar instead, and hide this. */}
+              {carding && <div className="art-title">
+                <span className="art-title-word" data-length={article.lexeme.headword.length > 24 ? "long" : article.lexeme.headword.length > 14 ? "mid" : "short"}>
+                  {article.lexeme.headword}
+                </span>
+                <button className="say always head" aria-label={`Listen to ${article.lexeme.headword}`} onClick={() => notify("Audio is not wired up yet")}><PlayIcon /></button>
+              </div>}
               <span className="spacer" />
-              <div className="seg">
+              <div className="seg art-views">
                 <button className={reading && view === "page" ? "on" : ""} onClick={() => { setViewChoice("page"); setMode("read"); }}>Page</button>
                 <button
                   className={reading && view === "cards" ? "on" : ""}
@@ -1108,10 +1111,30 @@ export default function App() {
                 >Cards</button>
                 <button className={mode !== "read" ? "on" : ""} onClick={() => setMode("yaml")}>YAML</button>
               </div>
-              {/* The escape hatch. Hand-editing drops a live proposal: the editor is the document of
-                  record there, and two sets of unsaved changes over one entry is not a state worth having. */}
-              <button className="icon-btn" aria-label="Edit as YAML" title="Edit as YAML" onClick={() => { setProposal(null); setMode("edit"); }}><PencilIcon /></button>
-              <button className="icon-btn" aria-label="Delete" title="Delete" onClick={() => void removeLexeme(article.lexeme.id)}><TrashIcon /></button>
+              {/* Editing is a thing you do to the document, so its button appears where the document is.
+                  Hand-editing drops a live proposal: two sets of unsaved changes over one entry is not a
+                  state worth having. */}
+              {mode === "yaml" && <button className="icon-btn" aria-label="Edit as YAML" title="Edit as YAML" onClick={() => { setProposal(null); setMode("edit"); }}><PencilIcon /></button>}
+              <button className="icon-btn art-delete" aria-label="Delete" title="Delete" onClick={() => void removeLexeme(article.lexeme.id)}><TrashIcon /></button>
+              {/* A phone has room for one control beside the word, so the views and Delete fold into this. */}
+              <div className="art-more" onClick={(event) => event.stopPropagation()}>
+                <button className="icon-btn" aria-label="Article menu" aria-haspopup="menu" aria-expanded={articleMenu}
+                  onClick={() => setArticleMenu((open) => !open)}><MoreIcon /></button>
+                {articleMenu && <div className="menu open" role="menu">
+                  {([["page", "Page"], ["cards", "Cards"], ["yaml", "YAML"]] as const).map(([id, name]) => {
+                    const on = id === "yaml" ? mode !== "read" : reading && view === id;
+                    return <button key={id} role="menuitemradio" aria-checked={on} className={on ? "on" : ""}
+                      disabled={id === "cards" && Boolean(proposal)}
+                      onClick={() => {
+                        setArticleMenu(false);
+                        if (id === "yaml") setMode("yaml");
+                        else { setViewChoice(id); setMode("read"); }
+                      }}>{name}</button>;
+                  })}
+                  <div className="menu-sep" />
+                  <button role="menuitem" className="danger" onClick={() => { setArticleMenu(false); void removeLexeme(article.lexeme.id); }}>Delete this word</button>
+                </div>}
+              </div>
             </div>}
 
             {!snapshot ? <p className="empty">Opening your vocabulary…</p>

@@ -628,7 +628,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .cards { height: 100%; display: flex; flex-direction: column; min-height: 0; }
 
 .cards-head { flex: none; }
-.cards-word { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; }
+.cards-word { display: flex; align-items: baseline; justify-content: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
 .cards-word .cw-emoji { align-self: center; }
 /* The word and its button as one inline line, for the same reason as the page's headword. */
 .cw-line { font-family: var(--serif); font-weight: 700; font-size: 30px; line-height: 1.05; }
@@ -641,8 +641,9 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .cards-word .say.head { width: 30px; height: 30px; }
 .cards-word .reading { margin: 0; font-size: 14px; }
 
+/* Centred when the chips fit; `safe` so a row that overflows still scrolls from its first chip. */
 .cards-nav {
-  position: relative; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  position: relative; display: flex; justify-content: safe center; gap: 6px; overflow-x: auto; scrollbar-width: none;
   margin: 12px -2px 0; padding: 2px 2px 12px; border-bottom: 2px solid var(--ink);
 }
 .cards-nav::-webkit-scrollbar { display: none; }
@@ -689,34 +690,32 @@ details.fold .fold-body { padding: 4px 0 18px; }
   filter: drop-shadow(0 8px 18px rgba(19,34,32,.18));
 }
 .card-pic img { border-radius: 10px; }
-/* No picture: the sense's emoji in the frame one would fill, square and quiet. */
-.card-tile {
-  flex: 0 1 260px; min-height: 120px; width: auto; aspect-ratio: 1; align-self: center;
-  display: grid; place-items: center; border-radius: 18px;
-  background: var(--surface); border: 1px solid var(--rule-soft); box-shadow: var(--shadow);
-}
-.card-tile span { font-size: clamp(56px, 12vh, 104px); line-height: 1; }
-.card-tile:hover { border-color: var(--rule); }
 /* Still fetching a drawn picture: a quiet word in the spot, not an unexplained gap. */
 .card-pic .sense-image-empty { position: absolute; inset: 0; }
-/* A picture pending, being drawn, failed or ruled out: the page's own frame, square, shrinking with
-   the card like a picture does. */
-.card-frame { flex: 1 1 0; min-height: 150px; max-height: 420px; display: flex; justify-content: center; }
-.card-frame .sense-image { margin: 0; height: 100%; max-width: 100%; }
-.card-frame .sense-image-frame { height: 100%; width: auto; max-width: 100%; }
-/* A card that is only words, set as a quotation: an ornament where a picture would be and a hanging
-   quotation mark, so the space reads as a margin rather than as something missing. */
-.card-main.quoted { gap: clamp(20px, 7vh, 64px); }
-.card-ornament {
-  align-self: center; font-family: var(--serif); font-size: 28px; line-height: 1; letter-spacing: .3em;
-  color: var(--ink-3); opacity: .6; user-select: none; -webkit-user-select: none;
+/* A picture being drawn right now: the page's own frame, as a square centred in the box a picture
+   takes, so it shrinks with the card the way a picture does instead of collapsing to a strip. */
+.card-frame { position: relative; flex: 1 1 0; min-height: 150px; max-height: 420px; width: 100%; }
+.card-frame .sense-image {
+  position: absolute; inset: 0; margin: auto; height: 100%; max-width: 100%; aspect-ratio: 1; pointer-events: none;
 }
-.card-quote {
-  display: block; height: .42em; margin: 0 0 6px -6px;
-  font-family: var(--serif); font-size: 84px; line-height: .8; color: var(--rule);
+.card-frame .sense-image-frame { width: 100%; height: 100%; }
+/* A card that is only words, set as an epigraph: an ivy leaf above pointing up and away (☙), the
+   sentence centred between quotation marks, a leaf below (❧). The group sits in the middle of the
+   card's free space, so the space reads as a margin rather than as something missing. */
+.card-main.quoted, .card-main.bare { justify-content: safe center; align-items: center; gap: clamp(18px, 5vh, 48px); }
+.card-ornament {
+  display: inline-flex; gap: 14px; color: var(--ink-3); opacity: .5;
   user-select: none; -webkit-user-select: none;
 }
-.card-main.quoted .card-ex { border-left: none; padding-left: 0; }
+.card-ornament svg { width: 38px; height: 21px; display: block; }
+.card-ornament.above svg, .card-ornament.pair svg:first-child { transform: scaleX(-1); }
+/* `width: 100%` under the cap: a centred flex item otherwise sizes to its text and runs off a phone. */
+.card-main.quoted .card-ex {
+  border-left: none; padding-left: 0; text-align: center; width: 100%; max-width: 34em; margin-inline: auto;
+}
+.card-main.quoted .card-ex .clip-line { max-width: 100%; }
+.quote-mark { color: var(--ink-3); user-select: none; -webkit-user-select: none; }
+.t > .quote-mark:first-child { margin-right: .04em; }
 
 .card-ex { flex: none; padding-left: 14px; border-left: 2px solid var(--rule); }
 .card-ex.own { border-left-color: var(--core); }
@@ -746,18 +745,18 @@ details.fold .fold-body { padding: 4px 0 18px; }
 }
 .cards-edge svg { width: 18px; height: 18px; }
 .cards-edge.next svg { transform: scaleX(-1); }
-.cards-edge:hover { opacity: 1; }
+.cards-edge:hover, .cards-edge:focus-visible { opacity: 1; }
 .cards-edge:disabled { opacity: .25; pointer-events: none; }
-@container vp (min-width: 1040px) {
-  .cards-edges { display: contents; }
-  /* A little above the middle: beside where the sentence is read, not the geometric centre. */
-  .cards-edge { position: absolute; top: 42%; transform: translateY(-50%); opacity: .28; }
-  .cards-edge.prev { left: -72px; }
-  .cards-edge.next { right: -72px; }
-  .cards:hover .cards-edge { opacity: .6; }
-  .cards .cards-edge:hover { opacity: 1; }
-  .cards-edge:disabled { opacity: 0; }
-}
+/* Beside the column, set by measuring the margin rather than the window. A plain circle; each arrow
+   owns its brightness — faint at rest, clear under the pointer — and a ring the eye does not see
+   widens what the pointer can hit. */
+.cards.edges-beside .cards-edges { display: contents; }
+.cards.edges-beside .cards-edge { position: absolute; top: 44%; transform: translateY(-50%); width: 36px; height: 36px; opacity: .45; }
+.cards.edges-beside .cards-edge::before { content: ""; position: absolute; inset: -7px; border-radius: 50%; }
+.cards.edges-beside .cards-edge.prev { left: -72px; }
+.cards.edges-beside .cards-edge.next { right: -72px; }
+.cards.edges-beside .cards-edge:hover, .cards.edges-beside .cards-edge:focus-visible { opacity: 1; }
+.cards.edges-beside .cards-edge:disabled { opacity: .15; }
 @media (hover: none) { .cards-edges, .cards-edge { display: none; } }
 
 /* ══════════════════════════ external dictionaries ══════════════════════════
@@ -2037,3 +2036,50 @@ details.fold .fold-body { padding: 4px 0 18px; }
   .att-photo { width: 64px; }
 }
 .clip-dialog-actions { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--rule-soft); font-size: 13px; }
+
+/* ══ Cards: proportions ══
+   The toolbar stays put; under it the word, the chips and the sense each get room to breathe rather
+   than being stacked against the toolbar. Nothing in the header depends on which card is showing, so
+   swiping through one word's cards never moves it. */
+.art-title, .art-more { display: none; }
+.art-more { position: relative; }
+.art-more .menu { right: 0; top: calc(100% + 6px); }
+.menu-sep { height: 1px; background: var(--rule-soft); margin: 5px 8px; }
+.menu button.danger { color: var(--warn); }
+.menu button:disabled { opacity: .45; cursor: default; }
+
+.cards-word { flex-wrap: nowrap; align-items: center; margin-top: clamp(16px, 3.4vh, 44px); }
+.cw-line { font-size: clamp(32px, 3.6vw, 42px); line-height: 1.08; min-width: 0; text-wrap: balance; text-align: center; }
+.cw-line[data-length="mid"] { font-size: clamp(28px, 3vw, 36px); }
+.cw-line[data-length="long"] { font-size: clamp(24px, 2.6vw, 30px); }
+.cw-emoji { width: 46px; height: 46px; font-size: 25px; }
+.cards-nav { margin-top: clamp(14px, 2.8vh, 30px); padding-bottom: 14px; }
+.cards-sep { flex: none; align-self: center; width: 1px; height: 18px; margin: 0 6px; background: var(--rule); }
+.card { padding-top: clamp(18px, 3.6vh, 40px); }
+.card-pic, .card-frame { max-height: min(420px, 44vh); }
+/* Quotation marks a size up from the sentence, without opening its lines. */
+.quote-mark { font-size: 1.3em; line-height: 0; vertical-align: -.1em; }
+
+/* Phone: the word is the toolbar's title in Cards, the views and Delete fold into a menu, and a long
+   phrase steps down in size and balances over two lines rather than being cut off. */
+@container vp (max-width: 720px) {
+  .art-views, .art-delete { display: none; }
+  .art-more { display: block; }
+  .art-bar.carding .spacer { display: none; }
+  .art-bar.carding .art-title {
+    display: flex; flex: 1; min-width: 0; align-items: center; justify-content: center; gap: 8px;
+  }
+  .art-title-word {
+    min-width: 0; font-family: var(--serif); font-weight: 700; letter-spacing: -.015em;
+    font-size: 24px; line-height: 1.1; text-wrap: balance; text-align: center; overflow-wrap: anywhere;
+  }
+  .art-title-word[data-length="mid"] { font-size: 20px; }
+  .art-title-word[data-length="long"] { font-size: 17px; }
+  .art-title .say.head { width: 28px; height: 28px; flex: none; }
+  .main.cards-on .cards-word { display: none; }
+  .main.cards-on .art-bar { margin-bottom: 4px; }
+  .cards-nav { margin-top: 14px; }
+  .card { padding-top: 20px; }
+  /* Narrower than the column and a little shorter, so a picture sits in the card rather than filling it. */
+  .card-pic, .card-frame { max-height: min(320px, 36vh); width: 88%; align-self: center; }
+}

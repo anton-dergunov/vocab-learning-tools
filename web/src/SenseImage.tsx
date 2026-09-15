@@ -110,33 +110,20 @@ export function SenseImage({ prompt, headword, busy, onOpen }: {
 /**
  * The same picture as a card shows it: as large as the card allows, with nothing around it.
  *
- * Only a picture that exists is drawn this way. One that is pending, failed, suppressed or being
- * drawn is shown in `SenseImage`'s own frame, so a card and the page say the same thing about it.
+ * Not a button. A card is for reading; the picture is asked for and changed on the page. One that is
+ * being drawn right now is shown in `SenseImage`'s own frame instead, so a card and the page say the
+ * same thing about it.
  */
-export function CardPicture({ prompt, headword, busy, onOpen }: {
-  prompt: ImagePrompt; headword: string; busy: boolean; onOpen(): void;
-}) {
+export function CardPicture({ prompt, headword, busy }: { prompt: ImagePrompt; headword: string; busy: boolean }) {
   const { url, error } = usePicture(prompt.imageRef, prompt.revision);
-  return <button
-    type="button" className="card-pic" onClick={onOpen}
+  return <div
+    className="card-pic" role="img"
     aria-label={prompt.prompt ? `Picture for ${headword}: ${prompt.prompt}` : `Picture for ${headword}`}
   >
     {/* Still fetching, the spot says so quietly instead of being an unexplained gap. */}
-    {url ? <img src={url} alt={prompt.prompt || ""} /> : <span className="sense-image-empty">{error ?? "Loading…"}</span>}
+    {url ? <img src={url} alt="" /> : <span className="sense-image-empty">{error ?? "Loading…"}</span>}
     {busy && url && <span className="sense-image-working" role="status"><SyncIcon /><span>Redrawing…</span></span>}
-  </button>;
-}
-
-/**
- * A sense with nothing drawn and nothing drawing: its emoji, in the frame a picture would fill.
- * Work in progress is never shown here — that is the page's own frame, at the page's own size.
- */
-export function EmojiTile({ emoji, onOpen }: { emoji: string; onOpen?(): void }) {
-  return <button
-    type="button" className="card-pic card-tile" onClick={onOpen} disabled={!onOpen} aria-label="No picture yet"
-  >
-    <span aria-hidden="true">{emoji}</span>
-  </button>;
+  </div>;
 }
 
 function placeholderFor(state: ImageState, prompt: ImagePrompt): string {
@@ -146,10 +133,10 @@ function placeholderFor(state: ImageState, prompt: ImagePrompt): string {
 }
 
 /**
- * A sense with no image prompt at all — nothing has been briefed for it.
+ * A sense with no image prompt at all, while its brief is being written.
  *
- * It gets the same frame and the same click target as a picture, so the article has one shape
- * whether or not a word has been through the pipeline yet.
+ * Shown only while that work is happening: a sense with no picture and nothing drawing shows no frame
+ * at all, and asks for one from the icon in its heading.
  */
 export function EmptySenseImage({ busy, onOpen }: { busy: boolean; onOpen(): void }) {
   return <figure className="sense-image">

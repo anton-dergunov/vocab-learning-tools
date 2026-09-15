@@ -54,6 +54,12 @@ const ICON = {
   /* A clip, drawn as a strip of film: a play triangle alone reads as "audio". */
   film:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h17M3.5 15h17M7.5 5v4M12 5v4M16.5 5v4M7.5 15v4M12 15v4M16.5 15v4"/></svg>',
   info:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><path d="M12 7.6v.1"/></svg>',
+  picture:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 16.5l4.5-4 3.5 3 3-2.5 5 4"/></svg>',
+  /* The printer's ivy leaf, pointing right (❧); mirrored in CSS for ☙. Drawn, not typed, because
+     Literata has no such glyph and every platform's fallback draws a different one. */
+  /* U+2767 from EB Garamond (Georg Duffner, Octavio Pardo), SIL Open Font License 1.1. */
+  more:   '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>',
+  hedera: '<svg viewBox="0 0 910 508" aria-hidden="true"><path fill="currentColor" d="M135 508Q107 508 86 489Q66 470 51 447Q35 447 18 443Q0 439 0 414Q0 382 16 350Q33 319 58 296Q83 272 107 266Q100 258 98 248Q96 239 96 229Q96 215 110 202Q124 189 146 179Q167 169 190 163Q214 157 232 157Q244 157 256 158Q269 158 281 160Q281 138 272 117Q262 96 248 82Q233 68 218 68Q206 68 200 74Q193 79 187 86Q180 94 171 101Q162 108 144 108Q113 108 92 86Q70 63 70 32Q70 18 80 9Q89 0 102 0Q110 0 114 6Q117 12 120 18Q123 24 126 28Q129 33 134 33Q139 33 142 28Q146 24 150 18Q154 12 158 7Q163 2 170 2Q212 2 246 22Q279 43 298 77Q318 111 318 150Q318 154 318 158Q317 162 317 166Q348 173 371 188Q394 202 410 216Q414 220 419 218Q424 216 420 214Q410 206 398 189Q387 172 387 153Q387 127 400 106Q412 86 433 74Q454 62 480 62Q519 62 547 78Q575 93 598 118Q620 142 640 168Q668 203 696 232Q725 260 766 260Q790 260 813 252Q836 245 851 230Q866 214 866 190Q866 157 844 134Q839 135 834 136Q830 136 826 136Q804 137 794 126Q785 114 785 96Q785 75 802 64Q819 54 840 54Q865 54 880 72Q895 91 902 118Q910 146 910 172Q910 224 886 268Q861 311 819 345Q777 379 726 403Q675 427 622 440Q568 452 520 452Q480 452 438 436Q397 421 370 391Q342 361 342 318Q342 292 358 276Q373 259 396 248Q404 244 404 242Q404 240 396 236Q377 225 356 218Q336 210 312 206Q305 238 290 266Q275 294 254 312Q234 329 208 329Q195 329 184 326Q174 323 165 319Q157 317 149 314Q141 312 133 312Q108 312 93 333Q78 354 78 380Q78 408 92 433Q107 458 130 458Q138 458 144 455Q149 452 153 448Q158 443 164 440Q170 436 178 436Q187 436 192 444Q196 453 196 462Q196 484 178 496Q159 508 135 508ZM190 286Q215 286 238 260Q260 234 272 202H254Q234 202 210 206Q186 211 169 220Q152 230 152 244Q152 260 163 273Q174 286 190 286Z"/></svg>',
   send:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h14"/><path d="M13 6l6 6-6 6"/></svg>'
 };
 
@@ -324,7 +330,8 @@ function spoken(html, button) {
 function quietTitle(s) {
   return String(s)
     .replace(/#[\p{L}\p{N}_]+/gu, " ")
-    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}]/gu, "")
+    .replace(/[0-9#*]\u{FE0F}?\u{20E3}/gu, "")
+    .replace(/\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Presentation}|[\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{1F3FB}-\u{1F3FF}]/gu, "")
     .replace(/\s*[|•]\s*/g, " · ")
     .replace(/\s+/g, " ")
     .replace(/^[\s·:\-–—]+|[\s·:\-–—]+$/g, "")
@@ -450,6 +457,7 @@ function senseSection(s, i, x) {
   const body = `
     <div class="sense-head">
       <p class="sense-def${state.review && mark.includes("mark-change") ? " field-change" : ""}">${spoken(esc(s.definition), say(s.definition))}</p>
+      ${s.images.length ? "" : `<button class="ask-anchor picture-anchor" data-add-picture aria-label="Add a picture" title="Add a picture">${ICON.picture}</button>`}
       <button class="ask-anchor" aria-label="Ask about this meaning">${ICON.ask}</button>
     </div>
     <div class="glosses">${s.glosses.map(glossLine).join("")}</div>
@@ -611,8 +619,8 @@ function renderArticle(x, opts) {
 function cardExample(e, quoted = false) {
   return `
     <div class="card-ex${isOwn(e) ? " own" : ""}${isClip(e) ? " clip-ex" : ""}">
-      ${quoted ? '<span class="card-quote" aria-hidden="true">“</span>' : ""}
-      <p class="t">${spoken(e.text, say(e.text))}</p>
+      <p class="t">${quoted ? '<span class="quote-mark" aria-hidden="true">“</span>' : ""}${spoken(e.text,
+        (quoted ? '<span class="quote-mark" aria-hidden="true">”</span>' : "") + say(e.text))}</p>
       ${e.translation ? `<p class="tr">${spoken(e.translation, sayTranslation(e.translation))}</p>` : ""}
       ${isOwn(e) ? '<span class="own-tag">your sentence</span>' : ""}
       ${isClip(e) ? clipLine(e) : ""}
@@ -628,12 +636,11 @@ function cardsFor(x) {
     /* A picture goes on the card of the sentence it was drawn from — a clip's included, so a clip
        and its picture share a card. A picture drawn from the sense alone opens the sense. */
     const spotOn = (c) => (anchored === null ? c === 0 : Boolean(items[c]) && items[c].at === anchored);
-    /* The picture's spot holds the picture; a picture being drawn in the page's own frame; and a
-       sense with nothing drawn and nothing drawing its emoji instead of empty paper. */
+    /* A card is for reading: the picture if it exists, the page's frame while one is being drawn,
+       and otherwise nothing — pictures are asked for on the page. */
     const visualAt = (c) => !spotOn(c) ? ""
       : picture && picture.drawing ? `<div class="card-frame">${pictureFrame(picture)}</div>`
-      : picture ? `<button class="card-pic" data-picture aria-label="Open the picture"><img src="${picture.src}" alt=""></button>`
-      : (s.emoji || x.emoji) ? `<button class="card-pic card-tile" data-picture aria-label="No picture yet — open to draw one"><span>${s.emoji || x.emoji}</span></button>`
+      : picture ? `<div class="card-pic" role="img"><img src="${picture.src}" alt=""></div>`
       : "";
     const glossLines = s.glosses.map((g) =>
       `<p class="card-gloss"><span class="lg">${esc(g.lang)}</span>${g.terms.map(esc).join(" · ")}</p>`).join("");
@@ -641,8 +648,9 @@ function cardsFor(x) {
     for (let c = 0; c < count; c++) {
       const item = items[c];
       const visual = visualAt(c);
-      /* Only words: set as a quotation, with an ornament where a picture would be. */
+      /* Only words: an epigraph between two ivy leaves. No sentence either: the leaves alone. */
       const quoted = !visual && Boolean(item);
+      const bare = !visual && !item;
       cards.push({
         group: `s${i}`,
         chip: senseName(s) ? esc(senseName(s)) : String(i + 1),
@@ -651,10 +659,12 @@ function cardsFor(x) {
             <p class="card-def">${spoken(esc(s.definition), say(s.definition))}</p>
             ${glossLines}
           </div>
-          <div class="card-main${quoted ? " quoted" : ""}">
+          <div class="card-main${quoted ? " quoted" : ""}${bare ? " bare" : ""}">
             ${visual}
-            ${quoted ? '<span class="card-ornament" aria-hidden="true">⁂</span>' : ""}
+            ${quoted ? `<span class="card-ornament above" aria-hidden="true">${ICON.hedera}</span>` : ""}
             ${item ? cardExample(item.e, quoted) : ""}
+            ${quoted ? `<span class="card-ornament below" aria-hidden="true">${ICON.hedera}</span>` : ""}
+            ${bare ? `<span class="card-ornament pair" aria-hidden="true">${ICON.hedera}${ICON.hedera}</span>` : ""}
           </div>
           ${count > 1 ? `<span class="card-pos">${c + 1} / ${count}</span>` : ""}`
       });
@@ -682,12 +692,11 @@ function renderCards(x) {
       <header class="cards-head">
         <div class="cards-word">
           <span class="cw-emoji">${x.emoji || "\u{1F4C4}"}</span>
-          <div class="cw-line"><h1 class="cw-headword">${esc(x.headword)}</h1>${say(x.headword, "always head")}</div>
+          <div class="cw-line" data-length="${x.headword.length > 24 ? "long" : x.headword.length > 14 ? "mid" : "short"}"><h1 class="cw-headword">${esc(x.headword)}</h1>${say(x.headword, "always head")}</div>
           ${x.reading ? `<span class="reading">${esc(x.reading)}</span>` : ""}
-          ${x.ipa ? `<span class="ipa">${esc(x.ipa)}</span>` : ""}
         </div>
         <nav class="cards-nav" aria-label="Senses and sections">
-          ${groups.map(([group, g]) => `<button class="cards-chip${group === current ? " on" : ""}${group.startsWith("s") ? "" : " aside"}"
+          ${groups.map(([group, g], index) => `${!group.startsWith("s") && index > 0 && groups[index - 1][0].startsWith("s") ? '<span class="cards-sep" aria-hidden="true"></span>' : ""}<button class="cards-chip${group === current ? " on" : ""}${group.startsWith("s") ? "" : " aside"}"
             data-go="${g.at}" data-group="${group}">${g.chip}</button>`).join("")}
         </nav>
       </header>
@@ -703,9 +712,20 @@ function renderCards(x) {
     </div>`;
 }
 
+/* Arrows beside the column only where the margin really has room for them, measured against `.main`,
+   which clips; otherwise a pair at the foot of the card. */
+function placeEdges() {
+  const cards = $(".cards"), main = $("#main");
+  if (!cards || !main) return;
+  const inner = cards.getBoundingClientRect(), outer = main.getBoundingClientRect();
+  cards.classList.toggle("edges-beside", inner.left - outer.left >= 100 && outer.right - inner.right >= 100);
+}
+window.addEventListener("resize", placeEdges);
+
 function wireCards() {
   const track = $("#cardsTrack");
   if (!track) return;
+  placeEdges();
   track.scrollLeft = state.card * track.clientWidth;
   let frame = 0;
   track.addEventListener("scroll", () => {
@@ -1083,14 +1103,26 @@ function render() {
     $("#artBar").innerHTML = `
       <button class="icon-btn" id="backBtn" aria-label="Back to the list">${ICON.back}</button>
       <span class="label art-where">${esc(state.topic === "all" ? "All words" : state.topic === "inbox" ? "Inbox" : topicOf(state.topic).name)}</span>
+      ${view === "cards" ? `<div class="art-title"><span class="art-title-word" data-length="${x.headword.length > 24 ? "long" : x.headword.length > 14 ? "mid" : "short"}">${esc(x.headword)}</span>${say(x.headword, "always head")}</div>` : ""}
       <span class="spacer"></span>
-      <div class="seg">
+      <div class="seg art-views">
         <button data-view="page" class="${view === "page" ? "on" : ""}">Page</button>
         <button data-view="cards" class="${view === "cards" ? "on" : ""}">Cards</button>
         <button data-mode="yaml" class="${state.mode === "yaml" ? "on" : ""}">YAML</button>
       </div>
-      <button class="icon-btn" id="editBtn" aria-label="Edit as YAML" title="Edit as YAML">${ICON.pencil}</button>
-      <button class="icon-btn" id="delBtn" aria-label="Delete" title="Delete">${ICON.trash}</button>`;
+      ${state.mode === "yaml" ? `<button class="icon-btn" id="editBtn" aria-label="Edit as YAML" title="Edit as YAML">${ICON.pencil}</button>` : ""}
+      <button class="icon-btn art-delete" id="delBtn" aria-label="Delete" title="Delete">${ICON.trash}</button>
+      <div class="art-more">
+        <button class="icon-btn" id="moreBtn" aria-label="Article menu">${ICON.more}</button>
+        <div class="menu" id="articleMenu">
+          <button data-view="page" class="${view === "page" ? "on" : ""}">Page</button>
+          <button data-view="cards" class="${view === "cards" ? "on" : ""}">Cards</button>
+          <button data-mode="yaml" class="${state.mode === "yaml" ? "on" : ""}">YAML</button>
+          <div class="menu-sep"></div>
+          <button id="delBtn2" class="danger">Delete this word</button>
+        </div>
+      </div>`;
+    $("#artBar").classList.toggle("carding", view === "cards");
     // Editing is a composer above, so only reading and the read-only projection get here.
     main.innerHTML = view === "cards" ? renderCards(x) : view === "page" ? renderArticle(x) : renderYaml(x);
     // The conversation belongs to Page: an edit that reorders senses needs every sense in view.
@@ -1223,8 +1255,11 @@ document.addEventListener("click", (ev) => {
   if (modeBtn) { state.mode = modeBtn.dataset.mode; render(); return; }
 
   if (hit("#editBtn")) { state.mode = "edit"; render(); return; }
+  if (hit("#moreBtn")) { $("#articleMenu").classList.toggle("open"); return; }
+  if (hit("#delBtn2")) { toast("Delete writes a tombstone — not wired up in the prototype"); return; }
   if (hit("#delBtn"))  { toast("Delete writes a tombstone — not wired up in the prototype"); return; }
 
+  if (hit("[data-add-picture]")) { toast("Opens the picture dialog — brief, Draw, or your own picture"); return; }
   const say = hit("[data-say]");
   if (say) {
     say.classList.add("playing");

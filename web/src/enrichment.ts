@@ -64,6 +64,26 @@ export interface EnrichmentStatus {
   running: boolean;
 }
 
+/**
+ * Whether one sense's picture is being worked on right now, which is what makes it show "Drawing…".
+ *
+ * Work aimed at the sense always counts. Work on the whole word — a brief, or a word queued behind
+ * another — counts only for a sense that still needs a picture: one already drawn, or one whose
+ * picture was removed, is not touched by it, and reading it as busy is what made a removed picture
+ * say "Writing a brief…" when nothing was being written for it. Clip work is never picture work.
+ */
+export function senseIsBusy(
+  status: Pick<EnrichmentStatus, "active" | "waiting">, lexemeId: string, senseId: string,
+  held: { imageRef: string | null; suppressed: boolean } | null
+): boolean {
+  const needsOne = !held || (!held.imageRef && !held.suppressed);
+  const aimed = (unit: { lexemeId: string; senseId: string | null }) =>
+    unit.lexemeId === lexemeId && (unit.senseId === senseId || (unit.senseId === null && needsOne));
+  if (status.waiting.some(aimed)) return true;
+  const active = status.active;
+  return Boolean(active && active.kind !== "clip" && aimed(active));
+}
+
 const RECENT = 20;
 /** Providers meter roughly one image a minute, so a refusal means waiting, not trying harder. */
 /* How many times a word comes back to a provider that was busy before leaving the rest to the

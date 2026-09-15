@@ -20,10 +20,10 @@ import { formatDay } from "./format";
 import { DictionaryEntries } from "./ExternalArticle";
 import type { ExternalEntry } from "./externalEntries";
 import type { Change, Mark } from "./articleEdit";
-import { AskIcon, BackIcon, BookIcon, CaretIcon, FilmIcon, InfoIcon, PlayIcon } from "./icons";
+import { AskIcon, BackIcon, BookIcon, CaretIcon, FilmIcon, HederaIcon, InfoIcon, PictureIcon, PlayIcon } from "./icons";
 import type { DiffPart } from "./wordDiff";
 import type { Article, ArticleSense } from "./selectors";
-import { CardPicture, EmojiTile, EmptySenseImage, SenseImage, imageStateOf } from "./SenseImage";
+import { CardPicture, EmptySenseImage, SenseImage, imageStateOf } from "./SenseImage";
 
 /* Plain words rather than a grammarian's abbreviations: "noun, feminine", not "n. · f.". */
 const POS_WORD: Record<string, string> = {
@@ -54,7 +54,10 @@ function placeLine(article: Article): string {
 export function quietTitle(title: string): string {
   return title
     .replace(/#[\p{L}\p{N}_]+/gu, " ")
-    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}]/gu, "")
+    // Flags are pairs of regional indicators and keycaps are a digit plus a combining mark — neither
+    // is a pictograph, which is how "🇪🇸" got through.
+    .replace(/[0-9#*]\u{FE0F}?\u{20E3}/gu, "")
+    .replace(/\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Presentation}|[\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{1F3FB}-\u{1F3FF}]/gu, "")
     .replace(/\s*[|•]\s*/g, " · ")
     .replace(/\s+/g, " ")
     .replace(/^[\s·:\-–—]+|[\s·:\-–—]+$/g, "")
@@ -268,6 +271,9 @@ function SenseSection({ entry, index, headword, pictures, clips, folded, onToggl
   ask?: AskSlot | null;
 }) {
   const { sense, examples, images } = entry;
+  const record = images[0] ?? null;
+  const busy = pictures?.busy(sense.id) ?? false;
+  const drawn = Boolean(record && imageStateOf(record) === "ready");
   const mark = marks?.of(sense.id) ?? null;
   const label = `sense ${index + 1}`;
   const moved = (field: string) => marks?.field(sense.id, field) ?? null;
@@ -294,21 +300,26 @@ function SenseSection({ entry, index, headword, pictures, clips, folded, onToggl
           {mark !== "removed" && <Say onListen={onListen} />}
         </Spoken>
       </p>
+      {/* Where a picture is asked for: the page is for editing, so the control lives here and not on
+          a card, and it replaces the empty frames a sense without a picture used to carry. */}
+      {pictures && !drawn && !busy && mark !== "removed" && <button
+        type="button" className="ask-anchor picture-anchor"
+        aria-label={record && imageStateOf(record) === "failed" ? "The picture could not be drawn" : "Add a picture"}
+        title={record && imageStateOf(record) === "failed" ? "The picture could not be drawn" : "Add a picture"}
+        onClick={() => pictures.open(sense.id, record)}
+      ><PictureIcon /></button>}
       {mark !== "removed" && <AskAnchor ask={ask} target={{ kind: "sense", id: sense.id, label }} />}
     </div>
     <div className={`glosses${tint(moved("glosses"))}`}>
       {sense.glosses.map((gloss) => <GlossLine key={gloss.lang} gloss={gloss} />)}
     </div>
     {/* The picture leads its sense: it is the thing seen first, whichever sentence it was drawn
-        from. A sense with no prompt row still shows a frame, so every sense has one shape. */}
-    {pictures && images.map((image) => <SenseImage
-      key={image.id} prompt={image} headword={headword}
-      busy={pictures.busy(sense.id)} onOpen={() => pictures.open(sense.id, image)}
-    />)}
-    {images.length === 0 && pictures && <EmptySenseImage
-      busy={pictures.busy(sense.id)}
-      onOpen={() => pictures.open(sense.id, null)}
+        from. It is shown when it exists or is being drawn, and otherwise not at all — no empty
+        frame; the icon in the heading is how one is asked for. */}
+    {pictures && record && (drawn || busy) && <SenseImage
+      prompt={record} headword={headword} busy={busy} onOpen={() => pictures.open(sense.id, record)}
     />}
+    {pictures && !record && busy && <EmptySenseImage busy onOpen={() => pictures.open(sense.id, null)} />}
     {orderedExamples(examples).map((example, position) => <ExampleBlock
       key={example.id} example={example} onListen={onListen} onPlayClip={onPlayClip}
       marks={marks} ask={ask} label={`example ${position + 1} of sense ${index + 1}`}
@@ -389,6 +400,11 @@ function Details({ article }: { article: Article }) {
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
 
+/** An ivy leaf, pointing away from the sentence it marks: ☙ above it, ❧ below it. */
+function Hedera({ side }: { side: "above" | "below" }) {
+  return <span className={`card-ornament ${side}`} aria-hidden="true"><HederaIcon /></span>;
+}
+
 interface Card {
   group: string;
   chip: string;
@@ -420,34 +436,31 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
     const items = orderedExamples(examples);
     const record = images[0] ?? null;
     const busy = pictures?.busy(sense.id) ?? false;
+    const drawn = Boolean(record && imageStateOf(record) === "ready");
     /* A picture goes on the card of the sentence it was drawn from — a clip's included — whatever
        state it is in, so a picture being drawn appears where the finished one will. */
     const anchored = record?.exampleId && items.some((example) => example.id === record.exampleId)
       ? record.exampleId : null;
     const count = Math.max(items.length, 1);
     const name = senseName(sense);
-    const open = () => pictures?.open(sense.id, record);
     for (let position = 0; position < count; position += 1) {
       const example = items[position] ?? null;
       const spot = anchored ? example?.id === anchored : position === 0;
-      const emoji = sense.emoji ?? lexeme.emoji;
-      /* What the picture's spot holds: the picture once drawn; the page's own frame while it is
-         pending, being drawn, failed or ruled out, so a card says "Drawing…" the way the page does;
-         and a sense with nothing drawn and nothing drawing opens on its emoji instead of empty
-         paper — the frame a picture would fill, opening the same dialog. */
+      /* A card is for reading, so it shows a picture that exists, the page's frame while one is
+         being drawn right now, and otherwise nothing: no placeholder and no control. Pictures are
+         asked for and changed on the page. */
       const visual = !spot ? null
-        : record && imageStateOf(record) === "ready"
-          ? <CardPicture prompt={record} headword={lexeme.headword} busy={busy} onOpen={open} />
-        : record
-          ? <div className="card-frame"><SenseImage prompt={record} headword={lexeme.headword} busy={busy} onOpen={open} /></div>
+        : drawn && record
+          ? <CardPicture prompt={record} headword={lexeme.headword} busy={busy} />
         : busy
-          ? <div className="card-frame"><EmptySenseImage busy onOpen={open} /></div>
-        : emoji
-          ? <EmojiTile emoji={emoji} onOpen={pictures ? open : undefined} />
+          ? <div className="card-frame">{record
+              ? <SenseImage prompt={record} headword={lexeme.headword} busy onOpen={() => undefined} />
+              : <EmptySenseImage busy onOpen={() => undefined} />}</div>
         : null;
-      /* A card that is only words is set as a quotation, with an ornament where a picture would be,
-         so the space reads as a margin rather than as something missing. */
+      /* A card that is only words is set as an epigraph between two ivy leaves, so the space reads
+         as a margin; a card with no sentence either keeps the pair of leaves alone. */
       const quoted = !visual && Boolean(example);
+      const bare = !visual && !example;
       const clip = example ? storedClipOf(example) : null;
       cards.push({
         group: `sense:${sense.id}`,
@@ -460,18 +473,25 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
               <span className="lg">{gloss.lang}</span>{gloss.terms.join(" · ")}
             </p>)}
           </div>
-          <div className={`card-main${quoted ? " quoted" : ""}`}>
+          <div className={`card-main${quoted ? " quoted" : ""}${bare ? " bare" : ""}`}>
             {visual}
-            {quoted && <span className="card-ornament" aria-hidden="true">⁂</span>}
+            {quoted && <Hedera side="above" />}
             {example && <div className={`card-ex${OWN_ORIGINS.has(example.origin) ? " own" : ""}${clip ? " clip-ex" : ""}`}>
-              {quoted && <span className="card-quote" aria-hidden="true">“</span>}
-              <p className="t"><Spoken text={example.text} form={example.matchedForm}><Say onListen={onListen} /></Spoken></p>
+              <p className="t">
+                {quoted && <span className="quote-mark" aria-hidden="true">“</span>}
+                <Spoken text={example.text} form={example.matchedForm}>
+                  {quoted && <span className="quote-mark" aria-hidden="true">”</span>}
+                  <Say onListen={onListen} />
+                </Spoken>
+              </p>
               {example.translation && <p className="tr">
                 <Marked text={example.translation} form={example.matchedTranslationForm} />
               </p>}
               {OWN_ORIGINS.has(example.origin) && <OwnTag />}
               {clip && <ClipLine clip={clip} onPlay={() => onPlayClip(example)} />}
             </div>}
+            {quoted && <Hedera side="below" />}
+            {bare && <span className="card-ornament pair" aria-hidden="true"><HederaIcon /><HederaIcon /></span>}
           </div>
           {count > 1 && <span className="card-pos">{position + 1} / {count}</span>}
         </>
@@ -508,6 +528,26 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
     .filter((card, index, all) => all.findIndex((other) => other.group === card.group) === index);
   const current = cards[Math.min(at, cards.length - 1)]?.group;
 
+  /* Beside the column only where the margin really has room for them, measured against `.main`,
+     which clips: a window-width rule put them where the space it assumed was not always there. */
+  const root = useRef<HTMLDivElement | null>(null);
+  const [beside, setBeside] = useState(false);
+  useEffect(() => {
+    const element = root.current;
+    const clipper = element?.closest(".main");
+    if (!element || !clipper || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const inner = element.getBoundingClientRect();
+      const outer = clipper.getBoundingClientRect();
+      setBeside(inner.left - outer.left >= 100 && outer.right - inner.right >= 100);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    observer.observe(clipper);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+
   const go = useCallback((index: number) => {
     const element = track.current;
     if (!element) return;
@@ -538,26 +578,31 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
     return () => document.removeEventListener("keydown", onKey);
   }, [at, go]);
 
-  return <div className="cards">
+  return <div className={`cards${beside ? " edges-beside" : ""}`} ref={root}>
     <header className="cards-head">
       <div className="cards-word">
         <span className="cw-emoji" aria-hidden="true">{lexeme.emoji || "📄"}</span>
         {/* The word and its button share one inline line, where `vertical-align: middle` centres the
             button on the word's lowercase letters rather than on the line box. */}
-        <div className="cw-line">
+        <div className="cw-line" data-length={lexeme.headword.length > 24 ? "long" : lexeme.headword.length > 14 ? "mid" : "short"}>
           <h1 className="cw-headword">{lexeme.headword}</h1>
           <Say head label={`Listen to ${lexeme.headword}`} onListen={onListen} />
         </div>
+        {/* No transcription on a card: the play button is how a word is heard, and the line it took
+            is room the card needs more. A reading (pinyin) is part of the word, so it stays. */}
         {lexeme.reading && <span className="reading">{lexeme.reading}</span>}
-        {lexeme.ipa && <span className="ipa">{lexeme.ipa}</span>}
       </div>
       <nav className="cards-nav" aria-label="Senses and sections" ref={nav}>
-        {groups.map((group) => <button
-          key={group.group} type="button"
-          className={`cards-chip${group.group === current ? " on" : ""}${group.aside ? " aside" : ""}`}
-          aria-current={group.group === current}
-          onClick={() => go(group.first)}
-        >{group.chip}</button>)}
+        {groups.map((group, index) => <Fragment key={group.group}>
+          {/* A rule between the meanings and everything about the word as a whole. */}
+          {group.aside && !groups[index - 1]?.aside && index > 0 && <span className="cards-sep" aria-hidden="true" />}
+          <button
+            type="button"
+            className={`cards-chip${group.group === current ? " on" : ""}${group.aside ? " aside" : ""}`}
+            aria-current={group.group === current}
+            onClick={() => go(group.first)}
+          >{group.chip}</button>
+        </Fragment>)}
       </nav>
     </header>
     <div className="cards-stage">

@@ -25,6 +25,8 @@ describe("a clip's title", () => {
       .toBe("conocemos a marta, la señora que está por cumplir 101 años");
     expect(quietTitle("En este pueblo humanos tienen prohibido vivir 🚫")).toBe("en este pueblo humanos tienen prohibido vivir");
     expect(quietTitle("Comiendo en un mercado 🌮🔥 #mexico #streetfood")).toBe("comiendo en un mercado");
+    expect(quietTitle("REDDIT DRAMA IN SPANISH 🇪🇸 FOR SPANISH LEARNERS")).toBe("reddit drama in spanish for spanish learners");
+    expect(quietTitle("Top 10 1️⃣ palabras")).toBe("top 10 palabras");
   });
 });
 
@@ -48,6 +50,29 @@ describe("the page", () => {
     fireEvent.click(sense);
     expect(reads("Chop the onion very finely.")).toBe(false);
     expect(reads("My nose itches.")).toBe(true);
+  });
+
+  it("asks for a missing picture from an icon in the sense heading, with no empty frame", () => {
+    const slot = pictures();
+    render(<LexemeArticle article={picar()} onUnsupported={() => undefined} pictures={slot} />);
+    // The cooking sense has no picture record at all.
+    const cooking = document.querySelector<HTMLElement>('[data-record="sensepicarchop0"]')!;
+    expect(cooking.querySelector(".sense-image")).toBeNull();
+    fireEvent.click(within(cooking).getByRole("button", { name: "Add a picture" }));
+    expect(slot.open).toHaveBeenCalledWith("sensepicarchop0", null);
+    // A sense whose picture exists shows it, and no icon.
+    const itch = document.querySelector<HTMLElement>('[data-record="sensepicaritch0"]')!;
+    expect(itch.querySelector(".sense-image")).not.toBeNull();
+    expect(within(itch).queryByRole("button", { name: "Add a picture" })).toBeNull();
+  });
+
+  it("shows no frame for a picture that was removed", () => {
+    const graph = testGraph();
+    graph.imagePrompts[0] = { ...graph.imagePrompts[0], imageRef: null, suppressed: true };
+    render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} onUnsupported={() => undefined} pictures={pictures()} />);
+    const itch = document.querySelector<HTMLElement>('[data-record="sensepicaritch0"]')!;
+    expect(itch.querySelector(".sense-image")).toBeNull();
+    expect(within(itch).getByRole("button", { name: "Add a picture" })).toBeInTheDocument();
   });
 
   it("plays nothing yet, and says so rather than failing silently", () => {
@@ -102,22 +127,27 @@ describe("cards", () => {
     });
     render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} view="cards" onUnsupported={() => undefined} pictures={pictures()} />);
     const second = document.querySelector<HTMLElement>('[data-card="1"]')!;
-    expect(reads("La lana pica.", second)).toBe(true);
-    expect(second.querySelector(".card-main.quoted .card-quote")).not.toBeNull();
-    expect(second.querySelector(".card-ornament")).not.toBeNull();
+    // Between two ivy leaves, and closed as well as opened — the marks are not part of the text.
+    expect(second.querySelector(".card-main.quoted .card-ornament.above")).not.toBeNull();
+    expect(second.querySelector(".card-main.quoted .card-ornament.below")).not.toBeNull();
+    expect(second.querySelector(".card-ex .t")!.textContent).toBe("“La lana pica.”");
+    expect([...second.querySelectorAll(".quote-mark")].every((mark) => mark.getAttribute("aria-hidden") === "true")).toBe(true);
     // The picture stays on the card of the sentence it was drawn from.
     expect(second.querySelector(".card-pic")).toBeNull();
     // The arrows are outside the track, so they can move to the margins or to the foot of the card.
     expect(document.querySelector(".cards-edges .cards-edge.next")).not.toBeNull();
   });
 
-  it("puts a picture on the card of the sentence it was drawn from, and an emoji where there is none", async () => {
+  it("puts a picture on the card it was drawn from, and nothing where there is none", async () => {
     render(<LexemeArticle article={picar()} view="cards" onUnsupported={() => undefined} pictures={pictures()} />);
     const itch = document.querySelector<HTMLElement>('[data-card="0"]')!;
     expect(await within(itch).findByRole("img")).toBeInTheDocument();
-    // The cooking sense has no picture, so it opens on its own emoji rather than empty paper.
+    // A card is for reading: the picture does not open the picture dialog.
+    expect(itch.querySelector("button.card-pic")).toBeNull();
+    // The cooking sense has no picture: no placeholder and no control, just its sentence as a quote.
     const cooking = document.querySelector<HTMLElement>('[data-card="1"]')!;
-    expect(cooking.querySelector(".card-tile")!.textContent).toContain("🔪");
+    expect(cooking.querySelector(".card-pic, .card-frame, .sense-image")).toBeNull();
+    expect(cooking.querySelector(".card-main.quoted")).not.toBeNull();
     // Its clip is a quiet, plainly pressable line.
     expect(within(cooking).getByRole("button", { name: /Play the clip: comiendo en un mercado · easy spanish/ }))
       .toBeInTheDocument();

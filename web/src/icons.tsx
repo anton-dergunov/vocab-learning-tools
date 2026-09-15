@@ -35,3 +35,15 @@ export const SendIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={
 export const FilmIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.7} strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 9h17M3.5 15h17M7.5 5v4M12 5v4M16.5 5v4M7.5 15v4M12 15v4M16.5 15v4" /></svg>;
 /** The article's details: what is known about the record rather than about the word. */
 export const InfoIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5" /><path d="M12 7.6v.1" /></svg>;
+/**
+ * The hedera, the printer's ivy leaf, pointing right (❧); the article mirrors it for ☙.
+ *
+ * The outline of U+2767 from EB Garamond (Georg Duffner and Octavio Pardo), used under the SIL Open
+ * Font License 1.1. Drawn from the glyph rather than typed, because Literata has no such character and
+ * every platform's fallback font draws a different one.
+ */
+export const HederaIcon = () => <svg viewBox="0 0 910 508" aria-hidden="true">
+  <path fill="currentColor" d="M135 508Q107 508 86 489Q66 470 51 447Q35 447 18 443Q0 439 0 414Q0 382 16 350Q33 319 58 296Q83 272 107 266Q100 258 98 248Q96 239 96 229Q96 215 110 202Q124 189 146 179Q167 169 190 163Q214 157 232 157Q244 157 256 158Q269 158 281 160Q281 138 272 117Q262 96 248 82Q233 68 218 68Q206 68 200 74Q193 79 187 86Q180 94 171 101Q162 108 144 108Q113 108 92 86Q70 63 70 32Q70 18 80 9Q89 0 102 0Q110 0 114 6Q117 12 120 18Q123 24 126 28Q129 33 134 33Q139 33 142 28Q146 24 150 18Q154 12 158 7Q163 2 170 2Q212 2 246 22Q279 43 298 77Q318 111 318 150Q318 154 318 158Q317 162 317 166Q348 173 371 188Q394 202 410 216Q414 220 419 218Q424 216 420 214Q410 206 398 189Q387 172 387 153Q387 127 400 106Q412 86 433 74Q454 62 480 62Q519 62 547 78Q575 93 598 118Q620 142 640 168Q668 203 696 232Q725 260 766 260Q790 260 813 252Q836 245 851 230Q866 214 866 190Q866 157 844 134Q839 135 834 136Q830 136 826 136Q804 137 794 126Q785 114 785 96Q785 75 802 64Q819 54 840 54Q865 54 880 72Q895 91 902 118Q910 146 910 172Q910 224 886 268Q861 311 819 345Q777 379 726 403Q675 427 622 440Q568 452 520 452Q480 452 438 436Q397 421 370 391Q342 361 342 318Q342 292 358 276Q373 259 396 248Q404 244 404 242Q404 240 396 236Q377 225 356 218Q336 210 312 206Q305 238 290 266Q275 294 254 312Q234 329 208 329Q195 329 184 326Q174 323 165 319Q157 317 149 314Q141 312 133 312Q108 312 93 333Q78 354 78 380Q78 408 92 433Q107 458 130 458Q138 458 144 455Q149 452 153 448Q158 443 164 440Q170 436 178 436Q187 436 192 444Q196 453 196 462Q196 484 178 496Q159 508 135 508ZM190 286Q215 286 238 260Q260 234 272 202H254Q234 202 210 206Q186 211 169 220Q152 230 152 244Q152 260 163 273Q174 286 190 286Z" />
+</svg>;
+/** More actions: three dots in a row. */
+export const MoreIcon = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="18.5" cy="12" r="1.7" /></svg>;
