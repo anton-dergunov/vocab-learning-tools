@@ -20,11 +20,9 @@ It also carries the switches for the article redesign spike:
 
 - **View** — `auto` (Cards in the phone and tablet frames, Page on desktop),
   `page` or `cards`; stands in for a Settings option.
-- **Picture** — in Cards, put a picture with the sentence it was drawn from, or
-  always on the sense's first card.
 - **▷ Translations** — listen buttons after translations as well.
 
 Deep links keep screenshots reproducible: `?open=la obra&frame=phone&view=cards&card=1`,
-plus `pic=first`, `tr=on`, `theme=dark`, and `size=375x667` to resize the frame.
+plus `tr=on`, `theme=dark`, and `size=375x667` to resize the frame.
 `la obra` and `animarse` are copied from a real account; `picar` sense 1 has a
 deliberately overlong example, to show the one card that has to scroll.

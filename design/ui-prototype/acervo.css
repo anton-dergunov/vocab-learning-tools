@@ -484,8 +484,15 @@ details.fold .fold-body { padding: 4px 0 18px; }
    and what changed is how much of it is on screen at once. */
 
 /* ── masthead ── */
+.head-line { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
+.head-line .headword { margin: 0; }
+/* Baseline, not centre: a mono IPA, an italic serif and a small mono filing line only look level when
+   their letters sit on one line. */
+.pron-row { align-items: baseline; column-gap: 14px; row-gap: 2px; margin-top: 8px; }
 .pron-row .gram { margin: 0; font-size: 15px; }
-.place { margin: 12px 0 0; font-size: 14px; color: var(--ink-3); }
+.place {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--ink-3);
+}
 
 /* ── foldable sections ── */
 .sec-toggle {
@@ -501,8 +508,15 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .sec-toggle:hover .label { color: var(--ink); }
 .sec.folded .sec-toggle .caret { transform: none; opacity: .8; }
 .sec.folded > .body { display: none; }
-.sec.folded { padding-bottom: 18px; }
-.sec .num svg { width: 13px; height: 13px; }
+/* Folded, a section is one line — icon and name side by side across the whole width — rather than
+   the rail's stacked three. */
+.sec.folded { padding: 16px 0; }
+.sec.folded > .rail-l { grid-column: 1 / -1; }
+.sec.folded .sec-toggle { display: flex; align-items: center; gap: 10px; }
+.sec.folded .sec .num, .sec.folded .num { margin: 0; }
+.sec.folded .sec-toggle .caret { top: 50%; margin-top: -6px; }
+.sec .num svg { vertical-align: -2px; }
+.sec .num svg { width: 14px; height: 14px; }
 
 /* ── listen ──
    A small outlined circle after a sentence. Always there on a touch screen, which cannot hover; on
@@ -518,6 +532,12 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .say:hover { color: var(--core); border-color: var(--core); }
 .say.playing { color: var(--core); border-color: var(--core); background: var(--core-soft); }
 .tr .say { width: 20px; height: 20px; vertical-align: 1px; }
+/* The headword's own play button: the same circle, larger and on white, so it separates from the word. */
+.say.head {
+  width: 32px; height: 32px; margin: 0; flex: none;
+  background: var(--surface); border-color: var(--rule); color: var(--ink-2); box-shadow: var(--shadow);
+}
+.say.head svg { width: 11px; height: 11px; }
 @media (hover: hover) {
   .say:not(.always) { opacity: 0; }
   .sense-def:hover .say, .t:hover .say, .tr:hover .say, .card-def:hover .say,
@@ -531,24 +551,27 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .ex .ask-anchor { margin-top: 3px; }
 .ex .ex-text { min-width: 0; }
 .say-tail { white-space: nowrap; }
-.own-hint { margin: 5px 0 0; font-size: 12px; color: var(--core); letter-spacing: .01em; }
-.own-hint::before { content: "✳ "; }
+/* Visible, and quieter than the sentence it belongs to: a small soft tag, not a coloured badge. */
+.own-tag {
+  display: inline-block; margin-top: 7px; padding: 1px 8px 1px 7px; border-radius: 999px;
+  font-size: 11.5px; line-height: 1.6; color: var(--core); background: var(--core-soft);
+}
+.own-tag::before { content: "✳ "; opacity: .8; }
 .ex.clip-ex { border-left-style: dotted; }
 .clip-line {
-  display: flex; align-items: center; gap: 9px; margin-top: 9px; padding: 0; max-width: 100%;
-  text-align: left; color: var(--ink-3);
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; max-width: 100%;
+  height: 30px; padding: 0 13px 0 9px; border-radius: 999px; text-align: left;
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink-2);
+  transition: border-color .12s, color .12s;
 }
-.clip-line .pl {
-  width: 26px; height: 26px; flex: none; border-radius: 50%;
-  background: var(--core-soft); color: var(--core); display: grid; place-items: center;
-}
-.clip-line .pl svg { width: 11px; height: 11px; margin-left: 1px; }
+.clip-line .film { display: grid; place-items: center; flex: none; color: var(--ink-2); }
+.clip-line .film svg { width: 16px; height: 16px; }
 .clip-line .src {
-  font-family: var(--mono); font-size: 11px; line-height: 1.4; min-width: 0;
+  font-family: var(--mono); font-size: 11px; line-height: 1.4; min-width: 0; color: var(--ink-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.clip-line:hover .src { color: var(--ink-2); }
-.clip-line:hover .pl { background: var(--core); color: var(--on-core); }
+.clip-line:hover { border-color: var(--ink-3); }
+.clip-line:hover .src { color: var(--ink); text-decoration: underline; text-underline-offset: 2.5px; }
 
 /* The picture leads its sense, centred, with nothing under it. */
 .sec .body > .sense-image { margin: 6px auto 4px; width: 100%; }
@@ -593,7 +616,8 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .cards { height: 100%; display: flex; flex-direction: column; min-height: 0; }
 
 .cards-head { flex: none; }
-.cards-word { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.cards-word { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; }
+.cards-word .cw-emoji, .cards-word .say { align-self: center; }
 .cw-emoji {
   width: 40px; height: 40px; flex: none; display: grid; place-items: center; font-size: 22px;
   border-radius: 10px; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow);
@@ -601,8 +625,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .cw-headword {
   margin: 0; font-family: var(--serif); font-weight: 700; font-size: 30px; line-height: 1.05; letter-spacing: -.02em;
 }
-.cards-word .say { margin-left: 0; width: 26px; height: 26px; }
-.cards-word .say svg { width: 10px; height: 10px; }
+.cards-word .say.head { width: 30px; height: 30px; }
 .cards-word .reading { margin: 0; font-size: 14px; }
 
 .cards-nav {
@@ -653,6 +676,14 @@ details.fold .fold-body { padding: 4px 0 18px; }
   filter: drop-shadow(0 8px 18px rgba(19,34,32,.18));
 }
 .card-pic img { border-radius: 10px; }
+/* No picture: the sense's emoji in the frame one would fill, square and quiet. */
+.card-tile {
+  flex: 0 1 260px; min-height: 120px; width: auto; aspect-ratio: 1; align-self: center;
+  display: grid; place-items: center; border-radius: 18px;
+  background: var(--surface); border: 1px solid var(--rule-soft); box-shadow: var(--shadow);
+}
+.card-tile span { font-size: clamp(56px, 12vh, 104px); line-height: 1; }
+.card-tile:hover { border-color: var(--rule); }
 .card-ex { flex: none; padding-left: 14px; border-left: 2px solid var(--rule); }
 .card-ex.own { border-left-color: var(--core); }
 .card-ex.clip-ex { border-left-style: dotted; }
@@ -1747,6 +1778,8 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   .cw-headword { font-size: 27px; }
   .card { padding-top: 12px; gap: 12px; }
   .card-ex .t { font-size: 20.5px; }
+  .head-line { gap: 10px; }
+  .say.head { width: 28px; height: 28px; }
   .card-ex .tr { font-size: 16px; }
   .att.has-photo { grid-template-columns: 64px minmax(0,1fr); gap: 12px; }
   .att-photo { width: 64px; }

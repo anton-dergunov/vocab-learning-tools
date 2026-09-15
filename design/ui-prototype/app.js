@@ -23,12 +23,10 @@ const state = {
      marks, the review bar and the struck-through removal can all be looked at. */
   review: false,
   /* The article redesign spike. `view` null means "the default for this device" (`currentView`);
-     `card` is which card Cards is showing; `pictureAt` is the open question of where a picture goes
-     in Cards — "anchor", with the sentence it was drawn from, or "first", always first; and
-     `sayTranslations` puts listen buttons after translations too. */
+     `card` is which card Cards is showing; and `sayTranslations` puts listen buttons after
+     translations too. */
   view: null,
   card: 0,
-  pictureAt: "anchor",
   sayTranslations: false
 };
 
@@ -53,6 +51,9 @@ const ICON = {
   /* Asking about a word — deliberately not `✳`, which is already "where you met it". */
   ask:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A2.5 2.5 0 0 1 17.5 17H12l-4.5 3.5V17H6.5A2.5 2.5 0 0 1 4 14.5v-8A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5z"/><path d="M10.2 8.6a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.7-.8 1.2v.3"/><path d="M12 14.2v.1"/></svg>',
   chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 15l7-7 7 7"/></svg>',
+  /* A clip, drawn as a strip of film: a play triangle alone reads as "audio". */
+  film:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h17M3.5 15h17M7.5 5v4M12 5v4M16.5 5v4M7.5 15v4M12 15v4M16.5 15v4"/></svg>',
+  info:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><path d="M12 7.6v.1"/></svg>',
   send:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h14"/><path d="M13 6l6 6-6 6"/></svg>'
 };
 
@@ -350,9 +351,10 @@ const senseName = (s) => (s.domain ? `${s.emoji ? `${s.emoji} ` : ""}${s.domain}
 
 function clipLine(e) {
   const source = [quietTitle(e.clip.title), e.clip.channel ? e.clip.channel.toLowerCase() : null].filter(Boolean).join(" · ");
+  /* Calm, but plainly a thing to press: an outlined pill with a film icon, in ink rather than teal. */
   return `
     <button class="clip-line" data-clip="1" aria-label="Play the clip">
-      <span class="pl">${ICON.play}</span><span class="src">${esc(source)}</span>
+      <span class="film">${ICON.film}</span><span class="src">${esc(source)}</span>
     </button>`;
 }
 
@@ -424,7 +426,7 @@ function exampleBlock(e, at) {
       <div class="ex-text">
         <p class="t">${spoken(text, say(e.text))}</p>
         ${e.translation ? `<p class="tr">${spoken(e.translation, sayTranslation(e.translation))}</p>` : ""}
-        ${isOwn(e) ? '<p class="own-hint">your sentence</p>' : ""}
+        ${isOwn(e) ? '<span class="own-tag">your sentence</span>' : ""}
         ${e.note ? `<p class="tr ex-note">✎ ${esc(e.note)}</p>` : ""}
         ${isClip(e) ? clipLine(e) : ""}
       </div>
@@ -490,21 +492,26 @@ function notesList(x) {
 
 function masthead(x) {
   const place = placeLine(x);
+  /* Two lines beside the plate: the word with its play button, then how it sounds and what it is.
+     Where it is filed trails that second line in small mono — it says something about the word, so
+     it stays in view, but it should not cost a line of its own. */
   return `
     <div class="masthead">
       <div class="head-row">
         <div class="emoji-plate">${x.emoji || "\u{1F4C4}"}</div>
         <div class="head-text">
-          <h1 class="headword">${esc(x.headword)}</h1>
+          <div class="head-line">
+            <h1 class="headword">${esc(x.headword)}</h1>
+            ${say(x.headword, "always head")}
+          </div>
           ${x.reading ? `<div class="reading">${esc(x.reading)}</div>` : ""}
           <div class="pron-row">
             ${x.ipa ? `<span class="ipa">${esc(x.ipa)}</span>` : ""}
-            <button class="play" data-say="${esc(x.headword)}">${ICON.play}Listen</button>
             <span class="gram">${esc(grammarWords(x))}</span>
+            ${place ? `<span class="place">${esc(place)}</span>` : ""}
           </div>
         </div>
       </div>
-      ${place ? `<p class="place">${esc(place)}</p>` : ""}
     </div>`;
 }
 
@@ -588,9 +595,9 @@ function renderArticle(x, opts) {
     ${met.length ? section(key("met"), false,
       '<span class="num">✳</span><span class="label">Where you met it</span>', met.map(attestationBlock).join("")) : ""}
     ${meta ? section(key("dict"), true,
-      '<span class="num">❡</span><span class="label">Other dictionaries</span>', dictionaryBody(x)) : ""}
+      `<span class="num">${ICON.book}</span><span class="label">Other dictionaries</span>`, dictionaryBody(x)) : ""}
     ${meta ? section(key("details"), true,
-      '<span class="num">⋯</span><span class="label">Details</span>', detailsBody(x)) : ""}`;
+      `<span class="num">${ICON.info}</span><span class="label">Details</span>`, detailsBody(x)) : ""}`;
 }
 
 /* ── Cards ───────────────────────────────────────────────────────────────
@@ -604,7 +611,7 @@ function cardExample(e) {
     <div class="card-ex${isOwn(e) ? " own" : ""}${isClip(e) ? " clip-ex" : ""}">
       <p class="t">${spoken(e.text, say(e.text))}</p>
       ${e.translation ? `<p class="tr">${spoken(e.translation, sayTranslation(e.translation))}</p>` : ""}
-      ${isOwn(e) ? '<p class="own-hint">your sentence</p>' : ""}
+      ${isOwn(e) ? '<span class="own-tag">your sentence</span>' : ""}
       ${isClip(e) ? clipLine(e) : ""}
     </div>`;
 }
@@ -615,13 +622,15 @@ function cardsFor(x) {
     const items = orderedExamples(s);
     const picture = s.images[0] || null;
     const anchored = picture && Number.isInteger(picture.anchor) ? picture.anchor : null;
-    /* Option A puts the picture with the sentence it was drawn from; option B always opens the
-       sense on it. A picture drawn from the sense alone opens the sense either way. */
-    const pictureOn = (c) => Boolean(picture) && (state.pictureAt === "first" || anchored === null
-      ? c === 0
-      : items[c] && items[c].at === anchored);
-    const glossLines = s.glosses.map((g) => `<p class="card-gloss">${s.glosses.length > 1
-      ? `<span class="lg">${esc(g.lang)}</span>` : ""}${g.terms.map(esc).join(" · ")}</p>`).join("");
+    /* A picture goes on the card of the sentence it was drawn from — a clip's included, so a clip
+       and its picture share a card. A picture drawn from the sense alone opens the sense. */
+    const pictureOn = (c) => Boolean(picture) && (anchored === null ? c === 0 : Boolean(items[c]) && items[c].at === anchored);
+    /* A sense with no picture at all opens on its emoji instead, so its first card is not a
+       definition floating over empty paper. It is the frame a picture would fill, and opens the
+       same dialog, where one can be drawn. */
+    const tile = !picture ? (s.emoji || x.emoji) : null;
+    const glossLines = s.glosses.map((g) =>
+      `<p class="card-gloss"><span class="lg">${esc(g.lang)}</span>${g.terms.map(esc).join(" · ")}</p>`).join("");
     const count = Math.max(items.length, 1);
     for (let c = 0; c < count; c++) {
       const item = items[c];
@@ -635,6 +644,7 @@ function cardsFor(x) {
           </div>
           <div class="card-main">
             ${pictureOn(c) ? `<button class="card-pic" data-picture aria-label="Open the picture"><img src="${picture.src}" alt=""></button>` : ""}
+            ${tile && c === 0 ? `<button class="card-pic card-tile" data-picture aria-label="No picture yet — open to draw one"><span>${tile}</span></button>` : ""}
             ${item ? cardExample(item.e) : ""}
           </div>
           ${count > 1 ? `<span class="card-pos">${c + 1} / ${count}</span>` : ""}`
@@ -664,7 +674,7 @@ function renderCards(x) {
         <div class="cards-word">
           <span class="cw-emoji">${x.emoji || "\u{1F4C4}"}</span>
           <h1 class="cw-headword">${esc(x.headword)}</h1>
-          ${say(x.headword, "always")}
+          ${say(x.headword, "always head")}
           ${x.reading ? `<span class="reading">${esc(x.reading)}</span>` : ""}
           ${x.ipa ? `<span class="ipa">${esc(x.ipa)}</span>` : ""}
         </div>
@@ -1276,7 +1286,6 @@ function setTheme(mode) {
 function paintSwitches() {
   $("#viewBtn").textContent = `View: ${state.view || "auto"}`;
   $("#viewBtn").classList.toggle("on", Boolean(state.view));
-  $("#picBtn").textContent = state.pictureAt === "first" ? "Picture: first" : "Picture: its sentence";
   $("#trBtn").classList.toggle("on", state.sayTranslations);
 }
 
@@ -1287,9 +1296,8 @@ $("#harness").addEventListener("click", (ev) => {
     setTheme(now === "dark" ? "light" : now === "light" ? "auto" : "dark");
     return;
   }
-  /* Stand-ins for Settings ▸ default article view, and the two open questions of the spike. */
+  /* Stand-ins for Settings ▸ default article view, and for listening to translations. */
   if (b.id === "viewBtn") { state.view = state.view === null ? "page" : state.view === "page" ? "cards" : null; }
-  else if (b.id === "picBtn") { state.pictureAt = state.pictureAt === "first" ? "anchor" : "first"; }
   else if (b.id === "trBtn") { state.sayTranslations = !state.sayTranslations; }
   else if (b.dataset.frame) {
     document.body.className = b.dataset.frame === "desktop" ? "" : `framed ${b.dataset.frame}`;
@@ -1340,7 +1348,6 @@ if (params.get("open")) {
 if (params.get("topic")) state.topic = params.get("topic");
 if (params.get("view") === "page" || params.get("view") === "cards") state.view = params.get("view");
 if (params.get("card")) state.card = Number(params.get("card")) || 0;
-if (params.get("pic") === "first") state.pictureAt = "first";
 if (params.get("tr") === "on") state.sayTranslations = true;
 if (params.get("capture") === "off") {
   captureBlocked = { provider: "vertex", model: "gemini-3.7-flash", reason: "VERTEX_API_KEY is not set" };
