@@ -24,7 +24,9 @@ import type { ImageWork, ImageWorkEntry } from "./selectors";
 /** Present tense while it is happening. The finished lists use the record, and read as facts. */
 const DOING: Record<string, string> = {
   brief: "describing the senses",
-  render: "drawing"
+  render: "drawing",
+  clips: "looking for clips",
+  pronounce: "recording pronunciations"
 };
 
 const SHOWN = 12;

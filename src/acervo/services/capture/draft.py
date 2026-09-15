@@ -28,6 +28,25 @@ from acervo.services.capture.coerce import (
 )
 
 
+EMOTION_LIMIT = 300
+
+
+def emotion_of(value: Any) -> str | None:
+    """A delivery direction, one line, cut at a word boundary rather than refused.
+
+    The prompt asks for a dozen words or so and the validator allows three hundred characters; a
+    model that wrote a paragraph has still said something usable, and refusing the whole draft over
+    how the sentence should *sound* would throw the article away with it.
+    """
+    text = " ".join(trimmed(value).split())
+    if not text:
+        return None
+    if len(text) <= EMOTION_LIMIT:
+        return text
+    cut = text[:EMOTION_LIMIT].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return cut or text[:EMOTION_LIMIT]
+
+
 def _from_sentence(claimed: Any, attestations: list[dict[str, Any]]) -> dict[str, Any] | None:
     # `Number(null)` is 0, so a plain numeric read here would take "I invented this" for "this is
     # sentence 0" and quietly credit the learner with every example the model wrote.
@@ -128,7 +147,7 @@ def draft_from(
                     "videoEnd": None,
                     "clipRef": None,
                     "imageRef": None,
-                    "audioRef": None,
+                    "emotion": emotion_of(example.get("emotion")),
                     "note": trimmed(example.get("note")) or None,
                     # The validator requires these to occur verbatim in the text they mark. A model
                     # that retypes an inflected form instead of copying it would otherwise refuse the

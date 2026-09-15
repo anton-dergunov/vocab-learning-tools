@@ -7,7 +7,12 @@
 # `litellm` is how `acervo/models/` reaches every provider but Cloudflare's image and audio
 # endpoints. It is imported lazily, so an entry point that never calls a model never pays for it.
 # `google-genai` is still here for `jobs/images/`, which plan 05 moves onto `models/`.
+#
+# `google-auth` is named rather than left to arrive with LiteLLM: `models/google_tts.py` imports it
+# directly to authenticate Cloud Text-to-Speech, so it is this package's own dependency and must not
+# disappear when another one stops needing it.
 PyYAML
+google-auth
 google-genai
 httpx
 litellm

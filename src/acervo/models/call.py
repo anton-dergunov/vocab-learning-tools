@@ -324,49 +324,66 @@ def image(
     )
 
 
+def _audio_adapter(name: str):
+    """The hand-written speech adapters, by the name a row gives in `adapter.audio`."""
+    if name == "cloudflare":
+        from acervo.models import cloudflare
+
+        return cloudflare.speech
+    if name == "google-tts":
+        from acervo.models import google_tts
+
+        return google_tts.speech
+    raise ProviderRefused("configuration", f"no audio adapter named {name!r}")
+
+
 def speech(
     words: str,
     *,
     row: Row,
+    language: str,
     model: str | None = None,
     voice: str | None = None,
     style: str | None = None,
     timeout: float = TIMEOUT_SECONDS,
 ) -> AudioResult:
-    """One speech call against one row.
+    """One speech call against one row, in a BCP-47 `language`.
 
-    `style` is carried only where the row says it is understood; a row that declares
-    `capabilities.audio.style` as `unsupported` drops it with a warning rather than sending an
-    instruction the provider will read aloud.
+    `voice` is the caller's choice, and without one the model's first declared voice for the
+    language is used. `style` is a free-text delivery direction, carried only where the *model*
+    declares `style: instruction` — elsewhere it is dropped with a warning rather than sent to a voice
+    that would read it aloud. The answer names the voice that actually spoke.
     """
     model = model or row.models_for("audio")[0]
+    # Voice names do not carry across providers: Gemini refuses OpenAI's "alloy" and names thirty of
+    # its own, and Google's per-language voices carry the language in the name. The row says which.
+    voice = voice or next(iter(row.voices_for(model, language)), None)
+    warnings: list[str] = []
+    if style and row.style_for(model) != "instruction":
+        warnings.append("style is not supported by this provider")
+        style = None
+    timeout = row.timeout_for("audio", timeout)
     started = time.monotonic()
-    if row.adapter.get("audio"):
-        from acervo.models import cloudflare
 
-        data, _declared = cloudflare.speech(row, model, words, voice=voice, timeout=timeout)
-        warnings = ("style is not supported by this provider",) if style else ()
+    if row.adapter.get("audio"):
+        data, _declared = _audio_adapter(row.adapter["audio"])(
+            row, model, words, language=language, voice=voice, style=style, timeout=timeout
+        )
         return AudioResult(
-            data=data, mime=audio_mime(data), answer=_answer(row, model, started, None, warnings)
+            data=data, mime=audio_mime(data), answer=_answer(row, model, started, None, warnings),
+            voice=voice,
         )
 
-    audio = (row.capabilities.get("audio") or {}) if isinstance(row.capabilities, dict) else {}
     request: dict[str, Any] = {
         "model": model,
         "input": words,
-        # Voice names do not carry across providers: Gemini refuses OpenAI's "alloy" and names
-        # twenty-nine of its own. The row says which one it means.
-        "voice": voice or audio.get("defaultVoice"),
-        "timeout": row.timeout_for("audio", timeout),
+        "voice": voice,
+        "timeout": timeout,
         **row.params_for("audio"),
         **_transport(row),
     }
-    warnings: list[str] = []
     if style:
-        if audio.get("style") == "instruction":
-            request["instructions"] = style
-        else:
-            warnings.append("style is not supported by this provider")
+        request["instructions"] = style
     try:
         response = speech_synthesis(**request)
     except Exception as error:  # noqa: BLE001
@@ -377,4 +394,5 @@ def speech(
         data=response.content,
         mime=audio_mime(response.content),
         answer=_answer(row, model, started, response, warnings),
+        voice=voice,
     )

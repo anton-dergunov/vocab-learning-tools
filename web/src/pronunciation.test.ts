@@ -1,0 +1,147 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AcervoApiError, backendSession } from "./api";
+import type { Pronunciation } from "./domain";
+import { setPronunciationCacheEnabled } from "./editorPreferences";
+import { MemoryMediaStore } from "./mediaStore";
+import {
+  clipBytes, currentClip, fill, forgetPronunciations, play, recordingsWanted, replaceStoreForTests
+} from "./pronunciation";
+import { repository } from "./repository";
+import { syncEngine } from "./sync";
+import { TEST_OWNER, testGraph } from "./testGraph";
+
+/**
+ * Hearing a word, and the two things that make it offline-first: the clip in the replica, and the
+ * bytes on the device. The audio element itself is jsdom's, filled in by `testSetup.ts`.
+ */
+
+const HEADWORD = { kind: "lexeme" as const, id: "lexemepicar0001", text: "picar", lang: "es" };
+const CLIP = () => repository.snapshot().pronunciations[0];
+const MP3 = () => new Blob(["ID3-audio"], { type: "audio/mpeg" });
+
+let store: MemoryMediaStore;
+
+function served(blob = MP3()) {
+  const fetched = vi.fn().mockResolvedValue({ ok: true, status: 200, blob: async () => blob });
+  vi.stubGlobal("fetch", fetched);
+  return fetched;
+}
+
+function recorded(overrides: Partial<Pronunciation> = {}) {
+  return vi.spyOn(backendSession, "pronounce").mockImplementation(async () => ({
+    ...CLIP(), audioRef: "audio/lexemepicar0001/hl08nur0wl9h0n1-99999999.mp3", ...overrides
+  }));
+}
+
+describe("playing a pronunciation", () => {
+  beforeEach(async () => {
+    store = new MemoryMediaStore();
+    replaceStoreForTests(store);
+    setPronunciationCacheEnabled(true);
+    await repository.clear();
+    await repository.load(TEST_OWNER);
+    await repository.applyRemote(testGraph(), 1, "dataset00000001");
+    vi.spyOn(syncEngine, "syncNow").mockResolvedValue(syncEngine.getStatus());
+    vi.spyOn(backendSession, "mediaFileUrl").mockImplementation((reference) => `https://acervo.example.com/media/${reference}`);
+    vi.spyOn(backendSession, "mediaHeaders").mockReturnValue({ Authorization: "Bearer token" });
+  });
+  afterEach(async () => { vi.unstubAllGlobals(); vi.restoreAllMocks(); await forgetPronunciations(); });
+
+  it("plays the clip the replica names without asking the server for a recording", async () => {
+    const fetched = served();
+    const pronounce = vi.spyOn(backendSession, "pronounce");
+    expect(await play(HEADWORD)).toEqual({ voice: "es-ES-Wavenet-F", stored: true });
+    expect(pronounce).not.toHaveBeenCalled();
+    expect(fetched).toHaveBeenCalledOnce();
+  });
+
+  it("asks the server only once, then plays from this device with nothing on the wire", async () => {
+    const fetched = served();
+    await play(HEADWORD);
+    await play(HEADWORD);
+    expect(fetched).toHaveBeenCalledOnce();
+    expect(await store.read(CLIP().audioRef)).not.toBeNull();
+  });
+
+  it("keeps nothing on the device when keeping is switched off", async () => {
+    setPronunciationCacheEnabled(false);
+    served();
+    await play(HEADWORD);
+    expect(await store.read(CLIP().audioRef)).toBeNull();
+  });
+
+  it("records again when the record no longer says what the clip says", async () => {
+    served();
+    const pronounce = recorded();
+    const edited = { ...HEADWORD, text: "picarse" };
+    expect(currentClip(repository.snapshot(), edited)).toBeNull();
+    await play(edited);
+    expect(pronounce).toHaveBeenCalledWith("lexemes", "lexemepicar0001", expect.any(String), false);
+  });
+
+  it("says plainly that a clip is neither here nor reachable, and queues nothing", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
+    await expect(play(HEADWORD)).rejects.toThrow(/not on this device yet/);
+  });
+
+  it("says that recording needs the server when the server is away", async () => {
+    served();
+    vi.spyOn(backendSession, "pronounce").mockRejectedValue(new AcervoApiError("no", 0, "offline"));
+    await expect(play({ ...HEADWORD, text: "picarse" })).rejects.toThrow(/needs the server/);
+  });
+
+  it("reads an unsaved proposal aloud and stores nothing", async () => {
+    const utterance = vi.spyOn(backendSession, "utterance").mockResolvedValue({ audio: MP3(), voice: "es-ES-Wavenet-F" });
+    const pronounce = vi.spyOn(backendSession, "pronounce");
+    expect(await play({ ...HEADWORD, id: null })).toEqual({ voice: "es-ES-Wavenet-F", stored: false });
+    expect(utterance).toHaveBeenCalledWith("picar", "es");
+    expect(pronounce).not.toHaveBeenCalled();
+  });
+
+  it("brings the clips the replica names onto this device, and nothing when keeping is off", async () => {
+    const fetched = served();
+    expect(await fill(repository.snapshot())).toBe(1);
+    expect(await fill(repository.snapshot())).toBe(0);
+
+    await forgetPronunciations();
+    setPronunciationCacheEnabled(false);
+    fetched.mockClear();
+    expect(await fill(repository.snapshot())).toBe(0);
+    expect(fetched).not.toHaveBeenCalled();
+  });
+
+  it("hands the export the bytes it holds rather than fetching them again", async () => {
+    const fetched = served();
+    await play(HEADWORD);
+    fetched.mockClear();
+    expect(new TextDecoder().decode(await clipBytes(CLIP().audioRef))).toBe("ID3-audio");
+    expect(fetched).not.toHaveBeenCalled();
+  });
+});
+
+describe("what is recorded in advance", () => {
+  beforeEach(async () => {
+    replaceStoreForTests(new MemoryMediaStore());
+    await repository.clear();
+    await repository.load(TEST_OWNER);
+    await repository.applyRemote(testGraph(), 1, "dataset00000001");
+  });
+
+  it("is the chosen fields, in the language being learned, that have no current clip", () => {
+    const graph = repository.snapshot();
+    const wanted = recordingsWanted(graph, "lexemepicar0001", { headword: true, definitions: true, examples: true });
+    // The headword already has a current clip, so it is not asked for again.
+    expect(wanted.some((target) => target.kind === "lexeme")).toBe(false);
+    expect(wanted.every((target) => target.lang === "es")).toBe(true);
+    expect(wanted.some((target) => target.kind === "example")).toBe(true);
+
+    expect(recordingsWanted(graph, "lexemepicar0001", { headword: false, definitions: false, examples: false })).toEqual([]);
+  });
+
+  it("leaves an English gloss-language example alone", () => {
+    const graph = repository.snapshot();
+    const english = graph.examples.filter((example) => example.textLang !== "es");
+    expect(recordingsWanted(graph, "lexemepicar0001", { headword: true, definitions: true, examples: true })
+      .some((target) => english.some((example) => example.id === target.id))).toBe(false);
+  });
+});

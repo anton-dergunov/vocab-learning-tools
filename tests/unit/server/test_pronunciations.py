@@ -1,0 +1,288 @@
+"""Pronouncing a record from a route, and what a clip is while its record changes under it.
+
+Against the real service over a throwaway media directory. What is stubbed is the provider and only
+the provider: Cloud TTS's adapter answers with fixed bytes and records what it was asked, so a test
+can say which voice read a headword and whether an emotion reached the example.
+"""
+
+from __future__ import annotations
+
+import logging
+
+import pytest
+
+from acervo.models.errors import ProviderUnavailable
+from acervo.pronunciation.ids import pronunciation_id
+
+from graph_records import attestation, example, lexeme, sense, vocabulary
+
+DEVICE = "device000000001"
+MP3 = b"ID3\x04\x00an-mp3-of-some-length"
+
+
+@pytest.fixture(autouse=True)
+def a_voice(server, monkeypatch, tmp_path):
+    """Cloud TTS is credentialed and answers, so the catalogue's recommended orders stand."""
+    credentials = tmp_path / "service-account.json"
+    credentials.write_text("{}")
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project-name")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(credentials))
+    monkeypatch.delenv("ACERVO_VERTEX_ACCOUNT", raising=False)
+    calls: list[dict] = []
+
+    def speech(row, model, words, **kwargs):
+        calls.append({"provider": row.id, "model": model, "words": words, **kwargs})
+        failure = getattr(speech, "failure", None)
+        if failure is not None:
+            raise failure
+        return MP3 + words.encode(), "audio/mpeg"
+
+    monkeypatch.setattr("acervo.models.google_tts.speech", speech)
+    speech.calls = calls
+    server.speech = speech
+    return speech
+
+
+def word(server, **overrides):
+    entry = lexeme(status="active", **overrides)
+    itch = sense(entry["id"], definition="Producir comezón.", definitionLang="es", order=0)
+    sentence = example(
+        itch["id"], text="¡Me pica todo!", translation="Everything itches!", translationLang="en",
+        emotion="exasperated, scratching and complaining",
+    )
+    met = attestation(entry["id"])
+    answer = server.push({
+        "vocabularies": [vocabulary()], "lexemes": [entry], "senses": [itch],
+        "attestations": [met], "examples": [sentence],
+    })
+    assert answer.status_code == 200, answer.json()
+    return entry, itch, sentence, met
+
+
+def say(server, collection, identifier, again=False):
+    return server.post(f"/pronunciations/{collection}/{identifier}", {"deviceId": DEVICE, "again": again})
+
+
+# ── a record ────────────────────────────────────────────────────────────────
+
+
+def test_pressing_play_writes_the_file_and_a_row_at_the_derived_id(server):
+    entry, itch, sentence, met = word(server)
+    answer = say(server, "lexemes", entry["id"])
+    assert answer.status_code == 200, answer.json()
+    clip = answer.json()["data"]
+
+    assert clip["id"] == pronunciation_id("lexeme", entry["id"])
+    assert clip["targetKind"] == "lexeme" and clip["targetId"] == entry["id"]
+    assert clip["text"] == "picar" and clip["lang"] == "es"
+    assert clip["providerId"] == "google-tts" and clip["modelId"] == "wavenet"
+    assert clip["voice"] == "es-ES-Wavenet-F"
+    assert clip["audioMime"] == "audio/mpeg" and clip["emotion"] is None
+    assert clip["audioRef"].startswith(f"audio/{entry['id']}/{clip['id']}-") and clip["audioRef"].endswith(".mp3")
+    assert (server.media / clip["audioRef"]).read_bytes() == MP3 + b"picar"
+
+    pulled = server.pull().json()["data"]["changes"]["pronunciations"]
+    assert [row["id"] for row in pulled] == [clip["id"]]
+
+
+def test_a_current_clip_is_reused_rather_than_recorded_twice(server):
+    entry, *_ = word(server)
+    first = say(server, "lexemes", entry["id"]).json()["data"]
+    second = say(server, "lexemes", entry["id"]).json()["data"]
+    assert len(server.speech.calls) == 1
+    assert second["audioRef"] == first["audioRef"] and second["revision"] == first["revision"]
+
+
+def test_an_edited_record_makes_its_clip_stale_and_the_next_press_records_the_new_words(server):
+    entry, itch, sentence, _ = word(server)
+    first = say(server, "examples", sentence["id"]).json()["data"]
+    stored = next(row for row in server.pull().json()["data"]["changes"]["examples"] if row["id"] == sentence["id"])
+    assert server.push({"examples": [{**stored, "text": "¡Me pica la espalda!"}]}).status_code == 200
+
+    second = say(server, "examples", sentence["id"]).json()["data"]
+    assert second["id"] == first["id"]
+    assert second["text"] == "¡Me pica la espalda!"
+    assert second["audioRef"] != first["audioRef"]
+    assert not (server.media / first["audioRef"]).exists(), "the file the row no longer names is removed"
+    assert (server.media / second["audioRef"]).exists()
+
+
+def test_record_again_replaces_a_current_clip_at_the_same_id(server):
+    entry, *_ = word(server)
+    server.speech.calls.clear()
+    first = say(server, "lexemes", entry["id"]).json()["data"]
+    again = say(server, "lexemes", entry["id"], again=True).json()["data"]
+    assert len(server.speech.calls) == 2
+    assert again["id"] == first["id"] and again["revision"] > first["revision"]
+
+
+def test_an_example_is_read_by_the_expressive_order_with_its_emotion_as_a_direction(server):
+    entry, itch, sentence, _ = word(server)
+    clip = say(server, "examples", sentence["id"]).json()["data"]
+    asked = server.speech.calls[-1]
+    assert asked["model"] == "gemini-3.1-flash-tts-preview"
+    assert "exasperated, scratching and complaining" in asked["style"]
+    assert "Spanish" in asked["style"]
+    assert "¡Me pica todo!" not in asked["style"], "the direction must never carry the words themselves"
+    assert clip["emotion"] == "exasperated, scratching and complaining"
+    assert clip["voice"] == "Kore"
+
+
+def test_a_headword_and_a_definition_get_no_direction_at_all(server):
+    entry, itch, *_ = word(server)
+    say(server, "lexemes", entry["id"])
+    say(server, "senses", itch["id"])
+    assert [call["style"] for call in server.speech.calls] == [None, None]
+    assert server.speech.calls[-1]["language"] == "es"
+
+
+def test_switching_emotion_off_reads_the_example_plainly(server):
+    entry, itch, sentence, _ = word(server)
+    assert server.put("/pronunciations/settings", {"expressive": False}).status_code == 200
+    clip = say(server, "examples", sentence["id"]).json()["data"]
+    assert server.speech.calls[-1]["style"] is None
+    assert clip["emotion"] is None
+
+
+def test_an_emotion_is_not_recorded_when_the_voice_that_answered_could_not_take_it(server):
+    entry, itch, sentence, _ = word(server)
+    server.put("/models/selection", {"chains": {"audioExpressive": [{"provider": "google-tts", "model": "wavenet"}]}})
+    clip = say(server, "examples", sentence["id"]).json()["data"]
+    assert server.speech.calls[-1]["style"] is None
+    assert clip["modelId"] == "wavenet" and clip["emotion"] is None
+
+
+def test_a_language_no_model_in_the_order_speaks_is_its_own_refusal(server):
+    entry = lexeme(language="fr", headword="piquer", lemma="piquer", status="active")
+    assert server.push({"lexemes": [entry]}).status_code == 200
+    server.put("/models/selection", {"chains": {"audioPlain": [{"provider": "google-tts", "model": "wavenet"}]}})
+    answer = say(server, "lexemes", entry["id"])
+    assert answer.status_code == 422
+    assert answer.json()["error"]["code"] == "no_voice_for_language"
+    assert "French" in answer.json()["error"]["message"]
+
+
+def test_a_rate_limit_is_the_same_code_every_other_model_speaks(server):
+    entry, *_ = word(server)
+    server.put("/models/selection", {"chains": {"audioPlain": [{"provider": "google-tts", "model": "wavenet"}]}})
+    server.speech.failure = ProviderUnavailable("rate_limited", "quota", provider_id="google-tts", model="wavenet")
+    answer = say(server, "lexemes", entry["id"])
+    assert answer.json()["error"]["code"] == "llm_rate_limited"
+    assert "speech model" in answer.json()["error"]["message"]
+    assert not list(server.media.rglob("*.mp3")), "nothing is written when nothing was spoken"
+
+
+def test_the_media_route_serves_the_clip_to_its_owner_only(server):
+    entry, *_ = word(server)
+    clip = say(server, "lexemes", entry["id"]).json()["data"]
+    served = server.client.get(f"/api/acervo/media/{clip['audioRef']}", headers=server.auth)
+    assert served.status_code == 200 and served.content.startswith(b"ID3")
+    assert server.client.get(f"/api/acervo/media/{clip['audioRef']}").status_code == 401
+
+
+def test_another_owners_record_cannot_be_pronounced(server, other):
+    entry, *_ = word(server)
+    assert other.post(f"/pronunciations/lexemes/{entry['id']}", {"deviceId": DEVICE}).status_code == 404
+    assert say(server, "vibes", entry["id"]).status_code == 404
+
+
+def test_an_attestation_is_read_in_its_words_language(server):
+    entry, itch, sentence, met = word(server)
+    clip = say(server, "attestations", met["id"]).json()["data"]
+    assert clip["lang"] == "es" and clip["text"] == met["text"]
+
+
+# ── a selection ─────────────────────────────────────────────────────────────
+
+
+def test_a_selection_is_spoken_and_never_stored(server):
+    word(server)
+    answer = server.post("/pronunciations/utterance", {"text": "Everything itches!", "language": "en"})
+    assert answer.status_code == 200
+    assert answer.headers["content-type"] == "audio/mpeg"
+    assert answer.content == MP3 + b"Everything itches!"
+    assert answer.headers["x-acervo-voice"] == "en-US-Wavenet-C"
+    assert server.pull().json()["data"]["changes"]["pronunciations"] == []
+
+
+def test_a_selection_must_say_what_language_it_is_in(server):
+    assert server.post("/pronunciations/utterance", {"text": "hola", "language": ""}).status_code == 400
+    assert server.post("/pronunciations/utterance", {"text": "", "language": "es"}).status_code == 400
+
+
+# ── settings and restoring ──────────────────────────────────────────────────
+
+
+def test_settings_follow_the_default_until_chosen_and_are_per_owner(server, other):
+    word(server)
+    view = server.get("/pronunciations/settings").json()["data"]
+    assert view["chosen"] is False
+    assert view["pregenerate"] == {"headword": False, "definitions": False, "examples": False}
+    assert view["expressive"] is True
+    assert view["languages"] == ["es"]
+    plain = {(entry["provider"], entry["model"]): entry for entry in view["orders"]["plain"]}
+    assert plain[("google-tts", "wavenet")]["voices"]["es"][0] == "es-ES-Wavenet-F"
+
+    saved = server.put("/pronunciations/settings", {
+        "pregenerate": {"headword": True},
+        "voices": {"google-tts": {"wavenet": {"es": "es-ES-Wavenet-E"}}},
+    }).json()["data"]
+    assert saved["chosen"] is True and saved["pregenerate"]["headword"] is True
+    assert other.get("/pronunciations/settings").json()["data"]["chosen"] is False
+
+
+def test_a_chosen_voice_is_the_one_that_reads(server):
+    entry, *_ = word(server)
+    server.put("/pronunciations/settings", {"voices": {"google-tts": {"wavenet": {"es": "es-ES-Wavenet-E"}}}})
+    clip = say(server, "lexemes", entry["id"]).json()["data"]
+    assert server.speech.calls[-1]["voice"] == "es-ES-Wavenet-E"
+    assert clip["voice"] == "es-ES-Wavenet-E"
+
+
+def test_a_voice_the_catalogue_does_not_offer_is_refused(server):
+    answer = server.put("/pronunciations/settings", {"voices": {"google-tts": {"wavenet": {"es": "en-US-Wavenet-C"}}}})
+    assert answer.json()["error"]["code"] == "unknown_voice"
+
+
+def test_an_exported_clip_is_put_back_with_who_recorded_it(server):
+    entry, *_ = word(server)
+    answer = server.client.put(
+        f"/api/acervo/v1/pronunciations/lexemes/{entry['id']}/audio",
+        params={"text": "picar", "providerId": "google-tts", "modelId": "wavenet", "voice": "es-ES-Wavenet-F"},
+        headers={**server.auth, "X-Acervo-Device": DEVICE, "Content-Type": "audio/mpeg"},
+        content=MP3,
+    )
+    assert answer.status_code == 200, answer.json()
+    clip = answer.json()["data"]
+    assert clip["modelId"] == "wavenet" and clip["voice"] == "es-ES-Wavenet-F"
+    assert server.speech.calls == [], "restoring spends nothing"
+    # And it is current, so pressing play reuses it.
+    say(server, "lexemes", entry["id"])
+    assert server.speech.calls == []
+
+
+def test_a_clip_of_words_the_record_no_longer_holds_is_refused(server):
+    entry, *_ = word(server)
+    answer = server.client.put(
+        f"/api/acervo/v1/pronunciations/lexemes/{entry['id']}/audio",
+        params={"text": "picaron", "providerId": "google-tts", "modelId": "wavenet"},
+        headers={**server.auth, "X-Acervo-Device": DEVICE}, content=MP3,
+    )
+    assert answer.status_code == 409 and answer.json()["error"]["code"] == "stale_clip"
+
+
+# ── the call log ────────────────────────────────────────────────────────────
+
+
+def test_every_request_leaves_one_outcome_line_saying_what_happened(server, caplog):
+    entry, itch, sentence, _ = word(server)
+    with caplog.at_level(logging.INFO, logger="acervo.models.calls"):
+        say(server, "examples", sentence["id"])
+        say(server, "examples", sentence["id"])
+    outcomes = [record.getMessage() for record in caplog.records if " outcome " in record.getMessage()]
+    assert len(outcomes) == 2
+    assert outcomes[0].startswith("pronounce-sentence outcome target=example:")
+    assert "source=generated" in outcomes[0] and "result=stored" in outcomes[0]
+    assert "pair=google-tts:gemini-3.1-flash-tts-preview" in outcomes[0] and "style=yes" in outcomes[0]
+    assert 'text="¡Me pica todo!"' in outcomes[0]
+    assert "source=reused" in outcomes[1]

@@ -1,112 +1,90 @@
 # Pronunciation and audio
 
-**Status:** Planned. Nothing blocks it.
+**Status:** Built, for everything a person presses. What is left is the unattended half.
 
-Rewritten from the provider roadmap's audio plan after that roadmap closed and its documents
-were deleted. The catalogue half is
-built — audio rows, `models.speech()`, the Cloudflare adapter, and a Settings ▸ Providers section
-that already stores an order — so what is left here is the record, the job, and playback.
+A word can be heard: the headword, a sense's definition, an example, an attestation and any stretch
+of text you select. The research that settled the shape is
+[`pronunciation-research.md`](pronunciation-research.md), and two of its findings decided the design —
+cost is not a constraint at this volume, and a clip is small enough to replicate, which an image is
+not.
 
-## Outcome
+## What a clip is
 
-A word can be heard. Two different kinds of hearing, deliberately kept apart, each with its own
-chain of catalogue rows, and a place in the graph to record which voice said what.
+**A record, not a call.** `pronunciations` is the ninth replicated collection: it names the file in
+`ACERVO_MEDIA_PATH`, the words that were spoken, the language, the emotion the voice was actually
+given, and the provider, model and voice that spoke it.
 
-## The decision this turns on
+Its id is derived — `pronunciation_id(targetKind, targetId)`, implemented in
+`src/acervo/pronunciation/ids.py` and `web/src/ids.ts` and pinned against shared vectors — so a
+spoken field holds at most one clip and recording it again rewrites that row. The file name carries
+a digest of the bytes, so a new recording has a new reference and a device holding the old one misses
+rather than serving what was just replaced.
 
-**Expressive and plain are two jobs, not one.** Conflating them means either paying a premium model
-to say a single word thousands of times, or getting a flat robotic reading of a sentence whose whole
-value is its intonation.
+**Stale is a comparison, not a flag.** A clip is current while its `text` equals what the record now
+says. Edit the sentence and the next press records the new words; nothing marks anything.
 
-- **Expressive.** A sentence — an attestation or an example — read the way a speaker would say it,
-  with the stress and contour that make it memorable. Gemini's TTS models are worth paying for here.
-  Generated once, for material worth hearing, and cached.
-- **Plain.** A headword or a lemma, said clearly. Any competent voice will do. This is the one the
-  application plays constantly, so it should be free.
+## The two orders
 
-They get **separate chains**, because the owner's answer to "what should read a sentence" and "what
-should read a word" are different answers. Settings ▸ Providers shows them as two sections with a
-sentence each saying what they are for; an unlabelled pair of chains would be guessed wrong.
+`audioPlain` reads a headword, a definition and a selection. `audioExpressive` reads an example, with
+its `emotion` as a delivery direction where the answering model declares `style: instruction`, and
+plainly where it does not. Both draw their pairs from the catalogue's one `audio` kind: any voice can
+read either, and which one *should* is the owner's answer rather than a fact about the voice.
 
-## What is already built
+The catalogue's `defaultChains` recommends Cloud TTS WaveNet for words and a Gemini voice for
+sentences; Settings ▸ Providers changes either. A pair whose model does not speak the language is
+left out of the walk for that language, and a chain where none does answers
+`no_voice_for_language`, which names what to fix.
 
-Do not rebuild any of this.
+## Providers
 
-- **`models.speech()`** (`src/acervo/models/call.py`) — one speech call against one row, returning
-  an `Answer` naming the row that answered.
-- **The style rule.** A style is carried only to a row whose `capabilities.audio.style` is
-  `instruction`; anywhere else it is dropped and the answer carries a warning, rather than being
-  read aloud as an instruction.
-- **The Cloudflare audio adapter** (`src/acervo/models/cloudflare.py`) — the one thing LiteLLM does
-  not cover.
-- **Content-sniffed MIME** (`call.audio_mime`), because Gemini answers WAV and Aura answers MP3, and
-  a clip labelled by what was hoped for rather than by what arrived does not play.
-- **Audio rows** on `gemini-free`, `vertex`, `cloudflare` and `openai`, with the facts learned the
-  hard way written into their `notes`: the free tier's ten speech requests a day; why
-  `gemini-2.5-flash-preview-tts` is deliberately excluded (it answers a short word with generated
-  *text* often enough to matter, Gemini refuses that with a 400, and LiteLLM surfaces it as an
-  `IndexError`, which the chain would read as terminal); melotts refusing Spanish with
-  `AiError 8002`, which is why Cloudflare's row names Deepgram Aura instead; and that Aura takes
-  `text` where melotts took `prompt`.
-- **A single `audio` kind** in Settings, which stores an order nothing reads yet.
-- **Live coverage**: `tests/integration/test_models_live.py` already makes one real speech call per
-  credentialed row, behind `RUN_LIVE_MODEL_TESTS`.
+`google-tts` is the Cloud Text-to-Speech API, with its own adapter (`models/google_tts.py`) because
+LiteLLM does not cover it — one route, `text:synthesize`, serving two families of voice that the row
+describes separately:
 
-## What is settled that the earlier plan left open
+- **Standard and WaveNet** — per language, named `es-ES-Wavenet-F`, no direction, and a permanent free
+  allowance far above what a vocabulary needs.
+- **Gemini voices** — named once, speaking any language, selected by `voice.modelName`, taking the
+  emotion in `input.prompt`, which is a field of its own and so never read aloud.
 
-**Where the bytes live.** The earlier plan deferred this to the image work, and the image work
-answered it:
-`ACERVO_MEDIA_PATH`, served from `GET /api/acervo/media/{path}` behind bearer auth and Range-capable,
-read-write in the worker and read-only in the server. Audio uses it and the record holds a relative
-path, exactly as `imageRef` does. **Do not design a second media store.**
+Audio capabilities are therefore declared **per model** (`capabilities.audio.models`): style,
+languages, locales and voices. The other audio rows — Gemini, Vertex, Cloudflare Aura, OpenAI — are
+kept and declare the same things, so choosing one is a settings change rather than a code change.
 
-**Kokoro's fate.** `src/acervo/tts/` was deleted with the PocketBase server, so the "measure it,
-then decide" branch resolved itself by the code going away. A local plain voice is now a *rebuild*,
-not a resurrection, and needs its own argument — starting with whether it runs at all on a GPU-less
-NAS. Cloudflare Aura at zero cost is the incumbent it has to beat.
+Credentials are the `vertex` row's: application default credentials plus `ACERVO_VERTEX_PROJECT`,
+which also travels as the quota-project header Cloud TTS requires of a user login. Enabling the API is
+in [`../acervo-vertex-setup.md`](../acervo-vertex-setup.md).
 
-## What is actually left
+## On the device
 
-1. **The audio record.** A lexeme has no audio field at all; `examples.audio_ref` exists but is an
-   ingestion string for a reference someone pasted, not a generated clip. Decide whether audio hangs
-   off the record it reads — a lexeme for plain, an example or attestation for expressive, the way
-   `image_prompts` hangs off a sense — or becomes its own owner-scoped table. Either way it carries
-   `ownerId`, `deleted`, `createdAt`, `editedAt`, `editedBy`, `revision`, names the model that
-   **answered** and the voice it used, and **this is the piece that costs a `--reset-database`.**
+Reads stay offline-first. A clip the replica names and the device holds plays with no request; the
+bytes live in `mediaStore.ts`'s own `pronunciations` store, so forgetting them never touches a
+picture. `fill()` brings down what the replica names after each sync, which is what makes a word
+recorded on another device — or in advance — play on a plane. Keeping is a per-device switch in
+Settings ▸ Pronunciation, on by default.
 
-2. **Two chains, not one.** `services/models.py`'s `KINDS` gains `audioExpressive` and `audioPlain`
-   in place of `audio`, plus the UI copy. The chain is a JSON document keyed by kind
-   (`model_selection.chains`), so this needs no migration of its own.
+Recording is a write: online, loud when it fails, never queued.
 
-3. **An `audio` subcommand** in `scripts/acervo_worker.py`, shaped like `jobs/images/run.py`'s
-   sweep: plan what is missing, generate, write, and be idempotent on re-run. Reuse the `Store`
-   pattern rather than inventing a second one. **Never a new compose service** —
-   `acervo-worker` is one-shot by design and a new job is a new subcommand.
+**A bad recording is replaced from the toast.** After a stored clip plays, the message offers Record
+again — the moment you know a recording is bad is the moment you have just heard it, and a control
+under every sentence would be a page of buttons.
 
-4. **LiteLLM in the worker image.** `deploy/acervo/Dockerfile` installs none today, with a comment
-   saying no worker job calls a model yet. This is the job that changes that.
+## What is left
 
-5. **Playback.** `web/src/LexemeArticle.tsx` already has the buttons, wired to
-   "Audio is not wired up yet". Reads come from the replica and must work offline like every other
-   read — which is another reason step 1 matters.
-
-6. **Row facts worth adding while you are there**: a `pacing` block is *not* wanted (a rate limit is
-   a fact about an account, not a provider), but voice lists per language and structured warnings
-   would earn their place — they currently live only in prose `notes`.
-
-## The credentials are meant to be reusable
-
-The same provider keys will be used by other projects that generate audio. Nothing in the record
-shape, the media store or the catalogue may assume Acervo is the only reader of a clip or the only
-caller behind a key.
+1. **A sweep.** `acervo-worker pronounce sweep`, shaped like `draw-pictures`: ask the graph which
+   words have no clips and record them while nobody is watching. Everything it needs exists —
+   `pronunciation.targets.wanted` is the query, and the ids are derived, so it and the interface
+   need no coordination. This is the last piece of the "record it in advance" story; today that
+   happens on the device that saves the word.
+2. **Aura-2.** Cloudflare's Spanish voice is a second model id and a voice list in the row, no code.
+3. **An Azure row**, whose styles are an SSML enum rather than free text — a third value for
+   `capabilities.audio.style`, and the first real test of that declaration.
+4. **Human recordings** (Lingua Libre, Forvo) as a source tier above TTS, per the research note.
 
 ## Non-goals
 
-- **No speech-to-text, and no Whisper.** A different direction of travel, with its own record shape
-  and no consumer.
-- **No pronunciation assessment.** Recording the owner's voice and scoring it is a product feature,
-  not a provider one.
-- **No new media store.** Audio adopts the images'.
-- **No compose service.** A new job is a new subcommand.
-- **No music, beds or timing.** A sibling prototype does those; folding that in is its own piece of
-  work, and this one only borrows its provider knowledge.
+- **No speech-to-text, and no Whisper.**
+- **No pronunciation assessment.** Recording the owner's voice and scoring it is a product feature.
+- **No second media store**, and no second pipeline: a clip is written by the route that recorded it
+  through `merge_graph`, exactly as a picture is.
+- **No device voices and no local models.** `speechSynthesis` cannot be captured, so it can never fill
+  a cache, and a voice for a language the device lacks reads the wrong thing in the wrong accent.

@@ -218,7 +218,7 @@ def _project_example(row: Mapping[str, Any]) -> dict[str, Any]:
         "videoEnd": to_int(row["video_end"]) if video_ref else None,
         "clipRef": text_or_none(row["clip_ref"]) if video_ref else None,
         "imageRef": text_or_none(row["image_ref"]),
-        "audioRef": text_or_none(row["audio_ref"]),
+        "emotion": text_or_none(row["emotion"]),
         "note": text_or_none(row["note"]),
         "matchedForm": text_or_none(row["matched_form"]),
         "matchedTranslationForm": text_or_none(row["matched_translation_form"]),
@@ -244,7 +244,7 @@ def _assign_example(value: Mapping[str, Any]) -> dict[str, Any]:
         "video_end": to_int(value.get("videoEnd")),
         "clip_ref": trimmed(value.get("clipRef")),
         "image_ref": trimmed(value.get("imageRef")),
-        "audio_ref": trimmed(value.get("audioRef")),
+        "emotion": trimmed(value.get("emotion")),
         "note": trimmed(value.get("note")),
         "matched_form": trimmed(value.get("matchedForm")),
         "matched_translation_form": trimmed(value.get("matchedTranslationForm")),
@@ -285,6 +285,39 @@ def _assign_image_prompt(value: Mapping[str, Any]) -> dict[str, Any]:
         "attempts": to_int(value.get("attempts")),
         "failure_reason": trimmed(value.get("failureReason")),
         "suppressed": to_bool(value.get("suppressed")),
+    }
+
+
+def _project_pronunciation(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "lexemeId": row["lexeme"],
+        "targetKind": row["target_kind"],
+        "targetId": row["target_id"],
+        "text": row["text"],
+        "lang": row["lang"],
+        "emotion": text_or_none(row["emotion"]),
+        "audioRef": row["audio_ref"],
+        "audioMime": row["audio_mime"],
+        "providerId": row["provider_id"],
+        "modelId": row["model_id"],
+        "voice": text_or_none(row["voice"]),
+    }
+
+
+def _assign_pronunciation(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "lexeme": trimmed(value.get("lexemeId")),
+        "target_kind": trimmed(value.get("targetKind")),
+        "target_id": trimmed(value.get("targetId")),
+        # Verbatim, not trimmed: staleness is decided by comparing this to the record's text.
+        "text": "" if value.get("text") is None else str(value.get("text")),
+        "lang": trimmed(value.get("lang")),
+        "emotion": trimmed(value.get("emotion")),
+        "audio_ref": trimmed(value.get("audioRef")),
+        "audio_mime": trimmed(value.get("audioMime")),
+        "provider_id": trimmed(value.get("providerId")),
+        "model_id": trimmed(value.get("modelId")),
+        "voice": trimmed(value.get("voice")),
     }
 
 
@@ -330,6 +363,7 @@ COLLECTIONS: tuple[Collection, ...] = (
     Collection("attestations", tables.attestations, _project_attestation, _assign_attestation),
     Collection("examples", tables.examples, _project_example, _assign_example),
     Collection("imagePrompts", tables.image_prompts, _project_image_prompt, _assign_image_prompt),
+    Collection("pronunciations", tables.pronunciations, _project_pronunciation, _assign_pronunciation),
     Collection("studyStates", tables.study_states, _project_study_state, _assign_study_state),
 )
 

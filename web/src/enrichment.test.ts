@@ -43,6 +43,13 @@ async function settled() {
   }
 }
 
+function pronunciationSettings(pregenerate = { headword: false, definitions: false, examples: false }) {
+  return {
+    pregenerate, expressive: true, voices: {}, chosen: false, languages: ["es"],
+    orders: { plain: [], expressive: [] }
+  };
+}
+
 describe("enriching a word that was just saved", () => {
   beforeEach(async () => {
     await repository.clear();
@@ -60,6 +67,8 @@ describe("enriching a word that was just saved", () => {
       searchEnabled: true, selfContainedOnly: false, chosen: false,
       corpus: { configured: true, reachable: true, ready: true, indexedLanguages: ["es"] }
     });
+    // And whether it should record the word's pronunciations at the same time. Off by default.
+    vi.spyOn(backendSession, "pronunciationSettings").mockResolvedValue(pronunciationSettings());
   });
 
   afterEach(() => { enrichment.stop(); enrichment.resume(); vi.restoreAllMocks(); });
@@ -446,5 +455,65 @@ describe("which sense a picture job makes busy", () => {
 
   it("never reads clip work as picture work", () => {
     expect(senseIsBusy({ active: job({ kind: "clip" }), waiting: [] }, "lexemepicar0001", "s1", null)).toBe(false);
+  });
+});
+
+describe("recording a word's pronunciations while it is saved", () => {
+  beforeEach(async () => {
+    await repository.clear();
+    await repository.load(TEST_OWNER);
+    await repository.applyRemote(testGraph(), 1, "dataset00000001");
+    enrichment.resume();
+    vi.spyOn(syncEngine, "syncNow").mockResolvedValue(syncEngine.getStatus());
+    /* Neither clips nor pictures here: this is about the step between them. */
+    vi.spyOn(backendSession, "clipSettings").mockResolvedValue({
+      searchEnabled: false, selfContainedOnly: false, chosen: true,
+      corpus: { configured: false, reachable: false, ready: false, indexedLanguages: [] }
+    });
+    vi.spyOn(backendSession, "imageSettings").mockResolvedValue({
+      drawEnabled: false, stylesOff: [], boostVariety: true, chosen: true,
+      maxAttempts: 4, styles: [], available: true
+    });
+  });
+  afterEach(() => { enrichment.stop(); enrichment.resume(); vi.restoreAllMocks(); });
+
+  it("records nothing unless the owner asked for it", async () => {
+    vi.spyOn(backendSession, "pronunciationSettings").mockResolvedValue(pronunciationSettings());
+    const pronounce = vi.spyOn(backendSession, "pronounce");
+    enrichment.enqueue("lexemepicar0001", "picar");
+    await settled();
+    expect(pronounce).not.toHaveBeenCalled();
+  });
+
+  it("records what was chosen, and never a field that already has a current clip", async () => {
+    vi.spyOn(backendSession, "pronunciationSettings")
+      .mockResolvedValue(pronunciationSettings({ headword: true, definitions: true, examples: false }));
+    const pronounce = vi.spyOn(backendSession, "pronounce")
+      .mockImplementation(async () => repository.snapshot().pronunciations[0]);
+    enrichment.enqueue("lexemepicar0001", "picar");
+    await settled();
+
+    const asked = pronounce.mock.calls.map(([collection]) => collection);
+    // The headword's clip is current in the fixture, so only the definitions are asked for.
+    expect(asked.length).toBeGreaterThan(0);
+    expect(new Set(asked)).toEqual(new Set(["senses"]));
+  });
+
+  it("waits out a busy provider rather than spending the whole word against it", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(backendSession, "pronunciationSettings")
+        .mockResolvedValue(pronunciationSettings({ headword: true, definitions: true, examples: true }));
+      const pronounce = vi.spyOn(backendSession, "pronounce")
+        .mockRejectedValue(new AcervoApiError("busy", 503, "llm_rate_limited"));
+      enrichment.enqueue("lexemepicar0001", "picar");
+      for (let turn = 0; turn < 60 && enrichment.getStatus().running; turn += 1) {
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      expect(pronounce).toHaveBeenCalled();
+      expect(enrichment.getStatus().recent.some((job) => job.kind === "audio" && job.error)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

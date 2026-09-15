@@ -99,6 +99,7 @@ def test_the_rules_below_are_not_vacuous():
     assert modules_under("models"), "no models/ modules: the stands-alone rule would be vacuous"
     assert modules_under("images"), "no images/ modules: the stands-alone rule would be vacuous"
     assert modules_under("clips"), "no clips/ modules: the stands-alone rule would be vacuous"
+    assert modules_under("pronunciation"), "no pronunciation/ modules: the stands-alone rule would be vacuous"
     assert (PACKAGE / "article.py").exists(), "no article.py: the shared-view rule would be vacuous"
     assert modules_under("speech"), "no speech/ modules: the stands-alone rule would be vacuous"
     assert modules_under("repository"), "no repository/ modules"
@@ -192,6 +193,17 @@ def test_the_clip_pipeline_stands_on_the_provider_package_and_nothing_else(path)
     """
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the clip pipeline stands alone"
+
+
+@pytest.mark.parametrize("path", modules_under("pronunciation"), ids=identify)
+def test_the_pronunciation_pipeline_stands_on_the_provider_package_and_nothing_else(path):
+    """Text and a language in, audio out — and no idea whose word it is or where the file goes.
+
+    `services/pronunciations.py` is the binding layer that reads `Settings`, the owner's orders and
+    voices, and the graph, and decides what Acervo's wire calls a clip that could not be recorded.
+    """
+    offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
+    assert not offenders, f"{path} imports {sorted(offenders)}; the pronunciation pipeline stands alone"
 
 
 def test_the_article_view_imports_nothing_of_acervos():

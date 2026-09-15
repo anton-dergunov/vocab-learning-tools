@@ -38,6 +38,7 @@ export const nowInstant = () => new Date().toISOString();
 const DERIVED_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 const IMAGE_PROMPT_NAMESPACE = "acervo/imagePrompt/v1";
 const CLIP_EXAMPLE_NAMESPACE = "acervo/clipExample/v1";
+const PRONUNCIATION_NAMESPACE = "acervo/pronunciation/v1";
 
 /**
  * SHA-256, synchronously.
@@ -118,6 +119,16 @@ export function imagePromptId(senseId: string): string {
  */
 export function clipExampleId(senseId: string, clipRef: string): string {
   return derivedId(`${CLIP_EXAMPLE_NAMESPACE}:${senseId}:${clipRef}`);
+}
+
+/**
+ * The id the clip reading this field must have, wherever it is recorded.
+ *
+ * Keyed on what is read, so a field has one clip and "Record again" rewrites it. Twinned with
+ * `acervo.pronunciation.ids.pronunciation_id`.
+ */
+export function pronunciationId(targetKind: string, targetId: string): string {
+  return derivedId(`${PRONUNCIATION_NAMESPACE}:${targetKind}:${targetId}`);
 }
 
 /**

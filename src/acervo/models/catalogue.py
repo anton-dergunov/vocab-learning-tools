@@ -34,6 +34,11 @@ KINDS = ("text", "image", "audio")
 # AGENTS.md, "Constrained decoding is not used"). `native` sends the request, `prompt` leaves the
 # asking to the prompt, and the reply is parsed and validated by the caller either way.
 JSON_MODES = ("native", "prompt", "unsupported")
+# What a speech model does with a delivery direction. `instruction` takes free natural language in a
+# field of its own — Gemini-TTS's `prompt`, OpenAI's `instructions` — so it is never read aloud;
+# `none` has nowhere to put one, and a style sent to it is dropped with a warning. A provider whose
+# styles are a fixed list (Azure's SSML `express-as`) would be a third value, not a special case.
+AUDIO_STYLES = ("instruction", "none")
 
 _PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _ADC_FILE = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
@@ -108,6 +113,45 @@ class Row:
         stated = (self.timeouts or {}).get(kind)
         return float(stated) if isinstance(stated, (int, float)) and stated > 0 else default
 
+    def audio_for(self, model: str) -> dict[str, Any]:
+        """What one speech model declares: the row's `capabilities.audio`, overlaid by the model's.
+
+        Per model rather than per row, because one endpoint can serve voices that differ in the ways
+        that matter — Google's Standard voices take no style and exist per language, while the Gemini
+        voices on the very same route take a free-text style and speak any language.
+        """
+        audio = self.capabilities.get("audio") if isinstance(self.capabilities, dict) else None
+        audio = audio if isinstance(audio, dict) else {}
+        merged = {name: value for name, value in audio.items() if name != "models"}
+        merged.update((audio.get("models") or {}).get(model) or {})
+        return merged
+
+    def style_for(self, model: str) -> str:
+        return str(self.audio_for(model).get("style") or "none")
+
+    def speaks(self, model: str, language: str) -> bool:
+        """Whether this model can say something in this BCP-47 language, by the row's own account."""
+        languages = self.audio_for(model).get("languages", "any")
+        if languages == "any":
+            return True
+        return any(_within(language, declared) for declared in languages)
+
+    def voices_for(self, model: str, language: str) -> tuple[str, ...]:
+        """The voices this model offers for a language, the default first. Empty when it names none."""
+        voices = self.audio_for(model).get("voices") or {}
+        for candidate in (*_widening(language), "*"):
+            if voices.get(candidate):
+                return tuple(voices[candidate])
+        return ()
+
+    def locale_for(self, model: str, language: str) -> str:
+        """The locale a provider wants for a language — `cmn-CN` for `zh-Hans` — or the tag itself."""
+        locales = self.audio_for(model).get("locales") or {}
+        for candidate in _widening(language):
+            if locales.get(candidate):
+                return str(locales[candidate])
+        return language
+
     @property
     def json_mode(self) -> str:
         return str(self.capabilities.get("jsonMode") or "prompt")
@@ -127,6 +171,12 @@ class Catalogue:
     version: int
     note: str
     rows: tuple[Row, ...]
+    # Orders the file recommends for a named chain when neither the owner nor the deployment chose
+    # one: {chain: ((provider, model), ...)}. Absent for a chain means catalogue order. It exists for
+    # the two speech chains, where catalogue order is wrong in an interesting way — it would read a
+    # headword with a paid expressive voice and an emotional sentence with one that cannot take a
+    # style — while every row involved is still a legitimate choice.
+    default_chains: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
 
     def __iter__(self):
         return iter(self.rows)
@@ -139,6 +189,44 @@ class Catalogue:
 
     def serving(self, kind: str) -> tuple[Row, ...]:
         return tuple(row for row in self.rows if row.serves(kind))
+
+
+def _widening(language: str) -> tuple[str, ...]:
+    """`zh-Hans-CN`, then `zh-Hans`, then `zh`: the most specific declaration wins."""
+    parts = language.split("-")
+    return tuple("-".join(parts[:count]) for count in range(len(parts), 0, -1))
+
+
+def _within(language: str, declared: str) -> bool:
+    spoken, named = language.lower(), declared.lower()
+    return spoken == named or spoken.startswith(named + "-")
+
+
+def _validate_audio(row: Row) -> None:
+    audio = row.capabilities.get("audio") if isinstance(row.capabilities, dict) else None
+    if audio is None:
+        return
+    if not isinstance(audio, dict):
+        raise CatalogueError(f"{row.id} declares audio capabilities that are not an object")
+    if "defaultVoice" in audio:
+        raise CatalogueError(f"{row.id} names a defaultVoice; voices are `voices: {{language: [...]}}`")
+    offered = row.models_for("audio") if row.serves("audio") else ()
+    for model in audio.get("models") or {}:
+        if model not in offered:
+            raise CatalogueError(f"{row.id} declares audio capabilities for {model!r}, which it does not offer")
+    for model in offered or ("",):
+        declared = row.audio_for(model)
+        if declared.get("style", "none") not in AUDIO_STYLES:
+            raise CatalogueError(f"{row.id} declares an unknown audio style {declared.get('style')!r}")
+        languages = declared.get("languages", "any")
+        if languages != "any" and not (isinstance(languages, list) and all(isinstance(v, str) and v for v in languages)):
+            raise CatalogueError(f"{row.id} must declare audio languages as \"any\" or a list of tags")
+        voices = declared.get("voices") or {}
+        if not isinstance(voices, dict) or not all(
+            isinstance(names, list) and names and all(isinstance(n, str) and n for n in names)
+            for names in voices.values()
+        ):
+            raise CatalogueError(f"{row.id} must declare voices as {{language: [name, ...]}}")
 
 
 def _validate(row: Row) -> None:
@@ -166,6 +254,7 @@ def _validate(row: Row) -> None:
             raise CatalogueError(f"{row.id} names the same {kind} model twice")
     if row.json_mode not in JSON_MODES:
         raise CatalogueError(f"{row.id} declares an unknown jsonMode {row.json_mode!r}")
+    _validate_audio(row)
     if row.keyEnv and row.keyEnv in row.passes.values():
         raise CatalogueError(f"{row.id} passes its key as an ordinary call argument")
     # `requires` names are the row's non-secret deployment facts — a project, an account id, a
@@ -201,7 +290,20 @@ def load_catalogue(path: Path | None = None) -> Catalogue:
         seen.add(row.id)
         _validate(row)
         rows.append(row)
-    return Catalogue(version=document["version"], note=document["note"], rows=tuple(rows))
+    by_id = {row.id: row for row in rows}
+    defaults: dict[str, tuple[tuple[str, str], ...]] = {}
+    for chain_name, pairs in (document.get("defaultChains") or {}).items():
+        named: list[tuple[str, str]] = []
+        for pair in pairs:
+            row = by_id.get(pair.get("provider"))
+            offered = {model for kind in (row.kinds if row else ()) for model in row.models_for(kind)}
+            if row is None or pair.get("model") not in offered:
+                raise CatalogueError(f"defaultChains.{chain_name} names {pair!r}, which no row offers")
+            named.append((row.id, pair["model"]))
+        defaults[chain_name] = tuple(named)
+    return Catalogue(
+        version=document["version"], note=document["note"], rows=tuple(rows), default_chains=defaults
+    )
 
 
 def reason(row: Row) -> str | None:

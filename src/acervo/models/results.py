@@ -50,3 +50,6 @@ class AudioResult:
     data: bytes
     mime: str
     answer: Answer
+    # The voice that actually spoke. A clip records it, so a voice changed later is detectable on the
+    # clips made before the change rather than silently mixed in with them.
+    voice: str | None = None

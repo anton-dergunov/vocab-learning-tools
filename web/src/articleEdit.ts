@@ -416,7 +416,7 @@ function newExample(
     sourceAttestationId,
     modelId: sourceAttestationId ? null : context.modelId,
     videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
-    clipRef: null, imageRef: null, audioRef: null,
+    clipRef: null, imageRef: null, emotion: null,
     note: (fields.note as string | null | undefined) ?? null,
     matchedForm: (fields.matchedForm as string | null | undefined) ?? null,
     matchedTranslationForm: (fields.matchedTranslationForm as string | null | undefined) ?? null

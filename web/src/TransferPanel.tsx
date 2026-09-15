@@ -14,8 +14,9 @@ import { syncEngine } from "./sync";
 import { languageOptions } from "./selectors";
 import { backendSession } from "./api";
 import { bytesFor } from "./media";
+import { clipBytes, COLLECTIONS } from "./pronunciation";
 import {
-  bundleName, exportBundle, importBundle, MEDIA_DIRECTORY, picturesIn, readBundle,
+  AUDIO_DIRECTORY, bundleName, exportBundle, importBundle, MEDIA_DIRECTORY, picturesIn, pronunciationsIn, readBundle,
   type BundleFile, type BundlePlan, type ImportReport
 } from "./transfer";
 
@@ -35,25 +36,28 @@ function save(name: string, bytes: Uint8Array): void {
 }
 
 /**
- * The bundle's text files, and its pictures kept as bytes.
+ * The bundle's text files, and its pictures and clips kept as bytes.
  *
- * Split because `strFromU8` on a WebP produces mojibake, not a picture — everything under `media/`
- * has to stay binary all the way to the route that stores it.
+ * Split because `strFromU8` on a WebP or an MP3 produces mojibake — everything under `media/`, and
+ * every recording under `audio/`, has to stay binary all the way to the route that stores it. A
+ * clip's `clips.yaml` is text like any other.
  */
-async function filesIn(file: File): Promise<{ files: BundleFile[]; pictures: Map<string, Uint8Array> }> {
+async function filesIn(file: File): Promise<{ files: BundleFile[]; pictures: Map<string, Uint8Array>; recordings: Map<string, Uint8Array> }> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (!/\.zip$/i.test(file.name)) {
-    return { files: [{ path: file.name, text: strFromU8(bytes) }], pictures: new Map() };
+    return { files: [{ path: file.name, text: strFromU8(bytes) }], pictures: new Map(), recordings: new Map() };
   }
   const files: BundleFile[] = [];
   const pictures = new Map<string, Uint8Array>();
+  const recordings = new Map<string, Uint8Array>();
   Object.entries(unzipSync(bytes))
     .filter(([path, content]) => !path.endsWith("/") && !NOISE.test(path) && content.length > 0)
     .forEach(([path, content]) => {
       if (path.startsWith(`${MEDIA_DIRECTORY}/`)) pictures.set(path, content);
+      else if (path.includes(`${AUDIO_DIRECTORY}/`) && !/\.ya?ml$/i.test(path)) recordings.set(path, content);
       else files.push({ path, text: strFromU8(content) });
     });
-  return { files, pictures };
+  return { files, pictures, recordings };
 }
 
 /** ~110 KiB a picture, which is what makes the size worth warning about before it is asked for. */
@@ -66,16 +70,18 @@ export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
   const [language, setLanguage] = useState<string>("all");
   const [markdown, setMarkdown] = useState(true);
   const [images, setImages] = useState(false);
+  const [pronunciations, setPronunciations] = useState(true);
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState("");
   const languages = languageOptions(snapshot);
-  const pictures = picturesIn(snapshot, { language, markdown, images: true });
+  const pictures = picturesIn(snapshot, { language, markdown, images: true, pronunciations });
+  const clips = pronunciationsIn(snapshot, { language, markdown, images, pronunciations: true }).clips;
 
   async function run() {
     setBusy("Writing…");
     try {
       const at = new Date().toISOString();
-      const files = exportBundle(snapshot, { language, markdown, images }, at);
+      const files = exportBundle(snapshot, { language, markdown, images, pronunciations }, at);
       const archive: Record<string, Uint8Array> = {};
       files.forEach((file) => { archive[file.path] = strToU8(file.text); });
 
@@ -95,9 +101,24 @@ export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
         }
       }
 
+      let silent = 0;
+      if (pronunciations) {
+        for (const [index, clip] of clips.entries()) {
+          setBusy(`Fetching pronunciations… ${index + 1} of ${clips.length}`);
+          try {
+            archive[clip.path] = await clipBytes(clip.reference);
+          } catch {
+            silent += 1;
+          }
+        }
+      }
+
       setBusy("Writing…");
       save(bundleName(language, at), zipSync(archive));
-      setProblem(missing ? `${missing} picture(s) could not be read and were left out.` : "");
+      setProblem([
+        missing ? `${missing} picture(s) could not be read and were left out.` : "",
+        silent ? `${silent} pronunciation(s) could not be read and were left out.` : ""
+      ].filter(Boolean).join(" "));
     } catch (error) {
       setProblem(error instanceof Error ? error.message : "The export could not be written.");
     } finally {
@@ -142,6 +163,18 @@ export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
         </span>
       </span>
     </label>
+    <label className="config-switch">
+      <input type="checkbox" checked={pronunciations} onChange={(event) => setPronunciations(event.target.checked)} />
+      <span>
+        <strong>Include pronunciations</strong>
+        <span>
+          {clips.length > 0
+            ? `${clips.length} recording${clips.length === 1 ? "" : "s"}, a few kilobytes each, with the voice `
+              + "and model that recorded them. Any this device does not hold come from the server."
+            : "Nothing has been recorded yet."}
+        </span>
+      </span>
+    </label>
     <button className="tb-btn" onClick={() => void run()} disabled={busy !== ""}>
       {busy || "Export…"}
     </button>
@@ -152,7 +185,7 @@ export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
 
 type Stage =
   | { at: "idle" }
-  | { at: "chosen"; name: string; plan: BundlePlan; pictures: Map<string, Uint8Array> }
+  | { at: "chosen"; name: string; plan: BundlePlan; pictures: Map<string, Uint8Array>; recordings: Map<string, Uint8Array> }
   | { at: "running"; done: number; total: number }
   | { at: "done"; report: ImportReport };
 
@@ -161,20 +194,21 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
   const [problem, setProblem] = useState("");
   const picker = useRef<HTMLInputElement>(null);
   const cancel = useRef({ cancelled: false });
+  const [restoreClips, setRestoreClips] = useState(true);
 
   async function choose(file: File | undefined) {
     if (!file) return;
     setProblem("");
     try {
-      const { files, pictures } = await filesIn(file);
-      setStage({ at: "chosen", name: file.name, plan: readBundle(files), pictures });
+      const { files, pictures, recordings } = await filesIn(file);
+      setStage({ at: "chosen", name: file.name, plan: readBundle(files), pictures, recordings });
     } catch (error) {
       setStage({ at: "idle" });
       setProblem(error instanceof Error ? error.message : "That file could not be read.");
     }
   }
 
-  async function run(plan: BundlePlan, pictures: Map<string, Uint8Array>) {
+  async function run(plan: BundlePlan, pictures: Map<string, Uint8Array>, recordings: Map<string, Uint8Array>) {
     cancel.current = { cancelled: false };
     setStage({ at: "running", done: 0, total: 0 });
     const deviceId = repository.snapshot().deviceId;
@@ -197,7 +231,20 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
            count until the next sync came round a minute later. Pulling in batches keeps a long
            import filling in as it goes rather than all at the end. */
         if (restored % RESTORED_PER_PULL === 0) await syncEngine.syncNow();
-      }
+      },
+      /* A clip is put back through its own route, naming who recorded it, and reaches the replica
+         on a pull exactly as a restored picture does. */
+      restoreClips && recordings.size ? {
+        files: recordings,
+        restore: async (target, id, bytes, entry) => {
+          const type = entry.file.endsWith(".wav") ? "audio/wav" : entry.file.endsWith(".ogg") ? "audio/ogg" : "audio/mpeg";
+          await backendSession.restorePronunciation(
+            COLLECTIONS[target], id, deviceId, new Blob([bytes as unknown as BlobPart], { type }), entry
+          );
+          restored += 1;
+          if (restored % RESTORED_PER_PULL === 0) await syncEngine.syncNow();
+        }
+      } : null
     );
 
     // And once at the end, so "import finished" means every picture is here, not merely uploaded.
@@ -233,8 +280,16 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
           {stage.plan.topics.length ? `, ${stage.plan.topics.length} topics` : ""}
           {stage.plan.vocabularies.length ? `, ${stage.plan.vocabularies.length} languages` : ""}
           {stage.pictures.size ? `, ${stage.pictures.size} pictures` : ""}
+          {stage.recordings.size ? `, ${stage.recordings.size} pronunciations` : ""}
         </span>
       </div>
+      {stage.recordings.size > 0 && <label className="config-switch">
+        <input type="checkbox" checked={restoreClips} onChange={(event) => setRestoreClips(event.target.checked)} />
+        <span>
+          <strong>Restore pronunciations</strong>
+          <span>Off, the words arrive without their recordings, which are made again on the first press.</span>
+        </span>
+      </label>}
       {stage.plan.problems.length > 0 && <ProblemList
         title={`${stage.plan.problems.length} ${stage.plan.problems.length === 1 ? "file" : "files"} could not be read and will be left out`}
         problems={stage.plan.problems}
@@ -243,7 +298,7 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
         <button className="tb-btn" onClick={reset}>Cancel</button>
         <button
           className="tb-btn" disabled={stage.plan.articles.length === 0}
-          onClick={() => void run(stage.plan, stage.pictures)}
+          onClick={() => void run(stage.plan, stage.pictures, stage.recordings)}
         >Import {stage.plan.articles.length} {stage.plan.articles.length === 1 ? "entry" : "entries"}</button>
       </div>
     </>}
@@ -264,6 +319,7 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
         <span>
           {stage.report.added} added
           {stage.report.picturesRestored > 0 && `, ${stage.report.picturesRestored} pictures put back`}
+          {stage.report.pronunciationsRestored > 0 && `, ${stage.report.pronunciationsRestored} pronunciations put back`}
           {stage.report.skipped.length > 0 && `, ${stage.report.skipped.length} already present`}
           {stage.report.failed.length > 0 && `, ${stage.report.failed.length} refused`}
           {stage.report.topicsAdded > 0 && `, ${stage.report.topicsAdded} new topics`}

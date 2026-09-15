@@ -92,7 +92,7 @@ export default function AddView({
   onChat?(document: string, turns: ChatTurn[]): Promise<ChatResult>;
   /** From `syncStatus`: chat is a round trip, and the dock is the only part of this that needs one. */
   offline?: boolean;
-  onNotify(message: string): void;
+  onNotify(message: string, action?: { label: string; run(): void }): void;
 }) {
   const [capture, setCapture] = useState("");
   const [headword, setHeadword] = useState(seed?.headword ?? "");
@@ -408,7 +408,7 @@ export default function AddView({
         ? <div className="article-preview">
             {/* No delete, and no storage footer: there is nothing stored to delete or describe. */}
             <LexemeArticle
-              article={preview.article} onUnsupported={onNotify} meta={false} marks={marks}
+              article={preview.article} onNotify={onNotify} meta={false} marks={marks}
             />
             {/* The same dock, over a proposal nobody has saved yet. `meta={false}` already says this
                 is not a stored word, and there is no review bar: the editor text *is* the proposal,

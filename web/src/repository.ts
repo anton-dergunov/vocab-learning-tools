@@ -1,7 +1,7 @@
 import {
   validateGraph,
   type Attestation, type AttestationInput, type EntityKind, type Example, type ExampleInput,
-  type ImagePrompt, type ImagePromptInput, type Lexeme, type LexemeInput, type Sense, type SenseInput,
+  type ImagePrompt, type ImagePromptInput, type Lexeme, type LexemeInput, type Pronunciation, type Sense, type SenseInput,
   type OwnedFields, type StudyState, type StudyStateInput, type SyncFields, type Topic, type TopicInput,
   type Vocabulary, type VocabularyInput, type VocabularyGraph
 } from "./domain";
@@ -9,13 +9,14 @@ import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase,
 import { clipExampleId, imagePromptId, newDeviceId, newId, nowInstant } from "./ids";
 import type { ArticleDraft, ImagePromptDraft } from "./yaml";
 
-export const LOCAL_SCHEMA_VERSION = 9;
+export const LOCAL_SCHEMA_VERSION = 10;
 
 const EMPTY_GRAPH = (): VocabularyGraph => ({
-  vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [], studyStates: []
+  vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],
+  pronunciations: [], studyStates: []
 });
 
-type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | StudyState;
+type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | Pronunciation | StudyState;
 type EntityInput = VocabularyInput | TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput;
 
 /** What the server returns for a batch of applied records. */
@@ -107,11 +108,12 @@ export class LocalAcervoRepository implements AcervoRepository {
         attestations: contents.attestations,
         examples: contents.examples,
         imagePrompts: contents.imagePrompts,
+        pronunciations: contents.pronunciations,
         studyStates: contents.studyStates
       };
       validateGraph(graph);
       const allRecords: Entity[][] = [
-        graph.vocabularies, graph.topics, graph.lexemes, graph.senses, graph.attestations, graph.examples, graph.imagePrompts, graph.studyStates
+        graph.vocabularies, graph.topics, graph.lexemes, graph.senses, graph.attestations, graph.examples, graph.imagePrompts, graph.pronunciations, graph.studyStates
       ];
       const hasForeignRecord = allRecords.some((records) => records.some((record) => record.ownerId !== ownerId));
       if (hasForeignRecord) throw new Error("Replica records do not belong to the authenticated owner.");
@@ -481,7 +483,7 @@ export class LocalAcervoRepository implements AcervoRepository {
           videoEnd: example.videoEnd,
           clipRef: example.clipRef,
           imageRef: example.imageRef,
-          audioRef: example.audioRef,
+          emotion: example.emotion,
           note: example.note,
           matchedForm: example.matchedForm,
           matchedTranslationForm: example.matchedTranslationForm,
@@ -513,6 +515,12 @@ export class LocalAcervoRepository implements AcervoRepository {
     live(this.graph.imagePrompts)
       .filter((record) => record.lexemeId === lexemeId && !keptPrompts.has(record.id))
       .forEach((record) => tombstone("imagePrompts", record));
+    // A clip of something the document removed reads words that no longer exist. The headword's
+    // clip is never among them: the lexeme stays, and an edited headword only makes its clip stale.
+    const kept: Record<string, Set<string>> = { sense: keptSenses, example: keptExamples, attestation: keptAttestations };
+    live(this.graph.pronunciations)
+      .filter((record) => record.lexemeId === lexemeId && record.targetKind !== "lexeme" && !kept[record.targetKind].has(record.targetId))
+      .forEach((record) => tombstone("pronunciations", record));
 
     await this.commit(changed);
     return lexemeId;
@@ -544,10 +552,16 @@ export class LocalAcervoRepository implements AcervoRepository {
       this.graph.attestations.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("attestations", record));
       this.graph.examples.filter((record) => senseIds.has(record.senseId) && !record.deleted).forEach((record) => tombstone("examples", record));
       this.graph.imagePrompts.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("imagePrompts", record));
+      this.graph.pronunciations.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("pronunciations", record));
       this.graph.studyStates.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("studyStates", record));
     } else if (kind === "senses") {
       this.graph.examples.filter((record) => record.senseId === id && !record.deleted).forEach((record) => tombstone("examples", record));
       this.graph.imagePrompts.filter((record) => record.senseId === id && !record.deleted).forEach((record) => tombstone("imagePrompts", record));
+      const examples = new Set(this.graph.examples.filter((record) => record.senseId === id).map((record) => record.id));
+      this.graph.pronunciations
+        .filter((record) => !record.deleted && ((record.targetKind === "sense" && record.targetId === id)
+          || (record.targetKind === "example" && examples.has(record.targetId))))
+        .forEach((record) => tombstone("pronunciations", record));
     }
     await this.commit(changed);
   }

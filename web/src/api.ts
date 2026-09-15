@@ -1,4 +1,4 @@
-import type { PartOfSpeech, VocabularyGraph } from "./domain";
+import type { PartOfSpeech, Pronunciation, VocabularyGraph } from "./domain";
 import { normalizeServerURL, sessionStore, type StoredSession } from "./session";
 import type { ArticleDraft } from "./yaml";
 
@@ -6,7 +6,7 @@ type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type LoginResponse = { token: string; user: { id: string; email: string } };
 
 /** Shared with the server hook. A mismatch stops synchronisation until the app is updated. */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 interface SyncEnvelope {
   schemaVersion: number;
@@ -113,6 +113,45 @@ export interface ImageSettings {
   available: boolean;
 }
 
+/* Pronunciation. Owner-scoped server state and a clip the server records, so like pictures these do
+   not go through `AcervoRepository` — but the rows they return are ordinary `pronunciations`, which
+   reach the replica on the next sync pull. */
+
+/** Which fields are recorded when a word is saved, rather than on the first press of play. */
+export interface PronunciationPregenerate {
+  headword: boolean;
+  definitions: boolean;
+  examples: boolean;
+}
+
+/** One model in one of the two orders, and the voices it offers per vocabulary language. */
+export interface PronunciationModel {
+  provider: string;
+  providerLabel: string;
+  model: string;
+  available: boolean;
+  /** `instruction` takes an example's emotion; `none` reads everything plainly. */
+  style: "instruction" | "none";
+  voices: Record<string, string[]>;
+}
+
+export interface PronunciationSettings {
+  pregenerate: PronunciationPregenerate;
+  /** Whether an example is spoken with its emotion by a voice that can take one. */
+  expressive: boolean;
+  /** {provider: {model: {language: voice}}}. Absent means the model's first voice. */
+  voices: Record<string, Record<string, Record<string, string>>>;
+  chosen: boolean;
+  languages: string[];
+  orders: { plain: PronunciationModel[]; expressive: PronunciationModel[] };
+}
+
+/** What a selection was read by. The audio itself carries no row, because nothing was stored. */
+export interface Utterance {
+  audio: Blob;
+  voice: string | null;
+}
+
 export interface ProviderCredential {
   kind: "key" | "file" | "none";
   variable: string | null;
@@ -166,6 +205,9 @@ const CAPTURE_TIMEOUT = 300_000;
 // minute, so a pause on the way is normal rather than a fault.
 const BRIEF_TIMEOUT = 180_000;
 const RENDER_TIMEOUT = 300_000;
+/* A spoken word takes under two seconds and an expressive sentence three; a whole chain falling
+   through its models is what this has to cover. Somebody is holding a finger over a play button. */
+const PRONOUNCE_TIMEOUT = 60_000;
 
 /* ── capture ────────────────────────────────────────────────────────────
    The ingest endpoint of design §05. What comes back is a *proposal*: a draft the interface renders
@@ -467,6 +509,26 @@ class ApiClient {
     }
     return envelope.data;
   }
+
+  /** A route that answers with bytes rather than an envelope, whose failures still arrive as one. */
+  async bytes(path: string, options: RequestInit = {}, timeout = REQUEST_TIMEOUT): Promise<Response> {
+    if (!this.session?.token) throw new AcervoApiError("Sign in to continue.", 401, "unauthenticated");
+    const baseUrl = this.session.baseUrl;
+    if (!baseUrl) throw new AcervoApiError("Configure the Acervo server first.", 0, "not_configured");
+    const headers = new Headers(options.headers);
+    if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    headers.set("Authorization", `Bearer ${this.session.token}`);
+    let response: Response;
+    try { response = await fetch(`${baseUrl}${API_PATH}${path}`, { ...options, headers, cache: "no-store", signal: timeoutSignal(timeout) }); }
+    catch { throw new AcervoApiError("The Acervo server could not be reached.", 0, "offline"); }
+    if (!response.ok) {
+      if (response.status === 401) this.onUnauthorized?.();
+      let envelope: Envelope<unknown> = {};
+      try { envelope = await response.json() as Envelope<unknown>; } catch { /* no body to read */ }
+      throw new AcervoApiError(envelope.error?.message || "The Acervo server returned an invalid response.", response.status, envelope.error?.code || "request_failed");
+    }
+    return response;
+  }
 }
 
 const client = new ApiClient();
@@ -666,6 +728,60 @@ export const backendSession = {
     return client.call<ImagePromptRow>(
       `/images/prompts/${encodeURIComponent(promptId)}`,
       { method: "DELETE", headers: { "X-Acervo-Device": deviceId } }
+    );
+  },
+
+  pronunciationSettings(): Promise<PronunciationSettings> {
+    return client.call<PronunciationSettings>("/pronunciations/settings");
+  },
+  savePronunciationSettings(
+    changes: Partial<{ pregenerate: Partial<PronunciationPregenerate>; expressive: boolean; voices: PronunciationSettings["voices"] }>
+  ): Promise<PronunciationSettings> {
+    return client.call<PronunciationSettings>("/pronunciations/settings", {
+      method: "PUT", body: JSON.stringify(changes)
+    });
+  },
+
+  /**
+   * The clip for one spoken field: the stored one while it is current, otherwise a new recording.
+   * `again` records it anew, which is "Record again". One model call, with a model call's timeout.
+   */
+  pronounce(collection: string, id: string, deviceId: string, again = false): Promise<Pronunciation> {
+    return client.call<Pronunciation>(
+      `/pronunciations/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`,
+      { method: "POST", body: JSON.stringify({ deviceId, again }) },
+      false,
+      PRONOUNCE_TIMEOUT
+    );
+  },
+
+  /** Read a selection aloud. Nothing is stored anywhere, the server included. */
+  async utterance(text: string, language: string): Promise<Utterance> {
+    const response = await client.bytes(
+      "/pronunciations/utterance",
+      { method: "POST", body: JSON.stringify({ text, language }) },
+      PRONOUNCE_TIMEOUT
+    );
+    return { audio: await response.blob(), voice: response.headers.get("X-Acervo-Voice") || null };
+  },
+
+  /** Put back a clip a bundle carried, naming who recorded it. Refused if the words have changed. */
+  restorePronunciation(
+    collection: string, id: string, deviceId: string, audio: Blob,
+    spoken: { text: string; providerId: string; modelId: string; voice: string | null; emotion: string | null }
+  ): Promise<Pronunciation> {
+    const query = new URLSearchParams({
+      text: spoken.text, providerId: spoken.providerId, modelId: spoken.modelId,
+      voice: spoken.voice ?? "", emotion: spoken.emotion ?? ""
+    });
+    return client.call<Pronunciation>(
+      `/pronunciations/${encodeURIComponent(collection)}/${encodeURIComponent(id)}/audio?${query}`,
+      {
+        method: "PUT", body: audio,
+        headers: { "Content-Type": audio.type || "application/octet-stream", "X-Acervo-Device": deviceId }
+      },
+      false,
+      RENDER_TIMEOUT
     );
   },
 

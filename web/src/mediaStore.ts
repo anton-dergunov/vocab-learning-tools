@@ -11,25 +11,30 @@
  * and here it is the difference between storing WebP bytes as WebP bytes and paying per-record
  * overhead on every one of a few thousand pictures.
  *
- * Keyed by `imageRef` — the path the record itself carries — rather than by the prompt id, because
- * a reference is what a component has in its hand and what the media route wants. A regeneration
- * overwrites in place, so the key is stable and the newest bytes win, which is exactly the
- * behaviour a cache should have and is why this needs no invalidation of its own.
+ * Keyed by the reference the record itself carries — `imageRef`, `audioRef` — rather than by a
+ * record id, because a reference is what a component has in its hand and what the media route wants.
+ * A regenerated picture overwrites in place, so the key is stable and the newest bytes win. A
+ * re-recorded pronunciation gets a new reference instead, so the old key is simply never asked for
+ * again; neither needs an invalidation of its own.
+ *
+ * **Two object stores, one per kind of media**, so pronunciations can be switched off and forgotten
+ * on a device without touching a single picture, and the other way round.
  */
 
 const DATABASE_NAME = "acervo-media";
-const DATABASE_VERSION = 1;
-const STORE = "pictures";
+const DATABASE_VERSION = 2;
+export const MEDIA_KINDS = ["pictures", "pronunciations"] as const;
+export type MediaKind = typeof MEDIA_KINDS[number];
 
-export interface StoredPicture {
-  /** The `imageRef` the record carries, relative to the server's media directory. */
+export interface StoredMedia {
+  /** The reference the record carries, relative to the server's media directory. */
   reference: string;
   blob: Blob;
   fetchedAt: string;
 }
 
 export interface MediaStore {
-  read(reference: string): Promise<StoredPicture | null>;
+  read(reference: string): Promise<StoredMedia | null>;
   save(reference: string, blob: Blob): Promise<void>;
   remove(reference: string): Promise<void>;
   clear(): Promise<void>;
@@ -51,66 +56,73 @@ function settled(transaction: IDBTransaction): Promise<void> {
   });
 }
 
+let opened: Promise<IDBDatabase> | null = null;
+
+/** One connection for both stores, so opening pictures and pronunciations cannot race an upgrade. */
+function openDatabase(): Promise<IDBDatabase> {
+  if (opened) return opened;
+  opened = new Promise((resolve, reject) => {
+    const opening = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+    opening.onupgradeneeded = () => {
+      const database = opening.result;
+      MEDIA_KINDS.forEach((store) => {
+        if (!database.objectStoreNames.contains(store)) database.createObjectStore(store, { keyPath: "reference" });
+      });
+    };
+    opening.onsuccess = () => resolve(opening.result);
+    opening.onerror = () => { opened = null; reject(opening.error); };
+  });
+  return opened;
+}
+
 class IndexedMediaStore implements MediaStore {
-  private handle: Promise<IDBDatabase> | null = null;
+  constructor(private readonly store: MediaKind) {}
 
   private open(): Promise<IDBDatabase> {
-    if (this.handle) return this.handle;
-    this.handle = new Promise((resolve, reject) => {
-      const opening = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-      opening.onupgradeneeded = () => {
-        const database = opening.result;
-        if (!database.objectStoreNames.contains(STORE)) {
-          database.createObjectStore(STORE, { keyPath: "reference" });
-        }
-      };
-      opening.onsuccess = () => resolve(opening.result);
-      opening.onerror = () => reject(opening.error);
-    });
-    return this.handle;
+    return openDatabase();
   }
 
-  async read(reference: string): Promise<StoredPicture | null> {
+  async read(reference: string): Promise<StoredMedia | null> {
     const database = await this.open();
     const record = await request(
-      database.transaction(STORE, "readonly").objectStore(STORE).get(reference)
+      database.transaction(this.store, "readonly").objectStore(this.store).get(reference)
     );
-    return (record as StoredPicture | undefined) ?? null;
+    return (record as StoredMedia | undefined) ?? null;
   }
 
   async save(reference: string, blob: Blob): Promise<void> {
     const database = await this.open();
-    const transaction = database.transaction(STORE, "readwrite");
-    transaction.objectStore(STORE).put({ reference, blob, fetchedAt: new Date().toISOString() });
+    const transaction = database.transaction(this.store, "readwrite");
+    transaction.objectStore(this.store).put({ reference, blob, fetchedAt: new Date().toISOString() });
     return settled(transaction);
   }
 
   async remove(reference: string): Promise<void> {
     const database = await this.open();
-    const transaction = database.transaction(STORE, "readwrite");
-    transaction.objectStore(STORE).delete(reference);
+    const transaction = database.transaction(this.store, "readwrite");
+    transaction.objectStore(this.store).delete(reference);
     return settled(transaction);
   }
 
   async clear(): Promise<void> {
     const database = await this.open();
-    const transaction = database.transaction(STORE, "readwrite");
-    transaction.objectStore(STORE).clear();
+    const transaction = database.transaction(this.store, "readwrite");
+    transaction.objectStore(this.store).clear();
     return settled(transaction);
   }
 
   async bytes(): Promise<number> {
     const database = await this.open();
     const records = await request(
-      database.transaction(STORE, "readonly").objectStore(STORE).getAll()
+      database.transaction(this.store, "readonly").objectStore(this.store).getAll()
     );
-    return (records as StoredPicture[]).reduce((total, record) => total + record.blob.size, 0);
+    return (records as StoredMedia[]).reduce((total, record) => total + record.blob.size, 0);
   }
 }
 
 /** Used where IndexedDB is unavailable, so a picture degrades to one fetch per view, not to none. */
 export class MemoryMediaStore implements MediaStore {
-  private records = new Map<string, StoredPicture>();
+  private records = new Map<string, StoredMedia>();
 
   async read(reference: string) { return this.records.get(reference) ?? null; }
   async save(reference: string, blob: Blob) {
@@ -123,6 +135,6 @@ export class MemoryMediaStore implements MediaStore {
   }
 }
 
-export function createMediaStore(): MediaStore {
-  return typeof indexedDB === "undefined" ? new MemoryMediaStore() : new IndexedMediaStore();
+export function createMediaStore(kind: MediaKind): MediaStore {
+  return typeof indexedDB === "undefined" ? new MemoryMediaStore() : new IndexedMediaStore(kind);
 }

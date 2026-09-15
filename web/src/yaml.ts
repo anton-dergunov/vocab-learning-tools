@@ -42,7 +42,8 @@ export interface ExampleDraft {
   videoEnd: number | null;
   clipRef: string | null;
   imageRef: string | null;
-  audioRef: string | null;
+  /** How the sentence should sound when read aloud: a short English direction, or null for neutral. */
+  emotion: string | null;
   note: string | null;
   matchedForm: string | null;
   matchedTranslationForm: string | null;
@@ -159,10 +160,10 @@ function exampleFields(example: ExampleDraft): Plain {
     videoEnd: example.videoEnd,
     clipRef: example.clipRef,
     imageRef: example.imageRef,
-    audioRef: example.audioRef,
     note: example.note,
     matchedForm: example.matchedForm,
-    matchedTranslationForm: example.matchedTranslationForm
+    matchedTranslationForm: example.matchedTranslationForm,
+    emotion: example.emotion
   });
 }
 
@@ -238,7 +239,7 @@ function exampleDraft(example: Example): ExampleDraft {
     videoEnd: example.videoEnd,
     clipRef: example.clipRef,
     imageRef: example.imageRef,
-    audioRef: example.audioRef,
+    emotion: example.emotion,
     note: example.note,
     matchedForm: example.matchedForm,
     matchedTranslationForm: example.matchedTranslationForm
@@ -542,7 +543,7 @@ class Reader {
 export const EXAMPLE_KEYS = [
   "id", "text", "textLang", "translation", "translationLang", "origin", "sourceAttestationId",
   "modelId", "videoRef", "videoTitle", "videoChannel", "videoStart", "videoEnd", "clipRef",
-  "imageRef", "audioRef", "note", "matchedForm", "matchedTranslationForm"
+  "imageRef", "emotion", "note", "matchedForm", "matchedTranslationForm"
 ];
 export const PROMPT_KEYS = [
   "id", "exampleId", "prompt", "styleId", "seed", "modelId", "promptVersion", "imageRef",
@@ -581,7 +582,7 @@ function readExample(reader: Reader, raw: unknown, path: string, textLang: strin
     videoEnd: reader.optionalNumber(fields.videoEnd, `${path}.videoEnd`),
     clipRef: reader.optional(fields.clipRef, `${path}.clipRef`),
     imageRef: reader.optional(fields.imageRef, `${path}.imageRef`),
-    audioRef: reader.optional(fields.audioRef, `${path}.audioRef`),
+    emotion: reader.optional(fields.emotion, `${path}.emotion`),
     note: reader.optional(fields.note, `${path}.note`),
     matchedForm: reader.optional(fields.matchedForm, `${path}.matchedForm`),
     matchedTranslationForm: reader.optional(fields.matchedTranslationForm, `${path}.matchedTranslationForm`)

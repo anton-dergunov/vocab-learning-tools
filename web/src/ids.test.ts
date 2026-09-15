@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clipExampleId, imagePromptId, newId } from "./ids";
+import { clipExampleId, imagePromptId, newId, pronunciationId } from "./ids";
 
 /**
  * One half of the check that the two derivations agree.
@@ -52,5 +52,15 @@ describe("a clip example's id", () => {
 
   it("cannot collide with the picture id of the same sense", () => {
     expect(clipExampleId("sensepicaritch0", "")).not.toBe(imagePromptId("sensepicaritch0"));
+  });
+});
+
+describe("a pronunciation's id", () => {
+  it("matches what the server derives, byte for byte", () => {
+    // The other half is `tests/unit/pronunciation/test_ids.py`.
+    expect(pronunciationId("lexeme", "lexemepicar0001")).toBe("hl08nur0wl9h0n1");
+    expect(pronunciationId("example", "oj3y4cakuelbgrd")).toBe("3p733vjo4detewl");
+    expect(pronunciationId("sense", "")).toBe("6nv0f3exl21x8za");
+    expect(pronunciationId("", "")).toBe("wjkov1ozu2c9fj5");
   });
 });

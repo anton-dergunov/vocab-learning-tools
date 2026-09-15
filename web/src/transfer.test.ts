@@ -8,14 +8,14 @@ import { articleFor, lexemesIn } from "./selectors";
 import { testGraph, TEST_OWNER } from "./testGraph";
 import { fakeRemote } from "./testRemote";
 import {
-  BUNDLE_FORMAT, bundleName, exportBundle, importBundle, MANIFEST_FILE, picturesIn, readBundle, remintIds,
-  slugFor, TOPICS_FILE, VOCABULARIES_FILE, type BundleFile, type ExportOptions
+  BUNDLE_FORMAT, bundleName, exportBundle, importBundle, MANIFEST_FILE, picturesIn, pronunciationsIn,
+  readBundle, remintIds, slugFor, TOPICS_FILE, VOCABULARIES_FILE, type BundleFile, type ExportOptions
 } from "./transfer";
 import { imagePromptId } from "./ids";
 import { draftFor, parseArticle } from "./yaml";
 
 const AT = "2026-09-01T12:00:00.000Z";
-const everything: ExportOptions = { language: "all", markdown: true, images: false };
+const everything: ExportOptions = { language: "all", markdown: true, images: false, pronunciations: false };
 
 const bundle = (graph = testGraph(), options: ExportOptions = everything) => exportBundle(graph, options, AT);
 const at = (files: BundleFile[], path: string) => files.find((file) => file.path === path)!;
@@ -81,7 +81,7 @@ describe("exporting a bundle", () => {
     // back is the route that attaches one by hand — this module names the pictures and takes a
     // callback, because it holds no transport and should not grow one.
     expect(bundle().map((file) => file.path).some((path) => path.startsWith("media/"))).toBe(false);
-    expect(picturesIn(testGraph(), { language: "es", markdown: false, images: true })).toEqual([
+    expect(picturesIn(testGraph(), { language: "es", markdown: false, images: true, pronunciations: false })).toEqual([
       { path: "media/es/picar-1.webp", reference: "images/lexemepicar0001/imagepicar00010.webp" }
     ]);
   });
@@ -108,15 +108,15 @@ describe("exporting a bundle", () => {
   });
 
   it("exports one language on its own, for handing to someone else", () => {
-    const paths = bundle(testGraph(), { language: "es", markdown: true, images: false }).map((file) => file.path);
+    const paths = bundle(testGraph(), { language: "es", markdown: true, images: false, pronunciations: false }).map((file) => file.path);
     expect(paths).toContain("es/picar.yaml");
     expect(paths.some((path) => path.startsWith("en/"))).toBe(false);
-    expect(parse(at(bundle(testGraph(), { language: "es", markdown: true, images: false }), VOCABULARIES_FILE).text))
+    expect(parse(at(bundle(testGraph(), { language: "es", markdown: true, images: false, pronunciations: false }), VOCABULARIES_FILE).text))
       .toHaveLength(1);
   });
 
   it("omits the markdown when it is not wanted", () => {
-    const paths = bundle(testGraph(), { language: "all", markdown: false, images: false }).map((file) => file.path);
+    const paths = bundle(testGraph(), { language: "all", markdown: false, images: false, pronunciations: false }).map((file) => file.path);
     expect(paths.some((path) => path.startsWith("markdown/"))).toBe(false);
   });
 
@@ -340,6 +340,38 @@ describe("reading a bundle", () => {
     const sense = plan.articles.find((article) => article.path === "es/picar.yaml")!.draft.senses[0];
     expect(sense.examples[0].text).toBe("Me pica la nariz.");
     expect(sense.emoji).toBeNull();
+  });
+
+  it("reads a version 9 bundle, dropping the example audio reference that has become a record", () => {
+    const older = [
+      "language: es", "headword: picar", "lemma: picar", "pos: verb", "status: active",
+      "senses:",
+      "  - order: 0",
+      "    definition: Producir comezón.",
+      "    definitionLang: es",
+      "    glosses:",
+      "      - {lang: en, terms: [to itch]}",
+      "    examples:",
+      "      - text: Me pica la nariz.",
+      "        textLang: es",
+      "        origin: manual",
+      "        audioRef: audio/picar.mp3",
+      ""
+    ].join("\n");
+
+    const files = bundle()
+      .filter((file) => !file.path.endsWith(".yaml") || file.path === MANIFEST_FILE
+        || file.path === VOCABULARIES_FILE || file.path === TOPICS_FILE)
+      .map((file) => file.path === MANIFEST_FILE
+        ? { ...file, text: file.text.replace(`schemaVersion: ${SCHEMA_VERSION}`, "schemaVersion: 9") }
+        : file)
+      .concat([{ path: "es/picar.yaml", text: older }]);
+
+    const plan = readBundle(files);
+    expect(plan.problems).toEqual([]);
+    const example = plan.articles.find((article) => article.path === "es/picar.yaml")!.draft.senses[0].examples[0];
+    expect(example.text).toBe("Me pica la nariz.");
+    expect(example.emotion).toBeNull();
   });
 
   it("refuses a bundle from another schema version, naming both", () => {
@@ -574,5 +606,55 @@ describe("re-minting ids", () => {
     expect(minted.senses[0].examples).toEqual([]);
     // The picture survives its anchor: a sentence you deleted must not take the drawing with it.
     expect(minted.senses[0].images[0].exampleId).toBeNull();
+  });
+});
+
+describe("the pronunciations a bundle carries", () => {
+  const withClips: ExportOptions = { language: "all", markdown: false, images: false, pronunciations: true };
+
+  it("names each clip after what it reads, beside its word file", () => {
+    const { files, clips } = pronunciationsIn(testGraph(), withClips);
+    expect(clips.map((clip) => clip.path)).toEqual(["audio/es/picar/headword.mp3"]);
+    expect(clips[0].reference).toBe(testGraph().pronunciations[0].audioRef);
+    const manifest = parse(at(files, "audio/es/picar/clips.yaml").text) as Record<string, unknown>[];
+    expect(manifest[0]).toMatchObject({
+      file: "headword.mp3", target: "lexeme", text: "picar", lang: "es",
+      providerId: "google-tts", modelId: "wavenet", voice: "es-ES-Wavenet-F"
+    });
+    // Off, and neither the manifest nor the clips are in the bundle at all.
+    expect(bundle(testGraph(), { ...withClips, pronunciations: false }).some((file) => file.path.startsWith("audio/"))).toBe(false);
+    expect(bundle(testGraph(), withClips).some((file) => file.path === "audio/es/picar/clips.yaml")).toBe(true);
+  });
+
+  it("leaves out a clip of words its record no longer says", () => {
+    const graph = testGraph();
+    graph.lexemes.find((lexeme) => lexeme.id === "lexemepicar0001")!.headword = "picarse";
+    expect(pronunciationsIn(graph, withClips).clips).toEqual([]);
+  });
+
+  it("puts a clip back on the record that says its words, and keeps who recorded it", async () => {
+    const repository = await emptyReplica();
+    const plan = readBundle(bundle(testGraph(), withClips));
+    expect([...plan.clips.keys()]).toEqual(["es/picar.yaml"]);
+
+    const restored: { target: string; id: string; voice: string | null }[] = [];
+    const report = await importBundle(
+      repository, plan, () => {}, { cancelled: false }, new Map(), null,
+      {
+        files: new Map([["audio/es/picar/headword.mp3", new Uint8Array([1, 2, 3])]]),
+        restore: async (target, id, _bytes, entry) => { restored.push({ target, id, voice: entry.voice }); }
+      }
+    );
+
+    expect(report.pronunciationsRestored).toBe(1);
+    const lexeme = lexemesIn(repository.snapshot(), "es").find((one) => one.headword === "picar")!;
+    expect(restored).toEqual([{ target: "lexeme", id: lexeme.id, voice: "es-ES-Wavenet-F" }]);
+  });
+
+  it("puts nothing back when the bundle carries no recordings", async () => {
+    const repository = await emptyReplica();
+    const plan = readBundle(bundle(testGraph(), withClips));
+    const report = await importBundle(repository, plan, () => {}, { cancelled: false }, new Map(), null, null);
+    expect(report.pronunciationsRestored).toBe(0);
   });
 });

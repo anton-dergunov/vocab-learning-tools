@@ -23,6 +23,7 @@ cleaned only on its way to a log has a path that skips the cleaning, and this re
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -71,6 +72,30 @@ def late(caller: str, provider: str, model: str, outcome: str, seconds: float) -
 
 def exhausted(caller: str, attempts: int, reasons: tuple[str, ...]) -> None:
     logger.error("%s exhausted after %d attempt(s): %s", caller, attempts, ", ".join(reasons))
+
+
+def outcome(caller: str, failed: bool = False, **fields: object) -> None:
+    """What a request did with its answer, one line, beside the attempts `chain.walk` wrote.
+
+    The attempt lines say which pair answered and how fast; they cannot say whether the answer was
+    used, reused from last time, stored, or thrown away because the write after it failed. This line
+    is that, as `key=value` pairs, so `grep 'pronounce-sentence outcome' | grep result=refused` is a
+    question with an answer. Text values are quoted and bounded with `excerpt`, and the shape
+    deliberately matches neither `_OK` nor `_BAD` — its second token has no colon — so `summarise`
+    reads straight past it.
+    """
+    parts = []
+    for name, value in fields.items():
+        if value is None or value == "":
+            continue
+        if isinstance(value, float):
+            rendered = f"{value:.2f}"
+        elif isinstance(value, str) and (not value.isprintable() or any(c in value for c in ' "=')):
+            rendered = json.dumps(excerpt(value), ensure_ascii=False)
+        else:
+            rendered = str(value)
+        parts.append(f"{name}={rendered}")
+    (logger.warning if failed else logger.info)("%s outcome %s", caller, " ".join(parts))
 
 
 # ── reading it back ─────────────────────────────────────────────────────────

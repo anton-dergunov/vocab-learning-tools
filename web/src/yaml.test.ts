@@ -22,7 +22,7 @@ describe("the YAML projection", () => {
     expect(document).toContain("- {lang: en, terms: [to itch]}");
     expect(document).toContain("id: sensepicaritch0");
     // Rendered in the read view, and dropped by the projection before this change.
-    expect(document).toContain("audioRef: audio/picar.mp3");
+    expect(document).toContain("emotion: exasperated, scratching at the collar");
     expect(document).toContain("matchedTranslationForm: itches");
   });
 
@@ -238,7 +238,7 @@ describe("the new-entry template", () => {
           translation: "The pirate costume comes with a hook.", translationLang: "en",
           origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
           videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
-          clipRef: null, imageRef: null, audioRef: null,
+          clipRef: null, imageRef: null, emotion: null,
           note: null, matchedForm: "un garfio", matchedTranslationForm: "hook"
         }]
       }],

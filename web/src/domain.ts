@@ -11,7 +11,10 @@ export type Register = typeof REGISTERS[number];
 export type LexemeStatus = typeof LEXEME_STATUSES[number];
 export type SourceKind = typeof SOURCE_KINDS[number];
 export type ExampleOrigin = typeof EXAMPLE_ORIGINS[number];
-export type EntityKind = "vocabularies" | "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "studyStates";
+export type EntityKind = "vocabularies" | "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "pronunciations" | "studyStates";
+/** What a pronunciation reads: a lexeme's headword, a sense's definition, an example's or an attestation's text. */
+export const PRONUNCIATION_TARGETS = ["lexeme", "sense", "example", "attestation"] as const;
+export type PronunciationTarget = typeof PRONUNCIATION_TARGETS[number];
 
 export interface SyncFields {
   deleted: boolean;
@@ -134,7 +137,11 @@ export interface Example extends SyncFields, OwnedFields {
   /** The corpus's own stable `segment_id`, so the stored text can be audited against the segment. */
   clipRef: string | null;
   imageRef: string | null;
-  audioRef: string | null;
+  /**
+   * How a native speaker would sound saying this sentence, as a short English direction a voice that
+   * takes one can follow. Null reads it neutrally.
+   */
+  emotion: string | null;
   note: string | null;
   matchedForm: string | null;
   matchedTranslationForm: string | null;
@@ -172,6 +179,29 @@ export interface ImagePrompt extends SyncFields, OwnedFields {
   suppressed: boolean;
 }
 
+/**
+ * A recording of one spoken field, made by the server when somebody pressed play.
+ *
+ * Its id is derived from what it reads (`pronunciationId(targetKind, targetId)`), so a field has at
+ * most one clip and recording it again rewrites this row. `text` is the words actually spoken: a
+ * record edited since no longer matches it, and that is what makes the clip stale.
+ */
+export interface Pronunciation extends SyncFields, OwnedFields {
+  id: string;
+  lexemeId: string;
+  targetKind: PronunciationTarget;
+  targetId: string;
+  text: string;
+  lang: string;
+  /** The emotion the voice was actually given, which is null when it could not take one. */
+  emotion: string | null;
+  audioRef: string;
+  audioMime: string;
+  providerId: string;
+  modelId: string;
+  voice: string | null;
+}
+
 export interface StudyState extends SyncFields, OwnedFields {
   id: string;
   lexemeId: string;
@@ -195,6 +225,7 @@ export interface VocabularyGraph {
   attestations: Attestation[];
   examples: Example[];
   imagePrompts: ImagePrompt[];
+  pronunciations: Pronunciation[];
   studyStates: StudyState[];
 }
 
@@ -373,7 +404,7 @@ export function validateGraph(graph: VocabularyGraph): void {
       invariant(record.ownerId === attestation.ownerId, "Example and attestation must have the same owner.");
       invariant(attestation.lexemeId === sense.lexemeId, "Example sense and attestation must belong to one lexeme.");
     }
-    [record.modelId, record.videoRef, record.videoTitle, record.videoChannel, record.clipRef, record.imageRef, record.audioRef, record.note].forEach((value) => optionalString(value, "Example optional field"));
+    [record.modelId, record.videoRef, record.videoTitle, record.videoChannel, record.clipRef, record.imageRef, record.emotion, record.note].forEach((value) => optionalString(value, "Example optional field"));
     [record.videoStart, record.videoEnd].forEach((value) => invariant(value === null || (Number.isSafeInteger(value) && value >= 0), "Example video timing is invalid."));
     // `videoRef` is what every clip field hangs on: a title, a channel, a timing or the corpus's
     // own segment id without one describes a clip that names no video.
@@ -424,6 +455,25 @@ export function validateGraph(graph: VocabularyGraph): void {
     // One direction only. A rendering model with nothing rendered is nonsense; a rendered image
     // with no model is a picture the owner attached themselves.
     invariant(!record.imageModelId || Boolean(record.imageRef), "A rendering model without a rendered image is not a record of anything.");
+  });
+
+  graph.pronunciations.forEach((record) => {
+    remember(record);
+    const lexeme = lexemes.get(record.lexemeId);
+    invariant(lexeme, "Pronunciation references a missing lexeme.");
+    invariant(record.ownerId === lexeme.ownerId, "Pronunciation and lexeme must have the same owner.");
+    oneOf(record.targetKind, PRONUNCIATION_TARGETS, "Pronunciation target kind");
+    const word = record.targetKind === "lexeme" ? lexemes.get(record.targetId)?.id
+      : record.targetKind === "sense" ? senses.get(record.targetId)?.lexemeId
+      : record.targetKind === "attestation" ? attestations.get(record.targetId)?.lexemeId
+      : senses.get(examples.get(record.targetId)?.senseId ?? "")?.lexemeId;
+    invariant(word === record.lexemeId, "A pronounced record must belong to the pronunciation's lexeme.");
+    invariant(record.text.length > 0, "Pronunciation text is required.");
+    language(record.lang, "Pronunciation language");
+    optionalString(record.emotion, "Pronunciation emotion");
+    [record.audioRef, record.audioMime, record.providerId, record.modelId].forEach((value) =>
+      invariant(typeof value === "string" && value.trim().length > 0, "A pronunciation names its file and who recorded it."));
+    optionalString(record.voice, "Pronunciation voice");
   });
 
   graph.studyStates.forEach((record) => {

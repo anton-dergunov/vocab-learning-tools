@@ -64,7 +64,7 @@ def example(sense_id: str, **overrides: Any) -> dict[str, Any]:
         "translation": None, "translationLang": None, "origin": "llm",
         "sourceAttestationId": None, "modelId": "stub-model", "videoRef": None, "videoTitle": None,
         "videoChannel": None, "videoStart": None, "videoEnd": None, "clipRef": None,
-        "imageRef": None, "audioRef": None, "note": None, "matchedForm": None,
+        "imageRef": None, "emotion": None, "note": None, "matchedForm": None,
         "matchedTranslationForm": None, **stamp(), **overrides,
     }
 

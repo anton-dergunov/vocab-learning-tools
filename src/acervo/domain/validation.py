@@ -22,6 +22,13 @@ REGISTER_VALUES = ("neutral", "formal", "colloquial", "slang", "vulgar")
 STATUS_VALUES = ("inbox", "active", "learned", "retired", "suppressed")
 SOURCE_KIND_VALUES = ("web", "book", "conversation", "video", "lesson", "unknown")
 ORIGIN_VALUES = ("attestation", "llm", "tatoeba", "subtitle", "wiktionary", "manual")
+# What a pronunciation reads, and the table and field each one names.
+PRONUNCIATION_TARGETS = {
+    "lexeme": ("lexemes", "headword"),
+    "sense": ("senses", "definition"),
+    "example": ("examples", "text"),
+    "attestation": ("attestations", "text"),
+}
 
 # field -> (required, maximum length). Straight from the bootstrap migration.
 TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
@@ -46,7 +53,7 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
         "text": (True, 5000), "text_lang": (True, 35), "translation": (False, 5000),
         "translation_lang": (False, 35), "model_id": (False, 240), "video_ref": (False, 500),
         "video_title": (False, 500), "video_channel": (False, 500), "clip_ref": (False, 120),
-        "image_ref": (False, 500), "audio_ref": (False, 500),
+        "image_ref": (False, 500), "emotion": (False, 300),
         "note": (False, 2000), "matched_form": (False, 240),
         "matched_translation_form": (False, 240),
     },
@@ -57,6 +64,11 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
         "prompt": (False, 10000), "style_id": (False, 120), "model_id": (False, 240),
         "prompt_version": (False, 128), "image_ref": (False, 500), "image_model_id": (False, 240),
         "failure_reason": (False, 500),
+    },
+    "pronunciations": {
+        "target_id": (True, 15), "text": (True, 5000), "lang": (True, 35), "emotion": (False, 300),
+        "audio_ref": (True, 500), "audio_mime": (True, 80), "provider_id": (True, 80),
+        "model_id": (True, 240), "voice": (False, 120),
     },
     "study_states": {"system": (True, 80)},
 }
@@ -70,6 +82,7 @@ SELECT_RULES: dict[str, dict[str, tuple[tuple[str, ...], bool]]] = {
     },
     "attestations": {"source_kind": (SOURCE_KIND_VALUES, True)},
     "examples": {"origin": (ORIGIN_VALUES, True)},
+    "pronunciations": {"target_kind": (tuple(PRONUNCIATION_TARGETS), True)},
 }
 
 # field -> (minimum, maximum or None)
@@ -294,6 +307,25 @@ def validate(name: str, row: Mapping[str, Any], lookup: Lookup) -> None:
         # modelled everywhere else here — an example the learner wrote carries no `model_id` either.
         if _text(row, "image_model_id") and not _text(row, "image_ref"):
             refuse("A rendering model without a rendered image is not a record of anything.")
+        return
+
+    if name == "pronunciations":
+        lexeme = _related(lookup, "lexemes", _text(row, "lexeme"), "Lexeme")
+        _same_owner(row, lexeme, "Pronunciation")
+        valid_language(row.get("lang"), "Pronunciation language")
+        table, _field = PRONUNCIATION_TARGETS[_text(row, "target_kind")]
+        target = _related(lookup, table, _text(row, "target_id"), "Pronounced record")
+        _same_owner(row, target, "Pronounced record")
+        # Every target must belong to this pronunciation's word; an example reaches it through its
+        # sense, which is the second hop that a record of the right owner but another word would pass.
+        if table == "lexemes":
+            word = target.get("id")
+        elif table == "examples":
+            word = (_related(lookup, "senses", str(target.get("sense") or ""), "Example sense") or {}).get("lexeme")
+        else:
+            word = target.get("lexeme")
+        if word != lexeme.get("id"):
+            refuse("A pronounced record must belong to the pronunciation's lexeme.")
         return
 
     if name == "study_states":

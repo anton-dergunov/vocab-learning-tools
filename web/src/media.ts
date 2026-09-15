@@ -18,7 +18,7 @@
 import { backendSession } from "./api";
 import { createMediaStore, type MediaStore } from "./mediaStore";
 
-const store: MediaStore = createMediaStore();
+const store: MediaStore = createMediaStore("pictures");
 
 interface Held {
   url: string;

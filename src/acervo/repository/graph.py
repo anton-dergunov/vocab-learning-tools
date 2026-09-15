@@ -1,6 +1,6 @@
 """The owner-scoped graph: the cursor, revision allocation, the merge, and the tombstone sweep.
 
-One strictly increasing sequence per owner, shared by all eight tables and never one per table. A
+One strictly increasing sequence per owner, shared by all nine tables and never one per table. A
 record left at revision zero is invisible to every `revision > cursor` pull, permanently and
 silently — the failure has no symptom until someone notices a word missing on another device weeks
 later. The hook this replaces allocated in a save hook because the write route was not the only
@@ -362,6 +362,7 @@ def article_records(owner: str, lexeme_id: str) -> dict[str, list[dict[str, Any]
         "senses": tables.senses.c.lexeme,
         "attestations": tables.attestations.c.lexeme,
         "imagePrompts": tables.image_prompts.c.lexeme,
+        "pronunciations": tables.pronunciations.c.lexeme,
     }
     changes: dict[str, list[dict[str, Any]]] = {collection.key: [] for collection in COLLECTIONS}
     with reading() as connection:
@@ -432,8 +433,57 @@ def image_prompt(owner: str, prompt_id: str) -> dict[str, Any] | None:
     return projected(collection, row) if row is not None else None
 
 
+def lexeme_of(owner: str, kind: str, identifier: str) -> str | None:
+    """The word a live record of this owner's belongs to, or nothing.
+
+    For a pronunciation route, which is addressed by the record it reads and needs the word before
+    it can assemble anything. Nothing covers a missing, deleted or foreign record alike.
+    """
+    with reading() as connection:
+        if kind == "lexeme":
+            table = tables.lexemes
+            column = table.c.id
+        elif kind in ("sense", "attestation"):
+            table = tables.senses if kind == "sense" else tables.attestations
+            column = table.c.lexeme
+        elif kind == "example":
+            examples, senses = tables.examples, tables.senses
+            return connection.execute(
+                select(senses.c.lexeme)
+                .select_from(examples.join(senses, examples.c.sense == senses.c.id))
+                .where(
+                    examples.c.id == identifier, examples.c.owner == owner,
+                    examples.c.deleted.is_(False), senses.c.deleted.is_(False),
+                )
+            ).scalar()
+        else:
+            return None
+        return connection.execute(
+            select(column).where(
+                table.c.id == identifier, table.c.owner == owner, table.c.deleted.is_(False)
+            )
+        ).scalar()
+
+
+def pronunciation(owner: str, pronunciation_id: str) -> dict[str, Any] | None:
+    """One pronunciation this owner holds, in the wire shape, tombstones included, or nothing.
+
+    Tombstones are returned, unlike `image_prompt`, because the id is derived: recording a target
+    again after its clip was removed must revive that row at its stored revision, and a writer that
+    could not see the tombstone would mint an insert the database already holds.
+    """
+    collection = COLLECTION_BY_KEY["pronunciations"]
+    with reading() as connection:
+        row = connection.execute(
+            select(collection.table).where(
+                collection.table.c.id == pronunciation_id, collection.table.c.owner == owner
+            )
+        ).mappings().first()
+    return projected(collection, row) if row is not None else None
+
+
 def held_ids(owner: str) -> set[str]:
-    """Every record id this owner already holds, across all eight tables."""
+    """Every record id this owner already holds, across all nine tables."""
     found: set[str] = set()
     with reading() as connection:
         for collection in COLLECTIONS:

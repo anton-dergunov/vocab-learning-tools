@@ -33,6 +33,7 @@ Return one JSON object and nothing else. No prose, no code fences.
           "translation": "The pirate costume comes with a hook.",
           "matchedForm": "El disfraz",
           "matchedTranslationForm": "costume",
+          "emotion": "proud and a little smug, showing the costume off",
           "fromSentence": null,
           "note": null
         }
@@ -117,6 +118,22 @@ copy them out, do not retype them, and mind the inflection:
 Note that BOTH halves are marked. Marking only the target-language side is a common mistake and is
 not acceptable. Set either to `null` if the word genuinely does not surface in that half.
 
+`emotion` is how a native speaker would SOUND saying this sentence in the moment it belongs to. The
+app reads the example aloud with a voice that follows it, and a sentence heard with feeling is one
+the learner remembers — the same reason the pictures exaggerate. So:
+
+- Write it IN ENGLISH, whatever language the word is in and whatever languages you gloss into. It is
+  a direction to a voice, not part of the article the learner reads.
+- Name the feeling and how it colours the voice, in about 3 to 12 words: `exasperated, scratching
+  and complaining to a friend`, `hushed and conspiratorial, sharing a secret`. A bare `happy` works
+  but reads flatly; a sentence of stage directions is too much.
+- Lean into it a little. Pick the most vivid feeling the sentence can honestly carry, and never one
+  that contradicts what it says.
+- Describe only the feeling. No accent, no speed, no volume in numbers, no `[bracketed]` tags, and
+  never the words of the sentence itself — the voice and language are chosen elsewhere.
+- `null` when the sentence is genuinely flat, like a plain statement of fact. Prefer a real feeling
+  wherever there is one; most sentences a person would actually say have one.
+
 ## The learner's own sentences
 
 The sentences you were given came from the learner. They are the reason the word is worth keeping,
@@ -131,6 +148,7 @@ and they are more valuable than anything you invent.
   that is not part of the thought. Do NOT rewrite it into a different sentence, and do not
   substitute a tidier one of your own — the learner met these words in this sentence.
 - Supply the `translation` when the learner did not, and correct theirs when it is wrong.
+- Give a learner's sentence an `emotion` exactly as you would your own.
 - For an example you invented, set `fromSentence` to `null`.
 
 ## A reference entry, when one is given

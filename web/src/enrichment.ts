@@ -21,12 +21,13 @@
 
 import { AcervoApiError, backendSession, type ImagePromptRow } from "./api";
 import { forget } from "./media";
+import { COLLECTIONS, fill, recordingsWanted, type RecordInAdvance } from "./pronunciation";
 import { repository } from "./repository";
 import { syncEngine } from "./sync";
 
-/** Audio is the next `kind`, not the next engine — clips were the third and went in here. */
+/** Audio is a `kind`, not an engine — clips were the third and went in here, pronunciation the fourth. */
 export type EnrichmentKind = "image" | "clip" | "audio";
-export type EnrichmentPhase = "brief" | "render" | "clips";
+export type EnrichmentPhase = "brief" | "render" | "clips" | "pronounce";
 
 export interface EnrichmentJob {
   id: string;
@@ -81,7 +82,7 @@ export function senseIsBusy(
     unit.lexemeId === lexemeId && (unit.senseId === senseId || (unit.senseId === null && needsOne));
   if (status.waiting.some(aimed)) return true;
   const active = status.active;
-  return Boolean(active && active.kind !== "clip" && aimed(active));
+  return Boolean(active && active.kind === "image" && aimed(active));
 }
 
 const RECENT = 20;
@@ -378,6 +379,9 @@ class EnrichmentEngine {
     }
     if (this.stopped) return;
 
+    await this.pronounce(lexemeId, label, device);
+    if (this.stopped) return;
+
     if (!(await this.drawingIsOn())) return;
 
     if (this.pending(lexemeId).unbriefed) {
@@ -426,6 +430,46 @@ class EnrichmentEngine {
       // Nothing was rested, so every row that could be drawn was drawn. Anything still outstanding
       // is the server's to sweep.
       if (!waited) return;
+    }
+  }
+
+  /**
+   * Record the word's pronunciations in advance, when the owner asked for that in Settings.
+   *
+   * Before pictures, because a recording takes a second or two and a picture a minute — the same
+   * argument that puts clips first. One clip per request, like one picture per request, so a word
+   * with ten examples is ten short calls that each show up and each can be stopped between.
+   */
+  private async pronounce(lexemeId: string, label: string, device: string): Promise<void> {
+    const choice = await this.recordingInAdvance();
+    if (!choice) return;
+    const wanted = recordingsWanted(repository.snapshot(), lexemeId, choice);
+    if (!wanted.length) return;
+    for (const target of wanted) {
+      if (this.stopped || !target.id) return;
+      const job = this.begin(lexemeId, label, "pronounce", null, "audio");
+      try {
+        await backendSession.pronounce(COLLECTIONS[target.kind], target.id, device);
+        this.rest.audio = FIRST_REST;
+        this.finish(job);
+      } catch (error) {
+        this.finish(job, message(error));
+        // A busy provider is waited out once and the rest left for the next press; anything else is
+        // this field's own problem, and the next field may well be fine.
+        if (error instanceof AcervoApiError && RETRY_CODES.has(error.code) && !(await this.rested(error, "audio"))) return;
+      }
+    }
+    await syncEngine.syncNow();
+    void fill();
+  }
+
+  /** Which fields the owner wants recorded in advance, or null when none — or the server is away. */
+  private async recordingInAdvance(): Promise<RecordInAdvance | null> {
+    try {
+      const { pregenerate } = await backendSession.pronunciationSettings();
+      return pregenerate.headword || pregenerate.definitions || pregenerate.examples ? pregenerate : null;
+    } catch {
+      return null;
     }
   }
 

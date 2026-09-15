@@ -28,7 +28,7 @@ function fileOf(bytes: Uint8Array, name: string): File {
 
 function bundleFile(name = "acervo-all-2026-09-01.zip"): File {
   const archive: Record<string, Uint8Array> = {};
-  exportBundle(testGraph(), { language: "all", markdown: false, images: false }, AT)
+  exportBundle(testGraph(), { language: "all", markdown: false, images: false, pronunciations: false }, AT)
     .forEach((file) => { archive[file.path] = strToU8(file.text); });
   return fileOf(zipSync(archive), name);
 }
@@ -36,7 +36,7 @@ function bundleFile(name = "acervo-all-2026-09-01.zip"): File {
 /** The same bundle with a picture beside a word file, the way an export with pictures writes it. */
 function bundleWithPicture(): File {
   const archive: Record<string, Uint8Array> = {};
-  exportBundle(testGraph(), { language: "all", markdown: false, images: false }, AT)
+  exportBundle(testGraph(), { language: "all", markdown: false, images: false, pronunciations: false }, AT)
     .forEach((file) => { archive[file.path] = strToU8(file.text); });
   archive["media/es/picar-1.webp"] = new Uint8Array([1, 2, 3]);
   return fileOf(zipSync(archive), "acervo-all-2026-09-01.zip");
@@ -63,14 +63,15 @@ describe("the export panel", () => {
     ]);
   });
 
-  it("writes a file named after what is in it", () => {
+  it("writes a file named after what is in it", async () => {
     render(<ExportPanel snapshot={snapshotOf()} />);
     fireEvent.click(screen.getByRole("button", { name: "Export…" }));
-    expect(saved!.name).toMatch(/^acervo-all-\d{4}-\d{2}-\d{2}\.zip$/);
+    // Not synchronous any more: the clips this device does not hold are fetched before it is zipped.
+    await waitFor(() => expect(saved!.name).toMatch(/^acervo-all-\d{4}-\d{2}-\d{2}\.zip$/));
 
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "es" } });
     fireEvent.click(screen.getByRole("button", { name: "Export…" }));
-    expect(saved!.name).toMatch(/^acervo-es-\d{4}-\d{2}-\d{2}\.zip$/);
+    await waitFor(() => expect(saved!.name).toMatch(/^acervo-es-\d{4}-\d{2}-\d{2}\.zip$/));
   });
 });
 

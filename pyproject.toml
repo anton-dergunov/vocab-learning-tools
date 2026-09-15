@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 # Kept in step with requirements/core.txt, which is what the containers install.
 dependencies = [
+    "google-auth>=2.40",
     "google-genai>=2.19.0",
     "httpx>=0.28",
     "litellm>=1.100",

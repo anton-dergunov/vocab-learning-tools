@@ -41,3 +41,26 @@ if (typeof Blob !== "undefined" && typeof Blob.prototype.text !== "function") {
 if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = function scrollIntoView() { /* jsdom has no layout */ };
 }
+
+/**
+ * jsdom has no media pipeline and no object URLs: `HTMLMediaElement.prototype.play` logs "not
+ * implemented" and returns nothing, and `URL.createObjectURL` is simply absent.
+ *
+ * A pronunciation is fetched, turned into an object URL and played to its end, so without these
+ * every test that presses a play button would fail on the environment rather than on the code. A
+ * clip here "plays" by finishing on the next tick. A test that cares whether playback was refused
+ * replaces `play` itself.
+ */
+if (typeof URL !== "undefined" && typeof URL.createObjectURL !== "function") {
+  let made = 0;
+  URL.createObjectURL = () => `blob:test/${++made}`;
+  URL.revokeObjectURL = () => undefined;
+}
+
+if (typeof HTMLMediaElement !== "undefined") {
+  HTMLMediaElement.prototype.play = function play(this: HTMLMediaElement) {
+    setTimeout(() => this.dispatchEvent(new Event("ended")));
+    return Promise.resolve();
+  };
+  HTMLMediaElement.prototype.pause = function pause() { /* nothing is playing in jsdom */ };
+}

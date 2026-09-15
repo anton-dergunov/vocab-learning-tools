@@ -24,6 +24,8 @@ import { AskIcon, BackIcon, BookIcon, CaretIcon, FilmIcon, HederaIcon, InfoIcon,
 import type { DiffPart } from "./wordDiff";
 import type { Article, ArticleSense } from "./selectors";
 import { CardPicture, EmptySenseImage, SenseImage, imageStateOf } from "./SenseImage";
+import { keyOf, play, playRuns, useSpeechState, type SayTarget } from "./pronunciation";
+import { runsOf } from "./selectionSpeech";
 
 /* Plain words rather than a grammarian's abbreviations: "noun, feminine", not "n. · f.". */
 const POS_WORD: Record<string, string> = {
@@ -32,7 +34,34 @@ const POS_WORD: Record<string, string> = {
 const REGISTER_WORD: Record<string, string> = { colloquial: "informal", formal: "formal", slang: "slang", vulgar: "vulgar" };
 /** Origins that came out of your own reading rather than a corpus or a model. */
 const OWN_ORIGINS = new Set(["attestation", "manual"]);
-const AUDIO_PENDING = "Audio is not wired up yet";
+
+/** A button press, told what it is reading. */
+type Listen = (target: SayTarget) => void;
+type Notify = (message: string, action?: { label: string; run(): void }) => void;
+
+/**
+ * Play a target and say so in the toast, which is where a bad recording is replaced.
+ *
+ * The toast rather than a control on the page: a button under every sentence to redo its audio would
+ * be a page of buttons, and the moment you know a recording is bad is the moment you have just heard
+ * it — which is exactly when the toast is on screen. Only a stored clip offers it; a proposal's words
+ * are read and kept nowhere, so there is nothing to record again.
+ */
+export function hear(target: SayTarget, onNotify: Notify, again = false): void {
+  void play(target, { again })
+    .then((played) => {
+      if (!played?.stored) return;
+      onNotify(`${again ? "Recorded again" : "Playing"}${played.voice ? ` · ${played.voice}` : ""}`,
+        { label: "Record again", run: () => hear(target, onNotify, true) });
+    })
+    .catch((error: unknown) => onNotify(error instanceof Error ? error.message : "That could not be pronounced."));
+}
+
+/** The headword's play button, for the one place outside an article that has one: the phone's toolbar. */
+export function HeadwordListen({ lexeme, onNotify }: { lexeme: Lexeme; onNotify: Notify }) {
+  return <Say head label={`Listen to ${lexeme.headword}`} target={headwordTarget(lexeme)}
+              onListen={(target) => hear(target, onNotify)} />;
+}
 
 export function grammarWords(lexeme: Lexeme): string {
   const bits = [(POS_WORD[lexeme.pos] ?? lexeme.pos) + (lexeme.gender ? `, ${lexeme.gender}` : "")];
@@ -135,10 +164,16 @@ function DiffText({ text, form, words }: { text: string; form: string | null; wo
       </span>)}</>;
 }
 
-/** A small listen button after a sentence. */
-function Say({ label = "Listen", head = false, onListen }: { label?: string; head?: boolean; onListen(): void }) {
+/** A small listen button after a sentence. Lit while its words are being fetched or heard. */
+function Say({ label = "Listen", head = false, target, onListen }: {
+  label?: string; head?: boolean; target: SayTarget; onListen: Listen;
+}) {
+  const speech = useSpeechState();
+  const key = keyOf(target);
+  const on = speech.busy === key || speech.playing === key;
   return <button
-    type="button" className={`say${head ? " always head" : ""}`} aria-label={label} onClick={onListen}
+    type="button" className={`say${head ? " always head" : ""}${on ? " playing" : ""}`} aria-label={label}
+    aria-busy={speech.busy === key} onClick={() => onListen(target)}
   ><PlayIcon /></button>;
 }
 
@@ -183,7 +218,7 @@ function AskAnchor({ ask, target }: { ask: AskSlot | null; target: AskTarget }) 
 function GlossLine({ gloss }: { gloss: Gloss }) {
   return <div className="gloss-line">
     <span className="lg">{gloss.lang}</span>
-    <span className="tm">{gloss.terms.map((term, index) =>
+    <span className="tm" lang={gloss.lang}>{gloss.terms.map((term, index) =>
       <Fragment key={term}>{index > 0 && " · "}<b>{term}</b></Fragment>)}</span>
   </div>;
 }
@@ -195,6 +230,27 @@ function ClipLine({ clip, onPlay }: { clip: StoredClip; onPlay(): void }) {
   return <button type="button" className="clip-line" onClick={onPlay} aria-label={`Play the clip: ${source}`}>
     <span className="film"><FilmIcon /></span><span className="src">{source}</span>
   </button>;
+}
+
+export const headwordTarget = (lexeme: Lexeme): SayTarget =>
+  ({ kind: "lexeme", id: lexeme.id, text: lexeme.headword, lang: lexeme.language });
+const senseTarget = (sense: Sense): SayTarget =>
+  ({ kind: "sense", id: sense.id, text: sense.definition, lang: sense.definitionLang });
+const exampleTarget = (example: Example): SayTarget =>
+  ({ kind: "example", id: example.id, text: example.text, lang: example.textLang });
+
+/** Every spoken block of an article by its `data-say`, so a selection of one whole block plays its clip. */
+function targetsOf(article: Article, stored: boolean): Map<string, SayTarget> {
+  const found = new Map<string, SayTarget>();
+  const add = (target: SayTarget) => found.set(`${target.kind}:${target.id}`, stored ? target : { ...target, id: null });
+  add(headwordTarget(article.lexeme));
+  article.senses.forEach(({ sense, examples }) => {
+    add(senseTarget(sense));
+    examples.forEach((example) => add(exampleTarget(example)));
+  });
+  article.attestations.forEach((attestation) =>
+    add({ kind: "attestation", id: attestation.id, text: attestation.text, lang: article.lexeme.language }));
+  return found;
 }
 
 function OwnTag() {
@@ -222,8 +278,8 @@ function FoldingSection({ folded, onToggle, rail, className = "", record, childr
   </section>;
 }
 
-function ExampleBlock({ example, onListen, onPlayClip, marks = null, ask = null, label = "" }: {
-  example: Example; onListen(): void; onPlayClip(example: Example): void;
+function ExampleBlock({ example, notesLang, onListen, onPlayClip, marks = null, ask = null, label = "" }: {
+  example: Example; notesLang: string; onListen: Listen; onPlayClip(example: Example): void;
   marks?: MarkSlot | null;
   ask?: AskSlot | null;
   label?: string;
@@ -238,19 +294,19 @@ function ExampleBlock({ example, onListen, onPlayClip, marks = null, ask = null,
   return <div className={`ex${own ? " own" : ""}${clip ? " clip-ex" : ""}${marked(mark)}`} data-record={example.id}>
     <MarkGlyph mark={mark} />
     <div className="ex-text">
-      <p className="t">
+      <p className="t" lang={example.textLang} data-say={`example:${example.id}`}>
         <Spoken text={example.text} form={example.matchedForm} words={moved("text")?.words ?? null}>
-          {!gone && <Say onListen={onListen} />}
+          {!gone && <Say target={exampleTarget(example)} onListen={onListen} />}
         </Spoken>
       </p>
-      {example.translation && <p className="tr">
+      {example.translation && <p className="tr" lang={example.translationLang ?? undefined}>
         <DiffText
           text={example.translation} form={example.matchedTranslationForm}
           words={moved("translation")?.words ?? null}
         />
       </p>}
       {own && <OwnTag />}
-      {example.note && <p className="tr ex-note">
+      {example.note && <p className="tr ex-note" lang={notesLang}>
         ✎ <DiffText text={example.note} form={null} words={moved("note")?.words ?? null} />
       </p>}
       {clip && !gone && <ClipLine clip={clip} onPlay={() => onPlayClip(example)} />}
@@ -259,13 +315,13 @@ function ExampleBlock({ example, onListen, onPlayClip, marks = null, ask = null,
   </div>;
 }
 
-function SenseSection({ entry, index, headword, pictures, clips, folded, onToggle, onListen, onPlayClip,
+function SenseSection({ entry, index, headword, notesLang, pictures, clips, folded, onToggle, onListen, onPlayClip,
                        marks = null, ask = null }: {
-  entry: ArticleSense; index: number; headword: string;
+  entry: ArticleSense; index: number; headword: string; notesLang: string;
   pictures: PictureSlot | null;
   clips: ClipSlot | null;
   folded: boolean; onToggle(): void;
-  onListen(): void;
+  onListen: Listen;
   onPlayClip(example: Example): void;
   marks?: MarkSlot | null;
   ask?: AskSlot | null;
@@ -295,9 +351,9 @@ function SenseSection({ entry, index, headword, pictures, clips, folded, onToggl
     </>}
   >
     <div className="sense-head">
-      <p className={`sense-def${tint(moved("definition"))}`}>
+      <p className={`sense-def${tint(moved("definition"))}`} lang={sense.definitionLang} data-say={`sense:${sense.id}`}>
         <Spoken text={sense.definition} form={null} words={moved("definition")?.words ?? null}>
-          {mark !== "removed" && <Say onListen={onListen} />}
+          {mark !== "removed" && <Say target={senseTarget(sense)} onListen={onListen} />}
         </Spoken>
       </p>
       {/* Where a picture is asked for: the page is for editing, so the control lives here and not on
@@ -321,7 +377,7 @@ function SenseSection({ entry, index, headword, pictures, clips, folded, onToggl
     />}
     {pictures && !record && busy && <EmptySenseImage busy onOpen={() => pictures.open(sense.id, null)} />}
     {orderedExamples(examples).map((example, position) => <ExampleBlock
-      key={example.id} example={example} onListen={onListen} onPlayClip={onPlayClip}
+      key={example.id} example={example} notesLang={notesLang} onListen={onListen} onPlayClip={onPlayClip}
       marks={marks} ask={ask} label={`example ${position + 1} of sense ${index + 1}`}
     />)}
     {/* A search in flight says so; a search that finished empty shows **nothing at all**. The
@@ -331,19 +387,19 @@ function SenseSection({ entry, index, headword, pictures, clips, folded, onToggl
   </FoldingSection>;
 }
 
-function AttestationBlock({ attestation, marks, onListen }: {
-  attestation: Attestation; marks: MarkSlot | null; onListen(): void;
+function AttestationBlock({ attestation, language, glossLang, marks, onListen }: {
+  attestation: Attestation; language: string; glossLang: string | undefined; marks: MarkSlot | null; onListen: Listen;
 }) {
   const mark = marks?.of(attestation.id) ?? null;
   return <div className={`att${marked(mark)}`} data-record={attestation.id}>
     <MarkGlyph mark={mark} />
     <div className="att-text">
-      <p className="t">
+      <p className="t" lang={language} data-say={`attestation:${attestation.id}`}>
         <Spoken text={attestation.text} form={null} words={marks?.field(attestation.id, "text")?.words ?? null}>
-          <Say onListen={onListen} />
+          <Say target={{ kind: "attestation", id: attestation.id, text: attestation.text, lang: language }} onListen={onListen} />
         </Spoken>
       </p>
-      {attestation.translation && <p className="tr">
+      {attestation.translation && <p className="tr" lang={glossLang}>
         <DiffText
           text={attestation.translation} form={null}
           words={marks?.field(attestation.id, "translation")?.words ?? null}
@@ -359,12 +415,12 @@ function AttestationBlock({ attestation, marks, onListen }: {
   </div>;
 }
 
-function NotesList({ notes, marks }: { notes: string[]; marks: MarkSlot | null }) {
+function NotesList({ notes, lang, marks }: { notes: string[]; lang: string; marks: MarkSlot | null }) {
   return <ul className="notes">{notes.map((note, index) => {
     /* Keyed by position, not by text. Text is not an identity — two identical notes shared a
        React key, and a reworded one had no partner to diff against. */
     const change = marks?.note(index) ?? null;
-    return <li key={index} className={marked(change?.mark ?? null).trim()} data-note={index}>
+    return <li key={index} className={marked(change?.mark ?? null).trim()} data-note={index} lang={lang}>
       <MarkGlyph mark={change?.mark ?? null} />
       <DiffText text={note} form={null} words={change?.words ?? null} />
     </li>;
@@ -423,7 +479,7 @@ interface Card {
  */
 function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: {
   article: Article; pictures: PictureSlot | null;
-  onListen(): void; onPlayClip(example: Example): void;
+  onListen: Listen; onPlayClip(example: Example): void;
   onReference?(entry: ExternalEntry | null): void;
 }) {
   const { lexeme } = article;
@@ -468,23 +524,25 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
         aside: false,
         body: <>
           <div className="card-sense">
-            <p className="card-def"><Spoken text={sense.definition} form={null}><Say onListen={onListen} /></Spoken></p>
+            <p className="card-def" lang={sense.definitionLang} data-say={`sense:${sense.id}`}>
+              <Spoken text={sense.definition} form={null}><Say target={senseTarget(sense)} onListen={onListen} /></Spoken>
+            </p>
             {sense.glosses.map((gloss) => <p key={gloss.lang} className="card-gloss">
-              <span className="lg">{gloss.lang}</span>{gloss.terms.join(" · ")}
+              <span className="lg">{gloss.lang}</span><span lang={gloss.lang}>{gloss.terms.join(" · ")}</span>
             </p>)}
           </div>
           <div className={`card-main${quoted ? " quoted" : ""}${bare ? " bare" : ""}`}>
             {visual}
             {quoted && <Hedera side="above" />}
             {example && <div className={`card-ex${OWN_ORIGINS.has(example.origin) ? " own" : ""}${clip ? " clip-ex" : ""}`}>
-              <p className="t">
+              <p className="t" lang={example.textLang} data-say={`example:${example.id}`}>
                 {quoted && <span className="quote-mark" aria-hidden="true">“</span>}
                 <Spoken text={example.text} form={example.matchedForm}>
                   {quoted && <span className="quote-mark" aria-hidden="true">”</span>}
-                  <Say onListen={onListen} />
+                  <Say target={exampleTarget(example)} onListen={onListen} />
                 </Spoken>
               </p>
-              {example.translation && <p className="tr">
+              {example.translation && <p className="tr" lang={example.translationLang ?? undefined}>
                 <Marked text={example.translation} form={example.matchedTranslationForm} />
               </p>}
               {OWN_ORIGINS.has(example.origin) && <OwnTag />}
@@ -500,13 +558,16 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
   });
   if (lexeme.notes.length) cards.push({
     group: "notes", chip: "✎ Notes", aside: true,
-    body: <><h2 className="card-title">Notes</h2><div className="card-main top"><NotesList notes={lexeme.notes} marks={null} /></div></>
+    body: <><h2 className="card-title">Notes</h2><div className="card-main top"><NotesList notes={lexeme.notes} lang={article.notesLang} marks={null} /></div></>
   });
   const met = looseAttestations(article);
   if (met.length) cards.push({
     group: "met", chip: "✳ Met it", aside: true,
     body: <><h2 className="card-title">Where you met it</h2><div className="card-main top">
-      {met.map((attestation) => <AttestationBlock key={attestation.id} attestation={attestation} marks={null} onListen={onListen} />)}
+      {met.map((attestation) => <AttestationBlock
+        key={attestation.id} attestation={attestation} language={lexeme.language} glossLang={article.glossLangs[0]}
+        marks={null} onListen={onListen}
+      />)}
     </div></>
   });
   const dictionaryAt = cards.length;
@@ -585,8 +646,8 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
         {/* The word and its button share one inline line, where `vertical-align: middle` centres the
             button on the word's lowercase letters rather than on the line box. */}
         <div className="cw-line" data-length={lexeme.headword.length > 24 ? "long" : lexeme.headword.length > 14 ? "mid" : "short"}>
-          <h1 className="cw-headword">{lexeme.headword}</h1>
-          <Say head label={`Listen to ${lexeme.headword}`} onListen={onListen} />
+          <h1 className="cw-headword" lang={lexeme.language} data-say={`lexeme:${lexeme.id}`}>{lexeme.headword}</h1>
+          <Say head label={`Listen to ${lexeme.headword}`} target={headwordTarget(lexeme)} onListen={onListen} />
         </div>
         {/* No transcription on a card: the play button is how a word is heard, and the line it took
             is room the card needs more. A reading (pinyin) is part of the word, so it stays. */}
@@ -672,7 +733,7 @@ function cardOnScreen(root: HTMLElement): HTMLElement | null {
  * A floating button above the selection, because a play button on every phrase would be noise and a
  * selection is already the gesture for "this bit".
  */
-function SelectionListen({ root, onListen }: { root: React.RefObject<HTMLElement | null>; onListen(): void }) {
+function SelectionListen({ root, onListen }: { root: React.RefObject<HTMLElement | null>; onListen(range: Range): void }) {
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   useEffect(() => {
     const onChange = () => {
@@ -698,7 +759,10 @@ function SelectionListen({ root, onListen }: { root: React.RefObject<HTMLElement
     type="button" className="sel-say" style={{ left: at.left, top: at.top }}
     // Pressing it must not collapse the selection it is about to read.
     onMouseDown={(event) => event.preventDefault()}
-    onClick={onListen}
+    onClick={() => {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) onListen(selection.getRangeAt(0));
+    }}
   ><PlayIcon /><span>Listen</span></button>;
 }
 
@@ -777,10 +841,13 @@ export interface PictureSlot {
  * to an entry you have. Everything above them is identical, because a proposal and the entry it
  * becomes are the same thing.
  */
-export default function LexemeArticle({ article, onUnsupported, meta = true, view = "page", pictures = null,
+export default function LexemeArticle({ article, onNotify, meta = true, view = "page", pictures = null,
                                        clips = null, marks = null, ask = null,
                                        onReference }: {
-  article: Article; onUnsupported(message: string): void; meta?: boolean;
+  article: Article;
+  /** A toast, with at most one action — "Record again" after a stored pronunciation plays. */
+  onNotify: Notify;
+  meta?: boolean;
   /** Cards never carries marks or the ask anchors: a proposal is reviewed on the page. */
   view?: ArticleView;
   pictures?: PictureSlot | null;
@@ -799,7 +866,18 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, vie
   const playingClip = playing ? storedClipOf(playing) : null;
   /* Every section folds on its own, remembered per word for as long as the article is open. */
   const [folds, setFolds] = useState<Record<string, boolean>>({});
-  const listen = useCallback(() => onUnsupported(AUDIO_PENDING), [onUnsupported]);
+  /* A stored article's buttons play its stored clips. An unsaved proposal — the Add view's preview,
+     or a live proposal's marks — has placeholder ids and words that are not stored yet, so it is read
+     aloud as it stands and nothing is kept. */
+  const stored = meta && !marks;
+  const listen = useCallback((target: SayTarget) => hear(stored ? target : { ...target, id: null }, onNotify),
+    [stored, onNotify]);
+  const listenToSelection = useCallback((range: Range) => {
+    if (!root.current) return;
+    const runs = runsOf(range, root.current, targetsOf(article, stored), lexeme.language);
+    void playRuns(runs).catch((error: unknown) =>
+      onNotify(error instanceof Error ? error.message : "That selection could not be read aloud."));
+  }, [article, stored, lexeme.language, onNotify]);
   useSelectAll(root, view);
 
   const key = (part: string) => `${lexeme.id}:${part}`;
@@ -825,7 +903,7 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, vie
   if (view === "cards") {
     return <div className="article-root cards-root" ref={root}>
       <ArticleCards article={article} pictures={pictures} onListen={listen} onPlayClip={setPlaying} onReference={onReference} />
-      <SelectionListen root={root} onListen={listen} />
+      <SelectionListen root={root} onListen={listenToSelection} />
       {dialog}
     </div>;
   }
@@ -841,10 +919,10 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, vie
           {/* Inline rather than flex: `vertical-align: middle` centres the button on the word's
               lowercase letters, which is where the eye reads the word, at every size it wraps to. */}
           <div className="head-line">
-            <h1 className={`headword${tint(head("headword"))}`}>
+            <h1 className={`headword${tint(head("headword"))}`} lang={lexeme.language} data-say={`lexeme:${lexeme.id}`}>
               <DiffText text={lexeme.headword} form={null} words={head("headword")?.words ?? null} />
             </h1>
-            <Say head label={`Listen to ${lexeme.headword}`} onListen={listen} />
+            <Say head label={`Listen to ${lexeme.headword}`} target={headwordTarget(lexeme)} onListen={listen} />
           </div>
           {lexeme.reading && <div className={`reading${tint(head("reading"))}`}>{lexeme.reading}</div>}
           <div className="pron-row">
@@ -864,6 +942,7 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, vie
         entry={entry}
         index={index}
         headword={lexeme.headword}
+        notesLang={article.notesLang}
         pictures={pictures}
         clips={clips}
         marks={marks}
@@ -878,14 +957,17 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, vie
     {lexeme.notes.length > 0 && <FoldingSection
       folded={isFolded("notes", false)} onToggle={() => toggle("notes", false)}
       rail={<><span className="num">✎</span><span className="label">Notes</span></>}
-    ><NotesList notes={lexeme.notes} marks={marks} /></FoldingSection>}
+    ><NotesList notes={lexeme.notes} lang={article.notesLang} marks={marks} /></FoldingSection>}
 
     {met.length > 0 && <FoldingSection
       folded={isFolded("met", false)} onToggle={() => toggle("met", false)}
       rail={<><span className="num">✳</span><span className="label">Where you met it</span></>}
     >
       {met.map((attestation) =>
-        <AttestationBlock key={attestation.id} attestation={attestation} marks={marks} onListen={listen} />)}
+        <AttestationBlock
+          key={attestation.id} attestation={attestation} language={lexeme.language} glossLang={article.glossLangs[0]}
+          marks={marks} onListen={listen}
+        />)}
     </FoldingSection>}
 
     {meta && <FoldingSection
@@ -902,7 +984,7 @@ export default function LexemeArticle({ article, onUnsupported, meta = true, vie
       rail={<><span className="num"><InfoIcon /></span><span className="label">Details</span></>}
     ><Details article={article} /></FoldingSection>}
 
-    <SelectionListen root={root} onListen={listen} />
+    <SelectionListen root={root} onListen={listenToSelection} />
     {dialog}
   </div>;
 }

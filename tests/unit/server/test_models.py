@@ -54,7 +54,8 @@ def test_both_routes_need_a_signed_in_owner(server):
 def test_with_no_record_every_kind_follows_the_deployment(server):
     readout = models(server)
     assert {kind: chain["source"] for kind, chain in readout["chains"].items()} == {
-        "text": "deployment", "image": "deployment", "audio": "deployment"
+        "text": "deployment", "image": "deployment",
+        "audioPlain": "deployment", "audioExpressive": "deployment",
     }
     assert readout["chains"]["text"]["pairs"] == [
         pair("gemini-free", GEMINI), pair("gemini-free", GEMINI_SECOND)
@@ -64,7 +65,9 @@ def test_with_no_record_every_kind_follows_the_deployment(server):
 def test_it_lists_every_row_including_the_ones_this_server_cannot_use(server):
     """"Why can I not pick Cloudflare" is a question the interface should answer without a shell."""
     rows = {row["id"]: row for row in models(server)["providers"]}
-    assert set(rows) == {"gemini-free", "vertex", "cloudflare", "openai", "openrouter", "ollama-local"}
+    assert set(rows) == {
+        "gemini-free", "vertex", "google-tts", "cloudflare", "openai", "openrouter", "ollama-local"
+    }
     assert rows["gemini-free"]["available"] is True and rows["gemini-free"]["reason"] is None
     assert rows["cloudflare"]["available"] is False
     assert rows["cloudflare"]["reason"] == "CLOUDFLARE_API_TOKEN is not set"
@@ -167,7 +170,7 @@ def test_only_the_kinds_named_change(server, cloudflare):
     choose(server, {"text": [pair("cloudflare", CLOUDFLARE)]})
     readout = models(server)
     assert readout["chains"]["text"]["source"] == "owner"
-    assert readout["chains"]["audio"]["source"] == "deployment"
+    assert readout["chains"]["audioPlain"]["source"] == "deployment"
 
 
 def test_the_owner_may_pin_one_model_of_a_row(server):
@@ -251,10 +254,28 @@ def test_a_refusal_leaves_the_stored_chain_untouched(server, cloudflare):
     choose(server, {"text": [pair("cloudflare", CLOUDFLARE)]})
     answer = choose(server, {
         "text": [pair("gemini-free", GEMINI)],
-        "audio": [pair("gemini-free", "gemini/retired-last-year")],
+        "audioPlain": [pair("gemini-free", "gemini/retired-last-year")],
     })
     assert answer.json()["error"]["code"] == "unknown_model"
     assert models(server)["chains"]["text"]["pairs"] == [pair("cloudflare", CLOUDFLARE)]
+
+
+def test_the_two_speech_chains_start_from_the_catalogues_recommended_orders(server):
+    """A headword wants a clear free voice and an example a voice that can take its emotion, so
+    neither follows plain catalogue order — which would read a headword with a paid Gemini voice."""
+    from acervo.services.models import deployment_chain
+
+    assert deployment_chain(server.settings, "audioPlain")[0] == ("google-tts", "wavenet")
+    assert deployment_chain(server.settings, "audioExpressive")[0] == ("google-tts", "gemini-3.1-flash-tts-preview")
+    choose(server, {"audioExpressive": [pair("google-tts", "wavenet"), pair("gemini-free", "gemini/gemini-3.1-flash-tts-preview")]})
+    stored = models(server)["chains"]["audioExpressive"]
+    assert stored["source"] == "owner"
+    assert stored["pairs"][1] == pair("gemini-free", "gemini/gemini-3.1-flash-tts-preview")
+
+
+def test_a_speech_chain_takes_only_speech_models(server):
+    answer = choose(server, {"audioPlain": [pair("gemini-free", GEMINI)]})
+    assert answer.json()["error"]["code"] == "unknown_model"
 
 
 def test_one_owners_chain_is_invisible_to_another(server, other):

@@ -18,7 +18,7 @@ function graph(): VocabularyGraph {
     id: "sense0000000001", lexemeId: lexeme.id, definition: "Una embarcación sencilla.", definitionLang: "es",
     glosses: [{ lang: "en", terms: ["raft"] }, { lang: "ru", terms: ["плот"] }], domain: null, emoji: null, order: 0, ...sync
   };
-  return { vocabularies: [], topics: [topic], lexemes: [lexeme], senses: [sense], attestations: [], examples: [], imagePrompts: [], studyStates: [] };
+  return { vocabularies: [], topics: [topic], lexemes: [lexeme], senses: [sense], attestations: [], examples: [], imagePrompts: [], pronunciations: [], studyStates: [] };
 }
 
 describe("Acervo domain", () => {
@@ -49,7 +49,7 @@ describe("Acervo domain", () => {
       id: "example00000001", senseId: value.senses[0].id, text: "Tuvo un mareo.", textLang: "es",
       translation: null, translationLang: null, origin: "attestation", sourceAttestationId: "attest000000001",
       modelId: null, videoRef: null, videoTitle: null, videoChannel: null, videoStart: null,
-      videoEnd: null, clipRef: null, imageRef: null, audioRef: null,
+      videoEnd: null, clipRef: null, imageRef: null, emotion: null,
       note: null, matchedForm: null, matchedTranslationForm: null, ...sync
     });
     expect(() => validateGraph(value)).toThrow("one lexeme");

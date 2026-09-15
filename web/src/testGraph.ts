@@ -95,7 +95,7 @@ export function testGraph(): VocabularyGraph {
         textLang: "es", translation: "My nose itches.", translationLang: "en", origin: "attestation",
         sourceAttestationId: "attestpicar0010", modelId: null, videoRef: null, videoTitle: null,
         videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
-        imageRef: null, audioRef: "audio/picar.mp3", note: null,
+        imageRef: null, emotion: "exasperated, scratching at the collar", note: null,
         matchedForm: "pica", matchedTranslationForm: "itches", ...sync("02-11")
       },
       {
@@ -109,7 +109,7 @@ export function testGraph(): VocabularyGraph {
         videoRef: "https://www.youtube.com/watch?v=ebJDiXbeHTY", videoTitle: "Comiendo en un mercado",
         videoChannel: "Easy Spanish", videoStart: 461, videoEnd: 468,
         clipRef: "seg_7c3d18e5b04a92f6de27",
-        imageRef: null, audioRef: null, note: null, matchedForm: "Pica",
+        imageRef: null, emotion: null, note: null, matchedForm: "Pica",
         matchedTranslationForm: "Chop", ...sync("02-11")
       },
       {
@@ -117,7 +117,7 @@ export function testGraph(): VocabularyGraph {
         textLang: "es", translation: "They crossed the river on a raft.", translationLang: "en",
         origin: "llm", sourceAttestationId: null, modelId: "demo-model", videoRef: null,
         videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
-        imageRef: null, audioRef: null, note: null,
+        imageRef: null, emotion: null, note: null,
         matchedForm: null, matchedTranslationForm: null, ...sync("01-22")
       }
     ],
@@ -128,6 +128,14 @@ export function testGraph(): VocabularyGraph {
         seed: 184521, modelId: "demo-prompt", promptVersion: "demo-v1",
         imageRef: "images/lexemepicar0001/imagepicar00010.webp", imageModelId: "demo-painter",
         exampleId: "examplepicar010", attempts: 1, failureReason: null, suppressed: false,
+        ...sync("02-11")
+      }
+    ],
+    pronunciations: [
+      {
+        id: "hl08nur0wl9h0n1", lexemeId: "lexemepicar0001", targetKind: "lexeme", targetId: "lexemepicar0001",
+        text: "picar", lang: "es", emotion: null, audioRef: "audio/lexemepicar0001/hl08nur0wl9h0n1-1a2b3c4d.mp3",
+        audioMime: "audio/mpeg", providerId: "google-tts", modelId: "wavenet", voice: "es-ES-Wavenet-F",
         ...sync("02-11")
       }
     ],

@@ -90,3 +90,32 @@ export function useDefaultArticleView(): ArticleView {
   }, []);
   return view;
 }
+
+/**
+ * Whether pronunciations are kept on this device once heard, remembered per device.
+ *
+ * On by default: a spoken headword is a few kilobytes, and a clip kept is a clip that plays on a
+ * plane. Off means every press asks the server — the choice for a device short on space — and
+ * switching it off forgets what was kept (`pronunciation.ts`). A device fact, like wrapping, so it is
+ * never replicated and never on the server.
+ */
+const PRONUNCIATION_CACHE_KEY = "acervo-pronunciation-cache";
+
+export function pronunciationCacheEnabled(): boolean {
+  return readPreference(PRONUNCIATION_CACHE_KEY, true);
+}
+
+export function setPronunciationCacheEnabled(value: boolean): void {
+  try { localStorage.setItem(PRONUNCIATION_CACHE_KEY, value ? "on" : "off"); } catch { /* a preference, not data */ }
+  window.dispatchEvent(new CustomEvent(PREFERENCES_EVENT));
+}
+
+export function usePronunciationCache(): boolean {
+  const [enabled, setEnabled] = useState(pronunciationCacheEnabled);
+  useEffect(() => {
+    const refresh = () => setEnabled(pronunciationCacheEnabled());
+    window.addEventListener(PREFERENCES_EVENT, refresh);
+    return () => window.removeEventListener(PREFERENCES_EVENT, refresh);
+  }, []);
+  return enabled;
+}

@@ -36,7 +36,8 @@ function catalogue(overrides: Partial<ModelCatalogue> = {}): ModelCatalogue {
     chains: {
       text: { source: "deployment", reason: null, pairs: [pair("gemini-free", GEMINI)] },
       image: { source: "deployment", reason: null, pairs: [] },
-      audio: { source: "deployment", reason: null, pairs: [] }
+      audioPlain: { source: "deployment", reason: null, pairs: [] },
+      audioExpressive: { source: "deployment", reason: null, pairs: [] }
     },
     ...overrides
   };
@@ -124,7 +125,8 @@ describe("the Providers pane", () => {
       chains: {
         text: { source: "owner", reason: null, pairs: [pair("gemini-free", GEMINI)] },
         image: { source: "deployment", reason: null, pairs: [] },
-        audio: { source: "deployment", reason: null, pairs: [] }
+        audioPlain: { source: "deployment", reason: null, pairs: [] },
+        audioExpressive: { source: "deployment", reason: null, pairs: [] }
       }
     });
     vi.spyOn(backendSession, "fetchModels").mockResolvedValue(chosen);
@@ -140,7 +142,8 @@ describe("the Providers pane", () => {
       chains: {
         text: { source: "owner", reason: "no model is switched on for text", pairs: [] },
         image: { source: "deployment", reason: null, pairs: [] },
-        audio: { source: "deployment", reason: null, pairs: [] }
+        audioPlain: { source: "deployment", reason: null, pairs: [] },
+        audioExpressive: { source: "deployment", reason: null, pairs: [] }
       }
     }));
     panel();
@@ -153,7 +156,8 @@ describe("the Providers pane", () => {
       chains: {
         text: { source: "owner", reason: null, pairs: [pair("gemini-free", GEMINI)] },
         image: { source: "deployment", reason: null, pairs: [] },
-        audio: { source: "deployment", reason: null, pairs: [] }
+        audioPlain: { source: "deployment", reason: null, pairs: [] },
+        audioExpressive: { source: "deployment", reason: null, pairs: [] }
       }
     }));
     const save = vi.spyOn(backendSession, "saveModelSelection").mockResolvedValue(catalogue());
@@ -170,7 +174,8 @@ describe("the Providers pane", () => {
           pairs: [pair("gemini-free", GEMINI), pair("gemini-free", GEMINI_SECOND)]
         },
         image: { source: "deployment", reason: null, pairs: [] },
-        audio: { source: "deployment", reason: null, pairs: [] }
+        audioPlain: { source: "deployment", reason: null, pairs: [] },
+        audioExpressive: { source: "deployment", reason: null, pairs: [] }
       }
     });
     vi.spyOn(backendSession, "fetchModels").mockResolvedValue(chosen);
@@ -197,7 +202,8 @@ describe("the Providers pane", () => {
       chains: {
         text: { source: "owner", reason: null, pairs: [pair("gemini-free", GEMINI_SECOND)] },
         image: { source: "deployment", reason: null, pairs: [] },
-        audio: { source: "deployment", reason: null, pairs: [] }
+        audioPlain: { source: "deployment", reason: null, pairs: [] },
+        audioExpressive: { source: "deployment", reason: null, pairs: [] }
       }
     });
     vi.spyOn(backendSession, "fetchModels").mockResolvedValue(catalogue());

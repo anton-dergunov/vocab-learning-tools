@@ -16,6 +16,7 @@ from acervo.api.routes import (
     images,
     mac_release,
     models,
+    pronunciations,
     session,
     speech,
 )
@@ -54,7 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     api = APIRouter(prefix=API_ROOT)
     for module in (health, session, graph, capture, chat, clips, dictionaries, images,
-                   mac_release, models, speech):
+                   mac_release, models, pronunciations, speech):
         api.include_router(module.router)
     app.include_router(api)
 

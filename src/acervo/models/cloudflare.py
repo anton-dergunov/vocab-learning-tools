@@ -68,15 +68,19 @@ def speech(
     model: str,
     words: str,
     *,
+    language: str | None = None,
     voice: str | None = None,
+    style: str | None = None,
     timeout: float = 120.0,
 ) -> tuple[bytes, str]:
-    audio = row.capabilities.get("audio") or {}
+    # `language` and `style` are accepted for the adapter signature and not sent: Aura is one
+    # language per model, and the row says which through `languages`; it takes no direction.
+    audio = row.audio_for(model)
     # Cloudflare's two text-to-speech families disagree about what the field is called: melotts
     # takes `prompt` (plus a `lang`), Deepgram's Aura takes `text` and refuses `prompt`. The row
     # says which, because that is a fact about the model rather than about Cloudflare.
     body: dict[str, Any] = {str(audio.get("inputField") or "prompt"): words}
-    chosen = voice or audio.get("defaultVoice")
+    chosen = voice
     if chosen:
         body["speaker"] = chosen
     payload = _run(row, model, json_body=body, timeout=timeout)

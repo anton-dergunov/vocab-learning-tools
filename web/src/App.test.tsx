@@ -146,7 +146,7 @@ function mockGarfioCapture() {
           // The learner's own sentence, linked to the attestation created by the same save.
           origin: "attestation", sourceAttestationId: "attest000000091", modelId: null,
           videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
-          clipRef: null, imageRef: null, audioRef: null,
+          clipRef: null, imageRef: null, emotion: null,
           note: null, matchedForm: "un garfio", matchedTranslationForm: "hook"
         }]
       }],
@@ -583,12 +583,27 @@ describe("Acervo application", () => {
     expect(await screen.findByRole("button", { name: "Edit as YAML" })).toBeInTheDocument();
   });
 
-  it("says plainly which actions are not connected yet", async () => {
+  it("plays a word's stored pronunciation, and records it again from the toast", async () => {
     signedIn();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ data: null }), blob: async () => new Blob(["ID3"], { type: "audio/mpeg" })
+    }));
+    const pronounce = vi.spyOn(backendSession, "pronounce");
+    // The session is restored by a spy in these tests, so the media address is too.
+    vi.spyOn(backendSession, "mediaFileUrl").mockImplementation((reference) => `${SESSION.baseUrl}/api/acervo/media/${reference}`);
     await openList();
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Listen to picar" }));
-    expect(await screen.findByText("Audio is not wired up yet")).toBeInTheDocument();
+
+    // The replica already names a current clip, so the first press asks the server for nothing.
+    expect(await screen.findByText("Playing · es-ES-Wavenet-F")).toBeInTheDocument();
+    expect(pronounce).not.toHaveBeenCalled();
+
+    const stored = repository.snapshot().pronunciations[0];
+    pronounce.mockResolvedValue({ ...stored, audioRef: "audio/lexemepicar0001/hl08nur0wl9h0n1-99999999.mp3", voice: "es-ES-Wavenet-E" });
+    fireEvent.click(screen.getByRole("button", { name: "Record again" }));
+    expect(await screen.findByText("Recorded again · es-ES-Wavenet-E")).toBeInTheDocument();
+    expect(pronounce).toHaveBeenCalledWith("lexemes", "lexemepicar0001", expect.any(String), true);
   });
 
   it("refuses to build a second entry for a word already in the vocabulary", async () => {

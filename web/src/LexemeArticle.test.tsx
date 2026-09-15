@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import LexemeArticle, { looseAttestations, quietTitle, type PictureSlot } from "./LexemeArticle";
+import { play } from "./pronunciation";
 import { articleFor } from "./selectors";
 import { testGraph } from "./testGraph";
 
@@ -10,6 +11,12 @@ vi.mock("./media", () => ({
   release: vi.fn()
 }));
 vi.mock("./dictionaries", () => ({ lookup: vi.fn(async () => []) }));
+/* What a press does with the audio is `pronunciation.test.ts`'s business; here, what it asks for. */
+vi.mock("./pronunciation", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./pronunciation")>(),
+  play: vi.fn(async () => ({ voice: "es-ES-Wavenet-F", stored: true })),
+  playRuns: vi.fn(async () => undefined)
+}));
 
 const picar = () => articleFor(testGraph(), "lexemepicar0001")!;
 const pictures = (): PictureSlot => ({ open: vi.fn(), busy: () => false });
@@ -36,7 +43,7 @@ describe("the page", () => {
   });
 
   it("folds each section on its own, and starts Details folded", () => {
-    render(<LexemeArticle article={picar()} onUnsupported={() => undefined} />);
+    render(<LexemeArticle article={picar()} onNotify={() => undefined} />);
     const details = screen.getByText("Details").closest("button")!;
     expect(details.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("demo-model")).toBeNull();
@@ -54,7 +61,7 @@ describe("the page", () => {
 
   it("asks for a missing picture from an icon in the sense heading, with no empty frame", () => {
     const slot = pictures();
-    render(<LexemeArticle article={picar()} onUnsupported={() => undefined} pictures={slot} />);
+    render(<LexemeArticle article={picar()} onNotify={() => undefined} pictures={slot} />);
     // The cooking sense has no picture record at all.
     const cooking = document.querySelector<HTMLElement>('[data-record="sensepicarchop0"]')!;
     expect(cooking.querySelector(".sense-image")).toBeNull();
@@ -69,24 +76,48 @@ describe("the page", () => {
   it("shows no frame for a picture that was removed", () => {
     const graph = testGraph();
     graph.imagePrompts[0] = { ...graph.imagePrompts[0], imageRef: null, suppressed: true };
-    render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} onUnsupported={() => undefined} pictures={pictures()} />);
+    render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} onNotify={() => undefined} pictures={pictures()} />);
     const itch = document.querySelector<HTMLElement>('[data-record="sensepicaritch0"]')!;
     expect(itch.querySelector(".sense-image")).toBeNull();
     expect(within(itch).getByRole("button", { name: "Add a picture" })).toBeInTheDocument();
   });
 
-  it("plays nothing yet, and says so rather than failing silently", () => {
+  it("tells each play button what it reads, in that text's own language", async () => {
     const told = vi.fn();
-    render(<LexemeArticle article={picar()} onUnsupported={told} />);
+    render(<LexemeArticle article={picar()} onNotify={told} />);
     fireEvent.click(screen.getByRole("button", { name: "Listen to picar" }));
+    expect(play).toHaveBeenLastCalledWith({ kind: "lexeme", id: "lexemepicar0001", text: "picar", lang: "es" }, { again: false });
     fireEvent.click(screen.getAllByRole("button", { name: "Listen" })[0]);
-    expect(told).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(play).mock.calls[1][0]).toMatchObject({ kind: "sense", id: "sensepicaritch0", lang: "es" });
+  });
+
+  it("offers to record a stored clip again from the toast, and nothing else on the page", async () => {
+    const told = vi.fn();
+    render(<LexemeArticle article={picar()} onNotify={told} />);
+    fireEvent.click(screen.getByRole("button", { name: "Listen to picar" }));
+    await waitFor(() => expect(told).toHaveBeenCalledWith("Playing · es-ES-Wavenet-F", expect.objectContaining({ label: "Record again" })));
+    told.mock.calls[0][1].run();
+    expect(play).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "lexeme" }), { again: true });
+  });
+
+  it("reads an unsaved proposal aloud as it stands and keeps nothing", () => {
+    render(<LexemeArticle article={picar()} onNotify={() => undefined} meta={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Listen to picar" }));
+    expect(play).toHaveBeenLastCalledWith(expect.objectContaining({ id: null, text: "picar" }), { again: false });
+  });
+
+  it("marks every spoken block with its language, so a selection can be read in the right one", () => {
+    const { container } = render(<LexemeArticle article={picar()} onNotify={() => undefined} />);
+    expect(container.querySelector("h1.headword")?.getAttribute("lang")).toBe("es");
+    const example = container.querySelector('[data-say="example:examplepicar010"]');
+    expect(example?.getAttribute("lang")).toBe("es");
+    expect(example?.parentElement?.querySelector(".tr")?.getAttribute("lang")).toBe("en");
   });
 });
 
 describe("cards", () => {
   it("gives each sense a card per sentence, then the sections after them", () => {
-    render(<LexemeArticle article={picar()} view="cards" onUnsupported={() => undefined} pictures={pictures()} />);
+    render(<LexemeArticle article={picar()} view="cards" onNotify={() => undefined} pictures={pictures()} />);
     const nav = within(screen.getByRole("navigation", { name: "Senses and sections" }));
     // A sense with no label is its number; one with a label shows its emoji and the label.
     expect(nav.getByRole("button", { name: "1" })).toBeInTheDocument();
@@ -100,7 +131,7 @@ describe("cards", () => {
   });
 
   it("keeps the definition on the card with its sentence and marks your own", () => {
-    render(<LexemeArticle article={picar()} view="cards" onUnsupported={() => undefined} pictures={pictures()} />);
+    render(<LexemeArticle article={picar()} view="cards" onNotify={() => undefined} pictures={pictures()} />);
     const first = document.querySelector<HTMLElement>('[data-card="0"]')!;
     expect(reads("My nose itches.", first)).toBe(true);
     expect(first.querySelector(".card-def")!.textContent).toBe("Producir comezón.");
@@ -111,7 +142,7 @@ describe("cards", () => {
     const graph = testGraph();
     graph.imagePrompts[0] = { ...graph.imagePrompts[0], imageRef: null, attempts: 0 };
     const busy: PictureSlot = { open: vi.fn(), busy: () => true };
-    render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} view="cards" onUnsupported={() => undefined} pictures={busy} />);
+    render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} view="cards" onNotify={() => undefined} pictures={busy} />);
     const itch = document.querySelector<HTMLElement>('[data-card="0"]')!;
     expect(itch.querySelector(".card-frame .sense-image-frame")).not.toBeNull();
     expect(within(itch).getByText("Drawing…")).toBeInTheDocument();
@@ -125,7 +156,7 @@ describe("cards", () => {
       id: "examplepicar011", origin: "tatoeba", sourceAttestationId: null,
       text: "La lana pica.", translation: "Wool itches.", matchedForm: "pica", matchedTranslationForm: "itches"
     });
-    render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} view="cards" onUnsupported={() => undefined} pictures={pictures()} />);
+    render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} view="cards" onNotify={() => undefined} pictures={pictures()} />);
     const second = document.querySelector<HTMLElement>('[data-card="1"]')!;
     // Between two ivy leaves, and closed as well as opened — the marks are not part of the text.
     expect(second.querySelector(".card-main.quoted .card-ornament.above")).not.toBeNull();
@@ -139,7 +170,7 @@ describe("cards", () => {
   });
 
   it("puts a picture on the card it was drawn from, and nothing where there is none", async () => {
-    render(<LexemeArticle article={picar()} view="cards" onUnsupported={() => undefined} pictures={pictures()} />);
+    render(<LexemeArticle article={picar()} view="cards" onNotify={() => undefined} pictures={pictures()} />);
     const itch = document.querySelector<HTMLElement>('[data-card="0"]')!;
     expect(await within(itch).findByRole("img")).toBeInTheDocument();
     // A card is for reading: the picture does not open the picture dialog.

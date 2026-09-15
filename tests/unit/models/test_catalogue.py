@@ -218,8 +218,36 @@ def test_serving_keeps_catalogue_order():
     """Row order is the default preference order, so it is load-bearing rather than cosmetic."""
     assert [row.id for row in SHIPPED.serving("text")][:3] == ["gemini-free", "vertex", "cloudflare"]
     assert [row.id for row in SHIPPED.serving("audio")] == [
-        "gemini-free", "vertex", "cloudflare", "openai"
+        "gemini-free", "vertex", "google-tts", "cloudflare", "openai"
     ]
+
+
+def test_speech_capabilities_are_declared_per_model_and_widen_from_the_most_specific_tag():
+    google = SHIPPED.find("google-tts")
+    assert google.style_for("wavenet") == "none"
+    assert google.style_for("gemini-3.1-flash-tts-preview") == "instruction"
+    assert google.speaks("wavenet", "zh-Hant") and not google.speaks("wavenet", "fr")
+    assert google.speaks("gemini-2.5-flash-tts", "fr")
+    assert google.locale_for("wavenet", "zh-Hant") == "cmn-TW"
+    assert google.locale_for("wavenet", "es-MX") == "es-ES"
+    assert google.voices_for("standard", "ru")[0] == "ru-RU-Standard-A"
+    assert SHIPPED.find("cloudflare").speaks("@cf/deepgram/aura-1", "en")
+    assert not SHIPPED.find("cloudflare").speaks("@cf/deepgram/aura-1", "es")
+
+
+def test_the_speech_chains_have_recommended_orders_that_name_real_pairs():
+    assert SHIPPED.default_chains["audioPlain"][0] == ("google-tts", "wavenet")
+    assert SHIPPED.default_chains["audioExpressive"][0] == ("google-tts", "gemini-3.1-flash-tts-preview")
+
+
+def test_an_audio_declaration_for_a_model_the_row_does_not_offer_is_refused(tmp_path):
+    document = json.loads(CATALOGUE_PATH.read_text(encoding="utf-8"))
+    google = next(row for row in document["providers"] if row["id"] == "google-tts")
+    google["capabilities"]["audio"]["models"]["chirp"] = {"style": "none"}
+    path = tmp_path / "catalogue.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(CatalogueError, match="does not offer"):
+        load_catalogue(path)
 
 
 def test_params_are_data_rather_than_code():

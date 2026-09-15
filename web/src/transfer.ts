@@ -17,7 +17,7 @@
 
 import { Document, isScalar, isSeq, parse, Scalar, visit } from "yaml";
 import { SCHEMA_VERSION } from "./api";
-import type { Lexeme, TopicInput, VocabularyGraph, VocabularyInput } from "./domain";
+import type { Lexeme, PronunciationTarget, TopicInput, VocabularyGraph, VocabularyInput } from "./domain";
 import { newId } from "./ids";
 import { markdownFor } from "./markdown";
 import type { AcervoRepository } from "./repository";
@@ -36,6 +36,8 @@ export const VOCABULARIES_FILE = "vocabularies.yaml";
 export const TOPICS_FILE = "topics.yaml";
 export const MARKDOWN_DIRECTORY = "markdown";
 export const MEDIA_DIRECTORY = "media";
+export const AUDIO_DIRECTORY = "audio";
+export const CLIPS_FILE = "clips.yaml";
 
 const RESERVED = [MANIFEST_FILE, VOCABULARIES_FILE, TOPICS_FILE];
 
@@ -57,6 +59,14 @@ export interface ExportOptions {
    * from the server, or from this device's cache if it happens to hold them.
    */
   images: boolean;
+  /**
+   * Whether to carry the pronunciation clips, with who recorded each one.
+   *
+   * On by default, unlike pictures: a clip is a few kilobytes, and a voice you have listened to for
+   * a month is worth keeping even though it could be recorded again. Like pictures, the bytes come
+   * from this device where it has them and from the server where it does not.
+   */
+  pronunciations: boolean;
 }
 
 /* ── filenames ──────────────────────────────────────────────────────────
@@ -239,6 +249,77 @@ export function picturesIn(graph: VocabularyGraph, options: ExportOptions): Bund
   return pictures;
 }
 
+/** One clip to carry: where it goes in the bundle, and the reference its bytes come from. */
+export interface BundleClip {
+  path: string;
+  reference: string;
+}
+
+/**
+ * What a bundle says about one clip, beside the file. `target` and `text` are how it finds its
+ * record again: a clip of a sentence belongs to whichever record says that sentence.
+ */
+export interface ClipEntry {
+  file: string;
+  target: PronunciationTarget;
+  text: string;
+  lang: string;
+  emotion: string | null;
+  providerId: string;
+  modelId: string;
+  voice: string | null;
+}
+
+const extensionOf = (reference: string) => reference.split(".").pop() || "mp3";
+
+/**
+ * Which clips a bundle would carry, and the per-word `clips.yaml` that describes them.
+ *
+ * Under `audio/<language>/<slug>/`, beside the word file of the same slug, and named for what they
+ * read — `headword.mp3`, `example-2-1.mp3` — so the directory can be browsed and played by ear.
+ * Only a clip that still says what its record says: a stale one is a recording of words the word no
+ * longer has, and carrying it would import it as current.
+ */
+export function pronunciationsIn(graph: VocabularyGraph, options: ExportOptions): { files: BundleFile[]; clips: BundleClip[] } {
+  const present = languageOptions(graph).map((option) => option.code);
+  const languages = options.language === "all" ? present : present.filter((code) => code === options.language);
+  const files: BundleFile[] = [];
+  const clips: BundleClip[] = [];
+  const live = graph.pronunciations.filter((clip) => !clip.deleted);
+
+  languages.forEach((language) => {
+    const words = lexemesIn(graph, language)
+      .slice()
+      .sort((left, right) => left.lemma.localeCompare(right.lemma) || left.id.localeCompare(right.id));
+    const names = uniqueNames(words);
+    words.forEach((lexeme) => {
+      const article = articleFor(graph, lexeme.id);
+      if (!article) return;
+      const directory = `${AUDIO_DIRECTORY}/${language}/${names.get(lexeme.id)}`;
+      const entries: ClipEntry[] = [];
+      const carry = (target: PronunciationTarget, id: string, text: string, name: string) => {
+        const clip = live.find((one) => one.targetKind === target && one.targetId === id && one.text === text);
+        if (!clip) return;
+        const file = `${name}.${extensionOf(clip.audioRef)}`;
+        clips.push({ path: `${directory}/${file}`, reference: clip.audioRef });
+        entries.push({
+          file, target, text: clip.text, lang: clip.lang, emotion: clip.emotion,
+          providerId: clip.providerId, modelId: clip.modelId, voice: clip.voice
+        });
+      };
+      carry("lexeme", lexeme.id, lexeme.headword, "headword");
+      article.senses.forEach(({ sense, examples }, index) => {
+        carry("sense", sense.id, sense.definition, `definition-${index + 1}`);
+        examples.forEach((example, position) => carry("example", example.id, example.text, `example-${index + 1}-${position + 1}`));
+      });
+      article.attestations.forEach((attestation, index) =>
+        carry("attestation", attestation.id, attestation.text, `attestation-${index + 1}`));
+      if (entries.length) files.push({ path: `${directory}/${CLIPS_FILE}`, text: document(entries) });
+    });
+  });
+  return { files, clips };
+}
+
 export function exportBundle(graph: VocabularyGraph, options: ExportOptions, exportedAt: string): BundleFile[] {
   const present = languageOptions(graph).map((option) => option.code);
   const languages = options.language === "all"
@@ -291,7 +372,8 @@ export function exportBundle(graph: VocabularyGraph, options: ExportOptions, exp
     },
     { path: VOCABULARIES_FILE, text: document(vocabularyRecords) },
     { path: TOPICS_FILE, text: document(topicRecords) },
-    ...files
+    ...files,
+    ...(options.pronunciations ? pronunciationsIn(graph, options).files : [])
   ];
 }
 
@@ -311,6 +393,8 @@ export interface BundlePlan {
   vocabularies: VocabularyInput[];
   topics: TopicInput[];
   articles: { path: string; draft: ArticleDraft }[];
+  /** Word file path (`es/picar.yaml`) → the clips its `clips.yaml` describes. */
+  clips: Map<string, ClipEntry[]>;
   problems: BundleProblem[];
 }
 
@@ -339,6 +423,10 @@ export interface BundlePlan {
  * is the one rewrite here: the line is dropped from each word file. It carried no information —
  * nothing ever set it true — so there is nothing to carry forward.
  *
+ * Version 10 added an optional `emotion` to an example, which an older file simply lacks, and removed
+ * an example's `audioRef`, a pasted reference nothing ever generated. That line is dropped the way
+ * `approved` is; a clip is its own record now, carried under `audio/` rather than in the word file.
+ *
  * `clipsSearchedAt` is deliberately not in the format at all. It is state the server keeps, like a
  * picture's attempt counter, so an imported word arrives never-consulted and the sweep finds it —
  * which is the right answer for a word that has just changed accounts.
@@ -347,13 +435,18 @@ export interface BundlePlan {
  * the sentence it illustrates and does not get an anchor invented for it — matching by position or
  * by text would be a guess, and a wrong anchor puts the picture under the wrong sentence.
  */
-const READABLE = new Set([SCHEMA_VERSION, 8, 7, 6]);
+const READABLE = new Set([SCHEMA_VERSION, 9, 8, 7, 6]);
 
 function upgradeBundle(files: BundleFile[], from: number): BundleFile[] {
   if (from === SCHEMA_VERSION) return files;
   if (READABLE.has(from)) {
     return files.map((file) => isWordFile(file.path)
-      ? { ...file, text: file.text.replace(/^[ \t]*approved:[ \t]*(?:true|false)[ \t]*\r?\n/gm, "") }
+      ? {
+          ...file,
+          text: file.text
+            .replace(/^[ \t]*approved:[ \t]*(?:true|false)[ \t]*\r?\n/gm, "")
+            .replace(/^[ \t]*audioRef:.*\r?\n/gm, "")
+        }
       : file);
   }
   throw new Error(
@@ -375,6 +468,7 @@ function isWordFile(path: string): boolean {
   if (RESERVED.includes(path)) return false;
   if (path.startsWith(`${MARKDOWN_DIRECTORY}/`)) return false;
   if (path.startsWith(`${MEDIA_DIRECTORY}/`)) return false;
+  if (path.startsWith(`${AUDIO_DIRECTORY}/`)) return false;
   if (!/\.ya?ml$/i.test(path)) return false;
   return path.split("/").length <= 2;
 }
@@ -470,7 +564,24 @@ export function readBundle(input: BundleFile[]): BundlePlan {
       }
     });
 
-  return { schemaVersion, vocabularies: vocabularyRecords, topics: topicRecords, articles, problems };
+  const clips = new Map<string, ClipEntry[]>();
+  files
+    .filter((file) => file.path.startsWith(`${AUDIO_DIRECTORY}/`) && file.path.endsWith(`/${CLIPS_FILE}`))
+    .forEach((file) => {
+      const word = `${file.path.slice(AUDIO_DIRECTORY.length + 1, -(CLIPS_FILE.length + 1))}.yaml`;
+      const entries = readRecords<ClipEntry>(files, file.path, problems, (raw) => {
+        const target = text(raw.target) as PronunciationTarget | null;
+        const said = typeof raw.text === "string" ? raw.text : null;
+        const [fileName, lang, providerId, modelId] = [text(raw.file), text(raw.lang), text(raw.providerId), text(raw.modelId)];
+        if (!fileName || !target || !["lexeme", "sense", "example", "attestation"].includes(target) || !said || !lang || !providerId || !modelId) {
+          throw new Error("does not say which file, record, words and model it is.");
+        }
+        return { file: fileName, target, text: said, lang, emotion: text(raw.emotion), providerId, modelId, voice: text(raw.voice) };
+      });
+      if (entries.length) clips.set(word, entries);
+    });
+
+  return { schemaVersion, vocabularies: vocabularyRecords, topics: topicRecords, articles, clips, problems };
 }
 
 /* ── importing ──────────────────────────────────────────────────────────*/
@@ -481,6 +592,8 @@ export interface ImportReport {
   added: number;
   /** Pictures put back from the bundle's `media/` directory. */
   picturesRestored: number;
+  /** Pronunciations put back from the bundle's `audio/` directory. */
+  pronunciationsRestored: number;
   skipped: { language: string; headword: string }[];
   failed: BundleProblem[];
   /** True when the run stopped early: the server went away, or the owner cancelled. */
@@ -504,6 +617,15 @@ export type RestorePicture = (
 
 /** `media/<language>/<slug>-<sense number>.webp` -> its bytes, as the zip holds them. */
 export type BundlePictures = ReadonlyMap<string, Uint8Array>;
+
+/** Put one clip back on the record it reads, with who recorded it. The same callback shape as a picture. */
+export type RestoreClip = (target: PronunciationTarget, id: string, bytes: Uint8Array, entry: ClipEntry) => Promise<void>;
+
+/** The bundle's clip files by path, and how to put one back — or nothing, when that was switched off. */
+export interface BundleRecordings {
+  files: ReadonlyMap<string, Uint8Array>;
+  restore: RestoreClip;
+}
 
 const DISCONNECTED = "not connected to the server";
 
@@ -574,10 +696,11 @@ export async function importBundle(
   onProgress: (done: number, total: number) => void = () => {},
   signal: ImportSignal = { cancelled: false },
   pictures: BundlePictures = new Map(),
-  restore: RestorePicture | null = null
+  restore: RestorePicture | null = null,
+  recordings: BundleRecordings | null = null
 ): Promise<ImportReport> {
   const report: ImportReport = {
-    vocabulariesAdded: 0, topicsAdded: 0, added: 0, picturesRestored: 0,
+    vocabulariesAdded: 0, topicsAdded: 0, added: 0, picturesRestored: 0, pronunciationsRestored: 0,
     skipped: [], failed: [], aborted: false
   };
 
@@ -644,6 +767,7 @@ export async function importBundle(
       report.picturesRestored += await restorePictures(
         repository, lexemeId, path, draft, pictures, restore, report
       );
+      report.pronunciationsRestored += await restoreClips(repository, lexemeId, plan.clips.get(path) ?? [], path, recordings, report);
     } catch (error) {
       report.failed.push({ path, message: messageOf(error) });
       if (disconnected(error)) return { ...report, aborted: true };
@@ -699,6 +823,52 @@ async function restorePictures(
         path: name,
         message: error instanceof Error ? error.message : String(error)
       });
+    }
+  }
+  return restored;
+}
+
+/**
+ * Put a word's clips back, each on the record that says its words.
+ *
+ * Matched by **text**, which is the one place in a bundle where that is right rather than a guess: a
+ * clip is a recording of particular words, so the record it belongs to is whichever record now says
+ * them, and the server refuses it anyway if the words differ. A clip with no such record is left out
+ * quietly — the word file was edited after the export, and the recording is of something else.
+ */
+async function restoreClips(
+  repository: AcervoRepository,
+  lexemeId: string,
+  entries: ClipEntry[],
+  path: string,
+  recordings: BundleRecordings | null,
+  report: ImportReport
+): Promise<number> {
+  if (!recordings || !entries.length) return 0;
+  const graph = repository.snapshot();
+  const live = <T extends { deleted: boolean }>(records: T[]) => records.filter((record) => !record.deleted);
+  const senses = live(graph.senses).filter((sense) => sense.lexemeId === lexemeId);
+  const senseIds = new Set(senses.map((sense) => sense.id));
+  const find = (entry: ClipEntry): string | undefined => {
+    switch (entry.target) {
+      case "lexeme": return graph.lexemes.find((lexeme) => lexeme.id === lexemeId && lexeme.headword === entry.text)?.id;
+      case "sense": return senses.find((sense) => sense.definition === entry.text)?.id;
+      case "example": return live(graph.examples).find((example) => senseIds.has(example.senseId) && example.text === entry.text)?.id;
+      case "attestation": return live(graph.attestations).find((one) => one.lexemeId === lexemeId && one.text === entry.text)?.id;
+    }
+  };
+  const directory = `${AUDIO_DIRECTORY}/${path.replace(/\.ya?ml$/i, "")}`;
+  let restored = 0;
+  for (const entry of entries) {
+    const name = `${directory}/${entry.file}`;
+    const bytes = recordings.files.get(name) ?? bySuffix(recordings.files, name);
+    const id = find(entry);
+    if (!bytes || !id) continue;
+    try {
+      await recordings.restore(entry.target, id, bytes, entry);
+      restored += 1;
+    } catch (error) {
+      report.failed.push({ path: name, message: error instanceof Error ? error.message : String(error) });
     }
   }
   return restored;

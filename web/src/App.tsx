@@ -21,10 +21,10 @@ import {
   externalEntryOf, EXTERNAL_ROW_LIMIT, mergeHits, referenceTextOf,
   type ExternalEntry, type ExternalRow, type RawHit
 } from "./externalEntries";
-import { BackIcon, GearIcon, MoreIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
+import { BackIcon, GearIcon, MoreIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
 import { useDefaultArticleView, type ArticleView } from "./editorPreferences";
 import LexemeArticle, {
-  type AskSlot, type AskTarget, type ClipSlot, type MarkSlot, type PictureSlot
+  type AskSlot, type AskTarget, type ClipSlot, type MarkSlot, type PictureSlot, HeadwordListen
 } from "./LexemeArticle";
 import LexemeList, { type ExternalSearch } from "./LexemeList";
 import { languageOf } from "./languages";
@@ -51,6 +51,7 @@ import { syncEngine } from "./sync";
 import { enrichment, senseIsBusy } from "./enrichment";
 import { ImageDialog } from "./ImageDialog";
 import { clearPictures, forget } from "./media";
+import { fill, forgetPronunciations } from "./pronunciation";
 import { SyncChip } from "./SyncStatus";
 import { ActivityChip, ActivityPanel } from "./ActivityPanel";
 import {
@@ -264,6 +265,12 @@ export default function App() {
   }, []);
 
   const syncStatus = useSyncExternalStore(syncEngine.subscribe, syncEngine.getStatus);
+
+  /* After every pull, bring the clips the replica names onto this device, so a word recorded on
+     another device, or in advance, plays on a plane. `fill` does nothing while keeping is off. */
+  useEffect(() => {
+    if (syncStatus.lastPulledAt) void fill();
+  }, [syncStatus.lastPulledAt]);
 
   useEffect(() => { void backendSession.restore().then(setSession); }, []);
 
@@ -926,6 +933,7 @@ export default function App() {
     // source answered under this one survives into it.
     forgetCachedLookups();
     await clearPictures();
+    await forgetPronunciations();
     await backendSession.logout();
     await repository.clear();
     setSnapshot(null);
@@ -1097,7 +1105,7 @@ export default function App() {
                 <span className="art-title-word" data-length={article.lexeme.headword.length > 24 ? "long" : article.lexeme.headword.length > 14 ? "mid" : "short"}>
                   {article.lexeme.headword}
                 </span>
-                <button className="say always head" aria-label={`Listen to ${article.lexeme.headword}`} onClick={() => notify("Audio is not wired up yet")}><PlayIcon /></button>
+                <HeadwordListen lexeme={article.lexeme} onNotify={notify} />
               </div>}
               <span className="spacer" />
               <div className="seg art-views">
@@ -1148,7 +1156,7 @@ export default function App() {
                   external={externalSearch}
                 />
               : mode === "read" ? <LexemeArticle
-                  article={article} view={view} onUnsupported={notify} pictures={pictures} clips={clips}
+                  article={article} view={view} onNotify={notify} pictures={pictures} clips={clips}
                   marks={markSlot} ask={askSlot} onReference={setReference}
                 />
               // Editing is a composer above, so only reading and the read-only projection get here.

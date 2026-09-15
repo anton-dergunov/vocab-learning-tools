@@ -27,8 +27,8 @@ from sqlalchemy import (
 
 metadata = MetaData()
 
-# The eight replicated tables, in graph order: topics before lexemes, lexemes before senses and
-# attestations, those before examples and sense-linked image prompts. Applying a batch in this order
+# The nine replicated tables, in graph order: topics before lexemes, lexemes before senses and
+# attestations, those before examples, sense-linked image prompts and pronunciations. Applying a batch in this order
 # means a relation always resolves, so it is also the merge order the write route uses — and,
 # reversed and with the first two dropped, the tombstone order.
 REPLICATED = (
@@ -39,6 +39,7 @@ REPLICATED = (
     "attestations",
     "examples",
     "image_prompts",
+    "pronunciations",
     "study_states",
 )
 
@@ -139,6 +140,24 @@ image_settings = Table(
     Column("boost_variety", Boolean, nullable=False, default=True),
     Column("edited_at", String(24), nullable=False),
     Index("idx_image_settings_owner", "owner", unique=True),
+)
+
+pronunciation_settings = Table(
+    "pronunciation_settings",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    # Which spoken fields are recorded when a word is saved, rather than on first press:
+    # {"headword": bool, "definitions": bool, "examples": bool}. Only target-language text is
+    # recorded in advance; everything else waits until somebody presses play.
+    Column("pregenerate", JSON, nullable=False, default=dict),
+    # Whether an example is spoken with its emotion by a voice that can take one.
+    Column("expressive", Boolean, nullable=False, default=True),
+    # The owner's voice per model per language: {provider: {model: {language: voice}}}. Absent means
+    # the first voice the catalogue declares, so a voice list that grows never changes a choice.
+    Column("voices", JSON, nullable=False, default=dict),
+    Column("edited_at", String(24), nullable=False),
+    Index("idx_pronunciation_settings_owner", "owner", unique=True),
 )
 
 clip_settings = Table(
@@ -282,7 +301,9 @@ examples = Table(
     # segment it names at any time. Not a foreign key: the corpus is a separate service.
     Column("clip_ref", String(120), nullable=False, default=""),
     Column("image_ref", String(500), nullable=False, default=""),
-    Column("audio_ref", String(500), nullable=False, default=""),
+    # How a native speaker would sound saying this sentence, as a short English direction a voice
+    # that takes one can follow ("exasperated, scratching and complaining"). Empty is neutral.
+    Column("emotion", String(300), nullable=False, default=""),
     Column("note", String(2000), nullable=False, default=""),
     Column("matched_form", String(240), nullable=False, default=""),
     Column("matched_translation_form", String(240), nullable=False, default=""),
@@ -322,6 +343,33 @@ image_prompts = Table(
     Index("idx_image_prompts_owner_revision", "owner", "revision"),
     Index("idx_image_prompts_owner_lexeme", "owner", "lexeme"),
     Index("idx_image_prompts_owner_sense", "owner", "sense"),
+)
+
+pronunciations = Table(
+    "pronunciations",
+    metadata,
+    # `pronunciation_id(target_kind, target_id)`, derived rather than random, so a record has at most
+    # one clip per spoken field and recording it again rewrites that row instead of adding a second.
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    Column("lexeme", String(15), ForeignKey("lexemes.id", ondelete="CASCADE"), nullable=False),
+    # What was read: the headword of a lexeme, the definition of a sense, the text of an example or an
+    # attestation. Not a foreign key, because it points at one of four tables; validation resolves it.
+    Column("target_kind", String(16), nullable=False),
+    Column("target_id", String(15), nullable=False),
+    # The words actually spoken, so a clip whose record has since been edited is recognisably stale.
+    Column("text", String(5000), nullable=False),
+    Column("lang", String(35), nullable=False),
+    # The delivery direction actually sent, which is empty whenever the voice could not take one.
+    Column("emotion", String(300), nullable=False, default=""),
+    Column("audio_ref", String(500), nullable=False),
+    Column("audio_mime", String(80), nullable=False),
+    Column("provider_id", String(80), nullable=False),
+    Column("model_id", String(240), nullable=False),
+    Column("voice", String(120), nullable=False, default=""),
+    *_sync_fields(),
+    Index("idx_pronunciations_owner_revision", "owner", "revision"),
+    Index("idx_pronunciations_owner_lexeme", "owner", "lexeme"),
 )
 
 study_states = Table(

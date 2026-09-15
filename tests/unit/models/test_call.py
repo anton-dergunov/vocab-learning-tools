@@ -359,9 +359,44 @@ def test_a_row_whose_kind_goes_through_an_adapter_does_not_reach_litellm(monkeyp
 
 def test_a_style_a_provider_cannot_follow_is_dropped_with_a_warning_rather_than_spoken(monkeypatch):
     """An instruction sent to a voice that does not take instructions gets read aloud."""
-    monkeypatch.setattr("acervo.models.cloudflare.speech", lambda *a, **k: (b"MP3", "audio/mpeg"))
-    result = call.speech("hola", row=CLOUDFLARE, style="cheerful")
+    sent = []
+    monkeypatch.setattr("acervo.models.cloudflare.speech",
+                        lambda *a, **k: sent.append(k) or (b"ID3MP3", "audio/mpeg"))
+    result = call.speech("hello", row=CLOUDFLARE, language="en", style="cheerful")
     assert result.answer.warnings == ("style is not supported by this provider",)
+    assert sent[-1]["style"] is None
+
+
+GOOGLE = SHIPPED.find("google-tts")
+
+
+def test_style_is_decided_per_model_because_one_route_serves_voices_that_differ(monkeypatch):
+    """Google's WaveNet and Gemini voices share an endpoint; only the Gemini ones take a direction."""
+    sent = []
+    monkeypatch.setattr("acervo.models.google_tts.speech",
+                        lambda *a, **k: sent.append(k) or (b"ID3MP3", "audio/mpeg"))
+    expressive = call.speech("¡Qué pica!", row=GOOGLE, model="gemini-3.1-flash-tts-preview",
+                             language="es", style="exasperated")
+    plain = call.speech("picar", row=GOOGLE, model="wavenet", language="es", style="exasperated")
+    assert sent[0]["style"] == "exasperated" and expressive.answer.warnings == ()
+    assert sent[1]["style"] is None and plain.answer.warnings == ("style is not supported by this provider",)
+
+
+def test_the_voice_that_spoke_is_the_models_default_for_the_language_unless_one_is_asked_for(monkeypatch):
+    monkeypatch.setattr("acervo.models.google_tts.speech", lambda *a, **k: (b"ID3MP3", "audio/mpeg"))
+    assert call.speech("picar", row=GOOGLE, model="wavenet", language="es").voice == "es-ES-Wavenet-F"
+    assert call.speech("咬", row=GOOGLE, model="wavenet", language="zh-Hans").voice == "cmn-CN-Wavenet-A"
+    assert call.speech("picar", row=GOOGLE, model="wavenet", language="es",
+                       voice="es-ES-Wavenet-E").voice == "es-ES-Wavenet-E"
+    assert call.speech("pique", row=GOOGLE, model="gemini-2.5-flash-tts", language="fr").voice == "Kore"
+
+
+def test_an_openai_style_travels_as_instructions(monkeypatch):
+    calls = []
+    monkeypatch.setattr(call, "speech_synthesis", lambda **k: calls.append(k) or type("R", (), {"content": b"ID3"})())
+    call.speech("hola", row=SHIPPED.find("openai"), language="es", style="tender")
+    assert calls[-1]["instructions"] == "tender"
+    assert calls[-1]["voice"] == "alloy"
 
 
 def test_json_is_only_parsed_when_it_was_asked_for(monkeypatch):

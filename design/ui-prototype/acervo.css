@@ -493,7 +493,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
    every size the headword takes. */
 .head-line {
   min-width: 0; text-wrap: balance;
-  font-family: var(--serif); font-weight: 700; font-size: clamp(34px, 6.5vw, 52px); line-height: 1.02;
+  font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 5.2vw, 44px); line-height: 1.04;
 }
 .head-line .headword { display: inline; margin: 0; font-size: inherit; }
 .head-line .say.head { vertical-align: middle; margin: 0 0 0 .28em; }
@@ -1769,6 +1769,10 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 .style-switch input { flex: none; }
 .style-switch .label { font-size: 10.5px; }
 .config-help.warn { color: var(--warn); }
+/* A voice per model per language: the model named once, its languages as selects beneath it. */
+.voice-model { display: grid; gap: 8px; margin-top: 12px; }
+.voice-model > strong { font-size: 13.5px; font-weight: 600; }
+.voice-model > strong .label { font-size: 10.5px; font-weight: 400; }
 
 /* ── the activity chip and panel ────────────────────────────────────────
    The chip appears only when there is something to say. An always-present indicator reading
@@ -1889,3 +1893,10 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 .card-main:not(.top)::after { flex-grow: 1.618; }
 /* A picture takes the free space first, up to its cap; only what is left is split around it. */
 .card-main .card-pic, .card-main .card-frame { flex-grow: 40; }
+/* A picture never shrinks past a size that still reads; below it the card scrolls instead. Declared
+   after every max-height so it wins where a short window would otherwise squeeze it. */
+.card-main .card-pic, .card-main .card-frame { min-height: 240px; }
+/* A line of text carries empty space above its letters — half its leading and the room the font
+   keeps for accents — and a rule or a pill below it carries none. Pulling the quote up by that much
+   makes the leaf above and the leaf below sit at the same visible distance from what they frame. */
+.card-main.quoted .card-ex { margin-top: -.55em; }

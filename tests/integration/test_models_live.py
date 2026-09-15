@@ -124,13 +124,22 @@ def test_an_image_comes_back_as_bytes_from_a_real_provider(identifier, model):
 @pytest.mark.parametrize(("identifier", "model"), pairs("audio"), ids=lambda v: v.split("/")[-1])
 def test_speech_comes_back_as_audio_from_a_real_provider(identifier, model):
     row = row_for("audio", identifier)
-    result = reachable(row, "audio")(lambda: call.speech(WORD, row=row, model=model))
+    # The word in a language the model says it speaks: Aura is English-only, the rest take Spanish.
+    language = "es" if row.speaks(model, "es") else "en"
+    words = WORD if language == "es" else "hello"
+    # A style goes only where the model declares it takes one, which is exactly what is being
+    # checked for the Gemini voices: that `prompt` is accepted and the answer is still audio.
+    style = "Say it warmly, like greeting an old friend." if row.style_for(model) == "instruction" else None
+    result = reachable(row, "audio")(
+        lambda: call.speech(words, row=row, model=model, language=language, style=style)
+    )
     check(result.answer, row)
     assert len(result.data) > 500, "that is too small to be a spoken word"
     # Sniffed from the bytes, not asserted by the row: Gemini answers WAV and Aura answers MP3.
     assert result.mime != "application/octet-stream", f"unrecognised audio {result.data[:8]!r}"
-    print(f"\n{identifier}: {model} → {len(result.data)} bytes {result.mime} "
-          f"in {result.answer.seconds:.1f}s")
+    assert result.answer.warnings == ()
+    print(f"\n{identifier}: {model} voice={result.voice} style={bool(style)} → {len(result.data)} "
+          f"bytes {result.mime} in {result.answer.seconds:.1f}s")
 
 
 def test_a_wrong_credential_is_refused_rather_than_routed_around(monkeypatch):

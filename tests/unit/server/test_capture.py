@@ -246,6 +246,21 @@ def test_it_drops_a_marked_form_the_model_retyped_instead_of_copying(seeded):
     assert invented["matchedTranslationForm"] is None
 
 
+def test_an_examples_emotion_travels_into_the_draft_and_a_long_one_is_cut_rather_than_refused(seeded):
+    rambling = "furious " * 60
+    seeded.model.article = {
+        **ARTICLE,
+        "senses": [{**ARTICLE["senses"][0], "examples": [
+            {**ARTICLE["senses"][0]["examples"][0], "emotion": "  proud,  showing off the costume "},
+            {**ARTICLE["senses"][0]["examples"][1], "emotion": rambling},
+        ]}],
+    }
+    proud, cut = seeded.capture().json()["data"]["draft"]["senses"][0]["examples"]
+    assert proud["emotion"] == "proud, showing off the costume"
+    assert 0 < len(cut["emotion"]) <= 300 and not cut["emotion"].endswith(" ")
+    assert cut["emotion"].split(" ")[-1] == "furious"
+
+
 def test_it_fills_in_a_gloss_and_a_definition_language_rather_than_losing_the_sense(seeded):
     seeded.model.article = {
         **ARTICLE,

@@ -48,6 +48,39 @@ To check it is already on:
 gcloud services list --enabled --project=PROJECT_ID | grep aiplatform
 ```
 
+### Enable Cloud Text-to-Speech, which is what says the words
+
+A different API from Vertex on the same project and the same credentials, and it is what reads a
+headword or an example aloud. Standard and WaveNet voices have a permanent free allowance far above
+what a vocabulary needs; the Gemini voices, which take a delivery direction, are billed with
+everything else.
+
+**Console** → [console.cloud.google.com/apis/library/texttospeech.googleapis.com](https://console.cloud.google.com/apis/library/texttospeech.googleapis.com)
+→ **Enable**.
+
+**Command line**
+
+```bash
+gcloud services enable texttospeech.googleapis.com --project=PROJECT_ID
+gcloud services list --enabled --project=PROJECT_ID | grep texttospeech
+```
+
+Cloud TTS refuses a *user* login that names no quota project, which is what Step 2 of Path A sets —
+so if speech says the project is missing while Vertex is happy, that is the setting to check. Acervo
+sends `ACERVO_VERTEX_PROJECT` as the quota project on every speech call for the same reason.
+
+To hear that it works, before Acervo is involved at all:
+
+```bash
+curl -s -X POST https://texttospeech.googleapis.com/v1/text:synthesize \
+  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  -H "x-goog-user-project: PROJECT_ID" -H "Content-Type: application/json" \
+  -d '{"input":{"text":"picar"},"voice":{"languageCode":"es-ES","name":"es-ES-Wavenet-F"},
+       "audioConfig":{"audioEncoding":"MP3"}}' \
+  | python3 -c 'import base64,json,sys;open("picar.mp3","wb").write(base64.b64decode(json.load(sys.stdin)["audioContent"]))'
+afplay picar.mp3
+```
+
 ### Make sure the project has billing
 
 Vertex is paid. A project with no billing account answers every call with a 403 that does not say

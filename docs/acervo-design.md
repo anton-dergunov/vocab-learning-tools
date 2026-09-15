@@ -197,8 +197,10 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
 
 - `example` — `senseId · text · textLang · translation · translationLang ·
   origin(attestation|llm|tatoeba|subtitle|wiktionary|manual) · sourceAttestationId · modelId ·
-  videoRef · videoTitle · videoChannel · videoStart · videoEnd · clipRef · imageRef · audioRef ·
-  note · matchedForm · matchedTranslationForm`. `origin` plus `modelId` on every row is
+  videoRef · videoTitle · videoChannel · videoStart · videoEnd · clipRef · imageRef · emotion ·
+  note · matchedForm · matchedTranslationForm`. **`emotion`** is how a speaker would sound saying the
+  sentence, a short direction in English that a voice which takes one follows when the example is read
+  aloud; a recording is its own record and not a field here (`docs/plans/pronunciation-and-audio.md`). `origin` plus `modelId` on every row is
   what makes bulk regeneration safe; **`sourceAttestationId`** is what lets an example be cleaned up
   and still point at the messy original you actually captured. `videoTitle`, `videoChannel`,
   `videoStart` and `videoEnd` (seconds) are what turn a bare `videoRef` into the citable clip the
@@ -337,7 +339,7 @@ Raw versus cleaned — both kept, lineage explicit:
   "sourceAttestationId": "attest000000001",
   "modelId": "gemini-3-flash",
   "imageRef": null,
-  "audioRef": "sha256:9c1e…"
+  "emotion": "warm and tender, a goodbye full of care"
 }
 ```
 
@@ -584,9 +586,16 @@ hatch left open, not a plan.
 
 ### Media
 
-Images and audio are **not** replicated. They live on the server, are referenced by content hash,
-and are fetched and cached on demand by the service worker. The text of your vocabulary works on a
-plane; the illustrations do not, and shouldn't pretend to.
+**Images are not replicated; pronunciations are.** Both live on the server and are fetched and cached
+on demand by the device, but only one of them is a record in the graph.
+
+This rule used to cover both, and it was written with 300 KB pictures in mind. A spoken headword is a
+couple of kilobytes: the clips of a whole vocabulary cost about what its *text* does, while its
+pictures cost two orders of magnitude more. So a clip is a row like any other — it carries the words
+it speaks and the voice that spoke them — and it travels on the ordinary cursor pull, which is what
+lets a word recorded on one device be heard on another with no network at all. The text of your
+vocabulary works on a plane, and now so does hearing it; the illustrations still do not, and
+shouldn't pretend to.
 
 ---
 

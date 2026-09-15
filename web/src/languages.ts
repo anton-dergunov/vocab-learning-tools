@@ -59,6 +59,12 @@ export function glossLanguagesFor(code: string, vocabularies: Vocabulary[] = [])
   return languageOf(code).glossLangs;
 }
 
+/** The language usage notes are written in: the owner's choice, else the first gloss language. */
+export function notesLanguageFor(code: string, vocabularies: Vocabulary[] = []): string {
+  const configured = vocabularies.find((entry) => !entry.deleted && entry.language === code);
+  return configured?.notesLang ?? glossLanguagesFor(code, vocabularies)[0] ?? code;
+}
+
 /** The definition language for a new sense: the owner's choice, else the target language itself. */
 export function definitionLanguageFor(code: string, vocabularies: Vocabulary[] = []): string {
   return vocabularies.find((entry) => !entry.deleted && entry.language === code)?.definitionLang ?? code;

@@ -70,7 +70,7 @@ describe("the Acervo repository", () => {
       senseId: sense.id, text: "Se desmayó durante la clase.", textLang: "es", translation: "They fainted during class.",
       translationLang: "en", origin: "attestation", sourceAttestationId: attestation.id, modelId: null,
       videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
-      clipRef: null, imageRef: null, audioRef: null, note: null,
+      clipRef: null, imageRef: null, emotion: null, note: null,
       matchedForm: null, matchedTranslationForm: null
     }, "example00000001");
     expect(repository.snapshot()).toMatchObject({ ready: true, ownerId: "owner0000000001" });
@@ -227,7 +227,7 @@ describe("saving an article edited as YAML", () => {
       senseId: "sense0000000001", text: "Me desmayé.", textLang: "es", translation: "I fainted.",
       translationLang: "en", origin: "manual", sourceAttestationId: null, modelId: null,
       videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
-      clipRef: null, imageRef: null, audioRef: null,
+      clipRef: null, imageRef: null, emotion: null,
       note: null, matchedForm: null, matchedTranslationForm: null
     }, "example00000001");
     const draft = () => parseArticle(yamlFor(articleFor(repository.snapshot(), "lexeme000000001")!));
@@ -284,7 +284,7 @@ describe("saving an article edited as YAML", () => {
       translation: "She passed out live on air.", translationLang: "en", origin: "subtitle",
       sourceAttestationId: null, modelId: null, videoRef: "https://youtu.be/od_YtGbRC48",
       videoTitle: "Informe semanal", videoChannel: "DW Español", videoStart: 252, videoEnd: 258,
-      clipRef: "seg_4b1c7d2e9a350f68cd41", imageRef: null, audioRef: null, note: null,
+      clipRef: "seg_4b1c7d2e9a350f68cd41", imageRef: null, emotion: null, note: null,
       matchedForm: null, matchedTranslationForm: null
     });
     await repository.saveArticle(clipped);
@@ -309,7 +309,7 @@ describe("saving an article edited as YAML", () => {
         id: null, text: "Casi me desmayo de la emoción.", textLang: "es", translation: null,
         translationLang: null, origin: "manual", sourceAttestationId: null, modelId: null,
         videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
-        clipRef: null, imageRef: null, audioRef: null,
+        clipRef: null, imageRef: null, emotion: null,
         note: null, matchedForm: null, matchedTranslationForm: null
       }]
     });
@@ -362,7 +362,7 @@ describe("saving an article edited as YAML", () => {
           translation: "It comes with a hook.", translationLang: "en", origin: "attestation",
           sourceAttestationId: "attest000000091", modelId: null, videoRef: null, videoTitle: null,
           videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
-          imageRef: null, audioRef: null, note: null, matchedForm: null,
+          imageRef: null, emotion: null, note: null, matchedForm: null,
           matchedTranslationForm: null
         }]
       }],
@@ -406,7 +406,7 @@ describe("saving an article edited as YAML", () => {
       translation: "He fainted on the metro.", translationLang: "en",
       origin: "attestation", sourceAttestationId: "attest000000077", modelId: null,
       videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
-      clipRef: null, imageRef: null, audioRef: null, note: null,
+      clipRef: null, imageRef: null, emotion: null, note: null,
       matchedForm: null, matchedTranslationForm: null
     });
     await repository.saveArticle(article, new Set(["attest000000077"]));

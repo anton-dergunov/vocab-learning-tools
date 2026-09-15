@@ -363,7 +363,7 @@ def test_a_clip_title_left_behind_by_another_writer_is_still_not_shown():
         "text": "Pica la cebolla.", "text_lang": "es", "translation": "", "translation_lang": "",
         "origin": "llm", "source_attestation": None, "model_id": "", "video_ref": "",
         "video_title": "A cooking show", "video_channel": "Easy Spanish", "video_start": 42,
-        "video_end": 48, "clip_ref": "seg_1f4c9a2b7e6d5c3a0b91", "image_ref": "", "audio_ref": "",
+        "video_end": 48, "clip_ref": "seg_1f4c9a2b7e6d5c3a0b91", "image_ref": "", "emotion": "",
         "note": "", "matched_form": "", "matched_translation_form": "",
         "deleted": False, "created_at": "2026-01-01T00:00:00.000Z",
         "edited_at": "2026-01-01T00:00:00.000Z", "edited_by": "job00000000001", "revision": 1,

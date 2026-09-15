@@ -23,7 +23,13 @@
       "capabilities": {
         "jsonMode": "native",
         "audio": {
-          "defaultVoice": "kore"
+          "style": "none",
+          "languages": "any",
+          "voices": {
+            "*": [
+              "Kore"
+            ]
+          }
         }
       },
       "params": {
@@ -69,7 +75,13 @@
           "seed": "ignored"
         },
         "audio": {
-          "defaultVoice": "Sulafat"
+          "style": "none",
+          "languages": "any",
+          "voices": {
+            "*": [
+              "Sulafat"
+            ]
+          }
         }
       },
       "params": {
@@ -92,6 +104,185 @@
         "image": 180,
         "audio": 90
       }
+    },
+    {
+      "id": "google-tts",
+      "label": "Google Cloud Text-to-Speech",
+      "kinds": [
+        "audio"
+      ],
+      "adapter": {
+        "audio": "google-tts"
+      },
+      "models": {
+        "audio": [
+          "wavenet",
+          "standard",
+          "gemini-3.1-flash-tts-preview",
+          "gemini-2.5-flash-tts"
+        ]
+      },
+      "auth": "adc",
+      "authEnv": "GOOGLE_APPLICATION_CREDENTIALS",
+      "accountEnv": "ACERVO_VERTEX_ACCOUNT",
+      "requires": [
+        "ACERVO_VERTEX_PROJECT"
+      ],
+      "passes": {
+        "quotaProject": "ACERVO_VERTEX_PROJECT"
+      },
+      "usageUrl": "https://console.cloud.google.com/apis/api/texttospeech.googleapis.com/metrics?project={ACERVO_VERTEX_PROJECT}",
+      "capabilities": {
+        "audio": {
+          "locales": {
+            "es": "es-ES",
+            "en": "en-US",
+            "ru": "ru-RU",
+            "zh-Hans": "cmn-CN",
+            "zh-Hant": "cmn-TW",
+            "zh": "cmn-CN"
+          },
+          "models": {
+            "wavenet": {
+              "style": "none",
+              "languages": [
+                "es",
+                "en",
+                "ru",
+                "zh"
+              ],
+              "voices": {
+                "es": [
+                  "es-ES-Wavenet-F",
+                  "es-ES-Wavenet-E",
+                  "es-ES-Wavenet-H",
+                  "es-ES-Wavenet-G"
+                ],
+                "en": [
+                  "en-US-Wavenet-C",
+                  "en-US-Wavenet-D",
+                  "en-US-Wavenet-E",
+                  "en-US-Wavenet-I",
+                  "en-US-Wavenet-F",
+                  "en-US-Wavenet-J"
+                ],
+                "ru": [
+                  "ru-RU-Wavenet-A",
+                  "ru-RU-Wavenet-B",
+                  "ru-RU-Wavenet-C",
+                  "ru-RU-Wavenet-D",
+                  "ru-RU-Wavenet-E"
+                ],
+                "zh-Hans": [
+                  "cmn-CN-Wavenet-A",
+                  "cmn-CN-Wavenet-B",
+                  "cmn-CN-Wavenet-D",
+                  "cmn-CN-Wavenet-C"
+                ],
+                "zh-Hant": [
+                  "cmn-TW-Wavenet-A",
+                  "cmn-TW-Wavenet-B",
+                  "cmn-TW-Wavenet-C"
+                ]
+              }
+            },
+            "standard": {
+              "style": "none",
+              "languages": [
+                "es",
+                "en",
+                "ru",
+                "zh"
+              ],
+              "voices": {
+                "es": [
+                  "es-ES-Standard-F",
+                  "es-ES-Standard-E",
+                  "es-ES-Standard-H",
+                  "es-ES-Standard-G"
+                ],
+                "en": [
+                  "en-US-Standard-C",
+                  "en-US-Standard-D",
+                  "en-US-Standard-E",
+                  "en-US-Standard-I",
+                  "en-US-Standard-F",
+                  "en-US-Standard-J"
+                ],
+                "ru": [
+                  "ru-RU-Standard-A",
+                  "ru-RU-Standard-B",
+                  "ru-RU-Standard-C",
+                  "ru-RU-Standard-D",
+                  "ru-RU-Standard-E"
+                ],
+                "zh-Hans": [
+                  "cmn-CN-Standard-A",
+                  "cmn-CN-Standard-B",
+                  "cmn-CN-Standard-D",
+                  "cmn-CN-Standard-C"
+                ],
+                "zh-Hant": [
+                  "cmn-TW-Standard-A",
+                  "cmn-TW-Standard-B",
+                  "cmn-TW-Standard-C"
+                ]
+              }
+            },
+            "gemini-3.1-flash-tts-preview": {
+              "style": "instruction",
+              "languages": "any",
+              "modelName": "gemini-3.1-flash-tts-preview",
+              "voices": {
+                "*": [
+                  "Kore",
+                  "Puck",
+                  "Charon",
+                  "Aoede",
+                  "Leda",
+                  "Orus",
+                  "Fenrir",
+                  "Despina",
+                  "Achernar",
+                  "Algieba",
+                  "Sulafat",
+                  "Gacrux"
+                ]
+              }
+            },
+            "gemini-2.5-flash-tts": {
+              "style": "instruction",
+              "languages": "any",
+              "modelName": "gemini-2.5-flash-tts",
+              "voices": {
+                "*": [
+                  "Kore",
+                  "Puck",
+                  "Charon",
+                  "Aoede",
+                  "Leda",
+                  "Orus",
+                  "Fenrir",
+                  "Despina",
+                  "Achernar",
+                  "Algieba",
+                  "Sulafat",
+                  "Gacrux"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "params": {
+        "audio": {
+          "audioEncoding": "MP3"
+        }
+      },
+      "timeouts": {
+        "audio": 30
+      },
+      "notes": "The Cloud Text-to-Speech API, which is not the Gemini API and not Vertex's generateContent: one route, `text:synthesize`, metered in characters, with a permanent free allowance of 4 M characters a month on Standard voices and 1 M on WaveNet — two orders of magnitude above what pronouncing a vocabulary needs. It authenticates with the same Google credentials as the `vertex` row once `texttospeech.googleapis.com` is enabled on the project, and a user login additionally needs a quota project, which is why the project travels as `x-goog-user-project` (`docs/acervo-vertex-setup.md`). LiteLLM does not cover this API, so it has its own adapter. The \"models\" `standard` and `wavenet` are voice families rather than model ids: the voice name carries the language and the family (`es-ES-Wavenet-F`), exist per language, and take no style. The Gemini models on the same route are named with `voice.modelName`, speak any language with the same named voices, and take a free-text delivery direction in `input.prompt` — the only field that can carry an example's emotion without it being read aloud. Voice lists were read from `voices.list` on 2026-09-15, female first where a language offers both; the first is the default. MP3 because every target plays it, iOS included, and a headword is a few kilobytes either way."
     },
     {
       "id": "cloudflare",
@@ -130,7 +321,11 @@
           "seed": "native"
         },
         "audio": {
-          "inputField": "text"
+          "inputField": "text",
+          "style": "none",
+          "languages": [
+            "en"
+          ]
         }
       },
       "params": {
@@ -166,6 +361,18 @@
         "image": {
           "size": "native",
           "seed": "ignored"
+        },
+        "audio": {
+          "style": "instruction",
+          "languages": "any",
+          "voices": {
+            "*": [
+              "alloy",
+              "coral",
+              "sage",
+              "verse"
+            ]
+          }
         }
       },
       "params": {
@@ -227,5 +434,31 @@
         "text": 60
       }
     }
-  ]
+  ],
+  "defaultChains": {
+    "audioPlain": [
+      {
+        "provider": "google-tts",
+        "model": "wavenet"
+      },
+      {
+        "provider": "google-tts",
+        "model": "standard"
+      }
+    ],
+    "audioExpressive": [
+      {
+        "provider": "google-tts",
+        "model": "gemini-3.1-flash-tts-preview"
+      },
+      {
+        "provider": "google-tts",
+        "model": "gemini-2.5-flash-tts"
+      },
+      {
+        "provider": "google-tts",
+        "model": "wavenet"
+      }
+    ]
+  }
 }

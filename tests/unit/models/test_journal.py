@@ -213,3 +213,21 @@ def test_a_raced_chain_names_its_failures_with_their_cost(written):
         chain.walk("text", [("gemini-free", "gemini/gemini-3.1-flash-lite")], SHIPPED,
                    ask, chain.stamped, caller="compose", hedge_after=5)
     assert "compose gemini-free:gemini/gemini-3.1-flash-lite unavailable after" in written.text
+
+
+def test_an_outcome_line_is_key_value_quoted_where_it_must_be_and_invisible_to_the_timings(written):
+    """A pronunciation says what it did with its answer on a line of its own. The timings reader
+    must read straight past it, or every clip would count as a pair nobody can name."""
+    journal.answered("pronounce-word", "google-tts", "wavenet", 0.41)
+    journal.outcome("pronounce-word", target="lexeme:abc", text='say "picar" = bite', chars=5,
+                    voice=None, seconds=0.5, result="stored")
+    journal.outcome("pronounce-word", True, result="refused:llm_rate_limited")
+    lines = [record.getMessage() for record in written.records]
+    assert lines[1] == 'pronounce-word outcome target=lexeme:abc text="say \\"picar\\" = bite" chars=5 seconds=0.50 result=stored'
+    assert written.records[2].levelno == logging.WARNING
+
+    stamped = [f"2026-09-15 10:00:00,000 {record.levelname} {record.getMessage()}" for record in written.records]
+    timings = journal.summarise(stamped)
+    assert [(one.caller, one.pair, one.answered, one.failed) for one in timings] == [
+        ("pronounce-word", "google-tts:wavenet", 1, 0)
+    ]

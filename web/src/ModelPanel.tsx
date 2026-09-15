@@ -24,9 +24,13 @@ import {
  * out of changing it.
  */
 
-const KINDS: { id: string; label: string; help: string }[] = [
+/* `offers` is the catalogue kind a chain draws its models from. The two pronunciation orders both draw
+   from `audio`: any voice can read either, and which one should is the owner's answer, not a fact
+   about the voice. */
+const KINDS: { id: string; offers: string; label: string; help: string }[] = [
   {
     id: "text",
+    offers: "text",
     /* Not "Entries": the same models write the briefs the picture generator works from, and will
        write whatever else needs words. What they have in common is that they produce text. */
     label: "Text",
@@ -36,15 +40,25 @@ const KINDS: { id: string; label: string; help: string }[] = [
   },
   {
     id: "image",
+    offers: "image",
     label: "Pictures",
     help: "For the sense pictures. Nothing reads this order yet — the job that draws them is still "
       + "to come — but what you choose here is kept."
   },
   {
-    id: "audio",
-    label: "Pronunciation",
-    help: "For hearing a word said. Nothing reads this order yet either, and the free allowance is "
-      + "a handful of clips a day rather than a batch."
+    id: "audioPlain",
+    offers: "audio",
+    label: "Pronunciation — words and definitions",
+    help: "Reads a headword, a definition and anything you select, in a clear, even voice. A voice "
+      + "that does not speak the word's language is passed over. Settings ▸ Pronunciation chooses "
+      + "each model's voice."
+  },
+  {
+    id: "audioExpressive",
+    offers: "audio",
+    label: "Pronunciation — example sentences",
+    help: "Reads example sentences. A model that takes a direction speaks each one with its emotion; "
+      + "one that cannot reads it plainly, so the order is also how you choose between the two."
   }
 ];
 
@@ -101,8 +115,9 @@ function ModelRow({ pair, provider, on, first, last, onToggle, onMove }: {
   </div>;
 }
 
-function KindSection({ kind, label, help, catalogue, onChange }: {
+function KindSection({ kind, offers, label, help, catalogue, onChange }: {
   kind: string;
+  offers: string;
   label: string;
   help: string;
   catalogue: ModelCatalogue;
@@ -120,7 +135,7 @@ function KindSection({ kind, label, help, catalogue, onChange }: {
      order arrives ticked and says whose it is. Changing anything makes the order yours. */
   const live = chain.pairs;
   const inherited = chain.source === "deployment";
-  const pairs = orderedPairs(catalogue.providers, live, kind);
+  const pairs = orderedPairs(catalogue.providers, live, offers);
 
   /* Three states, and unticking the last box reaches the third rather than bouncing off it:
      an order of your own, nothing at all, or "whatever the server does". Switching everything off

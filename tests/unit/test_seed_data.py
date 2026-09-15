@@ -79,7 +79,7 @@ def test_demo_graph_exercises_the_fields_the_interface_shows():
     assert any(record["notes"] for record in lexemes)
     examples = by_collection("examples")
     assert any(record["video_title"] and record["video_start"] for record in examples)
-    assert any(record["audio_ref"] for record in examples)
+    assert any(record["emotion"] for record in examples)
     assert any(record["note"] for record in examples)
     assert by_collection("image_prompts")
 

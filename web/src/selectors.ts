@@ -11,7 +11,7 @@ import {
   type OwnedFields, type Sense, type StudyState, type SyncFields, type Topic, type Vocabulary,
   type VocabularyGraph
 } from "./domain";
-import { glossLanguagesFor, languageOf, presentationOf, type LanguagePresentation } from "./languages";
+import { glossLanguagesFor, languageOf, notesLanguageFor, presentationOf, type LanguagePresentation } from "./languages";
 // Type-only, so it is erased at build time and the cycle with `yaml.ts` — which imports `Article`
 // from here — never exists at runtime.
 import type { ArticleDraft, AttestationDraft, ExampleDraft, SenseDraft } from "./yaml";
@@ -55,6 +55,8 @@ export interface Article {
    * the two say the same thing in the same tongue rather than disagreeing on screen.
    */
   glossLangs: string[];
+  /** The language the notes are written in, so a selection of one is read in that language. */
+  notesLang: string;
 }
 
 /**
@@ -353,7 +355,8 @@ export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | 
     // Without these the card image is invisible in the projection, so saving would orphan it.
     images: byAge(images.filter((image) => image.senseId === null)),
     study: studyStateOf(graph, lexemeId),
-    glossLangs: glossLanguagesFor(lexeme.language, graph.vocabularies)
+    glossLangs: glossLanguagesFor(lexeme.language, graph.vocabularies),
+    notesLang: notesLanguageFor(lexeme.language, graph.vocabularies)
   };
 }
 
@@ -484,7 +487,7 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
           videoEnd: example.videoEnd,
           clipRef: example.clipRef,
           imageRef: example.imageRef,
-          audioRef: example.audioRef,
+          emotion: example.emotion,
           note: example.note,
           matchedForm: example.matchedForm,
           matchedTranslationForm: example.matchedTranslationForm
@@ -506,6 +509,7 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
     images: promptsOf(draft.images, null, "image"),
     // A document cannot carry study state, so a proposal never has any to show.
     study: null,
-    glossLangs: glossLanguagesFor(draft.language, graph.vocabularies)
+    glossLangs: glossLanguagesFor(draft.language, graph.vocabularies),
+    notesLang: notesLanguageFor(draft.language, graph.vocabularies)
   };
 }

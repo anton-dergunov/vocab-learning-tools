@@ -48,7 +48,17 @@ from acervo.models.catalogue import (
 from acervo.repository import model_selection
 from acervo.settings import Settings
 
-KINDS = ("text", "image", "audio")
+KINDS = ("text", "image", "audioPlain", "audioExpressive")
+
+# Which catalogue kind each chain draws its pairs from. Two chains share `audio` because they are two
+# answers to one question asked twice: what should read a headword, which wants a clear free voice
+# held stable, and what should read an example, which wants a voice that can take the sentence's
+# emotion. Any speech model is a legitimate answer to either, so the catalogue does not split them.
+CATALOGUE_KINDS = {"text": "text", "image": "image", "audioPlain": "audio", "audioExpressive": "audio"}
+
+
+def catalogue_kind(kind: str) -> str:
+    return CATALOGUE_KINDS.get(kind, kind)
 
 # reason -> (status, code, what the owner is told). Total over `acervo.models.Reason`; the test that
 # pairs every reason with a row here is what stops an eighth reason arriving unmapped.
@@ -100,16 +110,19 @@ REFUSALS: dict[str, tuple[int, str, str]] = {
 
 
 def deployment_chain(settings: Settings, kind: str = "text") -> list[chain.Choice] | None:
-    """The row ids this *deployment* asks for a kind, or None when it has not said.
+    """What this *deployment* asks for a chain, or None when it has not said.
 
     None rather than an empty list, because an empty list now means "switched off" and an unset
     variable means the opposite: fall back to catalogue order.
 
-    Ids, never pairs: a deploy-time flag pins a provider and leaves the models to the catalogue,
-    which is all it should decide. Only text has one — plans 05 and 06 are where image and audio get
-    a caller, and two variables with no reader would be two more names for `install.sh` and
-    `--configure-llm` to keep in step for nothing.
+    Text reads `ACERVO_TEXT_CHAIN`, as row ids: a deploy-time flag pins a provider and leaves the
+    models to the catalogue. The speech chains read the catalogue's `defaultChains` instead, as pairs,
+    because catalogue order is wrong for them in a specific way — it would read a headword with a
+    paid expressive voice — and that is a fact about the voices rather than about a deployment.
     """
+    if kind in ("audioPlain", "audioExpressive"):
+        recommended = load_catalogue().default_chains.get(kind)
+        return list(recommended) if recommended else None
     named = settings.text_chain if kind == "text" else ""
     ids = [part.strip() for part in (named or "").split(",") if part.strip()]
     return ids or None
@@ -157,7 +170,7 @@ def chain_readout(settings: Settings, owner: str | None, kind: str = "text") -> 
     catalogue = load_catalogue()
     chosen = chain_for(settings, owner, kind)
     try:
-        candidates = chain.resolve(kind, chosen, catalogue)
+        candidates = chain.resolve(catalogue_kind(kind), chosen, catalogue)
     except ProviderError as error:
         return {"available": False, "provider": None, "model": None, "reason": error.detail}
     if not candidates:
@@ -165,7 +178,7 @@ def chain_readout(settings: Settings, owner: str | None, kind: str = "text") -> 
             "available": False,
             "provider": None,
             "model": None,
-            "reason": chain.unconfigured(kind, chosen, catalogue).detail,
+            "reason": chain.unconfigured(catalogue_kind(kind), chosen, catalogue).detail,
         }
     return {
         "available": True,
@@ -251,7 +264,7 @@ def refusal(error: ProviderError, kind: str = "text") -> ApiError:
     status, code, message = REFUSALS[error.reason]
     if kind == "image":
         message = message.replace("The language model", "The image model")
-    elif kind == "audio":
+    elif catalogue_kind(kind) == "audio":
         message = message.replace("The language model", "The speech model")
     # "Unconfigured" is the one refusal whose *particular* cause the owner can act on, and it is
     # already safe to show: it names an environment variable or says every model is switched off,
@@ -337,7 +350,9 @@ def _chain_view(settings: Settings, owner: str, kind: str, catalogue: Catalogue)
         try:
             pairs = [
                 {"provider": candidate.row.id, "model": candidate.model}
-                for candidate in chain.resolve(kind, deployment_chain(settings, kind), catalogue)
+                for candidate in chain.resolve(
+                    catalogue_kind(kind), deployment_chain(settings, kind), catalogue
+                )
             ]
         except ProviderError:
             pairs = []
@@ -381,9 +396,9 @@ def _submitted(kind: str, value: Any, catalogue: Catalogue) -> list[tuple[str, s
             raise ApiError(
                 400, "unknown_provider", f"This server has no provider called {identifier}."
             ) from None
-        if not row.serves(kind):
+        if not row.serves(catalogue_kind(kind)):
             raise ApiError(400, "unsupported_kind", f"{row.label} does not do {kind}.")
-        if model not in row.models_for(kind):
+        if model not in row.models_for(catalogue_kind(kind)):
             raise ApiError(
                 400, "unknown_model", f"{row.label} does not offer {model} for {kind}."
             )
