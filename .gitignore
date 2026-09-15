@@ -57,5 +57,5 @@ Caddyfile
 
 # The photo-capture spike: its cached engine responses, and the local file naming which Google
 # account and project it may spend.
-/research/photo_capture/runs/
-/research/photo_capture/.env
+/experiments/photo-capture/runs/
+/experiments/photo-capture/.env

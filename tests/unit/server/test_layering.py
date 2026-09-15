@@ -8,7 +8,7 @@ Four rules, each of which stops being true silently:
   interface already lives by.
 - `jobs/` and `consumers/` reach the graph through `client.py`, against the service's own route:
   same validation and same revision allocation as a phone. One writer, one pipeline.
-- Nothing that ships imports `research/`.
+- Nothing that ships imports `experiments/`.
 - `models/` stands alone: it is a provider package, not an Acervo one.
 - An enrichment pipeline — `images/`, `clips/` — may import the provider package and the article
   view, and nothing else of Acervo's, which is what lets a route and a batch sweep share one
@@ -236,10 +236,10 @@ def test_the_storage_layer_does_not_know_the_catalogue(path):
 
 
 @pytest.mark.parametrize("path", modules_under(), ids=identify)
-def test_nothing_that_ships_imports_the_research_tooling(path):
-    """`research/` is outside `src/` and outside the distribution, so importing it would not even
+def test_nothing_that_ships_imports_the_experiments(path):
+    """`experiments/` is outside `src/` and outside the distribution, so importing it would not even
     resolve where the service runs."""
-    assert not any(name.split(".")[0] == "research" for name in imports_of(path)), path
+    assert not any(name.split(".")[0] == "experiments" for name in imports_of(path)), path
 
 
 def test_the_client_does_not_drag_the_services_configuration_along():

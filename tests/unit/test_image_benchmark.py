@@ -11,29 +11,29 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from research.image_benchmark.config import (
+from experiments.image_benchmark.config import (
     BenchmarkConfigError,
     CandidateConfig,
     load_benchmark_config,
 )
-from research.image_benchmark.harness import (
+from experiments.image_benchmark.harness import (
     run_benchmark,
     validate_remote_authorization,
 )
-from research.image_benchmark.jobs import expand_jobs
-from research.image_benchmark.media import UnsafeSVGError, normalize_image, sanitize_svg_text
-from research.image_benchmark.ratings import (
+from experiments.image_benchmark.jobs import expand_jobs
+from experiments.image_benchmark.media import UnsafeSVGError, normalize_image, sanitize_svg_text
+from experiments.image_benchmark.ratings import (
     aggregate_ratings,
     load_rating_exports,
     write_ratings_report,
 )
-from research.image_benchmark.review import render_review
-from research import image_benchmark_runner
+from experiments.image_benchmark.review import render_review
+from experiments.image_benchmark import image_benchmark_runner
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = REPO_ROOT / "config" / "image-benchmark.yaml"
-RUNNER = REPO_ROOT / "research" / "image_benchmark_runner.py"
+RUNNER = REPO_ROOT / "experiments" / "image_benchmark" / "image_benchmark_runner.py"
 
 
 def load_config():

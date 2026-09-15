@@ -8,7 +8,7 @@ or media cache.
 ```bash
 uv sync
 uv run python --version
-uv run python scripts/benchmark_image_models.py list
+uv run python -m experiments.image_benchmark.benchmark_image_models list
 ```
 
 The repository pins Python 3.12 in `.python-version` and constrains the uv
@@ -21,11 +21,11 @@ network call. Every heavyweight and remote candidate must be named explicitly.
 ## Offline smoke path
 
 ```bash
-uv run python scripts/benchmark_image_models.py run \
+uv run python -m experiments.image_benchmark.benchmark_image_models run \
   --stage smoke \
   --models icon_scene
 
-uv run python scripts/benchmark_image_models.py render-review --stage smoke
+uv run python -m experiments.image_benchmark.benchmark_image_models render-review --stage smoke
 ```
 
 Open `output/image-benchmark/smoke/review.html`. The self-contained gallery
@@ -38,7 +38,7 @@ Aggregate one or more downloaded ratings exports into a standalone interactive
 report:
 
 ```bash
-uv run python scripts/benchmark_image_models.py aggregate-ratings \
+uv run python -m experiments.image_benchmark.benchmark_image_models aggregate-ratings \
   ~/Downloads/image-benchmark-smoke-ratings.json
 ```
 
@@ -71,7 +71,7 @@ the full finalist stage's forty-eight. It now selects eight finalists by
 default, including Gemini Pro Image. Run all 96 jobs with one resumable command:
 
 ```bash
-uv run python scripts/benchmark_image_models.py resume \
+uv run python -m experiments.image_benchmark.benchmark_image_models resume \
   --stage finalist_efficient \
   --execute-remote \
   --max-cost-usd 2.85
@@ -87,15 +87,15 @@ To keep local system pressure attributable, the same eight finalists can still
 be run one at a time:
 
 ```bash
-uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models lcm_dreamshaper
-uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models mflux_flux2_klein_q4
-uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models sana_sprint_06b
-uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models drawthings_flux2_klein_q6p
+uv run python -m experiments.image_benchmark.benchmark_image_models resume --stage finalist_efficient --models lcm_dreamshaper
+uv run python -m experiments.image_benchmark.benchmark_image_models resume --stage finalist_efficient --models mflux_flux2_klein_q4
+uv run python -m experiments.image_benchmark.benchmark_image_models resume --stage finalist_efficient --models sana_sprint_06b
+uv run python -m experiments.image_benchmark.benchmark_image_models resume --stage finalist_efficient --models drawthings_flux2_klein_q6p
 
-uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models cloudflare_flux2_klein --execute-remote --max-cost-usd 0.01
-uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models gemini_flash_lite_image --execute-remote --max-cost-usd 0.41
-uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models gemini_flash_image --execute-remote --max-cost-usd 0.81
-uv run python scripts/benchmark_image_models.py resume --stage finalist_efficient --models gemini_pro_image --execute-remote --max-cost-usd 1.61
+uv run python -m experiments.image_benchmark.benchmark_image_models resume --stage finalist_efficient --models cloudflare_flux2_klein --execute-remote --max-cost-usd 0.01
+uv run python -m experiments.image_benchmark.benchmark_image_models resume --stage finalist_efficient --models gemini_flash_lite_image --execute-remote --max-cost-usd 0.41
+uv run python -m experiments.image_benchmark.benchmark_image_models resume --stage finalist_efficient --models gemini_flash_image --execute-remote --max-cost-usd 0.81
+uv run python -m experiments.image_benchmark.benchmark_image_models resume --stage finalist_efficient --models gemini_pro_image --execute-remote --max-cost-usd 1.61
 ```
 
 These ceilings cover the configuration's twelve-image projections. They remain
@@ -105,7 +105,7 @@ Use `resume` to skip jobs whose manifest and native/normalized output are
 complete:
 
 ```bash
-uv run python scripts/benchmark_image_models.py resume \
+uv run python -m experiments.image_benchmark.benchmark_image_models resume \
   --stage finalist \
   --models icon_scene mflux_flux2_klein_q4
 ```
@@ -115,7 +115,7 @@ uv run python scripts/benchmark_image_models.py resume \
 Preparation is explicit and downloads only named candidates:
 
 ```bash
-uv run python scripts/benchmark_image_models.py prepare \
+uv run python -m experiments.image_benchmark.benchmark_image_models prepare \
   --models mflux_flux2_klein_q4 sdxl_turbo
 ```
 
@@ -124,10 +124,10 @@ pre-quantized 5.91 GB MFLUX checkpoint, not the roughly 33 GB reconstructed
 Diffusers checkpoint:
 
 ```bash
-uv run python scripts/benchmark_image_models.py prepare \
+uv run python -m experiments.image_benchmark.benchmark_image_models prepare \
   --models mflux_z_image_turbo_q4
 
-uv run python scripts/benchmark_image_models.py resume \
+uv run python -m experiments.image_benchmark.benchmark_image_models resume \
   --stage smoke \
   --models mflux_z_image_turbo_q4
 ```
@@ -163,7 +163,7 @@ troubleshooting are documented in
 ```bash
 export CLOUDFLARE_ACCOUNT_ID="..."
 export CLOUDFLARE_API_TOKEN="..."
-uv run python scripts/benchmark_image_models.py run \
+uv run python -m experiments.image_benchmark.benchmark_image_models run \
   --stage smoke \
   --models cloudflare_flux2_klein \
   --execute-remote \
@@ -189,7 +189,7 @@ exponential backoff. `resume` preserves completed images and retries only jobs
 without a complete success manifest:
 
 ```bash
-uv run python scripts/benchmark_image_models.py resume \
+uv run python -m experiments.image_benchmark.benchmark_image_models resume \
   --stage smoke \
   --models gemini_flash_image \
   --execute-remote \
@@ -204,7 +204,7 @@ The premium comparison uses Gemini 3 Pro Image, also called Nano Banana Pro.
 Its configured six-image smoke projection is `$0.804` at 1K square output:
 
 ```bash
-uv run python scripts/benchmark_image_models.py resume \
+uv run python -m experiments.image_benchmark.benchmark_image_models resume \
   --stage smoke \
   --models gemini_pro_image \
   --execute-remote \

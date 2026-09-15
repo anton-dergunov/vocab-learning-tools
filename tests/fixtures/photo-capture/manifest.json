@@ -4,7 +4,7 @@
   "truthShape": {
     "sentences": "every body-text sentence in the frame that touches the centre square (screenshots: all body text), in reading order, exactly as printed: hyphenation across lines joined, footnote markers omitted. text is null when the frame cuts the sentence mid-line (cutByFrame), so no stored sentence could be recovered from this photo",
     "sentence flags": "truncatedStart / truncatedEnd: the frame's top or bottom cuts it; occluded: something drawn over the page (a browser control, a navigation bar) hides part of it",
-    "taps": "word as printed, the index of its sentence, which occurrence of the word in that sentence, the unit a learner meant (lemma, no article), and class: primary (word in the sharp centre; thresholds are judged on these) or edge (reported, not optimised for). The tap point is not stored: research/photo_capture/score.py places it at the word's centre on the reference reading",
+    "taps": "word as printed, the index of its sentence, which occurrence of the word in that sentence, the unit a learner meant (lemma, no article), and class: primary (word in the sharp centre; thresholds are judged on these) or edge (reported, not optimised for). The tap point is not stored: experiments/photo-capture/score.py places it at the word's centre on the reference reading",
     "provenance": "transcribed by reading the full-resolution photos, 15 Sep 2026, and found to agree with Cloud Vision character for character on nearly every sentence; still to be spot-checked by the owner"
   },
   "images": [

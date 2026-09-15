@@ -91,7 +91,7 @@ generated examples, prompts, study statistics, and a Chinese reading.
   on `src/acervo/models/`, so a route and a batch sweep share it.
 - `src/acervo/jobs/images/` — the unattended half: the run directory, the sweep, the import.
 - `src/acervo/consumers/anki/` — headless Anki consumer infrastructure.
-- `research/` — benchmark tooling, outside the distribution and never imported by the service.
+- `experiments/` — experiments, spikes and benchmark tooling, outside the distribution and never imported by the service.
 - `macos/` — native host for the shared web interface.
 
 Deployment is designed for shared hosts and uses dedicated configurable listeners. It never assumes

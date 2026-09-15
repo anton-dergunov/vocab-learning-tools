@@ -204,7 +204,7 @@ def vision_credentials():
     account = os.environ.get("PHOTO_SPIKE_GCP_ACCOUNT")
     if not (adc and project and account):
         raise SystemExit("Set PHOTO_SPIKE_ADC, PHOTO_SPIKE_GCP_PROJECT and PHOTO_SPIKE_GCP_ACCOUNT "
-                         "(research/photo_capture/.env) before calling Cloud Vision.")
+                         "(experiments/photo-capture/.env) before calling Cloud Vision.")
     import google.auth.exceptions
     import google.auth.transport.requests
     import requests

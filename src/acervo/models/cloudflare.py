@@ -1,13 +1,13 @@
 """The one hand-written adapter: Cloudflare images and Cloudflare audio.
 
 LiteLLM covers Cloudflare *text* and neither of the other two, and this is the whole of the gap. The
-logic is lifted from `research/image_benchmark_runner.py`'s `run_cloudflare`, which already works
+logic is lifted from `experiments/image_benchmark/image_benchmark_runner.py`'s `run_cloudflare`, which already works
 against the live service — including the awkward part: FLUX.2 Klein requires `multipart/form-data`
 even for a text-only prompt, and a JSON body comes back as a 400 naming a required property
 `multipart` (`docs/cloudflare-workers-ai.md`). The `(None, value)` field tuples are what make an
 HTTP client send a multipart boundary without claiming the scalars are uploaded files.
 
-It is copied rather than imported: `research/` is outside the distribution, and
+It is copied rather than imported: `experiments/` is outside the distribution, and
 `test_layering.py` enforces that nothing shipping reaches into it. It is on httpx rather than
 `requests` because httpx emits the identical multipart body and is the one HTTP library this
 service already carries.

@@ -24,7 +24,7 @@ Nothing queues anything. Every generation path is a foreground command run by a 
 - `scripts/generate_images.py run` — a laptop sweep, and specifically a laptop one, because
   `images/preflight.py:37` shells out to `gcloud auth application-default print-access-token` and
   there is no `gcloud` in the server image
-- `scripts/benchmark_image_models.py` — a research harness, one subprocess per job
+- `experiments/image_benchmark/benchmark_image_models.py` — a research harness, one subprocess per job
 - `acervo-worker` — a one-shot container, `profiles: ["tools"]`, no ports, started by
   `docker compose run --rm` to do one job and exit
 
@@ -38,7 +38,7 @@ premature — it would look easy and then not be:
   for a macOS background worker in detail — five minutes of input idle, on AC power, thermal and
   memory nominal, no microphone or camera in use, one image per child process, fail closed — against
   `tools/macos_idle_probe.swift`.
-- **Subprocess isolation, already built.** `scripts/image_benchmark_runner.py`'s contract
+- **Subprocess isolation, already built.** `experiments/image_benchmark/image_benchmark_runner.py`'s contract
   (`contract_version: 1`, JSON request in, JSON result out, SDKs imported inside the backend
   function) is exactly the shape a remote worker would claim work in, and it already records peak
   memory per job.

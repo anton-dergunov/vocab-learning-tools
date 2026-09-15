@@ -1,4 +1,4 @@
-"""Benchmark and evaluation tooling. Never imported by the service.
+"""Experiments, spikes and benchmark tooling. Never imported by the service.
 
 Outside `src/` on purpose, and outside the distribution: nothing that ships needs it, and
 `pyproject.toml`'s `where = ["src"]` is what keeps it out. It is reached in development through

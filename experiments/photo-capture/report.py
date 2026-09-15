@@ -153,6 +153,13 @@ def nas_table() -> None:
 def main() -> None:
     report = S.run()
     (RUNS / "score.json").write_text(json.dumps(report, ensure_ascii=False))
+    # The quick call's input: every tap's sentence as Vision read it at 2048 px and SaT split it, so
+    # OCR damage is part of what the model is asked about.
+    reference = next(a for a in report["arms"]
+                     if a["engine"] == "vision" and a["variant"] == "full-2048" and a["segmenter"] == "S2-sat")
+    taps = [{**tap, **result} for tap, result in zip(report["taps"], reference["results"])
+            if result.get("ocrSentence")]
+    (RUNS / "taps-vision-full-2048-sat.json").write_text(json.dumps(taps, ensure_ascii=False, indent=1))
     ocr_tables(report)
     splitter_table(report)
     edge_table(report)

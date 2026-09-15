@@ -351,7 +351,7 @@ def prepare_candidates(
                 "--with",
                 "huggingface-hub>=0.30,<2",
                 "python",
-                str(repo_root / "research" / "image_benchmark_runner.py"),
+                str(repo_root / "experiments" / "image_benchmark" / "image_benchmark_runner.py"),
                 "prepare",
                 "--model-id",
                 candidate.model,

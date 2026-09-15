@@ -54,7 +54,7 @@ token into logs, issues, or chat.
 ## Run the smoke benchmark
 
 ```bash
-uv run python scripts/benchmark_image_models.py resume \
+uv run python -m experiments.image_benchmark.benchmark_image_models resume \
   --stage smoke \
   --models cloudflare_flux2_klein \
   --execute-remote \
@@ -64,7 +64,7 @@ uv run python scripts/benchmark_image_models.py resume \
 With an ignored `.env` file:
 
 ```bash
-uv run --env-file .env python scripts/benchmark_image_models.py resume \
+uv run --env-file .env python -m experiments.image_benchmark.benchmark_image_models resume \
   --stage smoke \
   --models cloudflare_flux2_klein \
   --execute-remote \

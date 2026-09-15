@@ -7,7 +7,7 @@ sends is what OCR produced for the tap, taken from a `taps` result file, so OCR 
 the test rather than cleaned away beforehand.
 
     set -a; . ./.env; set +a
-    .venv/bin/python research/photo_capture/quick.py --taps research/photo_capture/runs/taps.json \
+    .venv/bin/python experiments/photo-capture/quick.py --taps experiments/photo-capture/runs/taps.json \
         --pair gemini-free:gemini/gemini-3.1-flash-lite --pair cloudflare
 """
 

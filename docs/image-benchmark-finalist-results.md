@@ -136,7 +136,7 @@ enhanced Klein 9B model; neither is needed for the current production choice.
 ## Reproducing the aggregate report
 
 ```bash
-uv run python scripts/benchmark_image_models.py aggregate-ratings \
+uv run python -m experiments.image_benchmark.benchmark_image_models aggregate-ratings \
   ~/Downloads/image-benchmark-finalist_efficient-ratings.json
 ```
 

@@ -1,9 +1,10 @@
 # Photo capture · tap a word in what you're reading
 
 **Status:** unbuilt. The Spanish spike has run: **the idea survives with Cloud Vision reading the
-photo, and not with RapidOCR on the NAS**. See [Spike results](#spike-results). The code is in
-[`research/photo_capture/`](../../research/photo_capture/README.md), and the fixtures it measures
-against are in [`tests/fixtures/photo-capture/`](../../tests/fixtures/photo-capture/README.md).
+photo, and not with RapidOCR on the NAS**. See [Spike results](#spike-results), and the
+experiment write-up in [`experiments/photo-capture/`](../../experiments/photo-capture/README.md). The
+fixtures it measures against are in
+[`tests/fixtures/photo-capture/`](../../tests/fixtures/photo-capture/README.md).
 Several sections below have been corrected by what it measured. Chinese and Japanese are a separate
 spike, not yet run.
 
@@ -140,7 +141,7 @@ The server does the cleanup a page needs, so the interface only ever hit-tests:
   Vision's own paragraph and block boundaries, then run rules inside each block.
 - **Fragments rebuilt into lines** (RapidOCR only). On a curled or tilted page the detector breaks
   one printed line into pieces and orders them by their top edge, so pieces of neighbouring lines
-  interleave. `research/photo_capture/layout.py` chains them back along each line's slope. Vision
+  interleave. `experiments/photo-capture/layout.py` chains them back along each line's slope. Vision
   returns lines in reading order already.
 - **Truncation flagged.** A sentence cut off by the frame edge is marked, so the sheet can say "this
   sentence is cut off" rather than storing a fragment as if it were whole.
@@ -193,7 +194,7 @@ model. Gemini 3.5 flash-lite answered in **1.02 s at the median** (1.64 s p90), 
 That is a real reason for the quick call to have **its own model kind** rather than share `text`
 with compose: the owner's `text` chain is ordered for writing good entries, and this call is ordered
 for answering while a finger is still on the glass. The draft prompt is
-`research/photo_capture/quick_prompt.md`. Its one systematic miss is an idiom cut short, so its
+`experiments/photo-capture/quick_prompt.md`. Its one systematic miss is an idiom cut short, so its
 multi-word rule needs another pass: `doquier` for *por doquier*, `azar` for *al azar*, `caliza`
 for *piedra caliza*.
 
@@ -255,12 +256,20 @@ so:
 
 On screenshots it was as good as Vision: 100% of words and 90% of sentences.
 
-So the second row is a **degraded mode, not an equal**. When Vision is unavailable, RapidOCR can
-still read a screenshot, with the sheet saying up front that this takes several seconds; for a book
-photo it should say the reading may be incomplete. Whether that degraded mode is worth building at
-all, or whether "Vision is unavailable, try again later" is the honest answer, is the owner's
-decision. Running RapidOCR on the Mac worker would not help, because the Mac is not always on,
-which is the point of a fallback.
+**Decided: Vision is the reader, and the first build has no second row.** When Vision is
+unavailable, the camera says so and the owner tries again later. A bigger local model is not the
+way out: on this hardware the larger models the spike tried were slower and no more accurate (see
+the experiment's "Why not a better model on the NAS").
+
+If access to Vision changes, there are two fallbacks, in this order:
+1. **Azure AI Vision Read.** 5,000 free transactions a month and word polygons, but not yet
+   measured. Measure it first, with the spike's harness.
+2. **RapidOCR as a degraded mode.** It can read a screenshot, with the sheet saying up front that
+   this takes several seconds. For a book photo the sheet should also say the reading may be
+   incomplete.
+
+Running RapidOCR on the Mac worker would not help, because the Mac is not always on, which is the
+point of a fallback.
 
 **Rejected as the source of geometry:** Tesseract, which does poorly on camera photos, and a
 multimodal model, for the reasons above.
@@ -293,107 +302,24 @@ layer is `services/photo.py`, and `test_layering.py` enforces both.
 
 ## Spike results
 
-Run on 15 September 2026, Spanish only, against the 13 fixtures. The full tables regenerate offline
-from the cache with `research/photo_capture/report.py`, and the README there says how to rerun
-everything.
+The Spanish spike ran on 15 September 2026. Its method and every number are in
+[`experiments/photo-capture/`](../../experiments/photo-capture/README.md); this section keeps only
+what it decided.
 
-### How it was measured
-
-- **Ground truth.** Every sentence was transcribed by reading the full-resolution photos: 59 taps,
-  54 **primary** (the word in the sharp centre, where the owner aims) and 5 **edge** (a soft or
-  cut-off line), all in the manifest. The transcription agreed with Cloud Vision character for
-  character on nearly every sentence. Two independent readers matching is the check that the
-  truth is sound, but **the owner should still spot-check it**.
-- **Scoring.** A sentence's character error rate (CER) is measured by aligning the truth inside
-  the engine's text, so OCR quality and sentence splitting are scored separately. A tap is placed at
-  its word's centre on Vision's full-resolution reading, then asked of every engine and every
-  upload size.
-
-### Thresholds, set before measuring
-
-| Measure (primary taps) | Threshold | Vision, 2048 px, SaT | RapidOCR best, 2048 px |
-| --- | --- | --- | --- |
-| CER of the tapped word | ≤ 1% | **0.3%** ✓ | 15% ✗ |
-| CER of its sentence | ≤ 5% | **1.3%** ✓ | 12% ✗ (screenshots 4.2%, camera 17%) |
-| Right word hit | ≥ 95% | **98%** ✓ (camera 100%) | 80% ✗ (screenshots 100%, camera 68%) |
-| Right whole sentence | ≥ 90% | **98%** ✓ | 69–80% ✗ |
-| Right unit from the quick call | ≥ 85% | **85% exact, 98% near** ✓ (Gemini 3.5 flash-lite) | — |
-| Shutter → tappable, p50, 5 Mbps | ≤ 3 s | **≈ 1.6–1.9 s** ✓ | ≈ 7.5 s ✗ |
-| Tap → meaning, p50 | ≤ 1.5 s | **1.02 s** ✓ | — |
-
-The one Vision word miss was `índole` read as `indole` on screen-03; the one sentence miss was the
-sentence that screenshot's floating browser control covers.
-
-### OCR by upload
-
-| Engine | Upload | Bytes | CER camera | CER screenshot | Word hit | Sentence right |
-| --- | --- | --- | --- | --- | --- | --- |
-| Vision | full, 1280 px | 193 KB | 2.3% | 0.1% | 98% | 98% |
-| Vision | **full, 2048 px** | 404 KB | **0.4%** | **0.0%** | **98%** | **98%** |
-| Vision | full, original | 1243 KB | 0.2% | 0.1% | 100% | 98% |
-| Vision | square centre, 2048 px | 500 KB | 12% | 31% | 91% | 70% |
-| RapidOCR v5 mobile, Latin | full, 2048 px | 404 KB | 31% | 0.2% | 80% | 72% |
-| RapidOCR v5 mobile, Latin, box .3 | full, 2048 px | 404 KB | 16% | 0.2% | 80% | 69% |
-| RapidOCR v6 detector, v5 Latin, box .3 | full, 2048 px | 404 KB | 18% | 0.2% | 76% | 80% |
-
-On camera photos RapidOCR's CER comes from whole passages **missed**, not letters misread. The
-detector drops lines where the page tilts, curls or softens: the bottom quarter of camera-01, a
-whole paragraph of camera-05 inside the centre square. Vision reads both perfectly. A lower
-detector threshold, a looser box, contrast enhancement and tiling each recovered a little and none
-recovered the passage. camera-01 and camera-02 are the same page a moment apart, and RapidOCR lost
-the same lines in both, so the loss is systematic rather than noise.
-
-### Latency
-
-| Stage | Measured | Where |
-| --- | --- | --- |
-| Encode on the phone | not measured; a canvas JPEG is ~0.1–0.3 s | — |
-| Upload 404 KB | 0.65 s at 5 Mbps · 2.2 s at 1.5 Mbps · 0.16 s at 20 Mbps (computed) | — |
-| Vision round trip | 0.57 s median (0.5–1.2 s) | from the Mac |
-| RapidOCR v5 Latin, 2048 px | 6.7 s median, 4 threads · 9.0 s with 2 · 9.9 s with 1 | NAS, R1600 |
-| RapidOCR v5 Latin, 1280 px | 4.8 s median, 4 threads | NAS |
-| RapidOCR v6 detector, 2048 / 1280 px | 6.1 / 4.6 s, 4 threads | NAS |
-| Line rebuild + SaT split | 0.5 ms + 151 ms median (1.3 s worst) | Mac |
-| Quick call, Gemini 3.5 flash-lite | 1.02 s p50 · 1.64 s p90 | from the Mac |
-| Quick call, Gemini 3.1 flash-lite | 2.09 s p50 · 3.36 s p90 | from the Mac |
-| Quick call, Cloudflare Llama 3.3 70B | 2.52 s p50 · 4.63 s p90 | from the Mac |
-| Quick call, Vertex Gemini 3.5 Flash | 4.36 s p50 · 7.21 s p90 (and 10 of 56 rate limited) | from the Mac |
-
-RapidOCR was timed while DSM's own packages were busy (load average 5–12 on 4 threads), which is
-also the condition a capture arrives under. SaT on the NAS is not measured; assume two to three
-times the Mac. On a 1.5 Mbps uplink a 2048 px photo misses the 3 s budget on upload alone, and a
-1280 px one fits (≈ 2.1 s): the device should step down when the connection is slow.
-
-### The quick call, unit by unit
-
-| Model | Exact | Exact or near |
-| --- | --- | --- |
-| Gemini 3.5 flash-lite | 85% | 98% |
-| Gemini 3.1 flash-lite | 87% | 96% |
-| Cloudflare Llama 3.3 70B | 80% | 89% |
-| Vertex Gemini 3.5 Flash | 95% (44 answered) | 100% |
-
-"Near" accepts one form containing the other: `cada vez más` for truth `cada vez`, which is
-arguably the better answer. Several "exact" misses are the truth's strictness rather than a wrong
-answer: `trasuntar` against `trasuntarse`, `destacar` against `destacarse`. The misses that matter
-are idioms cut to a word (`doquier`, `azar`, `caliza`, `guardia` for *Guardia Suiza*) and
-Llama's invented `confier`.
-
-### What else it found
-
-- **Hyphenation across lines works** once joined in layout: all three hyphenated taps (`consejero`,
-  `personalidad`, `compositor`) hit on Vision.
-- **Truncation flags were not scored.** The flagger exists, but the spike never compared it with
-  the truth. That is the first thing to add when this becomes the OCR package.
-- **For info-triage**, which picked RapidOCR for video:
-  - Its Cyrillic recognition model covers Spanish characters but reads them badly (`maana`,
-    `operacion`, `habia`); the Latin model reads them correctly.
-  - RapidOCR silently shrinks every image to 2000 px (`Global.max_side_len`) before detection,
-    which is probably why raising the detector size "changed nothing" there.
-  - The v5 server detector took 29 s and the v6 medium models about 18 s per photo on the Mac, and
-    neither was more accurate.
-- **Not done:** the camera-path comparison on the phone (video frame, `takePhoto()`, native
-  picker). It waited on the result above, which says the idea survives, so it is next.
+- **Cloud Vision passed every threshold set before measuring:**
+  - the right word hit 98% of the time (100% on book photos);
+  - 98% of sentences came out right, with character error 0.4% on book photos;
+  - shutter to tappable took about 1.6–1.9 s on a 5 Mbps uplink.
+- **RapidOCR is a weaker, slower fallback.** It matched Vision on screenshots, but hit only 68% of
+  words on book photos, and took 4.6–6.7 s per photo on the NAS.
+- **A bigger local model is not the way out.** Larger models were slower and no more accurate, so
+  Vision is the reader. See "Where OCR runs".
+- **Read the whole frame at 2048 px**, and step down to 1280 px on a slow uplink.
+- **Split sentences with SaT.** Rules fail on the page's non-sentence text.
+- **Run the quick call on a fast model** (Gemini 3.5 flash-lite answered in 1.02 s at the median),
+  and give its prompt's multi-word rule another pass.
+- **Other OCR APIs** are compared there too. If a fallback is ever wanted, measure Azure AI Vision
+  Read before building the RapidOCR degraded mode.
 
 ## Chinese and Japanese: a separate spike
 

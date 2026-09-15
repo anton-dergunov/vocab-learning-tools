@@ -106,7 +106,7 @@ src/acervo/
   consumers/anki/    the headless Anki robot
   client.py          the one HTTP client against the service
   admin.py           the management CLI
-research/            benchmark tooling; never imported by the service
+experiments/         experiments and benchmark tooling; never imported by the service
 ```
 
 ### The six rules
@@ -381,7 +381,7 @@ regex carried over from the sandbox, which has not.
 Phase 4 folded the existing Python in. `client.py` replaced the four hand-rolled clients; `images/`
 became `jobs/images/` and `anki_sync/` became `consumers/anki/`, which is what made rule 3 testable
 rather than vacuous — `api/` may not import `jobs/` had matched nothing at all until `jobs/` existed.
-`image_benchmark/` moved out to `research/`, outside the distribution. Two write paths that had never
+`image_benchmark/` moved out to `research/` (now `experiments/`), outside the distribution. Two write paths that had never
 existed now do: a verified sense-image run into `imagePrompts` and the media directory, and Anki's
 FSRS state into `studyStates`. Neither needed a schema change, which is why none of it required
 rebuilding the database.

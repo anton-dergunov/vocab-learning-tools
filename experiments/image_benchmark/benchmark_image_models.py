@@ -8,13 +8,13 @@ import sys
 from pathlib import Path
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
-from research.image_benchmark.config import BenchmarkConfigError, load_benchmark_config
-from research.image_benchmark.harness import prepare_candidates, run_benchmark
-from research.image_benchmark.jobs import expand_jobs
-from research.image_benchmark.ratings import RatingsError, write_ratings_report
-from research.image_benchmark.review import render_review
+from experiments.image_benchmark.config import BenchmarkConfigError, load_benchmark_config
+from experiments.image_benchmark.harness import prepare_candidates, run_benchmark
+from experiments.image_benchmark.jobs import expand_jobs
+from experiments.image_benchmark.ratings import RatingsError, write_ratings_report
+from experiments.image_benchmark.review import render_review
 
 
 DEFAULT_CONFIG = _REPO_ROOT / "config" / "image-benchmark.yaml"
