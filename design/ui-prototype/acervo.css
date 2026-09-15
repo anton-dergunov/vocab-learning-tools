@@ -585,7 +585,9 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .clip-line:hover .src { color: var(--ink); text-decoration: underline; text-underline-offset: 2.5px; }
 
 /* The picture leads its sense, centred, with nothing under it. */
-.sec .body > .sense-image { margin: 6px auto 4px; width: 100%; }
+/* Aligned to the text column it belongs to, like a figure in a book: centred, it read as drifting
+   right of everything else that hangs from that edge. */
+.sec .body > .sense-image { margin: 6px 0 4px; width: 100%; }
 
 /* ── where you met it ── */
 .att .src { margin-top: 8px; font-size: 13px; color: var(--ink-3); gap: 10px; }
@@ -1841,14 +1843,14 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 .menu button.danger { color: var(--warn); }
 .menu button:disabled { opacity: .45; cursor: default; }
 
-.cards-word { flex-wrap: nowrap; align-items: center; margin-top: clamp(16px, 3.4vh, 44px); }
+.cards-word { flex-wrap: nowrap; align-items: center; margin-top: clamp(8px, 1.8vh, 22px); }
 .cw-line { font-size: clamp(32px, 3.6vw, 42px); line-height: 1.08; min-width: 0; text-wrap: balance; text-align: center; }
 .cw-line[data-length="mid"] { font-size: clamp(28px, 3vw, 36px); }
 .cw-line[data-length="long"] { font-size: clamp(24px, 2.6vw, 30px); }
 .cw-emoji { width: 46px; height: 46px; font-size: 25px; }
-.cards-nav { margin-top: clamp(14px, 2.8vh, 30px); padding-bottom: 14px; }
+.cards-nav { margin-top: clamp(18px, 3.2vh, 34px); padding-bottom: 18px; }
 .cards-sep { flex: none; align-self: center; width: 1px; height: 18px; margin: 0 6px; background: var(--rule); }
-.card { padding-top: clamp(18px, 3.6vh, 40px); }
+.card { padding-top: clamp(22px, 4.2vh, 46px); }
 .card-pic, .card-frame { max-height: min(420px, 44vh); }
 /* Quotation marks a size up from the sentence, without opening its lines. */
 .quote-mark { font-size: 1.3em; line-height: 0; vertical-align: -.1em; }
@@ -1876,3 +1878,14 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   /* Narrower than the column and a little shorter, so a picture sits in the card rather than filling it. */
   .card-pic, .card-frame { max-height: min(320px, 36vh); width: 88%; align-self: center; }
 }
+
+/* The free space around a card's content is split by the golden ratio — less above, more below —
+   rather than evenly. A tablet or phone is held tilted away and propped at the bottom, so the top of
+   the screen reads as further off: an equal split looks low, and 1 : 1.618 looks centred. The
+   spacers only grow, so a card whose content fills it gives them up and scrolls as before. */
+.card-main:not(.top) { justify-content: flex-start; }
+.card-main:not(.top)::before, .card-main:not(.top)::after { content: ""; flex: 0 1 0; margin-block: -8px; }
+.card-main:not(.top)::before { flex-grow: 1; }
+.card-main:not(.top)::after { flex-grow: 1.618; }
+/* A picture takes the free space first, up to its cap; only what is left is split around it. */
+.card-main .card-pic, .card-main .card-frame { flex-grow: 40; }
