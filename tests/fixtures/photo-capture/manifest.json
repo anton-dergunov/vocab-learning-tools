@@ -2,16 +2,10 @@
   "version": 1,
   "coordinates": "normalised: x and y in [0, 1] from the top-left of the image as stored",
   "truthShape": {
-    "lines": "transcription of the central, legible lines, top to bottom, exactly as printed",
-    "taps": [
-      {
-        "x": "number",
-        "y": "number",
-        "word": "the word under the tap, as printed",
-        "sentence": "the whole sentence it belongs to, joined across line breaks and hyphenation",
-        "unit": "the lexical unit a learner meant, which may be several words"
-      }
-    ]
+    "sentences": "every body-text sentence in the frame that touches the centre square (screenshots: all body text), in reading order, exactly as printed: hyphenation across lines joined, footnote markers omitted. text is null when the frame cuts the sentence mid-line (cutByFrame), so no stored sentence could be recovered from this photo",
+    "sentence flags": "truncatedStart / truncatedEnd: the frame's top or bottom cuts it; occluded: something drawn over the page (a browser control, a navigation bar) hides part of it",
+    "taps": "word as printed, the index of its sentence, which occurrence of the word in that sentence, the unit a learner meant (lemma, no article), and class: primary (word in the sharp centre; thresholds are judged on these) or edge (reported, not optimised for). The tap point is not stored: research/photo_capture/score.py places it at the word's centre on the reference reading",
+    "provenance": "transcribed by reading the full-resolution photos, 15 Sep 2026, and found to agree with Cloud Vision character for character on nearly every sentence; still to be spot-checked by the owner"
   },
   "images": [
     {
@@ -19,91 +13,1080 @@
       "kind": "camera",
       "source": "book-history",
       "notes": "Full page, dense text, curving at the bottom and softer toward the edges.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": "El viernes 13 de octubre de 1307, a la mañana, los miembros de la Orden del Temple, varios miles de personas, fueron arrestados en forma simultánea en todo el reino de Francia.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Esta gigantesca operación, llevada a cabo en el mayor secreto, había sido ordenada por el rey de Francia Felipe IV el Hermoso y dirigida por su consejero Guillermo de Nogaret.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "La Orden fue disuelta de inmediato y muchos templarios fueron condenados a muerte, entre ellos, el gran maestre Jacques de Molay.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "¿Por qué tomó esa decisión el rey de Francia?",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Los templarios pertenecían a una orden de monjes soldados, creada por el Concilio de Troyes en 1128.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Después de la primera cruzada, el objetivo era conservar los santos lugares de Palestina y proteger a los peregrinos que se dirigían a Jerusalén.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "El prestigio de los templarios era enorme en Tierra Santa, donde disponían de un ejército permanente y operativo, muy superior a los de otros reyes de la cristiandad.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Por otra parte, la Orden se benefició con colosales donaciones, que supo hacer fructificar magníficamente.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "llevada",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "llevar a cabo",
+            "class": "primary"
+          },
+          {
+            "word": "consejero",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "consejero",
+            "class": "primary"
+          },
+          {
+            "word": "disuelta",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "disolver",
+            "class": "primary"
+          },
+          {
+            "word": "monjes",
+            "sentence": 4,
+            "occurrence": 0,
+            "unit": "monje",
+            "class": "primary"
+          },
+          {
+            "word": "Tierra",
+            "sentence": 6,
+            "occurrence": 0,
+            "unit": "Tierra Santa",
+            "class": "primary"
+          },
+          {
+            "word": "parte",
+            "sentence": 7,
+            "occurrence": 0,
+            "unit": "por otra parte",
+            "class": "primary"
+          },
+          {
+            "word": "fructificar",
+            "sentence": 7,
+            "occurrence": 0,
+            "unit": "fructificar",
+            "class": "edge"
+          }
+        ]
+      }
     },
     {
       "file": "camera-02.jpg",
       "kind": "camera",
       "source": "book-history",
       "notes": "The same page as camera-01, taken a moment later: a check that two captures read the same.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": "El viernes 13 de octubre de 1307, a la mañana, los miembros de la Orden del Temple, varios miles de personas, fueron arrestados en forma simultánea en todo el reino de Francia.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Esta gigantesca operación, llevada a cabo en el mayor secreto, había sido ordenada por el rey de Francia Felipe IV el Hermoso y dirigida por su consejero Guillermo de Nogaret.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "La Orden fue disuelta de inmediato y muchos templarios fueron condenados a muerte, entre ellos, el gran maestre Jacques de Molay.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "¿Por qué tomó esa decisión el rey de Francia?",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Los templarios pertenecían a una orden de monjes soldados, creada por el Concilio de Troyes en 1128.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Después de la primera cruzada, el objetivo era conservar los santos lugares de Palestina y proteger a los peregrinos que se dirigían a Jerusalén.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "El prestigio de los templarios era enorme en Tierra Santa, donde disponían de un ejército permanente y operativo, muy superior a los de otros reyes de la cristiandad.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Por otra parte, la Orden se benefició con colosales donaciones, que supo hacer fructificar magníficamente.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "llevada",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "llevar a cabo",
+            "class": "primary"
+          },
+          {
+            "word": "consejero",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "consejero",
+            "class": "primary"
+          },
+          {
+            "word": "disuelta",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "disolver",
+            "class": "primary"
+          },
+          {
+            "word": "monjes",
+            "sentence": 4,
+            "occurrence": 0,
+            "unit": "monje",
+            "class": "primary"
+          },
+          {
+            "word": "Tierra",
+            "sentence": 6,
+            "occurrence": 0,
+            "unit": "Tierra Santa",
+            "class": "primary"
+          },
+          {
+            "word": "parte",
+            "sentence": 7,
+            "occurrence": 0,
+            "unit": "por otra parte",
+            "class": "primary"
+          }
+        ]
+      }
     },
     {
       "file": "camera-03.jpg",
       "kind": "camera",
       "source": "book-history",
       "notes": "Landscape, larger type, the last line cut off by the frame.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": "permanentes para encargarse de su protección en Roma.",
+            "truncatedStart": true,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Un primer contingente de un centenar de alabarderos llegó a la Ciudad Eterna el 22 de enero de 1506 y marcó la fundación oficial de la Guardia Suiza.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Seis años más tarde, después de la batalla de Ravena que expulsó a los franceses de Italia, y al finalizar una grandiosa ceremonia, el Papa le otorgó a la Guardia Suiza, como recompensa por sus buenos y leales servicios, el título de “defensores de la libertad de la Iglesia”.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "La selección de esta tropa de elite, que por su tarea estaba tan cerca del poder, debía ser drástica: los hombres eran elegidos por su elevada estatura, su fuerza, sus cualidades morales, pero también por su fidelidad a la religión católica; en la actualidad ya no es así, pues 30% de ellos son de confesión protestante.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Tras la victoria en la batalla de Marignano, en 1515, contra los mercenarios suizos del duque de Milán, que habían resistido notablemente, el rey Francisco I firmó con los cantones suizos una paz perpetua, por la cual ellos se comprometían a servir solamente a",
+            "truncatedStart": false,
+            "truncatedEnd": true,
+            "cutByFrame": false,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "alabarderos",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "alabardero",
+            "class": "primary"
+          },
+          {
+            "word": "otorgó",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "otorgar",
+            "class": "primary"
+          },
+          {
+            "word": "leales",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "leal",
+            "class": "primary"
+          },
+          {
+            "word": "drástica",
+            "sentence": 3,
+            "occurrence": 0,
+            "unit": "drástico",
+            "class": "primary"
+          },
+          {
+            "word": "Guardia",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "Guardia Suiza",
+            "class": "primary"
+          },
+          {
+            "word": "comprometían",
+            "sentence": 4,
+            "occurrence": 0,
+            "unit": "comprometerse",
+            "class": "edge"
+          }
+        ]
+      }
     },
     {
       "file": "camera-04.jpg",
       "kind": "camera",
       "source": "book-history",
       "notes": "Close up, large type. Lines are cut off at the right edge and a fingertip is in frame.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": null,
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": true,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "heredero",
+            "sentence": 0,
+            "occurrence": 0,
+            "unit": "heredero",
+            "class": "edge"
+          }
+        ]
+      }
     },
     {
       "file": "camera-05.jpg",
       "kind": "camera",
       "source": "book-tango",
       "notes": "Full page, small type, footnotes, strong perspective.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": "Todos los músicos de tango que elaboraron estilos distintivos con cierto grado de complejidad armónica, contrapuntística, rítmica y melódica, fueron herederos del impulso estético decareano: Aníbal Troilo, Osvaldo Pugliese, Horacio Salgán y Astor Piazzolla, por mencionar a algunos de los más notorios.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Entre los bandoneonistas, Piazzolla admiraba a Pedro Laurenz y Pedro Maffia, creadores de estilos instrumentales de gran personalidad, y, por períodos, integrantes del sexteto de De Caro, que además contribuyeron en gran medida para forjar la escuela decareana.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Piazzolla actuó brevemente en varias orquestas hasta que finalmente ingresó en la de Aníbal Troilo, en 1939, y permaneció en ella hasta 1944.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "En esos años se formó como un completo músico de tango (intérprete, arreglador y director).",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Sin embargo, aún no había logrado la pericia de compositor popular.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Su aprendizaje en la orquesta de Troilo resultó integral.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Fue ganando progresivamente la confianza del director, quien de tanto en tanto le pedía que lo reemplazara en su puesto de primer bandoneón.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "A partir de 1942 le permitió escribir algunos de los arreglos, y después se ocupaba sistemáticamente de corregirlos –como hacía con casi todos los arregladores–, por lo que, en términos de estilo, no se diferencian mucho de las demás orquestaciones hechas por los otros arregladores.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Ahora bien, el clima que habrían generado los arreglos de Piazzolla se trasunta bien en la forma en que recordaría, más tarde, ante su hija, esas tensiones: “Un día empecé a cansarme de Troilo y de sus retos.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "De las mil notas que escribía,",
+            "truncatedStart": false,
+            "truncatedEnd": true,
+            "cutByFrame": false,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "pericia",
+            "sentence": 4,
+            "occurrence": 0,
+            "unit": "pericia",
+            "class": "primary"
+          },
+          {
+            "word": "trasunta",
+            "sentence": 8,
+            "occurrence": 0,
+            "unit": "trasuntarse",
+            "class": "primary"
+          },
+          {
+            "word": "Ahora",
+            "sentence": 8,
+            "occurrence": 0,
+            "unit": "ahora bien",
+            "class": "primary"
+          },
+          {
+            "word": "tanto",
+            "sentence": 6,
+            "occurrence": 0,
+            "unit": "de tanto en tanto",
+            "class": "primary"
+          },
+          {
+            "word": "personalidad",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "personalidad",
+            "class": "primary"
+          },
+          {
+            "word": "compositor",
+            "sentence": 4,
+            "occurrence": 0,
+            "unit": "compositor",
+            "class": "primary"
+          }
+        ]
+      }
     },
     {
       "file": "camera-06.jpg",
       "kind": "camera",
       "source": "book-tango",
       "notes": "A closer framing of the passage in camera-05.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": "fueron herederos del impulso estético decareano: Aníbal Troilo, Osvaldo Pugliese, Horacio Salgán y Astor Piazzolla, por mencionar a algunos de los más notorios.",
+            "truncatedStart": true,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Entre los bandoneonistas, Piazzolla admiraba a Pedro Laurenz y Pedro Maffia, creadores de estilos instrumentales de gran personalidad, y, por períodos, integrantes del sexteto de De Caro, que además contribuyeron en gran medida para forjar la escuela decareana.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Piazzolla actuó brevemente en varias orquestas hasta que finalmente ingresó en la de Aníbal Troilo, en 1939, y permaneció en ella hasta 1944.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "En esos años se formó como un completo músico de tango (intérprete, arreglador y director).",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Sin embargo, aún no había logrado la pericia de compositor popular.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Su aprendizaje en la orquesta de Troilo resultó integral.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Fue ganando progresivamente la confianza del director, quien de tanto en tanto le pedía que lo reemplazara en su puesto de primer bandoneón.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "A partir de 1942 le permitió escribir algunos de los arreglos, y después se ocupaba sistemáticamente de corregirlos –como hacía con casi todos los arregladores–, por lo que, en términos de estilo, no se diferencian mucho de las demás orquestaciones hechas por los otros arregladores.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Ahora bien, el clima que habrían generado los arreglos de Piazzolla se trasunta bien en la forma en que recordaría, más tarde, ante su hija, esas tensiones: “Un día empecé a cansarme de Troilo y de sus retos.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "De las mil notas que escribía,",
+            "truncatedStart": false,
+            "truncatedEnd": true,
+            "cutByFrame": false,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "pericia",
+            "sentence": 4,
+            "occurrence": 0,
+            "unit": "pericia",
+            "class": "primary"
+          },
+          {
+            "word": "trasunta",
+            "sentence": 8,
+            "occurrence": 0,
+            "unit": "trasuntarse",
+            "class": "primary"
+          },
+          {
+            "word": "Ahora",
+            "sentence": 8,
+            "occurrence": 0,
+            "unit": "ahora bien",
+            "class": "primary"
+          },
+          {
+            "word": "personalidad",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "personalidad",
+            "class": "primary"
+          },
+          {
+            "word": "bandoneón",
+            "sentence": 6,
+            "occurrence": 0,
+            "unit": "bandoneón",
+            "class": "primary"
+          }
+        ]
+      }
     },
     {
       "file": "camera-07.jpg",
       "kind": "camera",
       "source": "book-tango",
       "notes": "Tilted page, italics, superscript note markers.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": null,
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": true,
+            "occluded": false
+          },
+          {
+            "text": "Implica la aplicación de un rubato intenso y específico, que no solo se contrapone con una exposición ordenada, clásica de la melodía, sino que también establece un conflicto con la regularidad del pulso de cuatro tiempos.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Los yeites –incluyen “arrastres”, “lloros” y “rezongos” de los bandoneones (desde segundas menores simultáneas hasta clusters que no tienen función armónica ni melódica sino expresiva)–, glissandi, portamenti y recursos percusivos.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "En la Sinfonietta, por ejemplo, Piazzolla toma varios de estos elementos, generadores de conflicto, provenientes del tango popular.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Encontramos por doquier comienzos melódicos acéfalos –un tipo de upbeat casi reglamentario en el tango– en todo el primer movimiento, que está orquestado con el registro medio y bajo de los instrumentos de la orquesta.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "En el tercer movimiento se puede observar cómo distintos niveles operan simultáneamente confiriendo complejidad y una textura más densa, disposición de la paleta instrumental que Piazzolla solía usar desde 1943 en sus arreglos para orquesta típica.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Tomo al azar entre muchos ejemplos el comienzo de Cotorrita de la suerte (Alfredo de Franco / José De Grandis), en el que se escuchan",
+            "truncatedStart": false,
+            "truncatedEnd": true,
+            "cutByFrame": false,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "yeites",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "yeite",
+            "class": "primary"
+          },
+          {
+            "word": "rezongos",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "rezongo",
+            "class": "primary"
+          },
+          {
+            "word": "doquier",
+            "sentence": 4,
+            "occurrence": 0,
+            "unit": "por doquier",
+            "class": "primary"
+          },
+          {
+            "word": "acéfalos",
+            "sentence": 4,
+            "occurrence": 0,
+            "unit": "acéfalo",
+            "class": "primary"
+          },
+          {
+            "word": "confiriendo",
+            "sentence": 5,
+            "occurrence": 0,
+            "unit": "conferir",
+            "class": "primary"
+          },
+          {
+            "word": "azar",
+            "sentence": 6,
+            "occurrence": 0,
+            "unit": "al azar",
+            "class": "primary"
+          }
+        ]
+      }
     },
     {
       "file": "camera-08.jpg",
       "kind": "camera",
       "source": "book-tango",
       "notes": "Close up of one passage with lines cut off at the right edge and a section heading.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": null,
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": true,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "definitiva",
+            "sentence": 0,
+            "occurrence": 0,
+            "unit": "en definitiva",
+            "class": "edge"
+          }
+        ]
+      }
     },
     {
       "file": "camera-09.jpg",
       "kind": "camera",
       "source": "book-tango",
       "notes": "The passage in camera-08, framed wider and tilted, with the start of each line cut off at the left.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": null,
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": true,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "estabiliza",
+            "sentence": 0,
+            "occurrence": 0,
+            "unit": "estabilizarse",
+            "class": "edge"
+          }
+        ]
+      }
     },
     {
       "file": "screen-01.png",
       "kind": "screenshot",
       "source": "sources/tangoba-clasificatorias.txt",
       "notes": "Bold body text below a photograph.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": "Año a año, el Mundial de Baile, la competencia de danza más destacada del género a nivel global, refleja el cada vez mayor virtuosismo y nivel de profesionalismo de los bailarines que llegan desde diferentes regiones del país y desde distintas partes del planeta para exhibir su talento en las categorías de Tango de Pista y Tango Escenario.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "El gran encuentro reunirá a las parejas ganadoras de las 26 preliminares en Argentina y del mundo y del Campeonato de Baile de la Ciudad, que competirán en diferentes instancias decisivas.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "El Mundial destinará una noche especial para la final del Tango de Pista y otra para elegir ganadores en Tango Escenario.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Serán dos funciones inolvidables en el Teatro Gran Rex junto a grandes artistas invitados, donde el abrazo del tango volverá a iluminar la calle Corrientes.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "destacada",
+            "sentence": 0,
+            "occurrence": 0,
+            "unit": "destacado",
+            "class": "primary"
+          },
+          {
+            "word": "exhibir",
+            "sentence": 0,
+            "occurrence": 0,
+            "unit": "exhibir",
+            "class": "primary"
+          },
+          {
+            "word": "cada",
+            "sentence": 0,
+            "occurrence": 0,
+            "unit": "cada vez",
+            "class": "primary"
+          },
+          {
+            "word": "reunirá",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "reunir",
+            "class": "primary"
+          },
+          {
+            "word": "Pista",
+            "sentence": 0,
+            "occurrence": 0,
+            "unit": "tango de pista",
+            "class": "primary"
+          }
+        ]
+      }
     },
     {
       "file": "screen-02.png",
       "kind": "screenshot",
       "source": "sources/perfil-mundial-tango.txt",
       "notes": "Serif headline and standfirst, a photograph with a caption, an advert.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": "Se consagraron en Tango Escenario y Tango Pista entre las 60 parejas que habían llegado a la gran final en el Obelisco.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "El día feo conspiró, pero al menos permitió la fiesta.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Pepe Colángelo, Amelita Baltar y Raúl Lavié encabezaron un show notable.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Galería de imágenes.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "La alegría de Bruna Estrellita y Julián Sánchez, campeones mundiales de Tango Escenario 2023.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "consagraron",
+            "sentence": 0,
+            "occurrence": 0,
+            "unit": "consagrarse",
+            "class": "primary"
+          },
+          {
+            "word": "conspiró",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "conspirar",
+            "class": "primary"
+          },
+          {
+            "word": "menos",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "al menos",
+            "class": "primary"
+          },
+          {
+            "word": "encabezaron",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "encabezar",
+            "class": "primary"
+          },
+          {
+            "word": "feo",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "feo",
+            "class": "primary"
+          }
+        ]
+      }
     },
     {
       "file": "screen-03.png",
       "kind": "screenshot",
       "source": "sources/malba.txt",
       "notes": "A floating browser control covers the ends of several lines.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": "El Museo de Arte Latinoamericano (MALBA) es uno de los más interesantes de la Ciudad: aloja la colección de arte de la Fundación Costantini, con aproximadamente 400 obras (pinturas, esculturas, grabados, fotografías y objetos) de grandes artistas latinoamericanos del siglo XX.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": true
+          },
+          {
+            "text": "El moderno edificio que alberga el Malba, revestido de piedra caliza y con amplias superficies de vidrio y acero, fue realizado en 1997 por el estudio cordobés Atelman-Fourcade-Tapia, ganadores de un concurso internacional cuyo jurado estuvo compuesto por los célebres arquitectos Norman Foster, César Pelli y Mario Botta.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": true
+          },
+          {
+            "text": "Malba es un espacio cultural dinámico y participativo en el que se presentan exposiciones temporarias de diversa índole (en muchas ocasiones junto a otros museos alrededor del mundo, colecciones internacionales y fundaciones afines) y muestras de arte contemporáneo argentino y latinoamericano.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Además, cuenta con un importante programa de cine y con una cinemateca que crece mensualmente a través de la adquisición y el rescate de films esenciales de la historia del cine.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "El museo también tiene un área de Literatura a través del cual realiza encuentros con escritores, cursos, seminarios, charlas literarias y presentaciones de libros.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "En la Colección Costantini se destacan las obras de Frida Kahlo, Roberto Matta, Diego Rivera, Joaquín Torres-García, Antonio Berni, Jorge de la",
+            "truncatedStart": false,
+            "truncatedEnd": true,
+            "cutByFrame": false,
+            "occluded": true
+          }
+        ],
+        "taps": [
+          {
+            "word": "caliza",
+            "sentence": 1,
+            "occurrence": 0,
+            "unit": "piedra caliza",
+            "class": "primary"
+          },
+          {
+            "word": "índole",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "índole",
+            "class": "primary"
+          },
+          {
+            "word": "afines",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "afín",
+            "class": "primary"
+          },
+          {
+            "word": "cinemateca",
+            "sentence": 3,
+            "occurrence": 0,
+            "unit": "cinemateca",
+            "class": "primary"
+          },
+          {
+            "word": "rescate",
+            "sentence": 3,
+            "occurrence": 0,
+            "unit": "rescate",
+            "class": "primary"
+          }
+        ]
+      }
     },
     {
       "file": "screen-04.png",
       "kind": "screenshot",
       "source": "sources/malba.txt",
       "notes": "Body text, a contact box in white on grey, and a map with street labels.",
-      "truth": null
+      "truth": {
+        "sentences": [
+          {
+            "text": "cinemateca que crece mensualmente a través de la adquisición y el rescate de films esenciales de la historia del cine.",
+            "truncatedStart": true,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "El museo también tiene un área de Literatura a través del cual realiza encuentros con escritores, cursos, seminarios, charlas literarias y presentaciones de libros.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "En la Colección Costantini se destacan las obras de Frida Kahlo, Roberto Matta, Diego Rivera, Joaquín Torres-García, Antonio Berni, Jorge de la Vega, Tarsila do Amaral, Pedro Figari, Lygia Clark y Guillermo Kuitca.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Conocé el barrio de Palermo.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Horarios: jueves a lunes, de 12 a 20 h.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Miércoles, de 11 a 20 h.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          },
+          {
+            "text": "Arancelada.",
+            "truncatedStart": false,
+            "truncatedEnd": false,
+            "cutByFrame": false,
+            "occluded": false
+          }
+        ],
+        "taps": [
+          {
+            "word": "Conocé",
+            "sentence": 3,
+            "occurrence": 0,
+            "unit": "conocer",
+            "class": "primary"
+          },
+          {
+            "word": "barrio",
+            "sentence": 3,
+            "occurrence": 0,
+            "unit": "barrio",
+            "class": "primary"
+          },
+          {
+            "word": "Arancelada",
+            "sentence": 6,
+            "occurrence": 0,
+            "unit": "arancelado",
+            "class": "primary"
+          },
+          {
+            "word": "Horarios",
+            "sentence": 4,
+            "occurrence": 0,
+            "unit": "horario",
+            "class": "primary"
+          },
+          {
+            "word": "destacan",
+            "sentence": 2,
+            "occurrence": 0,
+            "unit": "destacarse",
+            "class": "primary"
+          }
+        ]
+      }
     }
   ]
 }

@@ -54,3 +54,8 @@ Caddyfile
 /ingest.sh
 /TODO.txt
 /vertex-remote-config.txt
+
+# The photo-capture spike: its cached engine responses, and the local file naming which Google
+# account and project it may spend.
+/research/photo_capture/runs/
+/research/photo_capture/.env

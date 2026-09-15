@@ -26,11 +26,11 @@ These are short excerpts, kept only to test text recognition.
 
 `sources/` holds the body text of the three web pages, copied by hand on 2026-09-15. It serves as
 the reference text for the screenshots, and as a copy in case a page changes or goes away. The book
-pages have no reference text yet; their transcription is spike step 1.
+pages' text is transcribed in `manifest.json` instead, sentence by sentence.
 
 ## `manifest.json`
 
 One row per image: its `kind` (`camera` or `screenshot`), its `source`, a note on what makes it
 hard, and a `truth` block. The shape of `truth` is given at the top of the file. Every `truth` is
-`null` until it is written by hand. **Do not generate ground truth with the OCR under test**:
-scoring an engine against its own output measures nothing.
+written by hand: every sentence touching the centre of the frame, and 59 taps. **Do not generate
+ground truth with the OCR under test**: scoring an engine against its own output measures nothing.
