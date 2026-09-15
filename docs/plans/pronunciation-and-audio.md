@@ -23,6 +23,24 @@ rather than serving what was just replaced.
 **Stale is a comparison, not a flag.** A clip is current while its `text` equals what the record now
 says. Edit the sentence and the next press records the new words; nothing marks anything.
 
+## What a clip is stored as
+
+**Measured, blind, on 16 September 2026:** [`experiments/pronunciation-encoding/`](../../experiments/pronunciation-encoding/README.md).
+
+The first clips sounded metallic, and the cause was the encoding asked for rather than the model:
+Cloud TTS answers `MP3` at **32 kbps for a Gemini voice** and 64 for a WaveNet one, so the worst
+encoding landed on the expressive sentences. In a blind test of the same performance encoded five
+ways, every file the listener flagged was the 32 kbps MP3 and no other candidate was ever flagged;
+Opus at ~30 kbps was indistinguishable from uncompressed except for one "not sure", **and is smaller
+than the MP3 it replaces**. Uncompressed would be eleven times the size for no audible gain, and
+would repeal the reason audio is replicated at all.
+
+**Decided, not yet applied:** a clip should be asked for as **`OGG_OPUS`** — ~3.4 KB a word, ~18 KB a
+sentence, about 574 MB at the 10,000-word ceiling including its sentences, against 699 MB for what is
+stored today. The change is one value per model in the row, and the clips already recorded keep the
+format they have. `M4A` is not an option: the API returns MP3 bytes under that name for the voices
+that accept it, and refuses it for the rest.
+
 ## The two orders
 
 `audioPlain` reads a headword, a definition and a selection. `audioExpressive` reads an example, with

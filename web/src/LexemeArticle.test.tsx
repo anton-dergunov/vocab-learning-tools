@@ -179,8 +179,15 @@ describe("cards", () => {
     const cooking = document.querySelector<HTMLElement>('[data-card="1"]')!;
     expect(cooking.querySelector(".card-pic, .card-frame, .sense-image")).toBeNull();
     expect(cooking.querySelector(".card-main.quoted")).not.toBeNull();
-    // Its clip is a quiet, plainly pressable line.
-    expect(within(cooking).getByRole("button", { name: /Play the clip: comiendo en un mercado · easy spanish/ }))
-      .toBeInTheDocument();
+    // Its clip is a quiet, plainly pressable line, and the **channel leads**: it is what says what
+    // kind of speech this is, while the video's title is about a topic nobody opens the clip for.
+    const play = within(cooking).getByRole("button",
+      { name: /Play the clip: easy spanish · comiendo en un mercado/ });
+    expect(play).toBeInTheDocument();
+    // The title is the half that gives way when there is no room; the channel and the mark that
+    // says this opens something are both outside the text that truncates.
+    expect(play.querySelector(".ch")!.textContent).toBe("easy spanish");
+    expect(play.querySelector(".ti")!.textContent).toBe("comiendo en un mercado");
+    expect(play.querySelector(".go svg")).not.toBeNull();
   });
 });

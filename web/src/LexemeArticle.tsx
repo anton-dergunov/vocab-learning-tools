@@ -20,7 +20,7 @@ import { formatDay } from "./format";
 import { DictionaryEntries } from "./ExternalArticle";
 import type { ExternalEntry } from "./externalEntries";
 import type { Change, Mark } from "./articleEdit";
-import { AskIcon, BackIcon, BookIcon, CaretIcon, FilmIcon, HederaIcon, InfoIcon, PictureIcon, PlayIcon } from "./icons";
+import { AskIcon, BackIcon, BookIcon, CaretIcon, FilmIcon, HederaIcon, InfoIcon, OpenIcon, PictureIcon, PlayIcon } from "./icons";
 import type { DiffPart } from "./wordDiff";
 import type { Article, ArticleSense } from "./selectors";
 import { CardPicture, EmptySenseImage, SenseImage, imageStateOf } from "./SenseImage";
@@ -223,12 +223,30 @@ function GlossLine({ gloss }: { gloss: Gloss }) {
   </div>;
 }
 
-/** Calm, but plainly a thing to press: an outlined pill with a film icon, in ink rather than teal. */
+/** Calm, but plainly a thing to press: an outlined pill with a film icon, in ink rather than teal.
+ *
+ * **The channel leads and the title follows.** The channel is what tells you what kind of speech
+ * this is — a lesson, a street interview, two friends talking over each other — which is the whole
+ * reason to open it. A video's title is its own advertisement for a topic nobody is going to watch
+ * the video for, so it comes second, a shade quieter, and it is what truncation eats first: the
+ * channel survives at every width.
+ *
+ * The corner arrow is the one addition that says this *opens* something. Without it the pill read
+ * as a caption of the sentence above rather than a control, and it sits outside `.src` so that it
+ * survives the ellipsis too. */
 function ClipLine({ clip, onPlay }: { clip: StoredClip; onPlay(): void }) {
-  const source = [clip.videoTitle ? quietTitle(clip.videoTitle) : null, clip.videoChannel?.toLowerCase() ?? null]
-    .filter(Boolean).join(" · ") || "clip";
+  const channel = clip.videoChannel?.toLowerCase() ?? "";
+  const title = clip.videoTitle ? quietTitle(clip.videoTitle) : "";
+  const source = [channel, title].filter(Boolean).join(" · ") || "clip";
   return <button type="button" className="clip-line" onClick={onPlay} aria-label={`Play the clip: ${source}`}>
-    <span className="film"><FilmIcon /></span><span className="src">{source}</span>
+    <span className="film"><FilmIcon /></span>
+    <span className="src">
+      {channel && <span className="ch">{channel}</span>}
+      {channel && title ? " · " : null}
+      {title && <span className="ti">{title}</span>}
+      {!channel && !title ? "clip" : null}
+    </span>
+    <span className="go"><OpenIcon /></span>
   </button>;
 }
 

@@ -1,9 +1,8 @@
 You choose recorded speech for a learner's vocabulary entry.
 
 You are given one word from a learner's personal vocabulary, every sense it has, and a list of
-passages that real people actually said on video, retrieved for that word. For each sense, pick at
-most one passage — or pick nothing, which is very often the right answer — and translate the one you
-pick, in full.
+sentences that real people actually said on video, retrieved for that word. For each sense, pick at
+most one sentence — or pick nothing, which is very often the right answer.
 
 Return one JSON object and nothing else. No prose, no code fences.
 
@@ -42,78 +41,6 @@ learner has been told that this is what the word looks like in real speech, and 
 
 Most of these candidate lists will contain nothing worth keeping. Say so by returning null. You are
 not being measured on how many you fill in.
-
-## The translation must carry the whole passage
-
-This is the second thing that cannot be traded away, and after refusing well it is the most important
-instruction in this document. Read it before the rules about which passage to choose.
-
-**What you are given is a passage, not a sentence.** The field is called `sentence`, but what is in it
-was cut out of captions by pause and punctuation: it may run over several sentences, it may begin in the
-middle of one, and it very often breaks off mid-phrase. Whatever shape it arrives in, your translation is
-of **all of it**.
-
-**EVERY CLAUSE OF THE PASSAGE MUST APPEAR IN THE TRANSLATION.** Not a summary of it. Not the sentence
-that carries the vocabulary word. Not the part that reads well on its own. If the passage says something
-twice, the translation says it twice — *picaba mucho, picaba mucho* is **itched a lot, it itched a lot**,
-never *itched a lot*. A false start, a filler (*o sea*, *¿sabes?*), a self-correction, an interruption, a
-change of speaker: all of it was said, so all of it is translated.
-
-**A passage that breaks off is translated as far as it goes, and left broken.** Do not finish the
-thought, do not round it off, and do not drop a fragment because it is incomplete. *"…y era de color gris
-con"* ends in English as *"…and it was gray with"* — exactly as unfinished as it started.
-
-### Why this one is not negotiable
-
-The learner sees the passage and your translation one above the other, and taps a word in either to light
-up the words that answer to it in the other. That correspondence is computed from these two texts. A
-clause you left out is a row of words with nothing to attach to, so the passage stops answering to touch
-half way down — and, long before anyone notices that, somebody who does not speak this language is
-reading a confident translation of something other than what is in front of them. They cannot tell. An
-incomplete translation is therefore a worse failure than a badly chosen clip: a mediocre clip wastes their
-time, and this one misinforms them.
-
-### The failure this rule exists to stop
-
-This passage was chosen, correctly:
-
-> *"era un castillo un poco pijo, pero sí, trabajaba de camarera en un castillo que celebraba bodas. Y en
-> el castillo nos daban un traje que picaba mucho, picaba mucho y era de color gris con"*
-
-and came back translated like this:
-
-> *"And at the castle they gave us an outfit that itched a lot, it itched a lot and it was gray with"*
-
-The castle, the waitressing, the weddings — the whole first sentence — are simply gone, and nothing marks
-their absence. What reached the learner was a passage, and underneath it a fluent translation of the
-second half of it. This is what it should have been:
-
-> *"it was a bit of a posh castle, but yes, she worked as a waitress at a castle that hosted weddings. And
-> at the castle they gave us an outfit that itched a lot, it itched a lot and it was gray with"*
-
-Untidy, because the passage is untidy. Complete, because the passage is what it is.
-
-### Still a translation, not a gloss
-
-Complete does not mean mechanical. Translate clause by clause into natural wording — the way a subtitle
-reads, not the way a dictionary lists — keeping the register and the roughness of speech. Nothing added
-that is not there, nothing left out that is.
-
-### The mechanics
-
-For each sense you *do* pick, write the translation into `translation`, in the language named in
-`translationLang`.
-
-Then set `matchedTranslationForm` to the part of **your own translation** that carries the vocabulary
-word, copied from it exactly, character for character. It has to occur verbatim in the string you just
-wrote, because the reader emphasises that substring. If no single span of the translation carries the word
-— the translation restructured the sentence, or the word came out as grammar rather than as a word — leave
-`matchedTranslationForm` out. That is normal and is better than a near match.
-
-Omit both fields entirely for a sense where `segmentId` is null.
-
-**Before you answer, check your work:** read the passage clause by clause, and confirm each one has a
-counterpart in what you wrote. If a clause does not, you have not finished.
 
 ## The word means what it means in its own language
 
@@ -206,3 +133,17 @@ not good; pick nothing.
 
 **Do not invent a `segmentId`.** Copy one from the candidate list, character for character, or
 return null. An id that was not offered is discarded and counted against the prompt.
+
+## The translation
+
+For each sense you *do* pick, translate that sentence into the language named in `translationLang`,
+and put the translation in `translation`.
+
+Translate the sentence as a whole, naturally, the way a subtitle would — not word by word. Then set
+`matchedTranslationForm` to the part of **your own translation** that carries the vocabulary word,
+copied from it exactly, character for character. It has to occur verbatim in the string you just
+wrote, because the reader emphasises that substring. If no single span of the translation carries
+the word — the translation restructured the sentence, or the word came out as grammar rather than as
+a word — leave `matchedTranslationForm` out. That is normal and is better than a near match.
+
+Omit both fields entirely for a sense where `segmentId` is null.

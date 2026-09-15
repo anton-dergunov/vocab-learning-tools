@@ -34,6 +34,11 @@ export const SendIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={
 /** A clip, drawn as a strip of film: a play triangle alone reads as "audio". */
 export const FilmIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.7} strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 9h17M3.5 15h17M7.5 5v4M12 5v4M16.5 5v4M7.5 15v4M12 15v4M16.5 15v4" /></svg>;
 /** The article's details: what is known about the record rather than about the word. */
+/* The corner arrow that says a control opens something. Deliberately the plainest possible drawing
+   of it: this sits inside a pill that is already carrying a film strip and a line of text, and any
+   more ink here would make the clip compete with the sentence above it. */
+export const OpenIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2} strokeLinejoin="round" aria-hidden="true"><path d="M7 17L17 7" /><path d="M9 7h8v8" /></svg>;
+
 export const InfoIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5" /><path d="M12 7.6v.1" /></svg>;
 /**
  * The hedera, the printer's ivy leaf, pointing right (❧); the article mirrors it for ☙.

@@ -53,6 +53,9 @@ const ICON = {
   chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 15l7-7 7 7"/></svg>',
   /* A clip, drawn as a strip of film: a play triangle alone reads as "audio". */
   film:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h17M3.5 15h17M7.5 5v4M12 5v4M16.5 5v4M7.5 15v4M12 15v4M16.5 15v4"/></svg>',
+  /* The corner arrow that says a control opens something, drawn as plainly as it can be: the pill
+     it sits in is already carrying a film strip and a line of text. */
+  open:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>',
   info:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><path d="M12 7.6v.1"/></svg>',
   picture:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 16.5l4.5-4 3.5 3 3-2.5 5 4"/></svg>',
   /* The printer's ivy leaf, pointing right (❧); mirrored in CSS for ☙. Drawn, not typed, because
@@ -357,11 +360,19 @@ function looseAttestations(x) {
 const senseName = (s) => (s.domain ? `${s.emoji ? `${s.emoji} ` : ""}${s.domain}` : "");
 
 function clipLine(e) {
-  const source = [quietTitle(e.clip.title), e.clip.channel ? e.clip.channel.toLowerCase() : null].filter(Boolean).join(" · ");
-  /* Calm, but plainly a thing to press: an outlined pill with a film icon, in ink rather than teal. */
+  /* Calm, but plainly a thing to press: an outlined pill with a film icon, in ink rather than teal.
+     The channel leads — it says what kind of speech this is, which is why you would open it — and
+     the video's own title follows, quieter, and is what truncation eats first. The corner arrow is
+     the one mark that says this opens something rather than captioning the sentence above it. */
+  const channel = e.clip.channel ? e.clip.channel.toLowerCase() : "";
+  const title = quietTitle(e.clip.title);
+  const parts = [];
+  if (channel) parts.push(`<span class="ch">${esc(channel)}</span>`);
+  if (channel && title) parts.push(" · ");
+  if (title) parts.push(`<span class="ti">${esc(title)}</span>`);
   return `
     <button class="clip-line" data-clip="1" aria-label="Play the clip">
-      <span class="film">${ICON.film}</span><span class="src">${esc(source)}</span>
+      <span class="film">${ICON.film}</span><span class="src">${parts.join("") || "clip"}</span><span class="go">${ICON.open}</span>
     </button>`;
 }
 

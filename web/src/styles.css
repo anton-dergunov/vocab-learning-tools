@@ -581,8 +581,16 @@ details.fold .fold-body { padding: 4px 0 18px; }
   font-family: var(--mono); font-size: 11px; line-height: 1.4; min-width: 0; color: var(--ink-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* The channel a shade darker than the title it precedes, so the eye takes the useful half first. */
+.clip-line .ch { color: var(--ink-2); }
+.clip-line .ti { color: var(--ink-3); }
+/* Outside the text, and `flex: none`, so the one mark that says "this opens" is never the thing the
+   ellipsis eats. */
+.clip-line .go { display: grid; place-items: center; flex: none; margin-left: 1px; color: var(--ink-3); }
+.clip-line .go svg { width: 11px; height: 11px; }
 .clip-line:hover { border-color: var(--ink-3); }
 .clip-line:hover .src { color: var(--ink); text-decoration: underline; text-underline-offset: 2.5px; }
+.clip-line:hover .ch, .clip-line:hover .ti, .clip-line:hover .go { color: var(--ink); }
 
 /* The picture leads its sense, centred, with nothing under it. */
 /* Aligned to the text column it belongs to, like a figure in a book: centred, it read as drifting

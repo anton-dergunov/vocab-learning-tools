@@ -8,7 +8,13 @@ document and needed nothing beyond its step 1.
 What is built is not the same as what is tuned: the selection prompt has had five readings, recorded
 in [`../clip-selection-rounds.md`](../clip-selection-rounds.md), and the experiment in
 [`clip-selection-experiment.md`](clip-selection-experiment.md) is still unrun.
-[`clip-curation.md`](clip-curation.md) records what those readings showed is wanted next.
+[`clip-curation.md`](clip-curation.md) records what those readings showed is wanted next. A sixth
+reading found the selector translating only half of a passage it had chosen well; the prompt now
+demands every clause and the rewrite is measured in
+[`../../experiments/clip-translation/README.md`](../../experiments/clip-translation/README.md), while
+whether *code* should refuse an incomplete translation is deferred to
+[`translation-completeness-check.md`](translation-completeness-check.md) for want of data across
+enough languages to set a threshold honestly.
 
 The Spanish corpus on the NAS holds **250 videos / 60,001 segments** as of 11 Sep 2026, from three
 of four enabled channels: `luisito-comunica` yields nothing because yt-dlp cannot resolve
