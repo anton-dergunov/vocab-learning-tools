@@ -276,6 +276,12 @@ def score_call(record: Mapping[str, Any], passages: Mapping[str, dataset.Passage
         "matchedForm": matched_form_state(picked.get("matchedTranslationFormRaw"), translation),
         "numeralsKept": numerals_kept(passage.sentence, translation),
         "inTargetScript": in_target_script(translation, target),
+        # **The passage handed back instead of translated.** Added after a rewrite of this prompt
+        # shipped and did exactly that in production: it is exact, costs nothing, and had it been
+        # here from the start the class could not have been invisible. It is *not* the completeness
+        # check deferred to docs/plans/translation-completeness-check.md — that one needs a
+        # threshold and this one needs none.
+        "copiedSource": translation.strip() == passage.sentence.strip(),
     })
     return row
 

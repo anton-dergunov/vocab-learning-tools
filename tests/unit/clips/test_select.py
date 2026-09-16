@@ -264,6 +264,44 @@ def test_a_translation_that_never_stops_is_refused():
         )
 
 
+def test_the_passage_copied_back_instead_of_translated_is_refused():
+    """The failure that shipped, briefly, and is the reason this check exists.
+
+    Asked to translate into English, `gemini-3.5-flash-lite` returned the Spanish passage verbatim
+    for every sense it picked — complete, ended, carrying no segment id, and therefore invisible to
+    every other check here. In the article it drew a translation line identical to the sentence
+    above it, and the player then aligned the passage against itself.
+
+    Refused rather than dropped, like the other two: a model that does this does it to every entry
+    it writes, which is a fact about the pair and exactly what the next pair in the chain is for.
+    """
+    offered = candidates()
+    with pytest.raises(ValueError, match="copied the passage"):
+        parse_reply(
+            reply([{
+                "senseId": article().senses[0].id,
+                "segmentId": offered[0].segment_id,
+                "translation": offered[0].sentence,
+            }]),
+            article(), offered,
+        )
+
+
+def test_a_translation_that_merely_shares_a_word_with_its_passage_is_kept():
+    """The check is equality, not similarity. A translation may legitimately repeat a proper noun,
+    a loan word or a number from its source, and often must."""
+    offered = candidates()
+    found, _ = parse_reply(
+        reply([{
+            "senseId": article().senses[0].id,
+            "segmentId": offered[0].segment_id,
+            "translation": "And it is going to start to picar, because that is odd, guys.",
+        }]),
+        article(), offered,
+    )
+    assert found[0].translation.startswith("And it is going")
+
+
 def test_a_long_but_honest_translation_of_a_long_passage_is_kept():
     """A clip can be several sentences — the corpus decides where a passage ends, not Acervo — so
     the bound has to be relative to the source rather than a flat number of characters."""

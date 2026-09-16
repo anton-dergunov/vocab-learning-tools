@@ -35,11 +35,22 @@ Opus at ~30 kbps was indistinguishable from uncompressed except for one "not sur
 than the MP3 it replaces**. Uncompressed would be eleven times the size for no audible gain, and
 would repeal the reason audio is replicated at all.
 
-**Decided, not yet applied:** a clip should be asked for as **`OGG_OPUS`** — ~3.4 KB a word, ~18 KB a
-sentence, about 574 MB at the 10,000-word ceiling including its sentences, against 699 MB for what is
-stored today. The change is one value per model in the row, and the clips already recorded keep the
-format they have. `M4A` is not an option: the API returns MP3 bytes under that name for the voices
-that accept it, and refuses it for the rest.
+So **the provider is asked for the master and the compression happens here**: every Google model's
+row declares `encoding: "LINEAR16"`, and `pronunciation/encode.py` writes Ogg Opus. Asking for
+`OGG_OPUS` instead would have been simpler and worse — it comes back at 28–35 kbps with no way to ask
+for more, while the master costs nothing extra (this API meters characters, never bytes) and leaves
+the bitrate ours to set. It is set at libsndfile compression 0.8, which measures 55–68 kbps on real
+clips: a headword is ~5.7 KB and an expressive sentence ~34 KB, against 234 KB for its master.
+
+Two rules come with it. **An answer that arrived compressed is stored as it arrived** — Cloudflare's
+Aura returns MP3, and re-encoding a lossy stream adds a second generation of artifacts to save a few
+kilobytes. **A missing encoder refuses the recording** rather than quietly storing a master twelve
+times the size. A selection is compressed too, even though nothing is kept: it is downloaded before
+it can be heard.
+
+`M4A` is not an option: the API returns MP3 bytes under that name for the voices that accept it, and
+refuses it for the rest. Clips recorded before this keep the format they have; Record again replaces
+one.
 
 ## The two orders
 

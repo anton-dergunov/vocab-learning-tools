@@ -289,12 +289,54 @@ counted "this arm refused to pick" as "this arm translated incompletely", which 
 for obeying the prompt's first rule; p fell from 0.34 to **0.0042** once the pairing was restricted to
 cells where both arms picked. Refusal movement is Table 2's question and is answered there.
 
+### Postscript: it shipped, and it regressed
+
+**The rewrite was deployed and immediately produced a failure this experiment had no metric for.**
+Two clips on `la casa` came back with the Spanish passage copied verbatim into `translation` —
+`translationLang: en`, `modelId: gemini/gemini-3.5-flash-lite`, a model this run measured 69 times.
+In the article the translation line read identically to the sentence above it, and the player,
+which is handed the stored translation as its target text, aligned the passage against itself.
+
+Reproduced against the real article, with the request built by the shipped `build_request`:
+**4 of 8 translations copied under the new prompt, 0 of 8 under the old one**, same model, same
+request. The cause is the rewrite's own emphasis: "every clause must appear", "nothing left out",
+"translated as far as it goes and left broken", landing near the pre-existing "do not change the
+sentence", adds up to *reproduce the passage* for a model reading quickly.
+
+It is **intermittent**, which is why the numbers above did not catch it: across every sample since,
+the regressing prompt copied 4 times in 22 and the corrected one 0 in 20 — encouraging, well short
+of proof, and both free tiers were exhausted before a decisive sample could be taken.
+
+Three things changed as a result, and only one of them is the prompt:
+
+- **The prompt** now states the target language as an equal half of the instruction, names copying as
+  a failure with a worked example of it, and makes the final check ask "is this in `translationLang`,
+  and is it not simply the passage again?" before asking about completeness.
+- **`parse_reply` refuses a translation identical to its passage** (`select.py`), the way it already
+  refuses one that never stops. Exact, so it needs no threshold and no language table — and it is the
+  guarantee the prompt cannot give, since a prompt is a request and this is a check.
+- **The scorer gained `copiedSource`**, and the dataset now carries the **examples a real article
+  holds**. The requests measured above had none: one sense, one candidate, no examples, which is a
+  shape the server never sends. Re-scored with the new metric, all 296 recorded rows are clean — the
+  copying genuinely did not occur in this run — but a class of failure that no metric names is a
+  class that cannot be reported, and that is the lesson worth keeping.
+
+**What this says about the experiment, not the prompt.** Three repeats over ten passages is enough
+power for a failure that happens half the time and nowhere near enough for one that happens a fifth
+of the time on one passage. Every number above is honest about the failure it measured; none of them
+had anything to say about the failure that shipped.
+
 ### Verdict
 
-The rewrite ships. It does what it was written to do — severe truncation goes from 8 occurrences to
-none, full coverage rises 10 points, and the improvement is significant on a paired test — at a cost
-of half a second of median latency and no measurable damage to refusal behaviour. It does not reach
-0.95 on every pair, and the gap is one weak model whose remaining failures are mostly a different bug.
+The rewrite ships, with the correction and the code guard the postscript describes. It does what it
+was written to do — severe truncation goes from 8 occurrences to none, full coverage rises 10 points,
+and the improvement is significant on a paired test — at a cost of half a second of median latency
+and no measurable damage to refusal behaviour. It does not reach 0.95 on every pair, and the gap is
+one weak model whose remaining failures are mostly a different bug.
+
+It also shipped a regression, which is in the postscript rather than hidden here, and the
+measurements above should be re-run once the free tiers reset: the request shape has changed to carry
+examples, and `copiedSource` is a column this run could not report.
 
 What this run does **not** support is a code-level completeness check: see
 [`docs/plans/translation-completeness-check.md`](../../docs/plans/translation-completeness-check.md).

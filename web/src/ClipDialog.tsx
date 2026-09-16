@@ -215,7 +215,15 @@ function TranslationLine({ text, asking, job, onRetry }: {
   }
   // Aligned. The player is drawing the interactive version and there is nothing to add.
   if (job?.status === "complete" && job.result?.alignment_graph) return null;
-  if (asking) return <p className="hint clip-translation">Linking the words…</p>;
+  // **While it is still asking, this says nothing and occupies nothing.** It used to announce
+  // "Linking the words…" here, which was a paragraph with a rule above it and twenty pixels of its
+  // own — so the moment the graph arrived and this returned null, the dialog collapsed by the
+  // height of a line and everything in it moved. What the reader saw was the sentence they had
+  // started reading shifting under them, and the natural conclusion was that the *text* had
+  // changed. The linking is a nicety that finishes in a second or two and needs no narration; the
+  // states worth a line are the ones below, where something is actually wrong and there is
+  // something to do about it.
+  if (asking) return null;
   return <p className="hint clip-translation">
     {job === null
       ? "The spoken-usage corpus could not be reached, so the words are not linked."

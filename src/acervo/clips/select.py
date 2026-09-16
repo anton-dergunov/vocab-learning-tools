@@ -200,6 +200,27 @@ def parse_reply(payload: Any, article: ArticleView,
             raise ValueError(
                 f"The clip selector did not stop writing the translation for sense {sense_id}."
             )
+        # **A copy of the passage is not a translation of it**, and this one was not imagined
+        # either: asked for English, a model returned the Spanish passage back, verbatim, for every
+        # sense it picked. It passes every other check here — it is complete, it stops, it carries
+        # no segment id — and it reaches the article as a translation line identical to the sentence
+        # above it, which is the one reader who cannot tell. The player then aligns the passage
+        # against itself.
+        #
+        # Exact rather than approximate, so it needs no threshold and no per-language table, and it
+        # is the whole of what can be checked without ground truth: that a translation is *missing
+        # part* of its passage is the open question in
+        # `docs/plans/translation-completeness-check.md`; that it is *not a translation at all* is
+        # decidable here and now. Guarded on the two languages actually differing, because asking
+        # for a translation into the passage's own language is a different mistake made somewhere
+        # else, and on a length that a proper noun standing alone cannot reach.
+        source = candidate_text(by_segment, segment_id).strip()
+        target = (article.gloss_langs or [""])[0]
+        if (translation and translation == source and len(source) >= 25
+                and target and target != article.language):
+            raise ValueError(
+                f"The clip selector copied the passage instead of translating it for sense {sense_id}."
+            )
         matched = str(entry.get("matchedTranslationForm") or "").strip() or None
         # The invariant is verbatim, untrimmed and un-normalised. A form that does not hold loses
         # the form rather than being stored as a lie — the rule the capture path already follows.

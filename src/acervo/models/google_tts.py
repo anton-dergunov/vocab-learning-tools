@@ -33,6 +33,9 @@ from acervo.models.errors import RETRYABLE, ProviderRefused, ProviderUnavailable
 from acervo.models.redact import redactor
 
 SYNTHESIZE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
+# What each encoding arrives as. `call.speech` sniffs the bytes rather than trusting this, which is
+# the rule for every adapter — but an adapter that *claimed* the wrong type would still be lying.
+MIMES = {"LINEAR16": "audio/wav", "MP3": "audio/mpeg", "OGG_OPUS": "audio/ogg"}
 SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 DETAIL_LIMIT = 2000
 
@@ -59,7 +62,10 @@ def speech(
     body: dict[str, Any] = {
         "input": {"text": words},
         "voice": {"languageCode": row.locale_for(model, language), "name": chosen},
-        "audioConfig": {"audioEncoding": str(row.params_for("audio").get("audioEncoding") or "MP3")},
+        # The row says what to ask for, per model. Google's `MP3` is 32 kbps for a Gemini voice and
+        # 64 for a WaveNet one, so the rows ask for `LINEAR16` and `pronunciation/encode.py` does the
+        # compressing — see `experiments/pronunciation-encoding/`.
+        "audioConfig": {"audioEncoding": str(declared.get("encoding") or "MP3")},
     }
     if declared.get("modelName"):
         body["voice"]["modelName"] = declared["modelName"]
@@ -85,7 +91,7 @@ def speech(
         encoded = None
     if not isinstance(encoded, str) or not encoded:
         _fail(row, model, "empty", "the response contained no audio", response.status_code)
-    return base64.b64decode(encoded), "audio/mpeg"
+    return base64.b64decode(encoded), MIMES.get(str(declared.get("encoding") or "MP3"), "audio/mpeg")
 
 
 def _token(row: Row, model: str, project: str | None) -> str:

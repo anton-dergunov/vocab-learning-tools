@@ -43,18 +43,26 @@ learner has been told that this is what the word looks like in real speech, and 
 Most of these candidate lists will contain nothing worth keeping. Say so by returning null. You are
 not being measured on how many you fill in.
 
-## The translation must carry the whole passage
+## The translation: the whole passage, in the other language
 
 This is the second thing that cannot be traded away, and after refusing well it is the most important
 instruction in this document. Read it before the rules about which passage to choose.
+
+It has two halves and **neither one is worth anything without the other**. The translation must carry
+every clause of the passage, *and* it must be written in the language named in `translationLang` —
+which is never the language the passage is in. A complete copy of the passage is not a translation of
+it; it is the most useless thing you could put in that field, because the reader already has the
+passage and cannot read it. If your `translation` and the passage are the same text, you have failed
+this instruction as completely as if you had left the field empty.
 
 **What you are given is a passage, not a sentence.** The field is called `sentence`, but what is in it
 was cut out of captions by pause and punctuation: it may run over several sentences, it may begin in the
 middle of one, and it very often breaks off mid-phrase. Whatever shape it arrives in, your translation is
 of **all of it**.
 
-**EVERY CLAUSE OF THE PASSAGE MUST APPEAR IN THE TRANSLATION.** Not a summary of it. Not the sentence
-that carries the vocabulary word. Not the part that reads well on its own. If the passage says something
+**EVERY CLAUSE OF THE PASSAGE MUST APPEAR IN THE TRANSLATION, RENDERED INTO `translationLang`.** Not
+a summary of it. Not the sentence that carries the vocabulary word. Not the part that reads well on
+its own. And not the clause itself, carried over untranslated. If the passage says something
 twice, the translation says it twice — *picaba mucho, picaba mucho* is **itched a lot, it itched a lot**,
 never *itched a lot*. A false start, a filler (*o sea*, *¿sabes?*), a self-correction, an interruption, a
 change of speaker: all of it was said, so all of it is translated.
@@ -93,11 +101,30 @@ second half of it. This is what it should have been:
 
 Untidy, because the passage is untidy. Complete, because the passage is what it is.
 
-### Still a translation, not a gloss
+### The two ways to get this wrong
 
-Complete does not mean mechanical. Translate clause by clause into natural wording — the way a subtitle
-reads, not the way a dictionary lists — keeping the register and the roughness of speech. Nothing added
-that is not there, nothing left out that is.
+**Leaving something out**, which is what everything above is about. And **not translating at all**:
+copying the passage into `translation`, or leaving a phrase in the original language inside an
+otherwise translated sentence because it was awkward to render. Both have been seen. The second is
+the worse one, because a half-translated sentence looks like a translation to the only person who
+cannot check it.
+
+So, for the passage used above, each of these is a failure:
+
+> *"Pero comparado con una casa, la furgoneta es muy pequeña."* ← the passage, copied. Not a
+> translation.
+
+> *"But compared with una casa, the van is very small."* ← three words left in the original.
+
+and this is the answer:
+
+> *"But compared to a house, the van is very small."*
+
+**Complete does not mean unchanged.** The rule against changing the sentence is about the passage
+itself, which you never retype — you return its `segmentId` and nothing more. The translation is new
+text that you write, in another language. Translate clause by clause into natural wording, the way a
+subtitle reads rather than the way a dictionary lists, keeping the register and the roughness of
+speech: every clause accounted for, nothing invented.
 
 ### The mechanics
 
@@ -112,8 +139,10 @@ wrote, because the reader emphasises that substring. If no single span of the tr
 
 Omit both fields entirely for a sense where `segmentId` is null.
 
-**Before you answer, check your work:** read the passage clause by clause, and confirm each one has a
-counterpart in what you wrote. If a clause does not, you have not finished.
+**Before you answer, check your work, in this order:** first, is what you wrote in `translationLang`
+— all of it, with no phrase left in the passage's own language, and not simply the passage again?
+Then read the passage clause by clause and confirm each one has a counterpart in what you wrote. If
+either check fails, you have not finished.
 
 ## The word means what it means in its own language
 

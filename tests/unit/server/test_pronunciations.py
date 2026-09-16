@@ -7,7 +7,11 @@ can say which voice read a headword and whether an emotion reached the example.
 
 from __future__ import annotations
 
+import io
 import logging
+import math
+import struct
+import wave
 
 import pytest
 
@@ -18,6 +22,24 @@ from graph_records import attestation, example, lexeme, sense, vocabulary
 
 DEVICE = "device000000001"
 MP3 = b"ID3\x04\x00an-mp3-of-some-length"
+
+
+def wav(words: str) -> bytes:
+    """What Cloud TTS actually answers now: an uncompressed 24 kHz master, one that Opus can chew.
+
+    Long enough per character that a re-encode is visibly smaller, and different per text so two
+    clips cannot be confused for one another.
+    """
+    frames = bytearray()
+    for index in range(2_400 * max(len(words), 1)):
+        frames += struct.pack("<h", int(12_000 * math.sin(2 * math.pi * 220 * index / 24_000)))
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(24_000)
+        out.writeframes(bytes(frames))
+    return buffer.getvalue()
 
 
 @pytest.fixture(autouse=True)
@@ -35,7 +57,10 @@ def a_voice(server, monkeypatch, tmp_path):
         failure = getattr(speech, "failure", None)
         if failure is not None:
             raise failure
-        return MP3 + words.encode(), "audio/mpeg"
+        answer = getattr(speech, "answer", None)
+        if answer is not None:
+            return answer
+        return wav(words), "audio/wav"
 
     monkeypatch.setattr("acervo.models.google_tts.speech", speech)
     speech.calls = calls
@@ -77,9 +102,13 @@ def test_pressing_play_writes_the_file_and_a_row_at_the_derived_id(server):
     assert clip["text"] == "picar" and clip["lang"] == "es"
     assert clip["providerId"] == "google-tts" and clip["modelId"] == "wavenet"
     assert clip["voice"] == "es-ES-Wavenet-F"
-    assert clip["audioMime"] == "audio/mpeg" and clip["emotion"] is None
-    assert clip["audioRef"].startswith(f"audio/{entry['id']}/{clip['id']}-") and clip["audioRef"].endswith(".mp3")
-    assert (server.media / clip["audioRef"]).read_bytes() == MP3 + b"picar"
+    # Asked for uncompressed, stored as Opus: `pronunciation/encode.py`, measured blind in
+    # `experiments/pronunciation-encoding/`.
+    assert clip["audioMime"] == "audio/ogg" and clip["emotion"] is None
+    assert clip["audioRef"].startswith(f"audio/{entry['id']}/{clip['id']}-") and clip["audioRef"].endswith(".ogg")
+    kept = (server.media / clip["audioRef"]).read_bytes()
+    assert kept[:4] == b"OggS"
+    assert len(kept) < len(wav("picar")) / 3
 
     pulled = server.pull().json()["data"]["changes"]["pronunciations"]
     assert [row["id"] for row in pulled] == [clip["id"]]
@@ -169,14 +198,24 @@ def test_a_rate_limit_is_the_same_code_every_other_model_speaks(server):
     answer = say(server, "lexemes", entry["id"])
     assert answer.json()["error"]["code"] == "llm_rate_limited"
     assert "speech model" in answer.json()["error"]["message"]
-    assert not list(server.media.rglob("*.mp3")), "nothing is written when nothing was spoken"
+    assert not list(server.media.rglob("*.ogg")), "nothing is written when nothing was spoken"
+
+
+def test_a_provider_that_already_compressed_its_answer_is_stored_as_it_arrived(server):
+    """Aura answers MP3. Re-encoding a lossy stream into another codec would add a second generation
+    of artifacts to save a few kilobytes, which is the opposite of the point."""
+    entry, *_ = word(server)
+    server.speech.answer = (MP3, "audio/mpeg")
+    clip = say(server, "lexemes", entry["id"]).json()["data"]
+    assert clip["audioMime"] == "audio/mpeg" and clip["audioRef"].endswith(".mp3")
+    assert (server.media / clip["audioRef"]).read_bytes() == MP3
 
 
 def test_the_media_route_serves_the_clip_to_its_owner_only(server):
     entry, *_ = word(server)
     clip = say(server, "lexemes", entry["id"]).json()["data"]
     served = server.client.get(f"/api/acervo/media/{clip['audioRef']}", headers=server.auth)
-    assert served.status_code == 200 and served.content.startswith(b"ID3")
+    assert served.status_code == 200 and served.content.startswith(b"OggS")
     assert server.client.get(f"/api/acervo/media/{clip['audioRef']}").status_code == 401
 
 
@@ -196,11 +235,14 @@ def test_an_attestation_is_read_in_its_words_language(server):
 
 
 def test_a_selection_is_spoken_and_never_stored(server):
+    """Compressed on the way out even though nothing is kept: it is downloaded before it can be
+    heard, and a master is four times the wait for audio that lives one playback."""
     word(server)
     answer = server.post("/pronunciations/utterance", {"text": "Everything itches!", "language": "en"})
     assert answer.status_code == 200
-    assert answer.headers["content-type"] == "audio/mpeg"
-    assert answer.content == MP3 + b"Everything itches!"
+    assert answer.headers["content-type"] == "audio/ogg"
+    assert answer.content[:4] == b"OggS"
+    assert len(answer.content) < len(wav("Everything itches!")) / 3
     assert answer.headers["x-acervo-voice"] == "en-US-Wavenet-C"
     assert server.pull().json()["data"]["changes"]["pronunciations"] == []
 
@@ -255,6 +297,8 @@ def test_an_exported_clip_is_put_back_with_who_recorded_it(server):
     assert answer.status_code == 200, answer.json()
     clip = answer.json()["data"]
     assert clip["modelId"] == "wavenet" and clip["voice"] == "es-ES-Wavenet-F"
+    # A bundle's clip is put back byte for byte, whatever it was recorded as: it is already a file.
+    assert clip["audioMime"] == "audio/mpeg"
     assert server.speech.calls == [], "restoring spends nothing"
     # And it is current, so pressing play reuses it.
     say(server, "lexemes", entry["id"])

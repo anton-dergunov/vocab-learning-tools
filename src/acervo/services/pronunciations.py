@@ -29,7 +29,7 @@ from acervo.errors import ApiError
 from acervo.models import ChainExhausted, ProviderError, journal, load_catalogue
 from acervo.models.call import audio_mime
 from acervo.models.catalogue import available
-from acervo.pronunciation import speak as speaking
+from acervo.pronunciation import encode, speak as speaking
 from acervo.pronunciation.ids import pronunciation_id
 from acervo.pronunciation.targets import COLLECTION, Target, current, target_in
 from acervo.repository import graph, pronunciation_settings
@@ -188,13 +188,17 @@ def pronounce(settings: Settings, owner: str, device: str, route_kind: str, targ
         lambda error: log(started, source=source, result=error, failed=True),
     )
     result = spoken.result
+    # The provider answered with a master; what is kept is Opus. An answer that was already
+    # compressed passes through untouched — see `pronunciation/encode.py`.
+    kept, mime = encode.compact(result.data, result.mime)
     return _store(
-        settings, owner, device, target, existing, clip_id, result.data, result.mime,
+        settings, owner, device, target, existing, clip_id, kept, mime,
         provider_id=result.answer.provider_id, model_id=result.answer.model, voice=result.voice,
         emotion=target.emotion if spoken.direction else None,
         on_logged=lambda clip, outcome: log(
             started, source=source, clip=clip, result=outcome, failed=outcome != "stored",
-            bytes=len(result.data), attempts=len(result.answer.attempts), passed_over=_passed(result.answer),
+            bytes=len(kept), answered=f"{result.mime}:{len(result.data)}",
+            attempts=len(result.answer.attempts), passed_over=_passed(result.answer),
             warnings="; ".join(result.answer.warnings), style="yes" if spoken.direction else ("dropped" if style else "no"),
         ),
     )
@@ -244,14 +248,17 @@ def utterance(settings: Settings, owner: str, text: str, language: str) -> tuple
                         result=error, seconds=time.monotonic() - started)
 
     spoken = _speak(settings, owner, words, language, "plain", None, "pronounce-selection", failed)
+    # Compressed like a stored clip, though nothing is stored: this one is downloaded before it can
+    # be heard, and a master is four times the wait on a phone for audio that lives one playback.
     result = spoken.result
+    audio, mime = encode.compact(result.data, result.mime)
     journal.outcome(
         "pronounce-selection", lang=language, chars=len(words), text=words,
         pair=f"{result.answer.provider_id}:{result.answer.model}", voice=result.voice,
-        bytes=len(result.data), mime=result.mime, result="spoken",
+        bytes=len(audio), answered=f"{result.mime}:{len(result.data)}", mime=mime, result="spoken",
         seconds=time.monotonic() - started,
     )
-    return result.data, result.mime, {
+    return audio, mime, {
         "provider": result.answer.provider_id, "model": result.answer.model, "voice": result.voice or "",
     }
 

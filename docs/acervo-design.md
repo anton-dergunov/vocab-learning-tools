@@ -592,7 +592,8 @@ on demand by the device, but only one of them is a record in the graph.
 This rule used to cover both, and it was written with 300 KB pictures in mind. A spoken headword is a
 couple of kilobytes: the clips of a whole vocabulary cost about what its *text* does, while its
 pictures cost two orders of magnitude more. So a clip is a row like any other — it carries the words
-it speaks and the voice that spoke them — and it travels on the ordinary cursor pull, which is what
+it speaks, the voice that spoke them, and Opus at around 60 kbps because a blind listening test said
+so (`experiments/pronunciation-encoding/`) — and it travels on the ordinary cursor pull, which is what
 lets a word recorded on one device be heard on another with no network at all. The text of your
 vocabulary works on a plane, and now so does hearing it; the illustrations still do not, and
 shouldn't pretend to.

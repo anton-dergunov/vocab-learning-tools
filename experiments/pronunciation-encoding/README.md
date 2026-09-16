@@ -135,22 +135,44 @@ between four and eleven times as much:
 So the choice that follows from the numbers is **`OGG_OPUS`: better than what is stored today, on
 every piece where a difference was audible at all, and smaller than it.**
 
-## Decision
+## Decision, and what shipped
 
-**Ask Cloud TTS for `OGG_OPUS` instead of `MP3`**, for both the plain and the expressive voices. It
-is the only candidate that is simultaneously better-sounding and smaller than what is stored now,
-and the 32 kbps MP3 it replaces is the one thing in this test anybody could hear.
+**Ask for the uncompressed master and encode Opus here** — not `OGG_OPUS` from the API, which was the
+obvious reading of the result and the wrong one.
 
-Recorded here; the change itself is a follow-up — one value per model in `models/catalogue.json`,
-read by `src/acervo/models/google_tts.py`, with `audio_mime` already recognising an Ogg stream.
+Opus is right: it was indistinguishable from the master and is smaller than the MP3 it replaces. But
+the API's `OGG_OPUS` comes back at 28–35 kbps and there is no parameter to ask for more, while
+`LINEAR16` is the performance itself and the API meters **characters, not bytes** — so requesting the
+master costs nothing and puts the bitrate in Acervo's hands. That matters precisely because the one
+hesitation in this sheet was at 32 kbps (*"might be very slightly compressed, but not sure"*): the
+choice with headroom should not have to be argued with a provider.
 
-Two notes for whoever makes that change:
+So: every Google model's row declares `encoding: "LINEAR16"`, and
+[`src/acervo/pronunciation/encode.py`](../../src/acervo/pronunciation/encode.py) writes Ogg Opus at
+libsndfile compression 0.8 — measured at 51 kbps on this sheet's material and 55–68 kbps on real
+clips, VBR following the content. Half again the bitrate the listener already could not fault.
 
-- The blind candidates were encoded locally with libopus at 32 kbps; the API's own `OGG_OPUS`
-  answers at 28–35 kbps with the same encoder, so the listening result carries over. Worth one A/B
-  of a real API clip against its master before it ships.
-- The API's Opus reports a 48 kHz sample rate where its MP3 reports 24 kHz. That is Opus's internal
-  rate, not upsampled content, and is nothing to fix.
+Measured on the live path afterwards, through the real routes:
+
+| clip | master from Google | stored |
+| --- | --- | --- |
+| `picar` | 31 KB | **5.7 KB** at 68 kbps |
+| a definition | 107 KB | **16.7 KB** at 60 kbps |
+| an expressive example | 234 KB | **33.9 KB** at 55 kbps |
+| a selection (stored nowhere, still sent) | 84 KB | **13.4 KB** at 61 kbps |
+
+Three decisions fell out of implementing it:
+
+- **An answer that is already compressed is stored as it arrived.** Cloudflare's Aura returns MP3;
+  re-encoding a lossy stream into another lossy codec adds a second generation of artifacts to save a
+  few kilobytes. `encode.compact` is the rule, in one place.
+- **A selection is compressed too**, though nothing is stored: it is downloaded before it can be
+  heard, and a master was four times the wait on a phone for audio that lives one playback.
+- **A missing encoder is loud, not lenient.** Falling back to storing the master would multiply every
+  clip by twelve and show up as a full phone weeks later.
+- `soundfile` rather than ffmpeg: the wheel carries libsndfile, so the server image needs no system
+  package. The API's Opus reports a 48 kHz sample rate where its MP3 reports 24 kHz — that is Opus's
+  internal rate, not upsampled content, and is nothing to fix.
 
 ### Not settled here
 

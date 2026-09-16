@@ -106,11 +106,18 @@ def _ids(passage: Passage) -> tuple[str, str, str]:
 
 
 def article_for(passage: Passage, target_lang: str, *, with_decoy: bool) -> ArticleView:
-    """One lexeme, one or two senses, no examples.
+    """One lexeme, one or two senses, and the example each sense already has.
 
     The decoy is the passage's own neighbouring sense — the shape that makes refusing meaningful,
     since a selector that cannot tell two senses apart has somewhere wrong to put the clip. Left out
     in translate mode, where the question is what the translation says rather than where it goes.
+
+    **The examples are here because leaving them out was a real gap.** A production request carries
+    every sense with the examples it already holds, and this experiment's first version sent none —
+    so the requests it measured were a shape the server never actually sends. An example's own
+    translation is included only when it is in the language being asked for; a row translating into
+    Japanese gets the example's text alone rather than an authored Japanese sentence nobody here can
+    check.
     """
     vocabulary_id, lexeme_id, sense_id = _ids(passage)
     senses = [{
@@ -139,11 +146,26 @@ def article_for(passage: Passage, target_lang: str, *, with_decoy: bool) -> Arti
             "topicIds": [], "notes": [], "shortGloss": passage.raw["shortGloss"], **SYNC,
         }],
         "senses": senses,
-        "examples": [], "attestations": [], "imagePrompts": [], "studyStates": [],
+        "examples": _examples_for(passage, senses, target_lang),
+        "attestations": [], "imagePrompts": [], "studyStates": [],
     }
     articles = build_articles(changes, passage.source_lang)
     assert len(articles) == 1
     return articles[0]
+
+
+def _examples_for(passage: Passage, senses: list[dict], target_lang: str) -> list[dict]:
+    """One generated example per sense, as `acervo_compose.md` would have written it."""
+    example = passage.raw.get("example")
+    if not example:
+        return []
+    translation = example.get("translations", {}).get(target_lang)
+    return [{
+        "id": f"x{sense['id'][1:]}"[:15], "senseId": sense["id"],
+        "text": example["text"], "textLang": passage.source_lang,
+        "translation": translation, "translationLang": target_lang if translation else None,
+        "origin": "llm", "modelId": "gemini/gemini-3.5-flash-lite", **SYNC,
+    } for sense in senses[:1]]
 
 
 def candidate_for(passage: Passage, rank: int = 1) -> Candidate:

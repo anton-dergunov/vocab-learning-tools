@@ -55,10 +55,22 @@ def test_a_wavenet_voice_is_named_by_locale_and_takes_no_model_name_and_no_promp
     transport(monkeypatch, audio(), calls)
     data, mime = google_tts.speech(ROW, "wavenet", "picar", language="es")
     body = calls[-1]["json"]
-    assert (data, mime) == (b"ID3-an-mp3", "audio/mpeg")
+    assert (data, mime) == (b"ID3-an-mp3", "audio/wav")
     assert body["voice"] == {"languageCode": "es-ES", "name": "es-ES-Wavenet-F"}
     assert body["input"] == {"text": "picar"}
-    assert body["audioConfig"] == {"audioEncoding": "MP3"}
+    # The master, because the compression is Acervo's: `pronunciation/encode.py`, measured in
+    # `experiments/pronunciation-encoding/`. Google's own MP3 is 32 kbps for a Gemini voice.
+    assert body["audioConfig"] == {"audioEncoding": "LINEAR16"}
+
+
+def test_the_row_says_what_to_ask_for_and_an_undeclared_model_still_gets_something(monkeypatch):
+    """Every Google model declares `LINEAR16`; the fallback exists so a new row cannot ask for
+    nothing at all and fail inside Google rather than here."""
+    calls = []
+    transport(monkeypatch, audio(), calls)
+    for model in ("wavenet", "standard", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-tts"):
+        google_tts.speech(ROW, model, "picar", language="es")
+        assert calls[-1]["json"]["audioConfig"]["audioEncoding"] == "LINEAR16"
 
 
 def test_a_gemini_voice_carries_its_model_name_and_the_direction_in_a_field_of_its_own(monkeypatch):

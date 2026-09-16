@@ -226,12 +226,17 @@ describe("where the word linking has got to", () => {
     expect((await screen.findByTestId("target")).textContent).toBe(stored.translation);
   });
 
-  it("says so while it is still asking, rather than showing nothing", async () => {
+  it("says nothing at all while it is still asking, and takes up no room saying it", async () => {
+    // The linking runs quietly. A status line here had a rule above it and a line's worth of
+    // height, so it pushed everything down while it showed and pulled it back up when it went —
+    // and the reader, mid-sentence, saw the text move rather than a message go away.
     const stored = playing();
     translationFor.mockReturnValue(new Promise(() => { /* never settles */ }));
     render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
 
-    expect(await screen.findByText("Linking the words…")).toBeInTheDocument();
+    expect((await screen.findByTestId("target")).textContent).toBe(stored.translation);
+    expect(document.querySelector(".clip-translation")).toBeNull();
+    expect(screen.queryByText(/Linking/)).not.toBeInTheDocument();
   });
 
   it("says nothing of its own once the words are linked", async () => {
