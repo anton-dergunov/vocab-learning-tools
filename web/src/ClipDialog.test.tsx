@@ -239,6 +239,33 @@ describe("where the word linking has got to", () => {
     expect(screen.queryByText(/Linking/)).not.toBeInTheDocument();
   });
 
+  it("does not claim the corpus is unreachable on its way to asking it", async () => {
+    /* The line above samples the DOM once and so only caught this when the scheduler happened to
+       leave the bad frame standing — which made it fail under a loaded parallel run and pass alone.
+       This watches every mutation instead, because what is wrong is a frame rather than a state:
+       `asking` began true, but the alignment effect ran once with the clip still unfetched and took
+       the same branch as "there is nothing to align", so the commit that mounted the player mounted
+       "the corpus could not be reached" under it and the next effect took it away again. */
+    const stored = playing();
+    translationFor.mockReturnValue(new Promise(() => { /* never settles */ }));
+    let flashed = false;
+    const watcher = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          if (node.matches(".clip-translation") || node.querySelector(".clip-translation")) flashed = true;
+        }
+      }
+    });
+    watcher.observe(document.body, { childList: true, subtree: true });
+
+    render(<ClipDialog stored={stored} glossLang="en" headword="picar" onClose={() => undefined} />);
+    expect((await screen.findByTestId("target")).textContent).toBe(stored.translation);
+    watcher.disconnect();
+
+    expect(flashed).toBe(false);
+  });
+
   it("says nothing of its own once the words are linked", async () => {
     const stored = playing();
     translationFor.mockResolvedValue({

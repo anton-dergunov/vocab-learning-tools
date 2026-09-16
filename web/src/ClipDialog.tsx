@@ -90,16 +90,25 @@ export function ClipDialog({ stored, headword, glossLang, onClose, onRemove }: {
   const target_lang = stored.translationLang ?? glossLang;
 
   useEffect(() => {
+    /* "Not fetched yet" is not "nothing to align", and the two used to share this branch. On the
+       first pass `view` is null, so the guard below turned asking off before anything had been
+       asked — and the commit that mounted the player mounted the line under it too, saying the
+       corpus could not be reached, until the effect ran again a moment later and took it away.
+       That is the flicker the comment in `TranslationLine` says was designed out: a line appearing
+       and going, moving the sentence the reader had started. */
+    if (!view) return;
     // Nothing to align, so nothing is outstanding — otherwise the line below would say it was
     // still working forever, on a clip it was never going to ask about.
-    if (!view?.clip || !target_lang || !stored_text) { setAsking(false); return; }
+    if (!view.clip || !target_lang || !stored_text) { setAsking(false); return; }
     const cancel = new AbortController();
     let live = true;
     setAsking(true);
     translationFor(view.clip.segment_id, target_lang, cancel.signal, false, stored_text)
       .then((job) => { if (live) { setTranslation(job); setAsking(false); } });
     return () => { live = false; cancel.abort(); };
-  }, [view?.clip?.segment_id, target_lang, stored_text]);
+    // `view` itself, not its segment id: a clip the corpus no longer holds has no id, so keying on
+    // one meant the arrival of that answer did not re-run this.
+  }, [view, target_lang, stored_text]);
 
   /* The player already draws a retry beside a failed translation; this is the callback it needs to
      render one. It matters more than a convenience: the corpus remembers a stage that produced
