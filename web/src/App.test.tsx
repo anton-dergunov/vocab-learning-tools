@@ -417,6 +417,42 @@ describe("Acervo application", () => {
     expect(request.text).not.toContain("mosquito");
   });
 
+  it("forgets an abandoned composition rather than reopening it", async () => {
+    signedIn();
+    dictionariesAnswer({ device: [DEVICE_HIT] });
+    vi.mocked(lookupDictionaries).mockResolvedValue([{
+      dictionaryId: "kaikki-es-es", name: "Wiktionary (es→es)", origin: "device",
+      attribution: "Wiktionary contributors.", licence: "CC BY-SA 4.0", sourceLang: "es",
+      entry: { dictionaryId: "kaikki-es-es", word: "picadura", tier: "fields", articles: [{
+        headword: "picadura", posLabel: "noun",
+        senses: [{ definition: "Mordedura de un insecto." }]
+      }] }
+    }]);
+    const capture = vi.spyOn(backendSession, "captureText")
+      .mockRejectedValue(new AcervoApiError("nothing to build", 502, "llm_unusable"));
+
+    await openList();
+    fireEvent.change(screen.getByPlaceholderText("Search your words…"), { target: { value: "pica" } });
+    fireEvent.click(await screen.findByRole("button", { name: /picadura/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add to my words" }));
+    fireEvent.click(screen.getByRole("button", { name: "Build entry" }));
+    await waitFor(() => expect(capture).toHaveBeenCalled());
+    const spent = capture.mock.calls.length;
+
+    // Escape leaves the composition, and must take its seed with it. It used to clear the tab and
+    // leave the seed behind, so the next press of Add reopened the dictionary word you had walked
+    // away from — and, because a seeded composition processes itself on arrival, spent a capture
+    // building it a second time.
+    fireEvent.keyDown(document, { key: "Escape" });
+    await screen.findByRole("button", { name: /picar/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByLabelText(/Paste a word/)).toHaveValue("");
+    expect(screen.getByLabelText(/Which word/)).toHaveValue("");
+    expect(screen.queryByText(/What is being sent as reference/)).not.toBeInTheDocument();
+    expect(capture).toHaveBeenCalledTimes(spent);
+  });
+
   it("looks the dictionary form up too, not only the headword you read", async () => {
     signedIn();
     vi.mocked(lookupDictionaries).mockResolvedValue([]);
@@ -678,6 +714,26 @@ describe("Acervo application", () => {
     // Provenance is the point: the sentence survives as its own record, and the example says so.
     expect(example?.origin).toBe("attestation");
     expect(example?.sourceAttestationId).toBe(attestation?.id);
+  });
+
+  it("takes Add back to the capture box mid-composition rather than starting over", async () => {
+    signedIn();
+    await openList();
+    mockGarfioCapture();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.change(await screen.findByLabelText(/Paste a word/), {
+      target: { value: "El disfraz de pirata viene con un garfio." }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Process" }));
+    await screen.findByRole("heading", { name: "el garfio" });
+
+    // The toolbar stays up while you compose, so Add is reachable from the article you are
+    // reviewing. It means "back to the box", not "throw this away and start again" — correcting the
+    // word and processing it once more is the ordinary way to use this screen.
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByLabelText(/Paste a word/))
+      .toHaveValue("El disfraz de pirata viene con un garfio.");
   });
 
   it("renders the proposal from the document, so a YAML edit shows in the article", async () => {

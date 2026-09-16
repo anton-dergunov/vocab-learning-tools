@@ -197,6 +197,24 @@ export default function App() {
   const undoable = useRef<{ id: string; text: string } | null>(null);
   const [addTab, setAddTab] = useState<AddTab | null>(null);
   const [addSeed, setAddSeed] = useState<CaptureSeed | null>(null);
+  /* A composition has a lifetime, so it gets one door in and one door out. Closing used to be an
+     ad-hoc edit of the two states above at five call sites, three of which cleared the tab and left
+     the seed behind — so the next press of Add reopened the dictionary word you had walked away
+     from and, because a seed processes itself on arrival, spent a capture on it. The counter is the
+     composition's identity: keying the view on the headword instead meant two compositions of the
+     same word shared a draft. */
+  const [composition, setComposition] = useState(0);
+  const openCapture = useCallback((seed: CaptureSeed | null) => {
+    setProblems([]);
+    setAddSeed(seed);
+    setAddTab("capture");
+    setComposition((count) => count + 1);
+  }, []);
+  const closeCapture = useCallback(() => {
+    setProblems([]);
+    setAddTab(null);
+    setAddSeed(null);
+  }, []);
   const [langMenu, setLangMenu] = useState(false);
   const [articleMenu, setArticleMenu] = useState(false);
   const [scopeMenu, setScopeMenu] = useState(false);
@@ -601,17 +619,15 @@ export default function App() {
    * you were just reading as *reference* — grounding for the article, never sentences of your own.
    */
   const addFromDictionary = useCallback((request: DictionaryAddRequest) => {
-    setAddSeed({
+    setExternal(null);
+    openCapture({
       headword: request.headword,
       reference: request.reference,
       referenceMode: request.referenceMode,
       note: request.note,
       sources: request.sources
     });
-    setExternal(null);
-    setProblems([]);
-    setAddTab("capture");
-  }, []);
+  }, [openCapture]);
 
   const openLexeme = useCallback((id: string) => {
     setOpenId(id);
@@ -641,7 +657,7 @@ export default function App() {
       }
       // Innermost first: leave what you are composing before leaving the entry it belongs to.
       if (event.key === "Escape") {
-        if (addTab) { setProblems([]); setAddTab(null); }
+        if (addTab) closeCapture();
         else if (mode === "edit") { setProblems([]); setMode("read"); }
         else if (external) setExternal(null);
         else if (openId) setOpenId(null);
@@ -649,7 +665,7 @@ export default function App() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [addTab, external, mode, openId]);
+  }, [addTab, closeCapture, external, mode, openId]);
 
   /**
    * The one path a YAML document takes, whether it came from the article editor or the add sheet.
@@ -686,7 +702,7 @@ export default function App() {
   async function createFromYaml(text: string) {
     const id = await applyYaml(text);
     if (!id) return;
-    setAddTab(null);
+    closeCapture();
     openLexeme(id);
     /* Pictures are the enrichment phase, deliberately not part of making the entry: the article is
        readable the moment it is saved, and its pictures arrive behind it one at a time. Only the
@@ -881,14 +897,12 @@ export default function App() {
   const foldIn = useCallback((lexemeId: string, foldable: CaptureFoldable) => {
     const quoted = foldable.sentences.map((sentence) => `«${sentence.text}»`).join(" ");
     const note = foldable.note ? ` ${foldable.note}` : "";
-    setProblems([]);
-    setAddTab(null);
-    setAddSeed(null);
+    closeCapture();
     openLexeme(lexemeId);
     setSeededTurn(quoted
       ? `Fold this in: ${quoted}.${note}`
       : `I met this word again.${note || " Is there anything worth adding?"}`);
-  }, [openLexeme]);
+  }, [closeCapture, openLexeme]);
 
   /**
    * Capture submits text and gets back a proposal — never a stored record. Everything that saves
@@ -996,7 +1010,14 @@ export default function App() {
             </div>
           </div>
 
-          <button className="tb-btn primary" onClick={() => setAddTab("capture")}>
+          {/* The toolbar stays up while you compose, so this button means two things and only one
+              of them is "start something new": pressing it mid-composition returns you to the
+              capture box with what you typed still in it, which is how you correct the word after
+              reading the article it produced and process it again. */}
+          <button
+            className="tb-btn primary"
+            onClick={() => { if (addTab) setAddTab("capture"); else openCapture(null); }}
+          >
             <PlusIcon /><span className="wide-only">Add</span>
           </button>
 
@@ -1058,15 +1079,18 @@ export default function App() {
             title and a save button on screen at every window size. */}
         <main className={`main ${composing ? "composing" : ""}${carding && !composing ? " cards-on" : ""}`} ref={main}>
           {addTab ? <AddView
-            // A seed is a fresh composition, not a prop change: remounting is what makes "add this
-            // word, then that one" start clean rather than editing the previous draft.
-            key={addSeed?.headword ?? "blank"}
+            // A new composition is a fresh view, not a prop change: remounting is what makes "add
+            // this word, then that one" start clean rather than editing the previous draft. The key
+            // is the composition's own count rather than its headword, because keying on the word
+            // meant two goes at the same word shared a draft — and because switching tabs must not
+            // change it, so the text you typed survives reading the article it produced.
+            key={composition}
             tab={addTab} onTab={setAddTab} graph={snapshot} problems={problems} busy={saving}
             seed={addSeed} captureHealth={captureHealth}
-            onClose={() => { setProblems([]); setAddTab(null); setAddSeed(null); }}
+            onClose={closeCapture}
             onCreate={(draft) => void createFromYaml(draft)}
             onCapture={captureText}
-            onOpenLexeme={(id) => { setProblems([]); setAddTab(null); openLexeme(id); }}
+            onOpenLexeme={(id) => { closeCapture(); openLexeme(id); }}
             onFoldIn={foldIn}
             onChat={captureHealth?.available === false ? undefined : askAboutDraft}
             offline={syncStatus.state === "offline"}

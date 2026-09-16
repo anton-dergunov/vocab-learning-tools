@@ -302,9 +302,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     @objc fileprivate func deleteAllWords() { open("delete") }
 
     /// Every confirmation, and every write, stays on the side that owns the vocabulary.
+    ///
+    /// The name travels as an argument rather than inside the source. Today it is one of three
+    /// literals, so nothing can go wrong; a command that one day carries text somebody selected must
+    /// not be able to close the string literal it was pasted into and run as script in the origin
+    /// that holds the session.
     private func open(_ command: String) {
         showWindow()
-        webView.evaluateJavaScript("window.acervo?.command(\"\(command)\")")
+        webView.callAsyncJavaScript(
+            "window.acervo?.command(name)",
+            arguments: ["name": command],
+            in: nil,        // every frame
+            in: .page,      // the page's own world, where `window.acervo` is installed
+            // Fire and forget, as the call it replaced was: the menu asks, and the surface that owns
+            // the vocabulary decides what to show. Naming the handler also picks this overload over
+            // the `async throws` one, which a menu action cannot await.
+            completionHandler: nil
+        )
     }
 
     private func showSettings() {
