@@ -15,7 +15,7 @@ import { syncEngine } from "./sync";
  */
 
 export interface JobsStatus {
-  /** The latest job this device knows of per subject id, open or finished. */
+  /** The latest job this device knows of per kind and subject (`jobKey`), open or finished. */
   bySubject: ReadonlyMap<string, Job>;
   connected: boolean;
 }
@@ -27,10 +27,17 @@ const LONGEST_RETRY = 30_000;
 export const isOpen = (job: Job | undefined | null): job is Job & { state: "queued" | "running" } =>
   Boolean(job && OPEN.has(job.state));
 
+/** Jobs are kept per kind *and* subject: a new brief for a word must not hide its enrichment. */
+export const jobKey = (kind: string, subjectId: string) => `${kind}:${subjectId}`;
+
+/** The latest job of one kind about one record, open or just finished. */
+export function jobFor(status: JobsStatus, kind: string, subjectId: string): Job | undefined {
+  return status.bySubject.get(jobKey(kind, subjectId));
+}
+
 /** The job a word's page shows: its enrichment, open or just finished. */
 export function enrichmentOf(status: JobsStatus, lexemeId: string): Job | undefined {
-  const job = status.bySubject.get(lexemeId);
-  return job?.kind === "enrich" ? job : undefined;
+  return jobFor(status, "enrich", lexemeId);
 }
 
 /** Whether a word is still filling in. */
@@ -182,15 +189,15 @@ export class JobStream {
   async rebuild(): Promise<void> {
     const open = await backendSession.jobs(true);
     const next = new Map<string, Job>();
-    this.status.bySubject.forEach((job, subject) => {
+    this.status.bySubject.forEach((job, key) => {
       // A job this device saw open and the server no longer lists has finished unseen; its final
       // state is fetched rather than guessed, so a failure still shows its Try again.
-      if (!isOpen(job)) next.set(subject, job);
+      if (!isOpen(job)) next.set(key, job);
     });
     const vanished = [...this.status.bySubject.values()].filter(
       (job) => isOpen(job) && !open.some((current) => current.id === job.id)
     );
-    for (const job of open) if (job.subject) next.set(job.subject.id, job);
+    for (const job of open) if (job.subject) next.set(jobKey(job.kind, job.subject.id), job);
     this.update({ bySubject: next });
     for (const job of vanished) {
       try { this.apply(await backendSession.job(job.id)); } catch { /* pruned or gone: leave it */ }
@@ -200,20 +207,22 @@ export class JobStream {
   /** One job's news. The newest job for a subject wins, so a Try again replaces the failure. */
   apply(job: Job): void {
     if (!job.subject) return;
-    const held = this.status.bySubject.get(job.subject.id);
+    const key = jobKey(job.kind, job.subject.id);
+    const held = this.status.bySubject.get(key);
     if (held && held.id !== job.id && held.createdAt > job.createdAt) return;
     const next = new Map(this.status.bySubject);
-    if (job.dismissed) next.delete(job.subject.id);
-    else next.set(job.subject.id, job);
+    if (job.dismissed) next.delete(key);
+    else next.set(key, job);
     this.update({ bySubject: next });
   }
 
   /** The owner has seen a finished job's outcome and left the word; stop showing it. */
-  forget(subjectId: string): void {
-    const held = this.status.bySubject.get(subjectId);
+  forget(kind: string, subjectId: string): void {
+    const key = jobKey(kind, subjectId);
+    const held = this.status.bySubject.get(key);
     if (!held || isOpen(held)) return;
     const next = new Map(this.status.bySubject);
-    next.delete(subjectId);
+    next.delete(key);
     this.update({ bySubject: next });
   }
 

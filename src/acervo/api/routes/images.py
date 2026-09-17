@@ -30,6 +30,7 @@ from acervo.services.images import (
     apply_settings,
     attach_picture,
     brief_lexeme,
+    prompt_view,
     render_prompt,
     settings_view,
     suppress_prompt,
@@ -114,6 +115,12 @@ async def picture(sense_id: str, request: Request) -> JSONResponse:
             attach_picture, request.app.state.settings, owner, device, sense_id, payload, drawn_by
         )
     )
+
+
+@router.get("/images/prompts/{prompt_id}")
+def read_prompt(prompt_id: str, request: Request) -> JSONResponse:
+    """The row and the prompt it composes to — which is rebuilt, never stored."""
+    return data(prompt_view(owner_id(request), prompt_id))
 
 
 @router.delete("/images/prompts/{prompt_id}")

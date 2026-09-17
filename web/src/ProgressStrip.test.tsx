@@ -44,6 +44,14 @@ describe("what the strip says", () => {
     ]))?.phases[0].text).toBe("Drawing 1 of 2 (the provider is busy)");
   });
 
+  it("names the steps of the other kinds too", () => {
+    expect(stripOf(job("running", [{ name: "draw", state: "running" }], { kind: "image.redraw" }))?.phases)
+      .toEqual([{ text: "Drawing", current: true }]);
+    expect(stripOf(job("running", [
+      { name: "capture", state: "running", detail: { words: [{}, {}] } }
+    ], { kind: "capture" }))?.phases[0].text).toBe("Reading the text · 2 so far");
+  });
+
   it("says a job has not started yet", () => {
     expect(stripOf(job("queued", []))?.phases).toEqual([{ text: "Waiting to start", current: false }]);
   });

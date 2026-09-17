@@ -43,7 +43,9 @@ import SignIn from "./SignIn";
 import { setSearchScope, useSearchScope, type SearchScope } from "./searchScope";
 import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
-import { clipSearchOf, drawingPictures, enrichmentOf, isEnriching, isOpen, jobStream } from "./jobs";
+import {
+  clipSearchOf, drawingPictures, enrichmentOf, isEnriching, isOpen, jobFor, jobStream
+} from "./jobs";
 import ProgressStrip from "./ProgressStrip";
 import { ImageDialog } from "./ImageDialog";
 import { clearPictures, forget } from "./media";
@@ -423,8 +425,8 @@ export default function App() {
       .catch(() => notify("The style list could not be read from the server."));
   }, [editingImage, imageStyles.length, notify]);
 
-  /* Senses whose picture is being replaced, removed or redrawn from this device. Local because it
-     lasts exactly as long as the round trip. */
+  /* Senses whose picture is being replaced by a file or removed from this device. Local because it
+     lasts exactly as long as the round trip; a redraw is a server job and shows through the job map. */
   const [replacing, setReplacing] = useState<ReadonlySet<string>>(new Set());
 
   /**
@@ -463,32 +465,66 @@ export default function App() {
 
   const dismissEnrichment = useCallback((lexemeId: string) => {
     const job = enrichmentOf(jobStream.getStatus(), lexemeId);
-    jobStream.forget(lexemeId);
+    jobStream.forget("enrich", lexemeId);
     if (job) void backendSession.dismissJob(job.id).catch(() => undefined);
   }, []);
+
+  /** A picture action is a job, so leaving the word does not lose it. */
+  const askForPicture = useCallback((
+    kind: "image.redraw" | "image.rebrief", subject: { kind: string; id: string },
+    input?: Record<string, string>
+  ) => {
+    void backendSession.enqueueJob({ kind, subject, ...(input ? { input } : {}) })
+      .then((job) => jobStream.apply(job))
+      .catch((error) => notify(error instanceof Error ? error.message : "That could not be asked for."));
+  }, [notify]);
+
+  /* A redraw keeps its picture's reference — the path is derived from the record — so the bytes this
+     device cached have to go once the new picture is written, or the old one stays on screen. After,
+     never before: forgetting first would revoke a URL the "Redrawing…" frame is still showing. */
+  const redrawsSeen = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const finished = [...jobsStatus.bySubject.values()].filter((job) =>
+      job.kind === "image.redraw" && job.state === "done" && !redrawsSeen.current.has(job.id));
+    if (!finished.length) return;
+    finished.forEach((job) => redrawsSeen.current.add(job.id));
+    void (async () => {
+      const held = repository.snapshot().imagePrompts;
+      for (const job of finished) {
+        const ref = held.find((row) => row.id === job.subject?.id)?.imageRef;
+        if (ref) await forget(ref);
+      }
+      await syncEngine.syncNow();
+      setSnapshot(repository.snapshot());
+    })();
+  }, [jobsStatus]);
 
   /* A finished job's outcome is shown for as long as its word stays open, and not the next time. */
   const shownWord = useRef<string | null>(null);
   useEffect(() => {
     const left = shownWord.current;
     shownWord.current = openId;
-    if (left && left !== openId) jobStream.forget(left);
+    if (left && left !== openId) jobStream.forget("enrich", left);
   }, [openId]);
 
   const pictures = useMemo<PictureSlot | null>(() => {
     if (!article || mode !== "read") return null;
     const drawing = drawingPictures(enrichJob);
+    const rebriefing = isOpen(jobFor(jobsStatus, "image.rebrief", article.lexeme.id));
     return {
       open: (senseId, prompt) => setEditingImage({ senseId, prompt }),
+      retry: (prompt) => askForPicture("image.redraw", { kind: "imagePrompt", id: prompt.id }),
       busy: (senseId) => {
         if (replacing.has(senseId)) return true;
+        const record = article.senses.find((entry) => entry.sense.id === senseId)?.images[0] ?? null;
+        if (record && isOpen(jobFor(jobsStatus, "image.redraw", record.id))) return true;
+        if (rebriefing && !record?.imageRef) return true;
         if (!drawing) return false;
         // Only a sense the job will draw: one with a picture, or one ruled out, is not waiting.
-        const record = article.senses.find((entry) => entry.sense.id === senseId)?.images[0] ?? null;
         return !record || (!record.imageRef && !record.suppressed && !record.failureReason);
       }
     };
-  }, [article, mode, enrichJob, replacing]);
+  }, [article, mode, enrichJob, jobsStatus, replacing, askForPicture]);
 
   const clips = useMemo<ClipSlot | null>(() => {
     if (!article || mode !== "read") return null;
@@ -1243,17 +1279,14 @@ export default function App() {
       onChanged={() => setSnapshot(repository.snapshot())}
     />}
     {editingImage && article && <ImageDialog
-      prompt={editingImage.prompt}
+      // The live row rather than the one the dialog opened on, so a new brief shows when it lands.
+      prompt={article.senses.find((entry) => entry.sense.id === editingImage.senseId)?.images[0]
+        ?? editingImage.prompt}
+      briefing={isOpen(jobFor(jobsStatus, "image.rebrief", article.lexeme.id))}
+      onRebrief={() => askForPicture("image.rebrief", { kind: "lexeme", id: article.lexeme.id })}
       headword={article.lexeme.headword}
       styles={imageStyles}
-      deviceId={snapshot?.deviceId ?? ""}
-      lexemeId={article.lexeme.id}
-      senseId={editingImage.senseId}
       onClose={() => setEditingImage(null)}
-      onChanged={() => {
-        // The row the server wrote is authoritative; pull it rather than patching the replica here.
-        void syncEngine.syncNow().then(() => setSnapshot(repository.snapshot()));
-      }}
       onAttach={(file) => { void replacePicture(editingImage.senseId, () =>
         backendSession.attachImage(editingImage.senseId, snapshot?.deviceId ?? "", file)); }}
       onRemove={() => {
@@ -1264,11 +1297,9 @@ export default function App() {
       onDraw={(overrides) => {
         const held = editingImage.prompt;
         if (!held) return;
-        // The dialog closes and the picture says it is redrawing while the request runs.
-        void replacePicture(editingImage.senseId, () =>
-          backendSession.renderImage(held.id, snapshot?.deviceId ?? "", overrides));
+        // The dialog closes and the picture says it is redrawing while the server draws it.
+        askForPicture("image.redraw", { kind: "imagePrompt", id: held.id }, overrides);
       }}
-      onNotify={notify}
     />}
     <div className={`toast ${toast ? "show" : ""}`}>
       {toast}

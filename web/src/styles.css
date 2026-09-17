@@ -1903,6 +1903,12 @@ details.fold .fold-body { padding: 4px 0 18px; }
   color: var(--ink-3); font-size: 12.5px;
 }
 .clip-none.failed { color: var(--warn); }
+/* A picture that could not be drawn: its reason and the ways forward, where the picture would be. */
+.picture-failed {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; margin: 12px 0 0;
+  color: var(--warn); font-size: 12.5px;
+}
+.picture-failed .sep { color: var(--rule); margin: 0 6px; }
 .clip-remove {
   margin-top: 6px; font-size: 12px; color: var(--ink-3);
 }

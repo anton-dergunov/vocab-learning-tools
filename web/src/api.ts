@@ -202,11 +202,8 @@ const MEDIA_PATH = "/api/acervo/media";
 const REQUEST_TIMEOUT = 15_000;
 /** Capture is two model calls deep, so the sync timeout would abort a request that is working. */
 const CAPTURE_TIMEOUT = 300_000;
-// Model calls, so nowhere near the 15 seconds an ordinary read gets. A brief is one text call over
-// a chain that waits out a rate limit; an image is 30-60 seconds and providers meter roughly one a
-// minute, so a pause on the way is normal rather than a fault.
-const BRIEF_TIMEOUT = 180_000;
-const RENDER_TIMEOUT = 300_000;
+// A picture or a clip sent up from this device: a phone photograph over a slow connection.
+const UPLOAD_TIMEOUT = 300_000;
 /* A spoken word takes under two seconds and an expressive sentence three; a whole chain falling
    through its models is what this has to cover. Somebody is holding a finger over a play button. */
 const PRONOUNCE_TIMEOUT = 60_000;
@@ -450,17 +447,6 @@ export interface ClipSettings {
   corpus: CorpusReadout;
 }
 
-export interface ClipSearchResult {
-  lexemeId: string;
-  /** False when nothing was asked: the corpus does not index this language yet. */
-  searched: boolean;
-  skipped: string | null;
-  examples: unknown[];
-  /** Ids the model named that the request never offered. A prompt bug, surfaced rather than hidden. */
-  dropped: number;
-  usage: { provider?: string; model?: string; seconds?: number } | null;
-}
-
 /* ── jobs ─────────────────────────────────────────────────────────────────
    Work the server does on the owner's behalf. Server state, never replicated: the interface shows
    it and never does it. A job's results reach the replica the way every record does, on the pull
@@ -508,6 +494,8 @@ export interface Job {
 export interface JobRequest {
   kind: string;
   subject: { kind: string; id: string };
+  /** What the job needs beyond its subject: an edited brief and style, for edit-and-draw. */
+  input?: Record<string, string>;
   trigger?: "manual" | "import";
 }
 
@@ -788,26 +776,9 @@ export const backendSession = {
   },
 
   /** One text call covering every sense of the word. Its own timeout — a model call, not a read. */
-  briefLexeme(lexemeId: string, deviceId: string): Promise<{ lexemeId: string; imagePrompts: ImagePromptRow[] }> {
-    return client.call<{ lexemeId: string; imagePrompts: ImagePromptRow[] }>(
-      `/images/lexemes/${encodeURIComponent(lexemeId)}/brief`,
-      { method: "POST", body: JSON.stringify({ deviceId }) },
-      false,
-      BRIEF_TIMEOUT
-    );
-  },
-
-  /**
-   * One image call. `prompt` and `styleId` are edit-and-draw and cost no text call; without them
-   * the stored brief is drawn again with a fresh seed.
-   */
-  renderImage(promptId: string, deviceId: string, overrides: { prompt?: string; styleId?: string } = {}): Promise<ImagePromptRow> {
-    return client.call<ImagePromptRow>(
-      `/images/prompts/${encodeURIComponent(promptId)}/render`,
-      { method: "POST", body: JSON.stringify({ deviceId, ...overrides }) },
-      false,
-      RENDER_TIMEOUT
-    );
+  /** One picture's row and the whole prompt it composes to, which is never stored. */
+  imagePrompt(promptId: string): Promise<ImagePromptRow> {
+    return client.call<ImagePromptRow>(`/images/prompts/${encodeURIComponent(promptId)}`);
   },
 
   /**
@@ -835,7 +806,7 @@ export const backendSession = {
         }
       },
       false,
-      RENDER_TIMEOUT
+      UPLOAD_TIMEOUT
     );
   },
 
@@ -897,7 +868,7 @@ export const backendSession = {
         headers: { "Content-Type": audio.type || "application/octet-stream", "X-Acervo-Device": deviceId }
       },
       false,
-      RENDER_TIMEOUT
+      UPLOAD_TIMEOUT
     );
   },
 
@@ -943,14 +914,6 @@ export const backendSession = {
     return client.authHeaders();
   },
 
-  findClips(deviceId: string, lexemeId: string): Promise<ClipSearchResult> {
-    return client.call<ClipSearchResult>(
-      `/clips/lexemes/${encodeURIComponent(lexemeId)}/find`,
-      { method: "POST", body: JSON.stringify({ deviceId }) },
-      false,
-      CAPTURE_TIMEOUT
-    );
-  },
   clipSettings(): Promise<ClipSettings> {
     return client.call<ClipSettings>("/clips/settings");
   },

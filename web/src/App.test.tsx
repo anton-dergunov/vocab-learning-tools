@@ -936,10 +936,7 @@ describe("Acervo application", () => {
     signedIn();
     await openList();
     acceptWrites();
-    const asked = [
-      vi.spyOn(backendSession, "renderImage"), vi.spyOn(backendSession, "briefLexeme"),
-      vi.spyOn(backendSession, "findClips"), vi.spyOn(backendSession, "pronounce")
-    ];
+    const asked = [vi.spyOn(backendSession, "enqueueJob"), vi.spyOn(backendSession, "pronounce")];
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     const sheet = within(screen.getByRole("region", { name: "Add a word" }));
     fireEvent.click(sheet.getByRole("button", { name: "YAML" }));
@@ -991,6 +988,40 @@ describe("Acervo application", () => {
     }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Cards" })).toBeEnabled());
     expect(screen.queryByText(/Drawing/)).toBeNull();
+    act(() => jobStream.stop());
+  });
+
+  it("redraws a picture as a server job, and pulls the new one when it is done", async () => {
+    signedIn();
+    await openList();
+    vi.spyOn(backendSession, "imageSettings").mockResolvedValue({
+      drawEnabled: true, stylesOff: [], boostVariety: true, chosen: false, maxAttempts: 4,
+      available: true, styles: [{ id: "flat-vector", label: "Flat vector", mono: false }]
+    });
+    vi.spyOn(backendSession, "imagePrompt").mockRejectedValue(new Error("offline"));
+    const redraw: Job = {
+      id: "job000000000007", ownerId: TEST_OWNER, parentId: null, kind: "image.redraw",
+      subject: { kind: "imagePrompt", id: "imagepicar00010" }, input: {}, state: "queued",
+      trigger: "manual", steps: [], rerun: false, cancelRequested: false, dismissed: false,
+      error: null, message: null, notBefore: null, createdAt: "2026-09-17T10:00:00.000Z",
+      startedAt: null, finishedAt: null
+    };
+    const enqueue = vi.spyOn(backendSession, "enqueueJob").mockResolvedValue(redraw);
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Picture for picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Draw" }));
+
+    await waitFor(() => expect(enqueue).toHaveBeenCalledWith({
+      kind: "image.redraw", subject: { kind: "imagePrompt", id: "imagepicar00010" },
+      input: { prompt: "A hand hovering near an itchy nose, flat vector, no text.", styleId: "flat-vector" }
+    }));
+    // Leaving the dialog loses nothing: the picture says it is being redrawn for as long as the job is open.
+    expect(await screen.findByText(/Redrawing…|Drawing…/)).toBeInTheDocument();
+
+    const pulls = vi.mocked(backendSession.pullGraph).mock.calls.length;
+    act(() => jobStream.apply({ ...redraw, state: "done", finishedAt: "2026-09-17T10:01:00.000Z" }));
+    await waitFor(() => expect(vi.mocked(backendSession.pullGraph).mock.calls.length).toBeGreaterThan(pulls));
+    await waitFor(() => expect(screen.queryByText(/Redrawing…|Drawing…/)).toBeNull());
     act(() => jobStream.stop());
   });
 

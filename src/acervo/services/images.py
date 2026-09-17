@@ -480,6 +480,11 @@ def _article(owner: str, lexeme_id: str) -> tuple[ArticleView, dict[str, list[di
     return found, records
 
 
+def prompt_view(owner: str, prompt_id: str) -> dict[str, Any]:
+    """One picture's row and the whole prompt it composes to, for the picture dialog to show."""
+    return _readable(_held(owner, prompt_id), _styles())
+
+
 def _held(owner: str, prompt_id: str) -> dict[str, Any]:
     record = graph.image_prompt(owner, prompt_id)
     if record is None:

@@ -394,6 +394,15 @@ function SenseSection({ entry, index, headword, notesLang, pictures, clips, fold
       prompt={record} headword={headword} busy={busy} onOpen={() => pictures.open(sense.id, record)}
     />}
     {pictures && !record && busy && <EmptySenseImage busy onOpen={() => pictures.open(sense.id, null)} />}
+    {/* A picture that could not be drawn says why, once, where the picture would be — with the two
+        ways forward: draw it again, or open the dialog to change the brief or use your own. */}
+    {pictures && record && !busy && !record.imageRef && !record.suppressed && record.failureReason
+      && mark !== "removed" && <p className="picture-failed">
+        <span>{record.failureReason}</span><span className="sep">·</span>
+        <button type="button" className="strip-action" onClick={() => pictures.retry(record)}>Try again</button>
+        <span className="sep">·</span>
+        <button type="button" className="strip-action" onClick={() => pictures.open(sense.id, record)}>Change…</button>
+      </p>}
     {orderedExamples(examples).map((example, position) => <ExampleBlock
       key={example.id} example={example} notesLang={notesLang} onListen={onListen} onPlayClip={onPlayClip}
       marks={marks} ask={ask} label={`example ${position + 1} of sense ${index + 1}`}
@@ -871,6 +880,8 @@ export interface PictureSlot {
    * and the dialog has to know *which* sense's brief to show when it comes back.
    */
   open(senseId: string, prompt: ImagePrompt | null): void;
+  /** Draw a picture again that could not be drawn — a server job, like every picture action. */
+  retry(prompt: ImagePrompt): void;
   busy(senseId: string): boolean;
 }
 

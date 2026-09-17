@@ -156,12 +156,30 @@ def enqueue(
                 connection, owner, subject_id, trigger=trigger, parent=parent
             )
         else:
-            queued = _insert(
-                connection, owner, kind, trigger=trigger, subject_kind=subject_kind,
-                subject_id=subject_id, input=input, parent=parent,
-            )
+            waiting = _queued_for(connection, owner, kind, subject_id) if subject_id else None
+            if waiting is not None:
+                # A second request for the same thing before the first has started is the same
+                # request, and the newer wording wins: pressing Draw twice draws once.
+                connection.execute(
+                    update(_jobs).where(_jobs.c.id == waiting["id"]).values(input=dict(input or {}))
+                )
+                queued = project(_row(connection, waiting["id"]))  # type: ignore[arg-type]
+            else:
+                queued = _insert(
+                    connection, owner, kind, trigger=trigger, subject_kind=subject_kind,
+                    subject_id=subject_id, input=input, parent=parent,
+                )
     notify.queued(owner, queued)
     return queued
+
+
+def _queued_for(connection: Connection, owner: str, kind: str, subject_id: str) -> Mapping[str, Any] | None:
+    return connection.execute(
+        select(_jobs).where(
+            _jobs.c.owner == owner, _jobs.c.kind == kind, _jobs.c.subject_id == subject_id,
+            _jobs.c.state == "queued",
+        )
+    ).mappings().first()
 
 
 def open_of_kind(kind: str, owner: str | None = None) -> list[dict[str, Any]]:

@@ -28,6 +28,9 @@ export function describeJob(job: Job, snapshot: ReplicaSnapshot | null): string 
   return word ? `${kind} “${word.headword}”` : kind;
 }
 
+/* The kinds a person can ask for again from here. A capture is resubmitted by its transport. */
+const RETRYABLE = new Set(["enrich", "image.redraw", "image.rebrief"]);
+
 function when(instant: string | null): string {
   if (!instant) return "";
   const at = new Date(instant);
@@ -70,7 +73,9 @@ export default function ActivitySettings({ snapshot, onNotify }: {
   };
 
   const retry = (job: Job) => job.subject && void act(
-    () => backendSession.enqueueJob({ kind: job.kind, subject: job.subject! }),
+    () => backendSession.enqueueJob({
+      kind: job.kind, subject: job.subject!, input: job.input as Record<string, string>
+    }),
     "That could not be asked for again."
   );
   const cancel = (job: Job) => void act(() => backendSession.cancelJob(job.id), "That could not be cancelled.");
@@ -92,7 +97,7 @@ export default function ActivitySettings({ snapshot, onNotify }: {
       <span className="activity-actions">
         {isOpen(job) && !job.cancelRequested
           && <button type="button" className="tb-btn" onClick={() => cancel(job)}>Cancel</button>}
-        {job.state === "failed" && job.kind === "enrich"
+        {job.state === "failed" && RETRYABLE.has(job.kind)
           && <button type="button" className="tb-btn" onClick={() => retry(job)}>Try again</button>}
         {!isOpen(job) && <button type="button" className="tb-btn" onClick={() => dismiss(job)}>Dismiss</button>}
       </span>

@@ -30,6 +30,14 @@ function phase(step: JobStep): string | null {
       return `Drawing pictures${waiting}`;
     case "pronunciations":
       return `Recording audio${waiting}`;
+    case "draw":
+      return `Drawing${waiting}`;
+    case "brief":
+      return `Writing picture briefs${waiting}`;
+    case "capture": {
+      const words = Array.isArray(step.detail?.words) ? step.detail.words.length : 0;
+      return `Reading the text${words ? ` · ${words} so far` : ""}${waiting}`;
+    }
     default:
       return null;
   }

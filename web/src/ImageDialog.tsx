@@ -21,28 +21,25 @@
  */
 
 import { useEffect, useState } from "react";
-import { AcervoApiError, backendSession, type ImagePromptRow, type ImageStyle } from "./api";
+import { backendSession, type ImageStyle } from "./api";
 import type { ImagePrompt } from "./domain";
 import { useFilePicker } from "./SenseImage";
 
-type Busy = "" | "briefing";
-
 export function ImageDialog({
-  prompt, senseId, lexemeId, headword, styles, deviceId, onClose, onChanged, onDraw, onAttach,
-  onRemove, onNotify
+  prompt, headword, styles, briefing, onClose, onRebrief, onDraw, onAttach, onRemove
 }: {
-  /** Null for a sense that has no prompt row yet: the only action is to write one. */
+  /** The sense's row as the replica holds it now. Null for a sense that has none yet. */
   prompt: ImagePrompt | null;
-  /** The sense that was clicked. Not read off `prompt`, which is null for a sense with no row. */
-  senseId: string;
-  /** Likewise the word: a brief is written for the whole lexeme, row or no row. */
-  lexemeId: string;
   headword: string;
   styles: ImageStyle[];
-  deviceId: string;
+  /** Whether a new brief for this word is being written on the server right now. */
+  briefing: boolean;
   onClose(): void;
-  /** Called after any write, so the caller can pull and re-render. */
-  onChanged(row: ImagePromptRow | null): void;
+  /**
+   * Ask the server for a new brief for the whole word. A job: the dialog may be closed, and the new
+   * brief arrives in the field whenever it lands.
+   */
+  onRebrief(): void;
   /**
    * Hand a drawing to the caller, and expect nothing back.
    *
@@ -55,49 +52,35 @@ export function ImageDialog({
   onAttach(file: File): void;
   /** Remove the picture and rule the sense out. */
   onRemove(): void;
-  onNotify(message: string): void;
 }) {
   const [brief, setBrief] = useState(prompt?.prompt ?? "");
   const [styleId, setStyleId] = useState(prompt?.styleId ?? "");
-  const [busy, setBusy] = useState<Busy>("");
   const [composed, setComposed] = useState<string | null>(null);
 
+  /* A new brief lands in the replica while the dialog is open, and the fields follow it. */
   useEffect(() => {
     setBrief(prompt?.prompt ?? "");
     setStyleId(prompt?.styleId ?? "");
   }, [prompt?.id, prompt?.prompt, prompt?.styleId]);
 
-  const working = busy !== "";
+  /* The whole prompt is composed on the server and never stored, so it is read for the row on show. */
+  useEffect(() => {
+    setComposed(null);
+    if (!prompt?.id || !prompt.prompt) return;
+    let live = true;
+    backendSession.imagePrompt(prompt.id)
+      .then((row) => { if (live) setComposed(row.composedPrompt); })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [prompt?.id, prompt?.revision, prompt?.prompt]);
 
-  const run = async (what: Busy, action: () => Promise<ImagePromptRow | null>) => {
-    setBusy(what);
-    try {
-      const row = await action();
-      if (row) {
-        setBrief(row.prompt);
-        setStyleId(row.styleId);
-        setComposed(row.composedPrompt);
-      }
-      onChanged(row);
-    } catch (error) {
-      onNotify(error instanceof AcervoApiError ? error.message : "That did not work.");
-    } finally {
-      setBusy("");
-    }
-  };
+  const working = briefing;
 
   const draw = () => {
     if (!prompt) return;
     onDraw({ prompt: brief, styleId });
     onClose();
   };
-
-  const rewrite = () => run("briefing", async () => {
-    const { imagePrompts } = await backendSession.briefLexeme(lexemeId, deviceId);
-    // The row for *this* sense out of the word's whole set, so the field shows the brief that was
-    // just written rather than going blank while the others are updated too.
-    return imagePrompts.find((row) => row.senseId === senseId) ?? null;
-  });
 
   /* Attaching and removing close the dialog the way Draw does, and for the same reason: you have
      said what you want, and the article is where the answer belongs. The caller does the work and
@@ -120,9 +103,7 @@ export function ImageDialog({
     <section className="settings image-dialog" role="dialog" aria-modal="true" aria-labelledby="image-dialog-title">
       <header>
         <h2 id="image-dialog-title">Picture for “{headword}”</h2>
-        {/* Always closes, even mid-brief. The call is the server's and finishes either way — the
-            picture arrives on the next pull — so holding the dialog open bought nothing and left
-            the only way out a key a phone does not have. */}
+        {/* Always closes, even mid-brief. The brief is a server job and finishes either way. */}
         <button className="close" onClick={onClose} aria-label="Close">×</button>
       </header>
 
@@ -166,8 +147,8 @@ export function ImageDialog({
           <button className="primary" onClick={draw} disabled={working || !prompt || !brief.trim() || !styleId}>
             Draw
           </button>
-          <button onClick={rewrite} disabled={working}>
-            {busy === "briefing" ? "Writing…" : "Write a new brief"}
+          <button onClick={onRebrief} disabled={working}>
+            {briefing ? "Writing…" : "Write a new brief"}
           </button>
           <button onClick={picker.choose} disabled={working}>Use my own picture…</button>
           <button className="danger" onClick={remove} disabled={working || !prompt}>

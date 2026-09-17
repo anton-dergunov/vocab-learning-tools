@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AcervoApiError, backendSession, type Job } from "./api";
-import { FrameReader, JobStream, clipSearchOf, drawingPictures, enrichmentOf, isEnriching } from "./jobs";
+import {
+  FrameReader, JobStream, clipSearchOf, drawingPictures, enrichmentOf, isEnriching, jobFor
+} from "./jobs";
 import { syncEngine } from "./sync";
 
 function job(overrides: Partial<Job> = {}): Job {
@@ -138,7 +140,7 @@ describe("the map of jobs", () => {
   it("drops a dismissed job, and forgets a finished one when asked", () => {
     const stream = new JobStream();
     stream.apply(job({ state: "done" }));
-    stream.forget("lexemepicar0001");
+    stream.forget("enrich", "lexemepicar0001");
     expect(enrichmentOf(stream.getStatus(), "lexemepicar0001")).toBeUndefined();
 
     stream.apply(job({ state: "failed" }));
@@ -149,14 +151,22 @@ describe("the map of jobs", () => {
   it("does not forget a job that is still open", () => {
     const stream = new JobStream();
     stream.apply(job());
-    stream.forget("lexemepicar0001");
+    stream.forget("enrich", "lexemepicar0001");
     expect(isEnriching(stream.getStatus(), "lexemepicar0001")).toBe(true);
   });
 
   it("only counts enrichment as a word filling in", () => {
     const stream = new JobStream();
-    stream.apply(job({ kind: "image.redraw" }));
+    stream.apply(job({ kind: "image.rebrief" }));
     expect(isEnriching(stream.getStatus(), "lexemepicar0001")).toBe(false);
+  });
+
+  it("keeps a new brief for a word beside that word's enrichment, not over it", () => {
+    const stream = new JobStream();
+    stream.apply(job());
+    stream.apply(job({ id: "job000000000009", kind: "image.rebrief", createdAt: "2026-09-17T11:00:00.000Z" }));
+    expect(isEnriching(stream.getStatus(), "lexemepicar0001")).toBe(true);
+    expect(jobFor(stream.getStatus(), "image.rebrief", "lexemepicar0001")?.id).toBe("job000000000009");
   });
 });
 

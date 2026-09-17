@@ -46,7 +46,7 @@ describe("Settings ▸ Activity", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(again).toHaveBeenCalledWith({
-      kind: "enrich", subject: { kind: "lexeme", id: "lexemeother0001" }
+      kind: "enrich", subject: { kind: "lexeme", id: "lexemeother0001" }, input: {}
     }));
   });
 

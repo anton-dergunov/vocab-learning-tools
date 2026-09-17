@@ -27,7 +27,11 @@ router = APIRouter()
 # kind → what its subject must be. Grows as the interface gains a way to ask for each.
 ENQUEUEABLE: dict[str, str] = {
     "enrich": "lexeme",
+    "image.redraw": "imagePrompt",
+    "image.rebrief": "lexeme",
 }
+# What a request may carry into its job, per kind. Edit-and-draw is a redraw with its own wording.
+INPUTS: dict[str, tuple[str, ...]] = {"image.redraw": ("prompt", "styleId")}
 TRIGGERS = ("manual", "import")
 
 NOT_FOUND = ApiError(404, "not_found", "There is no such job.")
@@ -39,7 +43,10 @@ def _subject(owner: str, kind: str, body: dict[str, Any]) -> str:
     identifier = str(subject.get("id") or "").strip()
     if subject.get("kind") != expected or not is_record_id(identifier):
         raise ApiError(400, "invalid_input", f"A {kind} job is about one {expected}.")
-    if graph.lexeme_of(owner, expected, identifier) is None:
+    if expected == "imagePrompt":
+        if graph.image_prompt(owner, identifier) is None:
+            raise ApiError(404, "not_found", "That picture is not in your vocabulary.")
+    elif graph.lexeme_of(owner, expected, identifier) is None:
         raise ApiError(404, "not_found", "That word is not in your vocabulary.")
     return identifier
 
@@ -76,9 +83,14 @@ async def enqueue(request: Request) -> JSONResponse:
     if trigger not in TRIGGERS:
         raise ApiError(400, "invalid_input", "A job is asked for manually or by an import.")
     subject = await run_in_threadpool(_subject, account, kind, body)
+    given = body.get("input") if isinstance(body.get("input"), dict) else {}
+    carried = {
+        key: str(given[key]) for key in INPUTS.get(kind, ())
+        if isinstance(given.get(key), str) and given[key].strip()
+    }
     queued = await run_in_threadpool(
-        jobs.enqueue, account, kind, trigger=trigger,
-        subject_kind=ENQUEUEABLE[kind], subject_id=subject,
+        lambda: jobs.enqueue(account, kind, trigger=trigger, subject_kind=ENQUEUEABLE[kind],
+                             subject_id=subject, input=carried)
     )
     return data(queued, status=202)
 

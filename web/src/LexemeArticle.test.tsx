@@ -19,7 +19,7 @@ vi.mock("./pronunciation", async (importOriginal) => ({
 }));
 
 const picar = () => articleFor(testGraph(), "lexemepicar0001")!;
-const pictures = (): PictureSlot => ({ open: vi.fn(), busy: () => false });
+const pictures = (): PictureSlot => ({ open: vi.fn(), retry: vi.fn(), busy: () => false });
 /** Whether some paragraph reads exactly this, however emphasis has split it across elements. */
 const reads = (text: string, root: ParentNode = document) =>
   [...root.querySelectorAll("p")].some((paragraph) => paragraph.textContent === text);
@@ -141,7 +141,7 @@ describe("cards", () => {
   it("shows a picture still being drawn in the page's own frame, not in place of the emoji", () => {
     const graph = testGraph();
     graph.imagePrompts[0] = { ...graph.imagePrompts[0], imageRef: null, attempts: 0 };
-    const busy: PictureSlot = { open: vi.fn(), busy: () => true };
+    const busy: PictureSlot = { open: vi.fn(), retry: vi.fn(), busy: () => true };
     render(<LexemeArticle article={articleFor(graph, "lexemepicar0001")!} view="cards" onNotify={() => undefined} pictures={busy} />);
     const itch = document.querySelector<HTMLElement>('[data-card="0"]')!;
     expect(itch.querySelector(".card-frame .sense-image-frame")).not.toBeNull();
@@ -220,5 +220,31 @@ describe("a clip still to come", () => {
     render(<LexemeArticle article={picar()} onNotify={() => undefined} clips={clips(null)} />);
     expect(screen.queryByText("No recorded example")).toBeNull();
     expect(screen.queryByRole("status", { name: "Looking for a recorded example" })).toBeNull();
+  });
+});
+
+describe("a picture that could not be drawn", () => {
+  const declined = () => {
+    const graph = testGraph();
+    Object.assign(graph.imagePrompts[0], {
+      imageRef: null, imageModelId: null, failureReason: "The provider declined this prompt."
+    });
+    return articleFor(graph, "lexemepicar0001")!;
+  };
+
+  it("says why, and asks the server to draw it again", () => {
+    const slot = pictures();
+    render(<LexemeArticle article={declined()} onNotify={() => undefined} pictures={slot} />);
+    expect(screen.getByText("The provider declined this prompt.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(slot.retry).toHaveBeenCalledWith(expect.objectContaining({ id: "imagepicar00010" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change…" }));
+    expect(slot.open).toHaveBeenCalledWith("sensepicaritch0", expect.objectContaining({ id: "imagepicar00010" }));
+  });
+
+  it("says nothing while it is being drawn again", () => {
+    const busy: PictureSlot = { open: vi.fn(), retry: vi.fn(), busy: () => true };
+    render(<LexemeArticle article={declined()} onNotify={() => undefined} pictures={busy} />);
+    expect(screen.queryByText("The provider declined this prompt.")).toBeNull();
   });
 });
