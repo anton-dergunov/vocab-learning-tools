@@ -179,6 +179,21 @@ clip_settings = Table(
     Index("idx_clip_settings_owner", "owner", unique=True),
 )
 
+# When this owner's nightly run happens, and which of its steps are on. Server state for
+# `sync_state`'s reason, and like the other settings tables **no row means the defaults**.
+schedule_settings = Table(
+    "schedule_settings",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    # The hour, 0–23, in the deployment's zone (`ACERVO_TIMEZONE`).
+    Column("hour", Integer, nullable=False, default=2),
+    # {step name: bool}; a step not named keeps its default.
+    Column("steps", JSON, nullable=False, default=dict),
+    Column("edited_at", String(24), nullable=False),
+    Index("idx_schedule_settings_owner", "owner", unique=True),
+)
+
 # Work the server does on this owner's behalf, one row per request for it. Server state for
 # `sync_state`'s reason — never replicated, no `revision`/`deleted`/`edited_by` — and the durable
 # record the runner in `acervo/work/` reads (`docs/plans/processing-flow.md` §4.2).

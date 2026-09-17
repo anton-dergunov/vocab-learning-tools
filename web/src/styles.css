@@ -2043,6 +2043,13 @@ details.fold .fold-body { padding: 4px 0 18px; }
 }
 @media (prefers-reduced-motion: reduce) { .working-mark { animation: none; } }
 
+/* Settings ▸ Clips: adding a channel to the corpus's own catalogue. */
+.channel-form {
+  display: grid; gap: 10px; margin-top: 12px; padding: 12px;
+  border: 1px solid var(--rule); border-radius: 8px; background: var(--surface);
+}
+.channel-form .config-field { margin: 0; }
+
 /* Settings ▸ Activity. */
 .activity-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
 .activity-row {

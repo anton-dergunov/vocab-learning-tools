@@ -180,8 +180,12 @@ def test_the_stream_carries_no_records(server):
 def test_a_job_that_runs_is_told_step_by_step(server):
     _, job_id = save(server)
     runner = server.client.app.state.runner
-    chunks = collect(server, runner.run_until_idle, count=6)
-    states = [parse(chunk)["job"]["state"] for chunk in chunks[1:] if parse(chunk)]
+    chunks = collect(server, runner.run_until_idle, count=8)
+    # This word's job among whatever else the server was doing — the nightly timer ticks here too.
+    states = [
+        message["job"]["state"] for message in (parse(chunk) for chunk in chunks[1:])
+        if message and message.get("type") == "job" and message["job"]["id"] == job_id
+    ]
     assert states[0] == "running"
 
 

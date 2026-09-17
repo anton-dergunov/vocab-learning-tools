@@ -63,6 +63,12 @@ def create(email: str, password: str) -> dict[str, Any]:
     return {"id": user["id"], "email": email}
 
 
+def all_ids() -> list[str]:
+    """Every account, for the work the server does on a schedule for each of them."""
+    with reading() as connection:
+        return list(connection.execute(select(tables.users.c.id).order_by(tables.users.c.id)).scalars())
+
+
 def by_email(email: str) -> Mapping[str, Any] | None:
     with reading() as connection:
         return connection.execute(

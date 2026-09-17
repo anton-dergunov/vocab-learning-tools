@@ -24,6 +24,10 @@ OPEN = ("queued", "running")
 FINISHED = ("done", "failed", "cancelled")
 TRIGGERS = ("save", "import", "ingest", "manual", "schedule", "backfill")
 
+# Kinds whose running job already answers a second request: a corpus update asked for while one is
+# being followed is the same update, and a second nightly run the same night is not wanted.
+WHILE_RUNNING = frozenset({"corpus.update", "nightly"})
+
 # The error a job carries when the process that ran it went away. Nothing resumes: Try again
 # enqueues a new job, and a job that resumed would have to version its half-done state.
 INTERRUPTED = "interrupted"
@@ -156,13 +160,19 @@ def enqueue(
                 connection, owner, subject_id, trigger=trigger, parent=parent
             )
         else:
-            waiting = _queued_for(connection, owner, kind, subject_id) if subject_id else None
+            waiting = (
+                _open_for(connection, owner, kind, subject_id)
+                if kind in WHILE_RUNNING and subject_id
+                else _queued_for(connection, owner, kind, subject_id) if subject_id else None
+            )
             if waiting is not None:
                 # A second request for the same thing before the first has started is the same
                 # request, and the newer wording wins: pressing Draw twice draws once.
-                connection.execute(
-                    update(_jobs).where(_jobs.c.id == waiting["id"]).values(input=dict(input or {}))
-                )
+                if waiting["state"] == "queued":
+                    connection.execute(
+                        update(_jobs).where(_jobs.c.id == waiting["id"])
+                        .values(input=dict(input or {}))
+                    )
                 queued = project(_row(connection, waiting["id"]))  # type: ignore[arg-type]
             else:
                 queued = _insert(
@@ -171,6 +181,15 @@ def enqueue(
                 )
     notify.queued(owner, queued)
     return queued
+
+
+def _open_for(connection: Connection, owner: str, kind: str, subject_id: str) -> Mapping[str, Any] | None:
+    return connection.execute(
+        select(_jobs).where(
+            _jobs.c.owner == owner, _jobs.c.kind == kind, _jobs.c.subject_id == subject_id,
+            _jobs.c.state.in_(OPEN),
+        )
+    ).mappings().first()
 
 
 def _queued_for(connection: Connection, owner: str, kind: str, subject_id: str) -> Mapping[str, Any] | None:

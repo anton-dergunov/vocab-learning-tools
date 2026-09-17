@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ActivitySettings from "./ActivitySettings";
 import { backendSession, type Job } from "./api";
 import { jobStream } from "./jobs";
@@ -19,6 +19,13 @@ function job(id: string, state: Job["state"], overrides: Partial<Job> = {}): Job
 afterEach(() => { vi.restoreAllMocks(); jobStream.stop(); });
 
 describe("Settings ▸ Activity", () => {
+  beforeEach(() => {
+    vi.spyOn(backendSession, "scheduleSettings").mockResolvedValue({
+      hour: 2, steps: { "corpus.update": true }, chosen: false, timezone: "UTC",
+      nextRunAt: "2026-09-18T02:00:00.000Z", unavailable: {}, lastRun: null
+    });
+  });
+
   it("lists what is running, what failed and what finished, with what can be done about each", async () => {
     vi.spyOn(backendSession, "jobs").mockResolvedValue([
       job("job000000000001", "running"),
@@ -54,5 +61,6 @@ describe("Settings ▸ Activity", () => {
     vi.spyOn(backendSession, "jobs").mockResolvedValue([]);
     render(<ActivitySettings snapshot={null} onNotify={vi.fn()} />);
     expect(await screen.findByText("Nothing is running.")).toBeInTheDocument();
+    expect(await screen.findByText(/It has not run yet\./)).toBeInTheDocument();
   });
 });

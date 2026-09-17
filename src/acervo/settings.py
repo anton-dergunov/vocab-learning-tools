@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # source of truth that drifts the first time a row is added.
     text_chain: str = Field(default="", alias="ACERVO_TEXT_CHAIN")
 
+    # The zone the nightly hour in Settings ▸ Schedule is read in, as an IANA name. Empty means the
+    # server's own local zone — which in a container is usually UTC, so a deployment sets this.
+    timezone: str = Field(default="", alias="ACERVO_TIMEZONE")
+
     # Whether this process runs the job runner (`acervo/work/`). Always on in a deployment; off only
     # for a process that must serve without working, which is none today.
     runner_enabled: bool = Field(default=True, alias="ACERVO_RUNNER")

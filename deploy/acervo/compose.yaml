@@ -27,6 +27,8 @@ services:
       # nothing here. The keys themselves are named by their catalogue rows, and every value comes
       # from llm.env, which the installer writes mode 600 and compose passes last.
       ACERVO_TEXT_CHAIN: "${ACERVO_TEXT_CHAIN:-}"
+      # The zone Settings ▸ Schedule's nightly hour is read in; unset means the container's UTC.
+      ACERVO_TIMEZONE: "${ACERVO_TIMEZONE:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"

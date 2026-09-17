@@ -193,12 +193,13 @@ def test_the_deploy_preflight_sees_an_open_job_and_cancel_clears_it(running):
 
     reported = docker("exec", running.name, "python", "-m", "acervo.admin", "jobs", "open", "--json")
     assert reported.returncode == 0, reported.stderr
-    assert json.loads(reported.stdout)["open"] == 1
+    # By kind rather than by count: the nightly timer may have queued a run of its own by now.
+    assert json.loads(reported.stdout)["byKind"]["corpus.update"] == 1
 
     cancelled = docker("exec", running.name, "python", "-m", "acervo.admin", "jobs", "cancel", "--all")
     assert cancelled.returncode == 0, cancelled.stderr
     reported = docker("exec", running.name, "python", "-m", "acervo.admin", "jobs", "open", "--json")
-    assert json.loads(reported.stdout) == {"open": 0, "byKind": {}}
+    assert "corpus.update" not in json.loads(reported.stdout)["byKind"]
 
 
 def test_a_graph_round_trip_survives_a_restart_of_the_container(running):

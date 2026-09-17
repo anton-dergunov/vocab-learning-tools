@@ -144,27 +144,53 @@ def _unique(rows: Iterable[Candidate]) -> tuple[Candidate, ...]:
     return tuple(sorted(best.values(), key=lambda row: (row.rank, row.segment_id)))
 
 
+@dataclass(frozen=True)
+class Operation:
+    """An update or rebuild the corpus is running, as far as Acervo needs to know it."""
+
+    id: str
+    status: str
+    successful: bool | None
+    error: str | None
+
+    @property
+    def finished(self) -> bool:
+        return self.status not in ("queued", "running")
+
+
 class Corpus:
-    """Four read routes, no writes, and no retries.
+    """Read routes, the operator's update route, and no retries.
 
     No retries for `client.py`'s reason: a caller that wants them owns them, and a retry layer here
-    would change how the enrichment engine and the sweep behave without changing a line of either.
+    would change how a job behaves without changing a line of the job.
     """
 
     def __init__(self, base_url: str, *, timeout: float = TIMEOUT_SECONDS,
-                 http: httpx.Client | None = None) -> None:
+                 http: httpx.Client | None = None, operator_token: str = "") -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         # The seam `AcervoClient` uses, and how the fake corpus is injected in tests.
         self._http = http
+        # Sent only on the operator routes. It never leaves this process.
+        self._operator_token = operator_token
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    def _get(self, path: str, params: dict[str, Any] | None = None, *,
+             operator: bool = False) -> Any:
+        return self._send("GET", path, params=params, operator=operator)
+
+    def _send(self, method: str, path: str, *, params: dict[str, Any] | None = None,
+              body: Any = None, operator: bool = False) -> Any:
         url = f"{self.base_url}{path}"
+        headers = {"Authorization": f"Bearer {self._operator_token}"} if operator else None
         try:
-            if self._http is not None:
-                response = self._http.get(url, params=params, timeout=self.timeout)
+            if method == "GET":
+                sender = self._http.get if self._http is not None else httpx.get
+                response = sender(url, params=params, timeout=self.timeout,
+                                  **({"headers": headers} if headers else {}))
             else:
-                response = httpx.get(url, params=params, timeout=self.timeout)
+                sender = self._http.post if self._http is not None else httpx.post
+                response = sender(url, json=body, timeout=self.timeout,
+                                  **({"headers": headers} if headers else {}))
         except httpx.HTTPError as error:
             raise CorpusError("unreachable", str(error)) from None
 
@@ -231,6 +257,35 @@ class Corpus:
             return ()
         found = (_candidate(row) for row in rows)
         return _unique(row for row in found if row is not None)
+
+
+    # ── the operator's routes ─────────────────────────────────────────────────
+
+    def start_update(self, operation: str = "update") -> Operation:
+        """Ask the corpus to fetch what its enabled channels have new, and rebuild its index.
+
+        One runs at a time on that side: asking while one is active answers with the active one, so
+        a nightly run and an Update now follow the same operation rather than starting two.
+        """
+        payload = self._send(
+            "POST", "/corpus/operations", body={"operation": operation}, operator=True
+        )
+        return _operation(payload)
+
+    def operation(self, operation_id: str) -> Operation:
+        return _operation(self._get(f"/corpus/operations/{operation_id}", operator=True))
+
+
+def _operation(payload: Any) -> Operation:
+    if not isinstance(payload, dict) or not _text(payload.get("operation_id")):
+        raise CorpusError("refused", "The corpus did not describe the operation.")
+    successful = payload.get("successful")
+    return Operation(
+        id=_text(payload.get("operation_id")),
+        status=_text(payload.get("status")) or "failed",
+        successful=successful if isinstance(successful, bool) else None,
+        error=_text(payload.get("error")) or None,
+    )
 
 
 def _message(response: httpx.Response) -> str:

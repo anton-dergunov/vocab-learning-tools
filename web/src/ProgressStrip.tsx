@@ -32,6 +32,10 @@ function phase(step: JobStep): string | null {
       return `Recording audio${waiting}`;
     case "draw":
       return `Drawing${waiting}`;
+    case "corpus.update":
+      return `Updating recorded speech${waiting}`;
+    case "anki.pull":
+      return `Reading Anki's review state${waiting}`;
     case "brief":
       return `Writing picture briefs${waiting}`;
     case "capture": {
@@ -54,6 +58,8 @@ function failureOf(step: JobStep): string {
     }
     case "pronunciations":
       return "Some audio could not be recorded";
+    case "corpus.update":
+      return "The recorded-speech corpus could not be updated";
     default:
       return step.message || "Something could not be finished";
   }

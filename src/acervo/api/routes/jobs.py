@@ -29,7 +29,11 @@ ENQUEUEABLE: dict[str, str] = {
     "enrich": "lexeme",
     "image.redraw": "imagePrompt",
     "image.rebrief": "lexeme",
+    # Update now. The corpus is the deployment's, so the job is about it rather than a record.
+    "corpus.update": "corpus",
 }
+# Kinds about one fixed thing rather than a record the request names.
+FIXED_SUBJECTS: dict[str, str] = {"corpus.update": "corpus"}
 # What a request may carry into its job, per kind. Edit-and-draw is a redraw with its own wording.
 INPUTS: dict[str, tuple[str, ...]] = {"image.redraw": ("prompt", "styleId")}
 TRIGGERS = ("manual", "import")
@@ -38,6 +42,8 @@ NOT_FOUND = ApiError(404, "not_found", "There is no such job.")
 
 
 def _subject(owner: str, kind: str, body: dict[str, Any]) -> str:
+    if kind in FIXED_SUBJECTS:
+        return FIXED_SUBJECTS[kind]
     expected = ENQUEUEABLE[kind]
     subject = body.get("subject") if isinstance(body.get("subject"), dict) else {}
     identifier = str(subject.get("id") or "").strip()

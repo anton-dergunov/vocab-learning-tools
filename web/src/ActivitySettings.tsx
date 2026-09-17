@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { AcervoApiError, backendSession, type Job } from "./api";
+import { AcervoApiError, backendSession, type Job, type ScheduleSettings } from "./api";
 import { isOpen, jobStream } from "./jobs";
 import type { ReplicaSnapshot } from "./repository";
 import { stripOf } from "./ProgressStrip";
@@ -51,6 +51,7 @@ export default function ActivitySettings({ snapshot, onNotify }: {
 }) {
   const live = useSyncExternalStore(jobStream.subscribe, jobStream.getStatus);
   const [held, setHeld] = useState<Job[] | null>(null);
+  const [nightly, setNightly] = useState<ScheduleSettings | null>(null);
   const [problem, setProblem] = useState("");
 
   const load = useCallback(() => {
@@ -61,6 +62,12 @@ export default function ActivitySettings({ snapshot, onNotify }: {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  /* The one thing here that is not started by something happening. Read beside the jobs so this
+     page answers "is anything overdue" as well as "is anything running". */
+  useEffect(() => {
+    backendSession.scheduleSettings().then(setNightly).catch(() => undefined);
+  }, []);
 
   const act = async (action: () => Promise<Job>, failure: string) => {
     try {
@@ -123,6 +130,16 @@ export default function ActivitySettings({ snapshot, onNotify }: {
       {finished.length > 0 && <>
         <h4 className="config-subhead">Finished recently</h4>
         <ul className="activity-list">{finished.map(row)}</ul>
+      </>}
+      {nightly && <>
+        <h4 className="config-subhead">Nightly run</h4>
+        <p className="config-help">
+          {nightly.lastRun
+            ? `Last run ${nightly.lastRun.state === "done" ? "finished" : nightly.lastRun.state} `
+              + `${when(nightly.lastRun.finishedAt ?? nightly.lastRun.createdAt)}. `
+            : "It has not run yet. "}
+          Next {when(nightly.nextRunAt)}, in Settings ▸ Schedule.
+        </p>
       </>}
     </>}
   </section>;

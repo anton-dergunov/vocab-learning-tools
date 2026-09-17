@@ -11,22 +11,33 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const channels = vi.fn();
 const setChannelEnabled = vi.fn(async (_language: string, _id: string, _on: boolean) => undefined);
+const addChannel = vi.fn();
 const clipSettings = vi.fn();
 const saveClipSettings = vi.fn();
+const enqueueJob = vi.fn();
 
 vi.mock("./clips", async () => {
   const actual = await vi.importActual<typeof import("./clips")>("./clips");
-  return { ...actual, channels: () => channels(), setChannelEnabled: (...a: [string, string, boolean]) => setChannelEnabled(...a) };
+  return {
+    ...actual, channels: () => channels(),
+    setChannelEnabled: (...a: [string, string, boolean]) => setChannelEnabled(...a),
+    addChannel: (channel: unknown) => addChannel(channel)
+  };
 });
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
   return {
     ...actual,
-    backendSession: { ...actual.backendSession, clipSettings: () => clipSettings(), saveClipSettings: () => saveClipSettings() }
+    backendSession: {
+      ...actual.backendSession, clipSettings: () => clipSettings(),
+      saveClipSettings: () => saveClipSettings(),
+      enqueueJob: (request: unknown) => enqueueJob(request)
+    }
   };
 });
 
 const { default: ClipPanel } = await import("./ClipPanel");
+const { jobStream } = await import("./jobs");
 
 const channel = (over: Partial<Record<string, unknown>> = {}) => ({
   source_language: "es", section_id: "learning", section_name: "Language learning",
@@ -115,12 +126,56 @@ describe("the channel catalogue", () => {
     await waitFor(() => expect(setChannelEnabled).toHaveBeenCalledWith("es", "easy-spanish", false));
   });
 
-  it("says that switching one on does nothing until a harvest is run", async () => {
-    // Nothing in Acervo schedules one, so promising "the next harvest" without saying who runs it
-    // would be a promise the deployment does not keep.
+  it("says what switching one on and one off actually do", async () => {
+    /* Switching off is the half that is easy to get wrong: its clips leave search at the next
+       update, but the clips already saved in articles are records the owner kept. */
     channels.mockResolvedValue([channel()]);
     panel();
-    expect(await screen.findByText(/index-clips/)).toBeTruthy();
+    const copy = await screen.findByText(/with the next update/);
+    expect(copy.textContent).toContain("takes its clips out of search at the next update");
+    expect(copy.textContent).toContain("clips already saved in your articles stay");
+  });
+
+  it("asks for one update however often Update now is pressed", async () => {
+    channels.mockResolvedValue([channel()]);
+    const queued = {
+      id: "job000000000001", ownerId: "owner0000000001", parentId: null, kind: "corpus.update",
+      subject: { kind: "corpus", id: "corpus" }, input: {}, state: "running", trigger: "manual",
+      steps: [], rerun: false, cancelRequested: false, dismissed: false, error: null,
+      message: null, notBefore: null, createdAt: "2026-09-17T10:00:00.000Z", startedAt: null,
+      finishedAt: null
+    };
+    enqueueJob.mockResolvedValue(queued);
+    panel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Update now" }));
+    await waitFor(() => expect(enqueueJob).toHaveBeenCalledWith({
+      kind: "corpus.update", subject: { kind: "corpus", id: "corpus" }
+    }));
+    // While the server is updating, the button says so and cannot start a second one.
+    expect(await screen.findByRole("button", { name: "Updating…" })).toBeDisabled();
+    jobStream.stop();
+  });
+
+  it("adds a channel to the corpus's own catalogue", async () => {
+    channels.mockResolvedValue([channel()]);
+    addChannel.mockResolvedValue(channel({ id: "linguriosa", name: "Linguriosa" }));
+    panel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add a channel…" }));
+    const fields: [string, string][] = [
+      ["Language", "es"], ["Section", "learning"], ["Identifier", "linguriosa"],
+      ["Name", "Linguriosa"], ["URL", "https://www.youtube.com/@Linguriosa/videos"]
+    ];
+    fields.forEach(([label, value]) =>
+      fireEvent.change(screen.getByLabelText(label), { target: { value } }));
+    fireEvent.click(screen.getByRole("button", { name: "Add channel" }));
+
+    await waitFor(() => expect(addChannel).toHaveBeenCalledWith({
+      source_language: "es", section_id: "learning", id: "linguriosa", name: "Linguriosa",
+      url: "https://www.youtube.com/@Linguriosa/videos", enabled: true
+    }));
+    expect(await screen.findByRole("link", { name: "Linguriosa" })).toBeTruthy();
   });
 });
 

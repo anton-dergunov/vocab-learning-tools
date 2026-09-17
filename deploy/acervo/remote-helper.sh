@@ -372,7 +372,7 @@ run_worker() {
 
   operation=${1:-}
   case "$operation" in
-    "") echo "worker needs an operation, for example index-clips" >&2; exit 2 ;;
+    "") echo "worker needs an operation, for example pull-state" >&2; exit 2 ;;
     *[!a-z-]*|-*|*-) echo "worker operations are bare words; got: $operation" >&2; exit 2 ;;
   esac
 

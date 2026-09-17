@@ -491,6 +491,20 @@ export interface Job {
   children?: Job[];
 }
 
+/** Settings ▸ Schedule: when the nightly run happens, and which of its steps are on. */
+export interface ScheduleSettings {
+  /** 0–23, read in the server's `timezone`. */
+  hour: number;
+  steps: Record<string, boolean>;
+  /** False means nothing has been chosen and the deployment default is in force. */
+  chosen: boolean;
+  timezone: string;
+  nextRunAt: string;
+  /** Steps that are declared but cannot run from the server yet, and why. */
+  unavailable: Record<string, string>;
+  lastRun: Job | null;
+}
+
 export interface JobRequest {
   kind: string;
   subject: { kind: string; id: string };
@@ -648,6 +662,16 @@ export const backendSession = {
    */
   health(): Promise<ServerHealth> {
     return client.call<ServerHealth>("/health", {}, true);
+  },
+
+  /** When the nightly run happens, and how the last one went. */
+  scheduleSettings(): Promise<ScheduleSettings> {
+    return client.call<ScheduleSettings>("/schedule/settings");
+  },
+  saveScheduleSettings(changes: { hour?: number; steps?: Record<string, boolean> }): Promise<ScheduleSettings> {
+    return client.call<ScheduleSettings>("/schedule/settings", {
+      method: "PUT", body: JSON.stringify(changes)
+    });
   },
 
   /** The server's open jobs — what a client rebuilds its map from — or its recent ones. */

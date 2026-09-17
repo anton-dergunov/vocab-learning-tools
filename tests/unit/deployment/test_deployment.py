@@ -1809,14 +1809,14 @@ def test_the_launcher_runs_the_worker_from_the_current_release(tmp_path: Path) -
     (root / "current-release").write_text(f"{release}\n", encoding="utf-8")
 
     result = subprocess.run(
-        [str(helper), "worker", "--root", str(root), "index-clips"],
+        [str(helper), "worker", "--root", str(root), "pull-state"],
         text=True, capture_output=True, check=False,
     )
 
     assert result.returncode == 0, result.stderr
     # The root is passed on, so the worker script does not have to resolve it a second time and
     # cannot disagree with the launcher about which deployment this is.
-    assert recorded.read_text(encoding="utf-8").strip() == f"--root {root} index-clips"
+    assert recorded.read_text(encoding="utf-8").strip() == f"--root {root} pull-state"
 
 
 def test_the_launcher_passes_worker_arguments_through(tmp_path: Path) -> None:
@@ -1866,7 +1866,7 @@ def test_the_launcher_refuses_a_worker_run_with_no_deployment(tmp_path: Path) ->
     root.mkdir()
 
     result = subprocess.run(
-        [str(helper), "worker", "--root", str(root), "index-clips"],
+        [str(helper), "worker", "--root", str(root), "pull-state"],
         text=True, capture_output=True, check=False,
     )
 
@@ -1880,7 +1880,7 @@ def test_the_launcher_refuses_an_unexpected_acervo_root(tmp_path: Path) -> None:
     helper = runnable_remote_helper(tmp_path)
 
     result = subprocess.run(
-        [str(helper), "worker", "--root", str(tmp_path / "elsewhere"), "index-clips"],
+        [str(helper), "worker", "--root", str(tmp_path / "elsewhere"), "pull-state"],
         text=True, capture_output=True, check=False,
     )
 
