@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=8
+helper_protocol=9
 worker_arguments=
 
 mode=
@@ -19,6 +19,7 @@ llm_api_key_stdin=false
 google_credentials=
 reset_data=false
 reset_database=false
+cancel_jobs=false
 remember=false
 bind_address=
 anki_port=
@@ -33,13 +34,14 @@ usage() {
 usage:
   ./deploy.sh --local [--root PATH] [--bind-address ADDRESS] [--port PORT]
               [--app-bind-address ADDRESS] [--app-port PORT]
-              [--configure-credentials] [--reset-data] [--reset-database]
+              [--configure-credentials] [--reset-data] [--reset-database] [--cancel-jobs]
               [--configure-llm [--llm-chain IDS] [--llm-set NAME=VALUE]...
                [--llm-key NAME --llm-api-key-stdin]]
   ./deploy.sh [--target USER@HOST] [--root PATH] [--configure-credentials]
               [--bind-address ADDRESS] [--port PORT] [--remember-target]
               [--app-bind-address ADDRESS] [--app-port PORT]
               [--https-port PORT] [--service NAME] [--reset-data] [--reset-database]
+              [--cancel-jobs]
               [--configure-llm [--llm-chain IDS] [--llm-set NAME=VALUE]...
                [--llm-key NAME --llm-api-key-stdin]]
   ./deploy.sh [--target USER@HOST] [--remember-target] --install-helper
@@ -55,6 +57,8 @@ usage:
   --reset-data        replace the Anki sync server and robot collections
   --reset-database    replace the vocabulary database from scratch; accounts go with
                       it and are recreated with --create-account. Anki data is untouched
+  --cancel-jobs       cancel the server's open jobs instead of refusing to deploy
+                      while they run. A deploy never carries a job across versions
   --create-account    create one account on the running server, reading the address
                       and password from the terminal
   --configure-llm     update only the server's durable llm.env; existing server,
@@ -127,6 +131,7 @@ while [ "$#" -gt 0 ]; do
     --create-account) choose_action create-account; shift ;;
     --reset-data) reset_data=true; shift ;;
     --reset-database) reset_database=true; shift ;;
+    --cancel-jobs) cancel_jobs=true; shift ;;
     *) usage ;;
   esac
 done
@@ -417,6 +422,24 @@ build_release_archive() {
 # passwordless launcher is what has that access, it runs the same command on the far side.
 create_account_command='docker exec -i acervo-server-1 python -m acervo.admin accounts create --email'
 
+# A deploy never pauses or serialises a job: it refuses while any are open, or cancels them when told
+# to (`docs/plans/processing-flow.md` §4.7). The count comes from the running server as one line of
+# JSON; no answer at all — no container yet, or a server from before jobs existed — means nothing is
+# open. `--reset-database` skips the question, because the table goes with the database.
+refuse_open_jobs() {
+  open_report=$1
+  open_count=$(printf '%s\n' "$open_report" | sed -n 's/.*"open": *\([0-9][0-9]*\).*/\1/p' | head -n 1)
+  [ -n "$open_count" ] && [ "$open_count" -gt 0 ] || return 0
+  open_kinds=$(printf '%s\n' "$open_report" \
+    | sed -n 's/.*"byKind": *{\([^}]*\)}.*/\1/p' \
+    | sed 's/"\([^"]*\)": *\([0-9][0-9]*\)/\2 \1/g')
+  echo "Refusing to deploy: $open_count jobs are open ($open_kinds)." >&2
+  echo "Wait for them, or run ./deploy.sh --cancel-jobs." >&2
+  exit 1
+}
+
+jobs_command='docker exec acervo-server-1 python -m acervo.admin jobs'
+
 if [ "$mode" = local ]; then
   if [ "$action" = create-account ]; then
     prompt_account
@@ -431,6 +454,13 @@ if [ "$mode" = local ]; then
     exit 0
   fi
   [ -n "$acervo_root" ] || acervo_root=${ACERVO_LOCAL_ROOT:-"$HOME/.acervo"}
+  if [ "$reset_database" = false ]; then
+    if [ "$cancel_jobs" = true ]; then
+      $jobs_command cancel --all 2>/dev/null || true
+    else
+      refuse_open_jobs "$($jobs_command open --json 2>/dev/null || true)"
+    fi
+  fi
   local_archive=$(build_release_archive)
   credential_args=
   if [ "$configure_llm" = true ] && [ ! -f "$acervo_root/secrets.env" ]; then
@@ -561,6 +591,28 @@ if [ "$action" = configure-https ]; then
       "sudo -n $helper_path configure-https $https_arguments --app-port $effective_app_port"
   fi
   exit 0
+fi
+
+if [ "$reset_database" = false ]; then
+  if [ "$remote_mode" = helper ]; then
+    remote_jobs="sudo -n $helper_path jobs"
+  else
+    remote_jobs='docker_path=$(command -v docker || true); \
+      [ -n "$docker_path" ] || docker_path=/var/packages/ContainerManager/target/usr/bin/docker; \
+      "$docker_path" exec acervo-server-1 python -m acervo.admin jobs'
+  fi
+  if [ "$cancel_jobs" = true ]; then
+    echo "Cancelling the server's open jobs..."
+    if [ "$remote_mode" = helper ]; then
+      ssh -T "$target" "$remote_jobs cancel" || true
+    else
+      ssh -T "$target" "$remote_jobs cancel --all" || true
+    fi
+  elif [ "$remote_mode" = helper ]; then
+    refuse_open_jobs "$(ssh -T "$target" "$remote_jobs open" 2>/dev/null || true)"
+  else
+    refuse_open_jobs "$(ssh -T "$target" "$remote_jobs open --json" 2>/dev/null || true)"
+  fi
 fi
 
 archive=$(build_release_archive)

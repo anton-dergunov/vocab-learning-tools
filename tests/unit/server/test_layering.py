@@ -18,6 +18,8 @@ Four rules, each of which stops being true silently:
 - `speech/` is the translation seam the corpus calls back through: the provider package and nothing
   else of Acervo's, and nothing at all of the retrieval service's.
 - `repository/` stores; it does not know the catalogue.
+- `work/` runs jobs by calling `services/`, never `api/`; `services/` knows nothing of jobs; and a
+  route reaches jobs only through `repository.jobs`.
 """
 
 from __future__ import annotations
@@ -245,6 +247,44 @@ def test_the_storage_layer_does_not_know_the_catalogue(path):
     """
     offenders = {name for name in imports_of(path) if name.startswith("acervo.models")}
     assert not offenders, f"{path} imports {sorted(offenders)}; validate in acervo.services.models"
+
+
+def test_the_runner_rules_are_not_vacuous():
+    assert modules_under("work"), "no work/ modules: the runner rules would be vacuous"
+    assert (PACKAGE / "repository" / "jobs.py").exists(), "no repository/jobs.py"
+
+
+@pytest.mark.parametrize("path", modules_under("work"), ids=identify)
+def test_the_runner_never_reaches_back_into_the_request_path(path):
+    """`work/` calls the services the routes call, and never a route: a job and a request are the
+    same code, entered from two places, and neither place knows about the other."""
+    offenders = {name for name in imports_of(path) if name.startswith("acervo.api")}
+    assert not offenders, f"{path} imports {sorted(offenders)}; call acervo.services instead"
+
+
+@pytest.mark.parametrize("path", modules_under("services"), ids=identify)
+def test_the_services_know_nothing_of_jobs(path):
+    """What makes a service safe to call from a route and a job alike is that it cannot tell which."""
+    offenders = {
+        name for name in imports_of(path)
+        if name.startswith(("acervo.work", "acervo.repository.jobs"))
+    }
+    assert not offenders, f"{path} imports {sorted(offenders)}; services must not know about jobs"
+
+
+@pytest.mark.parametrize(
+    "path", [p for p in modules_under("api") if identify(p) != "api/app.py"], ids=identify
+)
+def test_routes_reach_jobs_only_through_the_repository(path):
+    """A route queues a job and reads its record. Only the application itself starts the runner."""
+    offenders = {name for name in imports_of(path) if name.startswith("acervo.work")}
+    assert not offenders, f"{path} imports {sorted(offenders)}; go through acervo.repository.jobs"
+
+
+def test_the_notification_hub_imports_nothing_of_acervos():
+    """The repository, the runner and the event route all import it, so it may import none of them."""
+    offenders = {name for name in imports_of(PACKAGE / "notify.py") if name.startswith("acervo")}
+    assert not offenders, f"acervo/notify.py imports {sorted(offenders)}"
 
 
 @pytest.mark.parametrize("path", modules_under(), ids=identify)

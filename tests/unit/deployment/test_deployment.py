@@ -353,6 +353,121 @@ def test_remote_deployment_streams_over_ssh_without_scp(tmp_path: Path) -> None:
     assert "test-password" not in commands
 
 
+def _jobs_ssh(tmp_path: Path, report: str) -> tuple[dict[str, str], Path]:
+    """An ssh that answers the launcher's `jobs open` with `report` and logs everything else."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    ssh_log = tmp_path / "ssh.log"
+    ssh = bin_dir / "ssh"
+    ssh.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >>\"$ACERVO_TEST_SSH_LOG\"\n"
+        "case \"$*\" in\n"
+        "  *'deploy-acervo check'*) printf 'helper\\n' ;;\n"
+        "  *'deploy-acervo jobs open'*) printf '%s\\n' \"$ACERVO_TEST_JOBS\" ;;\n"
+        "  *'deploy-acervo deploy'*) cat >/dev/null ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    ssh.chmod(0o755)
+    env = os.environ.copy()
+    env.update({
+        "PATH": f"{bin_dir}:{env['PATH']}",
+        "ACERVO_TEST_SSH_LOG": str(ssh_log),
+        "ACERVO_TEST_JOBS": report,
+        "ACERVO_SKIP_MACOS_RELEASE": "true",
+        "ACERVO_SKIP_APP_BUILD": "true",
+    })
+    return env, ssh_log
+
+
+def _deploy_remotely(env: dict[str, str], *extra: str, stdin: str = ""):
+    return subprocess.run(
+        [str(REPO_ROOT / "deploy.sh"), "--target", "deployer@server.example.test", *extra],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False, input=stdin,
+    )
+
+
+def test_a_deploy_refuses_while_the_server_has_jobs_open(tmp_path: Path) -> None:
+    """A deploy never carries a job across a version, so it will not start one under it either —
+    and it says so before building anything."""
+    env, ssh_log = _jobs_ssh(
+        tmp_path, '{"open": 3, "byKind": {"corpus.update": 1, "enrich": 2}}'
+    )
+    result = _deploy_remotely(env)
+    assert result.returncode == 1
+    assert "Refusing to deploy: 3 jobs are open (1 corpus.update, 2 enrich)." in result.stderr
+    assert "./deploy.sh --cancel-jobs" in result.stderr
+    assert "deploy-acervo deploy" not in ssh_log.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("report", ['{"open": 0, "byKind": {}}', ""])
+def test_a_deploy_goes_ahead_when_nothing_is_open_or_nothing_answers(
+    tmp_path: Path, report: str
+) -> None:
+    """No answer is a first deployment, a stopped server, or a server from before jobs existed."""
+    env, ssh_log = _jobs_ssh(tmp_path, report)
+    result = _deploy_remotely(env)
+    assert result.returncode == 0, result.stderr
+    assert "sudo -n /usr/local/sbin/deploy-acervo deploy" in ssh_log.read_text(encoding="utf-8")
+
+
+def test_cancel_jobs_cancels_then_deploys(tmp_path: Path) -> None:
+    env, ssh_log = _jobs_ssh(tmp_path, '{"open": 2, "byKind": {"enrich": 2}}')
+    result = _deploy_remotely(env, "--cancel-jobs")
+    assert result.returncode == 0, result.stderr
+    commands = ssh_log.read_text(encoding="utf-8").splitlines()
+    cancel = next(i for i, c in enumerate(commands) if "deploy-acervo jobs cancel" in c)
+    deploy = next(i for i, c in enumerate(commands) if "deploy-acervo deploy" in c)
+    assert cancel < deploy
+    assert not any("jobs open" in c for c in commands)
+
+
+def test_resetting_the_database_does_not_ask_about_jobs(tmp_path: Path) -> None:
+    """The table goes with the database, so the question has no answer worth waiting for."""
+    env, ssh_log = _jobs_ssh(tmp_path, '{"open": 2, "byKind": {"enrich": 2}}')
+    result = _deploy_remotely(env, "--reset-database", stdin="RESET ACERVO VOCABULARY\n")
+    assert result.returncode == 0, result.stderr
+    assert "deploy-acervo jobs" not in ssh_log.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("operation", "expected"),
+    [
+        ("open", "exec acervo-server-1 python -m acervo.admin jobs open --json"),
+        ("cancel", "exec acervo-server-1 python -m acervo.admin jobs cancel --all"),
+    ],
+)
+def test_the_launcher_asks_the_server_container_about_its_jobs(
+    tmp_path: Path, operation: str, expected: str
+) -> None:
+    helper = runnable_remote_helper(tmp_path)
+    docker_log = tmp_path / "docker.log"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker = bin_dir / "docker"
+    docker.write_text(
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$ACERVO_TEST_DOCKER_LOG\"\n", encoding="utf-8"
+    )
+    docker.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["ACERVO_TEST_DOCKER_LOG"] = str(docker_log)
+    result = subprocess.run(
+        [str(helper), "jobs", operation], env=env, text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert expected in docker_log.read_text(encoding="utf-8")
+
+
+def test_the_launcher_refuses_any_other_jobs_operation(tmp_path: Path) -> None:
+    helper = runnable_remote_helper(tmp_path)
+    result = subprocess.run(
+        [str(helper), "jobs", "enqueue"], text=True, capture_output=True, check=False
+    )
+    assert result.returncode == 2
+
+
 def test_remote_llm_configuration_streams_the_key_without_exposing_it(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

@@ -66,6 +66,19 @@ def test_a_new_index_changes_it_too():
     assert shape(plain) != shape(indexed)
 
 
+def test_narrowing_a_partial_index_changes_it_too():
+    """`jobs` holds one open `enrich` per word through a partial unique index, and what the index
+    covers is its condition — so a condition the digest could not see was a constraint that could
+    change with the head standing still."""
+    shape = _revision_module().shape_of
+    narrow, wide = _toy(), _toy()
+    Index("idx_things_count", narrow.tables["things"].c.count, unique=True,
+          sqlite_where=text("count > 0"))
+    Index("idx_things_count", wide.tables["things"].c.count, unique=True,
+          sqlite_where=text("count > 1"))
+    assert shape(narrow) != shape(wide)
+
+
 def test_the_shape_does_not_depend_on_the_order_the_tables_were_built_in():
     """Otherwise the id would move when a table was declared somewhere else in the file, and every
     deployment would demand a rebuild for a change that was not one."""

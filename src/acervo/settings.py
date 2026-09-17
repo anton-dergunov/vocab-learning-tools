@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # source of truth that drifts the first time a row is added.
     text_chain: str = Field(default="", alias="ACERVO_TEXT_CHAIN")
 
+    # Whether this process runs the job runner (`acervo/work/`). Always on in a deployment; off only
+    # for a process that must serve without working, which is none today.
+    runner_enabled: bool = Field(default=True, alias="ACERVO_RUNNER")
+
     # PocketBase allowed every origin by default and FastAPI sends nothing. The macOS host loads its
     # interface from `acervo://app` and calls the server cross-origin with headers that trigger a
     # preflight, so a missing header here fails every call inside the browser with no server-side log.

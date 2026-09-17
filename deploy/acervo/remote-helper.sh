@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PROTOCOL=8
+PROTOCOL=9
 HELPER_PATH=/usr/local/sbin/deploy-acervo
 SUDOERS_PATH=/etc/sudoers.d/deploy-acervo
 PATH="$PATH:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
@@ -75,6 +75,18 @@ create_account() {
   docker=$(docker_path)
   printf '%s\n' "$account_password" | "$docker" exec -i acervo-server-1 \
     python -m acervo.admin accounts create --email "$account_email"
+}
+
+# What the deployer asks before it ships a release: how many jobs the running server has open, or
+# cancel them. Two fixed commands in one named container, which is less than `deploy` already grants.
+# A server that is not running, or predates jobs, answers nothing, and nothing is what that means.
+server_jobs() {
+  docker=$(docker_path)
+  case "$1" in
+    open) "$docker" exec acervo-server-1 python -m acervo.admin jobs open --json 2>/dev/null || true ;;
+    cancel) "$docker" exec acervo-server-1 python -m acervo.admin jobs cancel --all 2>/dev/null || true ;;
+    *) echo "jobs takes open or cancel" >&2; exit 2 ;;
+  esac
 }
 
 validate_service() {
@@ -386,5 +398,6 @@ case "$command_name" in
   create-account) [ "$#" -eq 1 ] || exit 2; create_account ;;
   deploy) shift; deploy_release "$@" ;;
   worker) shift; run_worker "$@" ;;
-  *) echo "deploy-acervo accepts only check, create-account, deploy, status, worker, or configure-https" >&2; exit 2 ;;
+  jobs) [ "$#" -eq 2 ] || exit 2; server_jobs "$2" ;;
+  *) echo "deploy-acervo accepts only check, create-account, deploy, jobs, status, worker, or configure-https" >&2; exit 2 ;;
 esac

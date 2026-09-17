@@ -23,6 +23,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    text,
 )
 
 metadata = MetaData()
@@ -176,6 +177,58 @@ clip_settings = Table(
     Column("self_contained_only", Boolean, nullable=False, default=False),
     Column("edited_at", String(24), nullable=False),
     Index("idx_clip_settings_owner", "owner", unique=True),
+)
+
+# Work the server does on this owner's behalf, one row per request for it. Server state for
+# `sync_state`'s reason — never replicated, no `revision`/`deleted`/`edited_by` — and the durable
+# record the runner in `acervo/work/` reads (`docs/plans/processing-flow.md` §4.2).
+#
+# The row is written in the **same transaction** as the write that makes the work necessary, which
+# is what retires "never let a queue be the only record that work is needed": either both exist or
+# neither does. What the work still lacks is re-derived from the graph when each step runs, so the
+# row says *which word*, never *which pictures*.
+jobs = Table(
+    "jobs",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    # A job another job created — a capture's per-word `enrich` — so the whole tree reads as one.
+    Column("parent", String(15), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=True),
+    Column("kind", String(40), nullable=False),
+    # What the job is about: a lexeme, an image prompt, a channel — or nothing, as `""`.
+    Column("subject_kind", String(20), nullable=False, default=""),
+    Column("subject_id", String(64), nullable=False, default=""),
+    Column("input", JSON, nullable=False, default=dict),
+    # queued → running → done | failed | cancelled
+    Column("state", String(12), nullable=False),
+    # save, import, ingest, manual, schedule, backfill
+    Column("trigger", String(12), nullable=False),
+    Column("steps", JSON, nullable=False, default=list),
+    # A second request arrived while this one was running; the runner queues a fresh job after it.
+    Column("rerun", Boolean, nullable=False, default=False),
+    # Cancellation is cooperative, and may be asked for by another process (`admin jobs cancel`).
+    Column("cancel_requested", Boolean, nullable=False, default=False),
+    # A failure stays listed until the owner dismisses it; everything else is pruned by age.
+    Column("dismissed", Boolean, nullable=False, default=False),
+    Column("error", String(40), nullable=True),
+    Column("message", String(500), nullable=True),
+    # A job waiting out a provider's rest yields the lane rather than holding it. `""` means now.
+    Column("not_before", String(24), nullable=False, default=""),
+    Column("created_at", String(24), nullable=False),
+    Column("started_at", String(24), nullable=True),
+    Column("finished_at", String(24), nullable=True),
+    Index("idx_jobs_owner_state", "owner", "state"),
+    Index("idx_jobs_parent", "parent"),
+    # At most one open `enrich` per word. Safe for `sync_state`'s reason — this row never syncs — and
+    # it is the guard, not the mechanism: `repository/jobs.enqueue_enrich` checks first, so meeting
+    # this index in anger would be a bug.
+    Index(
+        "idx_jobs_open_enrich",
+        "owner",
+        "subject_id",
+        unique=True,
+        sqlite_where=text("kind = 'enrich' AND state IN ('queued', 'running')"),
+    ),
 )
 
 # The languages this owner studies, and how they want each presented. Replicated like any other

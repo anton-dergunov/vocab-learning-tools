@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import sys
+import time
 from collections import defaultdict
 from typing import Any
 
 from acervo import seed_data
 from acervo.domain.projection import COLLECTION_BY_NAME, projected
 from acervo.models import journal
-from acervo.repository import accounts, graph
+from acervo.repository import accounts, graph, jobs
 from acervo.repository.session import open_database
 from acervo.settings import Settings, settings as read_settings
 
@@ -162,6 +164,62 @@ def call_timings(settings: Settings) -> int:
     return 0
 
 
+def open_jobs(settings: Settings, as_json: bool) -> int:
+    """What a deploy reads before it touches anything: how many jobs are open, and of what kind."""
+    open_database(settings.database_path)
+    held = jobs.open_jobs()
+    by_kind: dict[str, int] = defaultdict(int)
+    for job in held:
+        by_kind[job["kind"]] += 1
+    if as_json:
+        print(json.dumps({"open": len(held), "byKind": dict(sorted(by_kind.items()))}))
+    elif not held:
+        print("No jobs are open.")
+    else:
+        kinds = ", ".join(f"{count} {kind}" for kind, count in sorted(by_kind.items()))
+        print(f"{len(held)} job(s) open ({kinds}).")
+    return 0
+
+
+def list_jobs(settings: Settings) -> int:
+    open_database(settings.database_path)
+    for job in jobs.open_jobs():
+        subject = job["subject"] or {}
+        print(f"{job['id']}  {job['state']:<9} {job['kind']:<16} "
+              f"{subject.get('kind', '')}:{subject.get('id', '')}  {job['createdAt']}")
+    return 0
+
+
+def cancel_jobs(settings: Settings, job_id: str | None, wait: float) -> int:
+    """Cancel every open job (or one), and wait for the runner to let go of the running ones.
+
+    Cancellation is cooperative: the runner stops at its next check, between model calls. A call
+    already in flight is abandoned rather than waited out — after `wait` seconds the job is closed
+    as cancelled whether or not the runner has agreed, because the process is about to stop anyway.
+    """
+    open_database(settings.database_path)
+    if job_id is None:
+        running = jobs.cancel_all()
+    else:
+        job = next((j for j in jobs.open_jobs() if j["id"] == job_id), None)
+        if job is None:
+            print(f"No open job {job_id}.", file=sys.stderr)
+            return 2
+        jobs.request_cancel(job["ownerId"], job_id)
+        running = [job] if job["state"] == "running" else []
+    deadline = time.monotonic() + max(0.0, wait)
+    while running and time.monotonic() < deadline:
+        still = {j["id"] for j in jobs.open_jobs() if j["state"] == "running"}
+        running = [j for j in running if j["id"] in still]
+        if running:
+            time.sleep(0.5)
+    if running:
+        abandoned = jobs.abandon_running()
+        print(f"Abandoned {abandoned} job(s) still in a model call.")
+    print("Cancelled." if job_id else "Every open job is cancelled.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="acervo.admin", description="Manage an Acervo server.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -178,6 +236,20 @@ def main(argv: list[str] | None = None) -> int:
 
     commands.add_parser("calls", help="how long each job takes per model, from the call log")
 
+    jobs_parser = commands.add_parser("jobs", help="the work the server is doing")
+    job_commands = jobs_parser.add_subparsers(dest="job_command", required=True)
+    open_parser = job_commands.add_parser("open", help="how many jobs are open")
+    open_parser.add_argument("--json", action="store_true")
+    job_commands.add_parser("list", help="every open job")
+    cancel_parser = job_commands.add_parser("cancel", help="cancel open jobs")
+    which = cancel_parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--all", action="store_true")
+    which.add_argument("job_id", nargs="?")
+    cancel_parser.add_argument(
+        "--wait", type=float, default=30.0,
+        help="seconds to wait for the runner before abandoning a job still in a model call",
+    )
+
     serve_parser = commands.add_parser("serve", help="run the HTTP service")
     serve_parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 - the container's own port
     serve_parser.add_argument("--port", type=int, default=8000)
@@ -192,6 +264,12 @@ def main(argv: list[str] | None = None) -> int:
         return seed(settings, arguments.owner_email)
     if arguments.command == "providers":
         return providers()
+    if arguments.command == "jobs":
+        if arguments.job_command == "open":
+            return open_jobs(settings, arguments.json)
+        if arguments.job_command == "list":
+            return list_jobs(settings)
+        return cancel_jobs(settings, None if arguments.all else arguments.job_id, arguments.wait)
     return serve(settings, arguments.host, arguments.port)
 
 

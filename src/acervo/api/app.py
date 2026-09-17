@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -24,15 +27,31 @@ from acervo.repository.session import open_database
 from acervo.services.models import open_call_log
 from acervo.settings import Settings
 from acervo.settings import settings as read_settings
+from acervo.work.runner import Runner
 
 API_ROOT = "/api/acervo/v1"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or read_settings()
-    app = FastAPI(title="Acervo", docs_url=None, redoc_url=None, openapi_url=None)
+    runner = Runner(settings)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # The runner lives exactly as long as the served application. A test client that is not
+        # entered as a context manager never starts it, and drives `runner.run_until_idle()` itself.
+        if settings.runner_enabled:
+            runner.start()
+        try:
+            yield
+        finally:
+            runner.stop()
+
+    app = FastAPI(title="Acervo", docs_url=None, redoc_url=None, openapi_url=None,
+                  lifespan=lifespan)
     app.state.settings = settings
     app.state.engine = open_database(settings.database_path)
+    app.state.runner = runner
     app.state.jwt_secret = auth.resolve_secret(settings)
     # Before the first request, because the first request is the one worth having a record of.
     open_call_log(settings)

@@ -29,6 +29,12 @@ from sqlalchemy import MetaData
 from acervo.db.tables import metadata
 
 
+def _where(index) -> str:
+    """A partial index's condition. Without it, narrowing or widening one would not move the head."""
+    condition = index.dialect_options["sqlite"].get("where")
+    return f":where({condition})" if condition is not None else ""
+
+
 def shape_of(described: MetaData) -> str:
     """A canonical description of every table, column, index and constraint.
 
@@ -51,6 +57,7 @@ def shape_of(described: MetaData) -> str:
         indexes = ",".join(sorted(
             f"{index.name}({','.join(sorted(column.name for column in index.columns))})"
             f"{':unique' if index.unique else ''}"
+            f"{_where(index)}"
             for index in table.indexes
         ))
         keys = ",".join(sorted(

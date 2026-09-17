@@ -141,6 +141,42 @@ def test_an_account_is_created_inside_the_container_and_can_then_sign_in(running
     assert payload["data"]["user"]["email"] == OWNER_EMAIL
 
 
+def test_the_deploy_preflight_sees_an_open_job_and_cancel_clears_it(running):
+    """What `deploy.sh` reads before it ships, read the way it reads it: `admin jobs` in the running
+    container. The job is held open by a far-future `not_before`, so the runner leaves it queued."""
+    email = "jobs@account.example.com"
+    created = subprocess.run(
+        ["docker", "exec", "-i", running.name,
+         "python", "-m", "acervo.admin", "accounts", "create", "--email", email],
+        input=f"{OWNER_PASSWORD}\n", capture_output=True, text=True,
+    )
+    assert created.returncode == 0, created.stderr
+    queued = docker(
+        "exec", running.name, "python", "-c",
+        "from sqlalchemy import update\n"
+        "from acervo.db import tables\n"
+        "from acervo.repository import accounts, jobs\n"
+        "from acervo.repository.session import open_database, transaction\n"
+        "from acervo.settings import settings\n"
+        "open_database(settings().database_path)\n"
+        f"owner = accounts.by_email({email!r})['id']\n"
+        "job = jobs.enqueue(owner, 'corpus.update', trigger='manual')\n"
+        "with transaction() as c:\n"
+        "    c.execute(update(tables.jobs).where(tables.jobs.c.id == job['id'])"
+        ".values(not_before='9999-12-31T00:00:00.000Z'))\n",
+    )
+    assert queued.returncode == 0, queued.stderr
+
+    reported = docker("exec", running.name, "python", "-m", "acervo.admin", "jobs", "open", "--json")
+    assert reported.returncode == 0, reported.stderr
+    assert json.loads(reported.stdout)["open"] == 1
+
+    cancelled = docker("exec", running.name, "python", "-m", "acervo.admin", "jobs", "cancel", "--all")
+    assert cancelled.returncode == 0, cancelled.stderr
+    reported = docker("exec", running.name, "python", "-m", "acervo.admin", "jobs", "open", "--json")
+    assert json.loads(reported.stdout) == {"open": 0, "byKind": {}}
+
+
 def test_a_graph_round_trip_survives_a_restart_of_the_container(running):
     _, session = request(
         running.base, "POST", f"{API}/session", {"email": OWNER_EMAIL, "password": OWNER_PASSWORD}
