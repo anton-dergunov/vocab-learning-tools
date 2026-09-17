@@ -148,7 +148,6 @@ function mockGarfioCapture() {
       note: null, consumedLines: 1, consumedText: null
     },
     duplicates: [],
-    applied: null,
     draft: {
       id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null,
       ipa: null, pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "🪝",
@@ -668,8 +667,7 @@ describe("Acervo application", () => {
         sentences: [], note: null, consumedLines: 1, consumedText: null
       },
       duplicates: [{ id: "lexemepicar0001", headword: "picar", shortGloss: "to itch; to chop" }],
-      draft: null,
-      applied: null
+      draft: null
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
@@ -792,8 +790,7 @@ describe("Acervo application", () => {
         sentences: [], note: null, consumedLines: 1, consumedText: null
       },
       duplicates: [{ id: "lexemepicar0001", headword: "picar", shortGloss: "to itch; to chop" }],
-      draft: null,
-      applied: null
+      draft: null
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Add" }));

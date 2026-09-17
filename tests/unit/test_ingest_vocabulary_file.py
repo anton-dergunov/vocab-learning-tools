@@ -1,8 +1,8 @@
-"""The Obsidian ingest walk, against a stubbed ingest endpoint.
+"""The notes-file walk, against a stubbed server that speaks `/captures` and `/jobs`.
 
-The interesting behaviour is entirely in how the walk advances: the server says how many leading
-lines one entry occupied, and the script has to move by exactly that, resume where it stopped, and
-never lose a word to a bad answer.
+The server does the work now (processing-flow §4.10). What is left to pin here is the transport:
+what each submission carries, how far a checkpoint advances on the server's word, and that nothing
+in the script paces or retries.
 """
 
 from __future__ import annotations
@@ -24,8 +24,6 @@ ingest = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ingest)
 
 
-# The shapes the real notes actually take: blank-line-separated blocks, `---` rules, and runs of
-# consecutive one-line entries with no separator at all.
 NOTES = """inquisitive - любознательный
 Inquisitive about coffee? - Хотите узнать больше о кофе?
 
@@ -37,49 +35,61 @@ Since then I have been navigating the job market.
 Toil - тяжёлый труд
 Consonant - согласный
 """
+LINES = len(NOTES.splitlines())
+
+
+def saved(headword: str, lines: int) -> dict:
+    return {"outcome": "saved", "headword": headword, "lines": lines, "lexemeId": "a" * 15}
+
+
+def finished(consumed: int, *words: dict, state: str = "done", **extra) -> list[dict]:
+    """What `GET /jobs/{id}` answers: once still running, then finished."""
+    step = {"name": "capture", "state": "done" if state == "done" else "failed",
+            "detail": {"consumedLines": consumed, "words": list(words)}}
+    running = {"state": "running", "steps": [{**step, "state": "running",
+                                              "detail": {"consumedLines": 0, "words": []}}]}
+    return [running, {"state": state, "steps": [step], "error": None, "message": None, **extra}]
 
 
 class Stub:
-    """Stands in for the server: hands back a fixed sequence of capture answers."""
+    """Stands in for the server: one scripted job per submission, and proposals for a dry run."""
 
-    def __init__(self, answers: list[dict], languages: list[str] | None = None,
-                 topics: list[str] | None = None) -> None:
-        self.answers = answers
-        self.languages = languages if languages is not None else ["en"]
-        self.topics = topics if topics is not None else ["Slang"]
-        self.requests: list[dict] = []
-        self.calls = 0
+    def __init__(self, *jobs: list[dict], proposals: list[dict] | None = None) -> None:
+        self.jobs = list(jobs)
+        self.proposals = proposals or []
+        self.submissions: list[dict] = []
+        self.captures: list[dict] = []
+        self.polls = 0
+        self.current: list[dict] = []
 
-    @property
-    def received(self) -> list[str]:
-        return [request.get("text", "") for request in self.requests]
+    def post(self, path: str, payload: dict) -> tuple[dict, int]:
+        if path.endswith("/session"):
+            return {"data": {"token": "t", "user": {"id": "o", "email": "e"}}}, 200
+        if path.endswith("/captures"):
+            self.submissions.append(payload)
+            self.current = self.jobs.pop(0)
+            return {"data": {"id": f"job{len(self.submissions):012d}", "state": "queued"}}, 202
+        if path.endswith("/capture"):
+            self.captures.append(payload)
+            return {"data": self.proposals.pop(0)}, 200
+        return {"error": {"code": "not_found", "message": path}}, 404
 
-    def next_answer(self, payload: dict) -> dict:
-        self.requests.append(payload)
-        answer = self.answers[min(self.calls, len(self.answers) - 1)]
-        self.calls += 1
-        return answer
+    def get(self, path: str) -> tuple[dict, int]:
+        self.polls += 1
+        answer = self.current.pop(0) if len(self.current) > 1 else self.current[0]
+        return {"data": answer}, 200
 
 
 @pytest.fixture
-def server():
+def server(monkeypatch):
     holder: dict = {}
+    monkeypatch.setattr(ingest, "POLL_SECONDS", 0)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):  # noqa: N802 - silence the default access log
             pass
 
-        def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler's interface
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length) or b"{}")
-            if self.path.endswith("/session"):
-                body, status = {"data": {"token": "t", "user": {"id": "o", "email": "e"}}}, 200
-            else:
-                answer = holder["stub"].next_answer(payload)
-                if "error" in answer:
-                    body, status = {"error": answer["error"]}, answer["error"].get("status", 400)
-                else:
-                    body, status = {"data": answer}, 200
+        def reply(self, body: dict, status: int) -> None:
             encoded = json.dumps(body).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -87,22 +97,12 @@ def server():
             self.end_headers()
             self.wfile.write(encoded)
 
+        def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler's interface
+            length = int(self.headers.get("Content-Length", 0))
+            self.reply(*holder["stub"].post(self.path, json.loads(self.rfile.read(length) or b"{}")))
+
         def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler's interface
-            stub = holder["stub"]
-            body = {"data": {"changes": {
-                "vocabularies": [
-                    {"language": language, "deleted": False} for language in stub.languages
-                ],
-                "topics": [
-                    {"name": topic, "deleted": False} for topic in stub.topics
-                ],
-            }}}
-            encoded = json.dumps(body).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(encoded)))
-            self.end_headers()
-            self.wfile.write(encoded)
+            self.reply(*holder["stub"].get(self.path))
 
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -112,216 +112,163 @@ def server():
     httpd.shutdown()
 
 
-def answer(headword: str, consumed: int, duplicates: list | None = None) -> dict:
-    return {
-        "resolution": {
-            "language": "en", "headword": headword, "lemma": headword, "pos": "noun",
-            "sentences": [], "note": None, "consumedLines": consumed, "consumedText": None,
-        },
-        "duplicates": duplicates or [],
-        "draft": {"headword": headword, "senses": [{}]},
-        "applied": {"lexemeId": "a" * 15},
-    }
-
-
 def run(server, source: Path, checkpoints: Path, monkeypatch, *extra: str) -> int:
     monkeypatch.setenv("ACERVO_PASSWORD", "secret")
     monkeypatch.setattr("sys.argv", [
         "ingest_vocabulary_file.py", str(source),
         "--server-url", server["url"], "--owner-email", "learner@account.example.com",
-        "--checkpoint-dir", str(checkpoints), "--rate-limit", "0", *extra,
+        "--checkpoint-dir", str(checkpoints), *extra,
     ])
     return ingest.main()
 
 
-def test_walks_the_file_one_entry_at_a_time_without_touching_it(server, tmp_path, monkeypatch, capsys):
+@pytest.fixture
+def notes(tmp_path) -> Path:
     source = tmp_path / "English vocabulary.md"
     source.write_text(NOTES, encoding="utf-8")
-    original = source.read_text(encoding="utf-8")
-    server["stub"] = Stub([answer("inquisitive", 2), answer("turmoil", 2), answer("toil", 1), answer("consonant", 1)])
-
-    assert run(server, source, tmp_path / "state", monkeypatch) == 0
-
-    # The default mode is non-destructive: the notes are exactly as they were.
-    assert source.read_text(encoding="utf-8") == original
-    assert "4 created" in capsys.readouterr().out
-    # Each call starts on the entry after the one before, and the rule between blocks is skipped
-    # locally rather than costing a call.
-    assert server["stub"].received[0].startswith("inquisitive")
-    assert server["stub"].received[1].startswith("turmoil")
-    assert server["stub"].received[2].startswith("Toil")
-    assert server["stub"].received[3].startswith("Consonant")
+    return source
 
 
-def test_resumes_from_the_checkpoint_rather_than_starting_again(server, tmp_path, monkeypatch, capsys):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
+def test_submits_the_file_and_follows_the_job_without_touching_the_notes(server, notes, tmp_path, monkeypatch, capsys):
+    server["stub"] = Stub(finished(
+        LINES, saved("inquisitive", 2), saved("turmoil", 2), saved("toil", 1), saved("consonant", 1)
+    ))
+
+    assert run(server, notes, tmp_path / "state", monkeypatch) == 0
+
+    assert notes.read_text(encoding="utf-8") == NOTES
+    [request] = server["stub"].submissions
+    assert request["text"] == "\n".join(NOTES.splitlines())
+    assert (request["mode"], request["window"], request["complete"]) == ("stream", 40, True)
+    output = capsys.readouterr().out
+    assert "✓ inquisitive" in output and "✓ consonant" in output
+    assert "4 created" in output
+    # The job was followed rather than assumed finished.
+    assert server["stub"].polls >= 2
+
+
+def test_the_file_goes_in_chunks_and_each_starts_where_the_server_stopped(server, notes, tmp_path, monkeypatch):
+    server["stub"] = Stub(
+        # The first chunk ends mid-entry, so the server leaves its tail for the next submission.
+        finished(5, saved("inquisitive", 2)),
+        finished(LINES - 5, saved("turmoil", 2), saved("toil", 1), saved("consonant", 1)),
+    )
+
+    assert run(server, notes, tmp_path / "state", monkeypatch, "--chunk-lines", "6", "--window-lines", "3") == 0
+
+    first, second = server["stub"].submissions
+    assert first["complete"] is False
+    assert len(first["text"].split("\n")) == 6
+    assert second["text"].startswith("turmoil")
+    assert second["complete"] is True
+
+
+def test_resumes_from_the_checkpoint_rather_than_starting_again(server, notes, tmp_path, monkeypatch, capsys):
     checkpoints = tmp_path / "state"
-    server["stub"] = Stub([answer("inquisitive", 2)])
-    assert run(server, source, checkpoints, monkeypatch, "--limit", "1") == 0
-    capsys.readouterr()
+    server["stub"] = Stub(finished(2, saved("inquisitive", 2)))
+    assert run(server, notes, checkpoints, monkeypatch, "--limit", "1") == 0
+    assert server["stub"].submissions[0]["limit"] == 1
 
-    server["stub"] = Stub([answer("turmoil", 2)])
-    assert run(server, source, checkpoints, monkeypatch, "--limit", "1") == 0
-    assert server["stub"].received[0].startswith("turmoil")
+    server["stub"] = Stub(finished(3, saved("turmoil", 2)))
+    assert run(server, notes, checkpoints, monkeypatch, "--limit", "1") == 0
+    # Two lines in: the blank and the rule after `inquisitive` are the server's to skip.
+    assert server["stub"].submissions[0]["text"].split("\n")[:2] == ["", "---"]
 
     # And --restart deliberately ignores what was already done.
-    server["stub"] = Stub([answer("inquisitive", 2)])
-    assert run(server, source, checkpoints, monkeypatch, "--limit", "1", "--restart") == 0
-    assert server["stub"].received[0].startswith("inquisitive")
+    server["stub"] = Stub(finished(2, saved("inquisitive", 2)))
+    assert run(server, notes, checkpoints, monkeypatch, "--limit", "1", "--restart") == 0
+    assert server["stub"].submissions[0]["text"].startswith("inquisitive")
 
 
-def test_consume_cuts_each_entry_out_so_what_is_left_is_the_queue(server, tmp_path, monkeypatch, capsys):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
-    server["stub"] = Stub([answer("inquisitive", 2), answer("turmoil", 2)])
+def test_consume_cuts_what_the_server_finished_out_of_the_file(server, notes, tmp_path, monkeypatch):
+    server["stub"] = Stub(finished(7, saved("inquisitive", 2), saved("turmoil", 2)))
 
-    assert run(server, source, tmp_path / "state", monkeypatch, "--consume", "--limit", "2") == 0
+    assert run(server, notes, tmp_path / "state", monkeypatch, "--consume", "--limit", "2") == 0
 
-    remaining = source.read_text(encoding="utf-8")
-    assert "inquisitive" not in remaining
-    assert "turmoil" not in remaining
+    remaining = notes.read_text(encoding="utf-8")
+    assert "inquisitive" not in remaining and "turmoil" not in remaining
     assert remaining.strip().startswith("Toil")
     # The original is recoverable, which is what makes cutting safe to offer at all.
-    assert "inquisitive" in (tmp_path / "notes.md.bak").read_text(encoding="utf-8")
+    assert "inquisitive" in notes.with_suffix(".md.bak").read_text(encoding="utf-8")
 
 
-def test_a_duplicate_is_reported_and_the_walk_carries_on(server, tmp_path, monkeypatch, capsys):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
-    server["stub"] = Stub([
-        answer("inquisitive", 2, duplicates=[{"id": "b" * 15, "headword": "inquisitive"}]),
-        answer("turmoil", 2),
-    ])
-
-    assert run(server, source, tmp_path / "state", monkeypatch, "--limit", "2") == 0
+def test_duplicates_and_unreadable_blocks_are_reported(server, notes, tmp_path, monkeypatch, capsys):
+    server["stub"] = Stub(finished(
+        LINES,
+        {"outcome": "duplicate", "headword": "inquisitive", "lines": 2, "existing": ["inquisitive"]},
+        {"outcome": "failed", "error": "unreadable_input", "message": "Not a word.", "lines": 2},
+        saved("toil", 1), saved("consonant", 1),
+    ))
+    assert run(server, notes, tmp_path / "state", monkeypatch) == 0
     output = capsys.readouterr().out
     assert "already in your vocabulary" in output
-    assert "1 created, 1 already known" in output
+    assert "✗ Not a word." in output
+    assert "2 created, 1 already known, 1 skipped" in output
 
 
-def test_an_unreadable_block_is_skipped_instead_of_stalling_the_walk(server, tmp_path, monkeypatch, capsys):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
-    server["stub"] = Stub([
-        {"error": {"code": "unreadable_input", "message": "Not a word.", "status": 422}},
-        answer("turmoil", 2),
-    ])
-
-    assert run(server, source, tmp_path / "state", monkeypatch, "--limit", "2") == 0
-    # Without the local fallback the walk would resubmit the same lines for ever.
-    assert server["stub"].received[1].startswith("turmoil")
-    assert "1 created, 0 already known, 1 skipped" in capsys.readouterr().out
-
-
-def test_an_unconfigured_language_stops_the_run_rather_than_failing_every_entry(server, tmp_path, monkeypatch):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
-    server["stub"] = Stub([
-        {"error": {"code": "language_not_configured", "message": "No en vocabulary.", "status": 409}},
-    ])
-
-    assert run(server, source, tmp_path / "state", monkeypatch) == 1
-    assert server["stub"].calls == 1
-
-
-def test_preflight_refuses_a_missing_language_and_topic_before_capture(server, tmp_path, monkeypatch, capsys):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
+def test_a_failed_job_stops_the_run_and_keeps_only_what_the_server_finished(server, notes, tmp_path, monkeypatch, capsys):
     checkpoints = tmp_path / "state"
-    server["stub"] = Stub([answer("inquisitive", 2)], languages=["es"], topics=["Food"])
+    server["stub"] = Stub(finished(
+        2, saved("inquisitive", 2), state="failed",
+        error="language_not_configured", message="The account has no en vocabulary.",
+    ))
 
-    assert run(server, source, checkpoints, monkeypatch, "--language", "en") == 1
-    assert server["stub"].calls == 0
-    assert not checkpoints.exists()
+    assert run(server, notes, checkpoints, monkeypatch) == 1
     assert "no en vocabulary" in capsys.readouterr().err
-
-    server["stub"] = Stub([answer("inquisitive", 2)], languages=["en"], topics=["Food"])
-    assert run(server, source, checkpoints, monkeypatch, "--topic", "Actions") == 1
-    assert server["stub"].calls == 0
-    assert "missing Actions" in capsys.readouterr().err
+    assert ingest.read_offset(ingest.checkpoint_path(checkpoints, notes), notes) == 2
 
 
-def test_transient_provider_failures_retry_then_succeed(server, tmp_path, monkeypatch, capsys):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
-    server["stub"] = Stub([
-        {"error": {"code": "llm_rate_limited", "message": "Busy.", "status": 503}},
-        {"error": {"code": "llm_unavailable", "message": "Unavailable.", "status": 503}},
-        answer("inquisitive", 2),
-    ])
-    sleeps = []
-    monkeypatch.setattr(ingest.time, "sleep", sleeps.append)
+def test_nothing_in_the_script_paces_or_retries(server, notes, tmp_path, monkeypatch, capsys):
+    """The server waits out a busy provider; the script only follows."""
+    busy = {"state": "queued", "notBefore": "2026-09-17T12:00:00.000Z",
+            "steps": [{"name": "capture", "state": "waiting", "detail": {"words": []}}]}
+    server["stub"] = Stub([busy, *finished(LINES, saved("inquisitive", 2))])
 
-    assert run(server, source, tmp_path / "state", monkeypatch, "--limit", "1") == 0
-    assert server["stub"].calls == 3
-    assert sleeps == [15, 30]
-    assert "1 created" in capsys.readouterr().out
-
-
-def test_exhausted_transient_retries_do_not_advance_checkpoint(server, tmp_path, monkeypatch):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
-    checkpoints = tmp_path / "state"
-    failure = {"error": {"code": "llm_rate_limited", "message": "Busy.", "status": 503}}
-    server["stub"] = Stub([failure, failure, failure, failure])
-    monkeypatch.setattr(ingest.time, "sleep", lambda _seconds: None)
-
-    assert run(server, source, checkpoints, monkeypatch, "--limit", "1") == 1
-    assert server["stub"].calls == 4
-    assert not checkpoints.exists()
+    assert run(server, notes, tmp_path / "state", monkeypatch) == 0
+    assert len(server["stub"].submissions) == 1
+    assert "the provider is busy" in capsys.readouterr().out
+    source = (REPO_ROOT / "scripts" / "ingest_vocabulary_file.py").read_text(encoding="utf-8")
+    assert "Pace" not in source and "RETRY" not in source
 
 
 def test_checkpoints_are_specific_to_the_resolved_source_path(server, tmp_path, monkeypatch, capsys):
     first = tmp_path / "one" / "notes.md"
     second = tmp_path / "two" / "notes.md"
-    first.parent.mkdir()
-    second.parent.mkdir()
-    first.write_text(NOTES, encoding="utf-8")
-    second.write_text(NOTES, encoding="utf-8")
+    for source in (first, second):
+        source.parent.mkdir()
+        source.write_text(NOTES, encoding="utf-8")
     checkpoints = tmp_path / "state"
 
-    server["stub"] = Stub([answer("inquisitive", 2)])
-    assert run(server, first, checkpoints, monkeypatch, "--limit", "1") == 0
-    capsys.readouterr()
-    server["stub"] = Stub([answer("inquisitive", 2)])
-    assert run(server, second, checkpoints, monkeypatch, "--limit", "1") == 0
-    capsys.readouterr()
+    for source in (first, second):
+        server["stub"] = Stub(finished(2, saved("inquisitive", 2)))
+        assert run(server, source, checkpoints, monkeypatch, "--limit", "1") == 0
     assert len(list(checkpoints.glob("notes.md.*.json"))) == 2
 
-    server["stub"] = Stub([answer("turmoil", 2)])
-    assert run(server, first, checkpoints, monkeypatch, "--limit", "1") == 0
-    assert server["stub"].received[0].startswith("turmoil")
 
-
-def test_a_dry_run_creates_nothing_and_leaves_no_checkpoint(server, tmp_path, monkeypatch, capsys):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
-    checkpoints = tmp_path / "state"
-    server["stub"] = Stub([answer("inquisitive", 2)])
-
-    assert run(server, source, checkpoints, monkeypatch, "--dry-run", "--limit", "1") == 0
-    assert not checkpoints.exists()
-    assert "not created" in capsys.readouterr().out
-    # The flag the server acts on, not merely what the script printed.
-    assert server["stub"].requests[0]["apply"] is False
-
-
-def test_a_real_run_asks_the_server_to_apply_and_passes_the_topic_through(server, tmp_path, monkeypatch, capsys):
-    source = tmp_path / "notes.md"
-    source.write_text(NOTES, encoding="utf-8")
-    server["stub"] = Stub([answer("inquisitive", 2)])
-
-    assert run(server, source, tmp_path / "state", monkeypatch, "--limit", "1", "--topic", "Slang") == 0
-    request = server["stub"].requests[0]
-    assert request["apply"] is True
-    assert request["mode"] == "stream"
+def test_the_topic_and_language_are_passed_through_for_the_server_to_check(server, notes, tmp_path, monkeypatch):
+    server["stub"] = Stub(finished(LINES))
+    assert run(server, notes, tmp_path / "state", monkeypatch, "--topic", "Slang", "--language", "en") == 0
+    request = server["stub"].submissions[0]
     # Files already filed under a heading know their own topic better than the model can infer it.
     assert request["topics"] == ["Slang"]
+    assert request["language"] == "en"
 
 
-def test_the_local_block_fallback_stops_at_a_separator():
-    lines = ["turmoil - суматоха", "an example line", "", "---", "", "Toil - тяжёлый труд"]
-    assert ingest.logical_block(lines) == 5
-    # No separator anywhere: consume the window rather than guessing a smaller step.
-    assert ingest.logical_block(["one", "two"]) == 2
+def test_a_dry_run_proposes_creates_nothing_and_leaves_no_checkpoint(server, notes, tmp_path, monkeypatch, capsys):
+    checkpoints = tmp_path / "state"
+    server["stub"] = Stub(proposals=[{
+        "resolution": {"headword": "inquisitive", "consumedLines": 2},
+        "duplicates": [], "draft": {"headword": "inquisitive", "senses": [{}]},
+    }])
+
+    assert run(server, notes, checkpoints, monkeypatch, "--dry-run", "--limit", "1") == 0
+    assert not checkpoints.exists()
+    assert server["stub"].submissions == []
+    assert "not created" in capsys.readouterr().out
+
+
+def test_a_chunk_never_carries_more_text_than_the_server_accepts():
+    lines = ["x" * 3000] * 20
+    chunk = ingest.chunk_of(lines, 0, 20)
+    assert len("\n".join(chunk)) <= ingest.TEXT_LIMIT
+    assert chunk

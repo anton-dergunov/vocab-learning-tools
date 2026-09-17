@@ -9,10 +9,8 @@ mattered: one used a 600-second timeout and the other 300; one carried the error
 threw it away; and both inferred the method from the body, so a bodyless POST — which is what
 `/graph/reset` and `/session/refresh` are — could not be expressed at all.
 
-**No retries live here.** The file ingestion retries on exactly `llm_rate_limited`, `llm_unavailable`
-and `llm_unreachable`, with delays its own tests assert; a retry layer inside the transport would
-change that behaviour without changing a line of the retry code, which is the failure the error-code
-taxonomy exists to prevent. A caller that wants retries owns them.
+**No retries live here.** Waiting out a busy provider is the server's job runner's decision, made in
+one place; a retry layer inside the transport would be a second one that nobody else knew about.
 """
 
 from __future__ import annotations
@@ -210,7 +208,20 @@ class AcervoClient:
             body={"schemaVersion": SCHEMA_VERSION, "deviceId": device_id, "changes": changes},
         )
 
+    def submit_capture(self, *, device_id: str, **request: Any) -> dict[str, Any]:
+        """Queue a headless capture. Answers at once with the job; the words are its output."""
+        return self.call(
+            "POST",
+            f"{API_PATH}/captures",
+            body={"schemaVersion": SCHEMA_VERSION, "deviceId": device_id, **request},
+        )
+
+    def job(self, job_id: str) -> dict[str, Any]:
+        """One job the server is doing, with its steps and the jobs it created."""
+        return self.call("GET", f"{API_PATH}/jobs/{job_id}")
+
     def capture(self, *, device_id: str, timeout: float = CAPTURE_TIMEOUT, **request: Any) -> dict[str, Any]:
+        """Propose one entry for review. Writes nothing."""
         return self.call(
             "POST",
             f"{API_PATH}/capture",

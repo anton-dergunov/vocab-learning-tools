@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Walk a messy vocabulary notes file into Acervo, one entry at a time.
+"""Walk a messy vocabulary notes file into Acervo's Inbox.
 
-A thin transport against the ingest endpoint (design §05): it holds no prompt and knows nothing
-about what an article contains. It submits a window of lines, the server works out which single
-entry sits at the front of it and how many lines that entry occupied, and the walk advances by
-exactly that much. Everything lands in the Inbox for review in the app.
+A thin transport (processing-flow §4.10): it submits the file a chunk at a time to `POST /captures`
+and follows the job the server makes of it. The server works out where each entry ends, stops at
+words you already have, files the rest in the Inbox and enriches them — and waits out a busy
+provider itself. This script holds no prompt, no pacing and no retries; it only remembers how far
+the server got.
 
 The source file is never modified unless you ask for it:
 
     # resumable, and leaves the notes byte-identical
-    scripts/ingest_vocabulary_file.py "~/notes/English vocabulary.md" \
+    scripts/ingest_vocabulary_file.py "~/notes/English vocabulary.md" \\
         --server-url https://acervo.example.com --owner-email learner@account.example.com
 
     # cuts each processed entry out of the file, so what is left is the queue
@@ -28,34 +29,13 @@ import time
 from pathlib import Path
 
 from acervo.client import AcervoClient, AcervoError
-from acervo.models.pacing import Pace
 
 DEVICE_ID = "ingestscript01"
-RETRY_DELAYS = (15, 30, 60)
-TRANSIENT_CAPTURE_ERRORS = {"llm_rate_limited", "llm_unavailable", "llm_unreachable"}
 DEFAULT_CHECKPOINTS = Path.home() / ".acervo" / "ingest"
-SEPARATORS = {"", "---", "***", "___"}
-
-
-def logical_block(lines: list[str]) -> int:
-    """How far to skip when the server could not read the front of the window at all.
-
-    Only a fallback. Blocks in these files are separated by a blank line or a rule often enough
-    that this keeps a walk moving past junk without spending a call on every single line.
-    """
-    for index, line in enumerate(lines):
-        if index and line.strip() in SEPARATORS:
-            while index < len(lines) and lines[index].strip() in SEPARATORS:
-                index += 1
-            return index
-    return len(lines)
-
-
-def leading_blanks(lines: list[str]) -> int:
-    count = 0
-    while count < len(lines) and lines[count].strip() in SEPARATORS:
-        count += 1
-    return count
+# The server refuses a capture longer than this, so a chunk is cut to fit.
+TEXT_LIMIT = 20000
+POLL_SECONDS = 2.0
+OPEN = ("queued", "running")
 
 
 def checkpoint_path(directory: Path, source: Path) -> Path:
@@ -88,41 +68,70 @@ def count_lines(source: Path) -> int:
     return len(source.read_text(encoding="utf-8").splitlines())
 
 
-def capture(client: AcervoClient, text: str, language: str, topics: list[str], apply: bool) -> dict:
-    return client.capture(
-        device_id=DEVICE_ID,
-        mode="stream",
-        apply=apply,
-        text=text,
-        language=language or None,
-        topics=topics,
-        sourceKind="unknown",
-    )
+def chunk_of(lines: list[str], offset: int, size: int) -> list[str]:
+    """The next submission: up to `size` lines, and never more text than the server accepts."""
+    chunk = lines[offset:offset + size]
+    while len(chunk) > 1 and len("\n".join(chunk)) > TEXT_LIMIT:
+        chunk = chunk[: len(chunk) // 2]
+    return chunk
 
 
-def preflight(client: AcervoClient, language: str, topics: list[str]) -> None:
-    """Verify owner configuration before the first model call can spend money."""
-    changes = client.pull_graph().get("changes") or {}
-    vocabularies = [item for item in changes.get("vocabularies", []) if not item.get("deleted")]
-    configured_languages = {str(item.get("language", "")).lower() for item in vocabularies}
-    if language and language.lower() not in configured_languages:
-        raise AcervoError(
-            f"The account has no {language} vocabulary. Add it in Settings before ingesting this file.",
-            "language_not_configured",
-            409,
-        )
-    live_topics = {
-        str(item.get("name", "")).strip().lower()
-        for item in changes.get("topics", [])
-        if not item.get("deleted")
-    }
-    missing = [topic for topic in topics if topic.strip().lower() not in live_topics]
-    if missing:
-        raise AcervoError(
-            "The account is missing " + ", ".join(missing) + ". Add or rename the topic before ingesting this file.",
-            "topic_not_configured",
-            409,
-        )
+def describe(word: dict) -> str:
+    lines = word.get("lines", 0)
+    span = f"{lines} {'line' if lines == 1 else 'lines'}"
+    if word.get("outcome") == "saved":
+        return f"  ✓ {word.get('headword')}  ({span})"
+    if word.get("outcome") == "duplicate":
+        existing = ", ".join(word.get("existing") or [])
+        return f"  · {word.get('headword')}  already in your vocabulary as {existing} — skipped"
+    return f"  ✗ {word.get('message') or word.get('error')}  — skipped {span}"
+
+
+def follow(client: AcervoClient, job_id: str, printed: int) -> tuple[dict, int]:
+    """Poll a job to its end, printing each word as the server reports it."""
+    while True:
+        job = client.job(job_id)
+        words = ((job.get("steps") or [{}])[0].get("detail") or {}).get("words") or []
+        for word in words[printed:]:
+            print(describe(word), flush=True)
+        printed = len(words)
+        if job.get("state") not in OPEN:
+            return job, printed
+        waiting = next((step for step in job.get("steps") or [] if step.get("state") == "waiting"), None)
+        if waiting is not None and job.get("notBefore"):
+            print(f"  … the provider is busy; the server resumes at {job['notBefore']}", flush=True)
+        time.sleep(POLL_SECONDS)
+
+
+def dry_run(client: AcervoClient, source: Path, offset: int, args: argparse.Namespace) -> int:
+    """Propose entries one window at a time and create nothing — the synchronous review route."""
+    lines = source.read_text(encoding="utf-8").splitlines()
+    shown = 0
+    while offset < len(lines) and (not args.limit or shown < args.limit):
+        if not lines[offset].strip() or lines[offset].strip() in {"---", "***", "___"}:
+            offset += 1
+            continue
+        window = lines[offset:offset + args.window_lines]
+        try:
+            result = client.capture(
+                device_id=DEVICE_ID, mode="stream", text="\n".join(window),
+                language=args.language or None, topics=args.topic, sourceKind="unknown",
+            )
+        except AcervoError as error:
+            print(f"\n{error}", file=sys.stderr)
+            return 1
+        resolution = result.get("resolution") or {}
+        consumed = min(max(1, int(resolution.get("consumedLines") or 1)), len(window))
+        draft = result.get("draft") or {}
+        senses = len(draft.get("senses") or [])
+        if result.get("duplicates"):
+            print(f"  · {resolution.get('headword')}  already in your vocabulary — would be skipped")
+        else:
+            print(f"  ~ {draft.get('headword', resolution.get('headword'))}  "
+                  f"({senses} {'sense' if senses == 1 else 'senses'}, {consumed} lines) — not created")
+        shown += 1
+        offset += consumed
+    return 0
 
 
 def main() -> int:
@@ -131,12 +140,13 @@ def main() -> int:
     parser.add_argument("--server-url", default=os.getenv("ACERVO_SERVER_URL", ""))
     parser.add_argument("--owner-email", default=os.getenv("ACERVO_OWNER_EMAIL", ""))
     parser.add_argument("--window-lines", type=int, default=40,
-                        help="how many lines to show the server at a time (default: 40)")
+                        help="how many lines the server looks at for one entry (default: 40)")
+    parser.add_argument("--chunk-lines", type=int, default=400,
+                        help="how many lines each submission carries (default: 400)")
     parser.add_argument("--limit", type=int, default=0, help="stop after this many entries")
     parser.add_argument("--language", default="", help="a hint, verified by the server")
     parser.add_argument("--topic", action="append", default=[],
                         help="the topic this file is already filed under; may be repeated")
-    parser.add_argument("--rate-limit", type=int, default=10, help="requests per minute (default: 10)")
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINTS,
                         help="where progress is remembered, outside the notes themselves")
     parser.add_argument("--restart", action="store_true", help="ignore the checkpoint and start again")
@@ -150,8 +160,8 @@ def main() -> int:
     if not source.is_file():
         print(f"No such file: {source}", file=sys.stderr)
         return 2
-    if args.window_lines < 1:
-        print("--window-lines must be at least 1", file=sys.stderr)
+    if args.window_lines < 1 or args.chunk_lines < args.window_lines:
+        print("--window-lines must be at least 1, and --chunk-lines at least as many", file=sys.stderr)
         return 2
 
     server_url = args.server_url.strip() or input("Acervo server URL: ").strip()
@@ -167,98 +177,68 @@ def main() -> int:
     except AcervoError as error:
         print(f"Could not sign in: {error}", file=sys.stderr)
         return 1
-    try:
-        preflight(client, args.language, args.topic)
-    except AcervoError as error:
-        print(f"Preflight failed: {error}", file=sys.stderr)
-        return 1
 
-    if args.consume and not args.dry_run:
+    marker = checkpoint_path(args.checkpoint_dir, source)
+    # In consume mode the file itself is the progress, so an offset would double-count.
+    offset = 0 if (args.consume or args.restart) else read_offset(marker, source)
+    if args.dry_run:
+        return dry_run(client, source, offset, args)
+
+    if args.consume:
         backup = source.with_suffix(source.suffix + ".bak")
         if not backup.exists():
             backup.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
             print(f"  backup written to {backup}")
 
-    marker = checkpoint_path(args.checkpoint_dir, source)
-    # In consume mode the file itself is the progress, so an offset would double-count.
-    offset = 0 if (args.consume or args.restart) else read_offset(marker, source)
-    limiter = Pace(args.rate_limit)
-    created = skipped = failed = 0
-
+    counts = {"saved": 0, "duplicate": 0, "failed": 0}
     while True:
         lines = source.read_text(encoding="utf-8").splitlines()
-        if offset >= len(lines):
+        done = sum(counts.values())
+        if offset >= len(lines) or (args.limit and done >= args.limit):
             break
-        if args.limit and created + skipped + failed >= args.limit:
-            break
+        chunk = chunk_of(lines, offset, args.chunk_lines)
+        complete = offset + len(chunk) >= len(lines)
+        try:
+            job = client.submit_capture(
+                device_id=DEVICE_ID, mode="stream", text="\n".join(chunk),
+                window=args.window_lines, complete=complete,
+                limit=(args.limit - done) if args.limit else 0,
+                language=args.language or None, topics=args.topic, sourceKind="unknown",
+            )
+            job, _ = follow(client, job["id"], 0)
+        except AcervoError as error:
+            print(f"\n{error}", file=sys.stderr)
+            return 1
 
-        # Free, and it keeps blank runs and rule lines from costing a model call each.
-        blanks = leading_blanks(lines[offset:])
-        if blanks:
-            offset += blanks
-            if args.consume and not args.dry_run:
-                source.write_text("\n".join(lines[blanks:]) + "\n", encoding="utf-8")
-                offset = 0
-            continue
+        progress = (job.get("steps") or [{}])[0].get("detail") or {}
+        consumed = min(int(progress.get("consumedLines") or 0), len(chunk))
+        for word in progress.get("words") or []:
+            counts[word.get("outcome", "failed")] = counts.get(word.get("outcome", "failed"), 0) + 1
 
-        window = lines[offset:offset + args.window_lines]
-        result = None
-        error = None
-        for attempt in range(len(RETRY_DELAYS) + 1):
-            limiter.acquire()
-            try:
-                result = capture(client, "\n".join(window), args.language, args.topic, not args.dry_run)
-                error = None
-                break
-            except AcervoError as caught:
-                error = caught
-                if caught.code not in TRANSIENT_CAPTURE_ERRORS or attempt >= len(RETRY_DELAYS):
-                    break
-                delay = RETRY_DELAYS[attempt]
-                print(f"  ↻ {caught} — retrying in {delay} seconds")
-                time.sleep(delay)
-
-        if error is not None:
-            if error.code != "unreadable_input":
-                print(f"\n{error}", file=sys.stderr)
-                return 1
-            step = logical_block(window)
-            print(f"  ✗ {error}  — skipping {step} {'line' if step == 1 else 'lines'}")
-            failed += 1
-            consumed = step
-            headword = None
-        else:
-            assert result is not None
-            resolution = result.get("resolution") or {}
-            consumed = max(1, int(resolution.get("consumedLines") or 1))
-            headword = resolution.get("headword")
-            if result.get("duplicates"):
-                names = ", ".join(item["headword"] for item in result["duplicates"])
-                print(f"  · {headword or '?'}  already in your vocabulary as {names} — skipped")
-                skipped += 1
-            elif args.dry_run:
-                draft = result.get("draft") or {}
-                senses = len(draft.get("senses") or [])
-                print(f"  ~ {draft.get('headword', headword)}  ({senses} {'sense' if senses == 1 else 'senses'}, {consumed} lines) — not created")
-                created += 1
-            else:
-                print(f"  ✓ {headword}  ({consumed} {'line' if consumed == 1 else 'lines'})")
-                created += 1
-
-        consumed = min(consumed, len(window))
-        if args.consume and not args.dry_run:
-            remaining = lines[offset + consumed:]
+        if args.consume:
+            remaining = lines[consumed:]
             source.write_text("\n".join(remaining) + ("\n" if remaining else ""), encoding="utf-8")
         else:
             offset += consumed
-            if not args.dry_run:
-                write_offset(marker, source, offset)
+            write_offset(marker, source, offset)
 
-    total = len(source.read_text(encoding="utf-8").splitlines())
-    print(f"\n{created} created, {skipped} already known, {failed} skipped.")
-    if args.consume and not args.dry_run:
+        if job.get("state") != "done":
+            print(f"\nThe server stopped: {job.get('message') or job.get('error')}", file=sys.stderr)
+            return 1
+        if consumed == 0:
+            # Nothing a whole window could hold was left in this chunk; the tail is the next one's.
+            if complete:
+                break
+            print("\nThe server made no progress on this chunk; try a larger --chunk-lines.",
+                  file=sys.stderr)
+            return 1
+
+    total = count_lines(source)
+    print(f"\n{counts['saved']} created, {counts['duplicate']} already known, "
+          f"{counts['failed']} skipped. Their pictures, clips and audio are being made on the server.")
+    if args.consume:
         print(f"{total} lines left in {source.name}.")
-    elif not args.dry_run:
+    else:
         print(f"At line {offset} of {total} — {source.name} is unchanged; rerun to continue.")
     return 0
 

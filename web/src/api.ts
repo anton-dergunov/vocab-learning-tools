@@ -265,7 +265,6 @@ export interface CaptureResult {
   resolution: CaptureResolution;
   duplicates: CaptureDuplicate[];
   draft: ArticleDraft | null;
-  applied: { lexemeId: string } | null;
   /** Only ever set alongside `duplicates`: what this capture could add to the word already held. */
   foldable?: CaptureFoldable | null;
   /**
@@ -714,13 +713,6 @@ export const backendSession = {
     });
   },
   /**
-   * Submits text to the ingest endpoint and returns what it made of it.
-   *
-   * `apply` is deliberately never set from here: the interface reviews a draft and then writes it
-   * through the repository, so capture gets no private path into the store. The headless transports
-   * are the ones that ask the server to apply.
-   */
-  /**
    * One turn of conversation. Writes nothing — a proposal is applied to a draft on this device and
    * only a second press, through the repository, ever reaches the store.
    *
@@ -742,6 +734,11 @@ export const backendSession = {
     }, false, CAPTURE_TIMEOUT);
   },
 
+  /**
+   * Submits text to the capture route and returns what it made of it. The route writes nothing: the
+   * interface reviews the draft and saves it like any other article. Headless transports submit to
+   * `POST /captures` instead, and the server files what it makes in the Inbox.
+   */
   captureText(deviceId: string, request: CaptureRequest): Promise<CaptureResult> {
     return client.call<CaptureResult>("/capture", {
       method: "POST",
@@ -749,7 +746,6 @@ export const backendSession = {
         schemaVersion: SCHEMA_VERSION,
         deviceId,
         mode: "single",
-        apply: false,
         text: request.text,
         headword: request.headword?.trim() || null,
         sourceUrl: request.sourceUrl ?? null,

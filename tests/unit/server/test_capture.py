@@ -311,7 +311,7 @@ def test_it_never_consumes_zero_lines_in_a_stream_so_a_walk_cannot_stall(seeded)
 
 def test_it_refuses_a_mismatched_stream_boundary_before_composing_or_writing(seeded):
     seeded.model.resolution = {**RESOLUTION, "consumedLines": 1, "consumedText": "different text"}
-    answer = seeded.capture(mode="stream", text="line one\nline two", apply=True)
+    answer = seeded.capture(mode="stream", text="line one\nline two")
     assert answer.json()["error"]["code"] == "stream_boundary_mismatch"
     assert len(seeded.model.calls) == 1
     changes = seeded.pull().json()["data"]["changes"]
@@ -319,28 +319,13 @@ def test_it_refuses_a_mismatched_stream_boundary_before_composing_or_writing(see
     assert changes["examples"] == []
 
 
-# ── applying ────────────────────────────────────────────────────────────────
+# ── writing nothing ─────────────────────────────────────────────────────────
 
 
-def test_it_applies_the_draft_through_the_ordinary_write_path_when_asked(seeded):
+def test_a_proposal_is_never_written_even_when_applying_is_asked_for(seeded):
+    """Headless capture is a job now (`POST /captures`); this route only proposes."""
     body = seeded.capture(apply=True).json()["data"]
-    assert re.match(r"^[a-z0-9]{15}$", body["applied"]["lexemeId"])
-
-    changes = seeded.pull().json()["data"]["changes"]
-    created = next(row for row in changes["lexemes"] if row["id"] == body["applied"]["lexemeId"])
-    assert created["headword"] == "el garfio"
-    # Nobody reviewed it, which is what the Inbox holds.
-    assert created["status"] == "inbox"
-    # Numbered by the one allocator, which is what makes it visible to a cursor pull at all.
-    assert created["revision"] > 0
-    assert len(changes["attestations"]) == 1
-    assert len(changes["examples"]) == 2
-    drawn = next(row for row in changes["examples"] if row["origin"] == "attestation")
-    assert drawn["sourceAttestationId"] == changes["attestations"][0]["id"]
-
-
-def test_a_draft_is_not_written_unless_applying_was_asked_for(seeded):
-    seeded.capture()
+    assert "applied" not in body
     changes = seeded.pull().json()["data"]["changes"]
     assert changes["attestations"] == []
     assert len(changes["lexemes"]) == 1  # only the seeded `picar`

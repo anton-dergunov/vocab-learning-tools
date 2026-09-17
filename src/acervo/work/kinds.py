@@ -54,4 +54,4 @@ def _load() -> None:
     if _loaded:
         return
     _loaded = True
-    from acervo.work import enrich  # noqa: F401 - registers itself
+    from acervo.work import capture, enrich  # noqa: F401 - each registers itself

@@ -1,11 +1,10 @@
-"""Capture: text in, an entry to review out.
+"""Capture: text in, an entry to review out — or, headless, a job that files entries in the Inbox.
 
-The order of operations here is itself contract. The vocabulary checks come before generation, so an
-unkept language never spends a model call; the duplicate check comes after resolve and before
-compose, so a repeat capture costs one call rather than two. No transaction is held across either
-model call.
+`POST /capture` is synchronous because a person is waiting to review the result. `POST /captures`
+is the headless transports' door: it queues a `capture` job and answers at once. Both run
+`services/capture/pipeline.propose`, so there is one pipeline.
 
-The whole pipeline runs in the threadpool. Two model calls of up to 120 seconds each on the event
+The interactive pipeline runs in the threadpool. Two model calls of up to 120 seconds each on the event
 loop would stall every other request for four minutes.
 """
 
@@ -21,126 +20,54 @@ from acervo.api.auth import owner_id
 from acervo.api.errors import data
 from acervo.api.payload import json_body
 from acervo.errors import ApiError
-from acervo.models import Answer
-from acervo.repository import graph
-from acervo.services.articles import save_article
-from acervo.services.capture.coerce import reference_of, trimmed
-from acervo.services.capture.compose import compose
-from acervo.services.capture.draft import draft_from
-from acervo.services.capture.resolve import resolve
-from acervo.settings import Settings
+from acervo.repository import graph, jobs
+from acervo.services.capture.pipeline import TEXT_LIMIT, propose
 
 router = APIRouter()
-
-TEXT_LIMIT = 20000
-
-
-def _passed_over(*calls: Answer) -> list[dict[str, str]]:
-    """Which providers were asked before the one that answered, and why they were not it.
-
-    A fall-through is otherwise completely silent. The entry names the model that wrote it, but a
-    provider at the head of the owner's order that is quietly broken looks exactly like one they
-    never chose — and they would go on believing it is the one building their words.
-
-    Deduplicated across the two model calls: a provider that refused both is one thing that is
-    wrong, not two.
-    """
-    seen: dict[tuple[str, str], dict[str, str]] = {}
-    for call in calls:
-        for provider, model, reason in call.passed_over:
-            seen.setdefault((provider, model), {"provider": provider, "model": model, "reason": reason})
-    return list(seen.values())
-
-
-def _foldable(resolution: dict[str, Any], body: dict[str, Any]) -> dict[str, Any] | None:
-    """What this capture carried that the entry already held may not have.
-
-    `resolution["sentences"]` is the learner's own text, corrected — a dictionary's examples never
-    reach it (`coerce.reference_of`), which is exactly what makes folding it in safe: everything
-    here can legitimately become an attestation on the stored word.
-
-    None when the capture was just the word again, which is the common case and not worth offering.
-    """
-    sentences = resolution["sentences"]
-    note = trimmed(body.get("note")) or None
-    reference = reference_of(body)
-    if not sentences and not note and reference is None:
-        return None
-    return {"sentences": sentences, "reference": reference is not None, "note": note}
-
-
-def run_capture(settings: Settings, account: str, device: str, body: dict[str, Any]) -> dict[str, Any]:
-    vocabularies = graph.owner_vocabularies(account)
-    resolution, resolving = resolve(settings, account, body, vocabularies)
-
-    vocabulary = next(
-        (entry for entry in vocabularies if entry["language"] == resolution["language"]), None
-    )
-    if vocabulary is None:
-        # Deliberately before generation: building an article for a language the owner does not keep
-        # would spend a model call on something with nowhere to go.
-        raise ApiError(
-            409,
-            "language_not_configured",
-            f"This looks like {resolution['language']}, which you have no vocabulary for yet. "
-            "Add it in Settings, then capture this again.",
-        )
-    if not vocabulary["glossLangs"]:
-        raise ApiError(
-            409,
-            "language_not_configured",
-            f"Your {resolution['language']} vocabulary has no translation language set, so an entry "
-            "cannot be built. Choose one in Settings.",
-        )
-
-    duplicates = graph.duplicate_lexemes(
-        account, resolution["language"], resolution["headword"], resolution["lemma"]
-    )
-    if duplicates:
-        # A repeat capture is an addition, not an entry (design §05). Merging it into the word it
-        # belongs to is the article conversation's job, and this branch already knows everything
-        # that job needs: resolve has run, so the learner's own sentences are in hand, separated
-        # from anything a dictionary supplied. No second model call, and no merge path here — the
-        # interface opens the stored article and asks one ordinary question.
-        return {
-            "resolution": resolution, "duplicates": duplicates, "draft": None, "applied": None,
-            "passedOver": _passed_over(resolving),
-            "foldable": _foldable(resolution, body),
-        }
-
-    topics = graph.owner_topics(account)
-    # The model that answered, not the one that was asked first: with a chain, those differ the
-    # moment a provider is rate limited, and the entry must record the one that did the work.
-    answer, composing = compose(settings, account, resolution, body, vocabulary, topics)
-    draft = draft_from(answer, resolution, body, vocabulary, topics, composing.model)
-
-    applied = None
-    if body.get("apply") is True:
-        # Applied with nobody reviewing it — an ingestion script, a headless transport — which is
-        # exactly what the Inbox is for. The same save the interface makes, so nothing about capture
-        # gets a private way into the store.
-        saved = save_article(
-            account, device, draft, enqueue=graph.Enqueue("ingest"), status="inbox"
-        )
-        applied = {"lexemeId": saved["lexemeId"]}
-    return {
-        "resolution": resolution, "duplicates": [], "draft": draft, "applied": applied,
-        "passedOver": _passed_over(resolving, composing),
-        # Total rather than conditional: a field that is sometimes absent is a field every reader
-        # has to guess about.
-        "foldable": None,
-    }
 
 
 @router.post("/capture")
 async def capture(request: Request) -> JSONResponse:
+    """Propose one entry for review. Writes nothing; the interface saves what the owner approves."""
     account = owner_id(request)
     body = await json_body(request)
     graph.require_schema_version(body.get("schemaVersion"))
-    device = graph.require_device(body.get("deviceId"))
+    graph.require_device(body.get("deviceId"))
+    _require_text(body)
+    return data(await run_in_threadpool(propose, request.app.state.settings, account, body))
+
+
+def _require_text(body: dict[str, Any]) -> str:
     text = str(body.get("text") or "")
     if not text.strip():
         raise ApiError(400, "invalid_input", "There is nothing to capture.")
     if len(text) > TEXT_LIMIT:
         raise ApiError(400, "invalid_input", "That capture is too long to process in one request.")
-    return data(await run_in_threadpool(run_capture, request.app.state.settings, account, device, body))
+    return text
+
+
+# What a headless capture may carry into its job. Everything else in a request is ignored.
+CAPTURE_FIELDS = (
+    "text", "mode", "headword", "language", "topics", "sourceKind", "sourceUrl", "sourceTitle",
+    "note", "reference", "referenceMode", "window", "complete", "limit",
+)
+
+
+@router.post("/captures")
+async def submit(request: Request) -> JSONResponse:
+    """Capture without anyone reviewing it: one submission, one job (processing-flow §4.10).
+
+    The caller cannot know how many words a text holds — stream-mode resolve discovers that while it
+    runs — so the submission is the unit and the words are its output. Each saved word lands in the
+    Inbox and is enriched by a child job.
+    """
+    account = owner_id(request)
+    body = await json_body(request)
+    graph.require_schema_version(body.get("schemaVersion"))
+    graph.require_device(body.get("deviceId"))
+    _require_text(body)
+    job = await run_in_threadpool(
+        jobs.enqueue, account, "capture", trigger="ingest",
+        input={field: body[field] for field in CAPTURE_FIELDS if field in body},
+    )
+    return data(job, status=202)
