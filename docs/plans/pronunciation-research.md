@@ -102,7 +102,8 @@ This is the finding that removes a whole category of work. Every utterance in th
 through a write, and writes are online by invariant. So the moment a word exists, the server can mint
 its audio — and the clip travels to the device in the same cursor pull as the record. There is no
 "word in the replica with no audio that the device must voice for itself", except in the narrow
-window between a save and a backfill sweep, which the device-voice fallback covers.
+window between a save and the recording step of its enrichment, which the device-voice fallback
+covers.
 
 That kills the strongest argument for on-device neural TTS. For the record, it *would* work:
 
@@ -208,9 +209,10 @@ like text — justified purely by finding 2, and true for no other media.
 **The chain for a sentence clip:** Vertex Gemini TTS (with a style instruction) → Gemini free tier →
 Chirp 3: HD → *nothing*. A missing sentence clip is an absence, not an error.
 
-**Backfill is a sweep**, a subcommand of the one worker, shaped like the image and clip sweeps: ask
-the graph what has no audio, render, write, be idempotent. Running it late, twice or never costs
-latency and nothing else.
+**Backfill asks the graph what has no audio**, renders, writes, and is idempotent — so running it
+late, twice or never costs latency and nothing else. *(Built as a step of the server's `enrich` job,
+with `run-worker.sh backfill` for words that predate it, rather than as a sweep of its own; see
+[`processing-flow.md`](processing-flow.md).)*
 
 **The per-language voice registry is the piece no layer currently has.** "Which voice is correct
 Spanish, and is it es‑MX or es‑ES" is a content decision like a prompt, not a provider capability —

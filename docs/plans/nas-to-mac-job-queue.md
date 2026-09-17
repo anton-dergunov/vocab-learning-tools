@@ -3,6 +3,12 @@
 **Status:** A sketch, deliberately. Nothing waits on it, and it should not be built until something
 concretely needs it.
 
+**The job record it asked for now exists**, built by
+[`processing-flow.md`](processing-flow.md): a `jobs` table beside `sync_state`, owner-scoped and
+never replicated, with a runner inside the server. So the question this plan declined to answer —
+*where does the record of outstanding work live* — has an answer, and it is not a queue a phone
+would carry. What is still only a sketch is the rest: a second machine doing the work.
+
 The provider roadmap this began as plan 07 of is finished — one catalogue, one
 `src/acervo/models/` package, one place in Settings where the owner chooses. The provider surface a
 remote worker would call therefore exists; this is kept because the asymmetry it describes has not
@@ -92,8 +98,8 @@ wrong. The Mac polls: claim the oldest unclaimed job by writing its own device i
 post the result, release. A lease that expires is reclaimable, which is the whole of the failure
 handling — a Mac that closes mid-job loses one job, and the sweep is already idempotent.
 
-**It is the same `acervo-worker`, on a different machine.** Not new code: `acervo-worker audio` and
-the image sweep already exist as subcommands, and a claiming loop is a wrapper around them. It runs
+**It is the same `acervo-worker`, on a different machine.** Not new code: the laptop image run
+already exists, and a claiming loop is a wrapper around it. It runs
 on the Mac under a LaunchAgent, gated by the rules already specified at
 `image-generation-research.md:186-215`, and it must fail closed — no AC power, no work.
 

@@ -1142,6 +1142,19 @@ you are away from it.
 > and every flow is idempotent by construction rather than by discipline. Never let the queue be the
 > only record that work is needed.
 
+**§09 REVISED — enrichment is event-driven, from a durable job record, and runs in the server.**
+[`plans/processing-flow.md`](plans/processing-flow.md) retires the rule above. It was written for an
+architecture that no longer exists: Prefect as an *optional* orchestrator, and image generation on an
+idle-gated MacBook that could be away for a week. There is no orchestrator and no second machine; one
+Python process serves and works.
+
+What the rule protected against is gone: the job is written in the **same transaction** as the word
+that needs it, so either both exist or neither does. What it got right is kept — a job says *which
+word* and each step re-derives what that word still lacks, the derived ids make two writers converge,
+and "none" is a successful outcome. What it cost is gone too: the interface no longer carries a
+pipeline, a headless capture no longer waits for a sweep, and nothing runs on a schedule except one
+nightly corpus update.
+
 Two cautions carried forward from that document, both still right:
 
 - **Phase 1 discipline.** Ordinary Python stages first, Prefect as an optional wrapper over the same

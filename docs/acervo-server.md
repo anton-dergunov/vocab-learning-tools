@@ -159,17 +159,23 @@ package is simply no longer the thing it was built to be. So `test_layering.py` 
 
 ### Synchronous and asynchronous
 
-The line is §09's, and the package layout draws it:
+Revised by [`plans/processing-flow.md`](plans/processing-flow.md): the server is the unit that
+works, and the package layout draws the line.
 
-- **`api/` + `services/` — synchronous.** Capture, the graph routes, session, health, dictionary
-  lookups. Must work with everything else down.
-- **`jobs/` — asynchronous.** Images, audio, Anki push and FSRS pull, corpus harvest and indexing,
-  export, and the sweeps.
+- **`api/` + `services/` — synchronous.** Capture for review, chat, the graph and article routes,
+  session, health, dictionary lookups, pressing play. Must work with everything else down.
+- **`work/` — asynchronous, in the same process.** A durable `jobs` row per piece of work, and a
+  runner that takes one at a time: a saved word's enrichment, a headless capture, a redraw, the
+  nightly corpus update. It calls the same `services/` functions the routes call, so a job and a
+  request are one pipeline entered from two places.
+- **`jobs/` — batch work that runs somewhere else.** The Anki consumer, the dictionary compiler and
+  the laptop image run, one-shot through `acervo-worker`, writing the graph through `client.py`.
 
-Jobs are plain Python functions with CLI entry points, run one-shot by `acervo-worker`. If Prefect
-is adopted it is a wrapper that calls them, never something they import — §09's Phase 1 discipline.
-And flows are sweeps, not queue consumers: *"which lexemes lack an image" is a query against the
-core*, not a queue entry.
+Work is **started by the write that makes it necessary**, in the same transaction as the record —
+not by a queue nobody can see, and not by a sweep on a timer. Steps stay idempotent by derivation:
+*"which senses lack a picture" is a query against the core*, asked again each time a step runs, so a
+job run twice writes nothing the second time. `GET /events` says *that* something changed; records
+still reach a device only through the cursor pull.
 
 ---
 

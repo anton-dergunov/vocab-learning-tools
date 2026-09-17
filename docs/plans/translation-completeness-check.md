@@ -123,7 +123,6 @@ writing". A lower bound is the same kind of fact about a pair and is handled the
 
 The false-rejection cost must be stated correctly when that is argued. A raise does **not** mark the
 word searched: `services/clips.py` never reaches `_write`, so `clipsSearchedAt` stays null and
-`jobs/clips/sweep.py` — which derives its work from `clipsSearchedAt IS NULL` — picks the word up
-again. So a false reject costs the clip at save time *and* an unbounded re-search of a word that was
+a backfill — which derives its work from `clipsSearchedAt IS NULL` — picks the word up again. So a false reject costs the clip at save time *and* an unbounded re-search of a word that was
 fine, which is the worse half and the reason the threshold must sit well clear of the complete
 distribution.

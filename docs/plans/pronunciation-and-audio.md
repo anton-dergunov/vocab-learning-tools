@@ -99,11 +99,10 @@ under every sentence would be a page of buttons.
 
 ## What is left
 
-1. **A sweep.** `acervo-worker pronounce sweep`, shaped like `draw-pictures`: ask the graph which
-   words have no clips and record them while nobody is watching. Everything it needs exists —
-   `pronunciation.targets.wanted` is the query, and the ids are derived, so it and the interface
-   need no coordination. This is the last piece of the "record it in advance" story; today that
-   happens on the device that saves the word.
+1. ~~**A sweep.**~~ **Done, and not as a sweep.** Recording in advance is the third step of the
+   server's `enrich` job ([`processing-flow.md`](processing-flow.md) §4.4): a save queues the job,
+   and the step asks `pronunciation.targets.wanted` what this word still lacks. Words that predate
+   it are `run-worker.sh backfill`. Nothing records on the device that saved the word any more.
 2. **Aura-2.** Cloudflare's Spanish voice is a second model id and a voice list in the row, no code.
 3. **An Azure row**, whose styles are an SSML enum rather than free text — a third value for
    `capabilities.audio.style`, and the first real test of that declaration.

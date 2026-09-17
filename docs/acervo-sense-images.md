@@ -6,11 +6,14 @@ article, that style variety is pedagogical, that a master is 1024×1024 WebP, an
 no image is complete. What was missing was *what the picture is of*, *how the prompt is written*,
 and *where the work runs first*. That is this document.
 
-Status: **In the product.** Pictures are drawn on the server, from the interface and from a sweep,
-and shown in the article. `src/acervo/images/` is the pipeline — a brief writer and a renderer,
-standing alone on `src/acervo/models/` so that a route and a batch job can share it;
-`src/acervo/services/images.py` binds it to Acervo; `src/acervo/api/routes/images.py` is the five
-routes; `src/acervo/jobs/images/sweep.py` is the unattended half.
+Status: **In the product.** Pictures are drawn on the server and shown in the article.
+`src/acervo/images/` is the pipeline — a brief writer and a renderer, standing alone on
+`src/acervo/models/` so that a job and a laptop run can share it; `src/acervo/services/images.py`
+binds it to Acervo; `src/acervo/work/enrich.py` draws for a word that was just saved and
+`src/acervo/work/images.py` for a redraw or a new brief somebody asked for
+([`plans/processing-flow.md`](plans/processing-flow.md) revises §09 below). `api/routes/images.py`
+keeps what a person does directly: the settings, the readout, attaching your own picture, and ruling
+a sense out.
 
 **What has not happened is landing the 2,285 pictures drawn on the laptop**, and the reason is an
 accident of history rather than anything about the design. Their `senseId`s were read from the
@@ -167,13 +170,13 @@ fact: Vertex takes an aspect ratio and its own size name, so the row carries
 ### The gap that is now closed: what an undrawn record means
 
 `imageRef: null` used to mean three things at once — "written, not yet drawn", "drawing was refused",
-and "the owner does not want one here" — so a sweep defined as *"which senses lack a picture"*
+and "the owner does not want one here" — so work defined as *"which senses lack a picture"*
 retried a permanently blocked sense forever and could not be told to stop. Three columns close it,
 and every other state derives from them rather than being named:
 
 | Field | Type | Notes |
 |---|---|---|
-| `attempts` | int | Render calls spent. Past a threshold the sweep leaves the row alone. |
+| `attempts` | int | Render calls spent. Past a threshold nothing draws the row on its own again. |
 | `failureReason` | string? | The last refusal, in the provider's words. Null on success. |
 | `suppressed` | bool | The owner has ruled on this sense. Nothing ever regenerates it. |
 
@@ -201,7 +204,7 @@ what to do about it, and only the first of those is data.
 > ### DECISION
 > **`suppressed` is not a tombstone, and could not be.**
 >
-> An image prompt's id is *derived* from its `senseId`. A tombstoned row is invisible to the sweep,
+> An image prompt's id is *derived* from its `senseId`. A tombstoned row is invisible to enrichment,
 > which re-briefs the sense and mints **the same id** — so tombstoning does not prevent
 > regeneration, it guarantees a collision at a higher revision. The row has to stay, visible, saying
 > the owner ruled on this sense.
@@ -214,7 +217,7 @@ A provider that looks at the prompt and declines is terminal for that wording: `
 increments, `failureReason` records what it said, and it is deliberately **not** suppressed —
 a different brief may well pass, which is what the edit-and-draw flow is for. A writer refusal *is*
 suppressed, because that is a judgement about the sense rather than about a wording, and it becomes
-a row with no brief so the sweep can see it at all. A rate limit is neither: nothing is recorded
+a row with no brief so that nothing briefs the sense again. A rate limit is neither: nothing is recorded
 against the sense, because an allowance running out says nothing about it and must not spend one of
 its retries. A refused *credential* stops the run, since falling through would hide a mistake and
 spend somebody else's allowance on it.
@@ -328,7 +331,7 @@ permanently silent, so a style added to `config/image-styles.yaml` must be on by
 
 | Control | Shape | Default |
 |---|---|---|
-| **Draw pictures** | one switch, and it governs everything that draws *by itself* — the sweep, and a client enriching a word that was just saved. It deliberately does not gate the per-sense buttons: switching it off is how you get a word with no pictures and then add the one you want by hand. Checked by the two drivers rather than by the routes, for that reason. | on |
+| **Draw pictures** | one switch, and it governs everything that draws *by itself* — the `enrich` job of a word that was just saved, and a backfill. It deliberately does not gate the per-sense buttons: switching it off is how you get a word with no pictures and then add the one you want by hand. Checked by the two drivers rather than by the routes, for that reason. | on |
 | **The styles** | one switch per style, on or off. A style switched off is never offered. At least one must stay on — with none there is nothing to draw with, and "draw nothing" is the switch above rather than an empty list. | all on |
 | **Boost variety** | one switch. On, each style is presented with a few of its example subjects, sampled per word, which pushes the writer toward styles it would otherwise pass over. Off, styles are offered on their own descriptions alone. | **on** |
 
@@ -391,9 +394,9 @@ vocabulary is a broken feature, not a cautious one.
 > **A refusal is a successful outcome, and it is not retried.**
 >
 > §09 already says `none` is a success. The writer returns `refused: true` with a one-line reason,
-> no `imagePrompt` row is created, and the sweep does not come back for it. A provider-side block
-> at drawing time is different: the row exists, `attempts` increments, `failureReason` records the
-> provider's words, and the sweep gives up after a threshold.
+> no `imagePrompt` row is created, and nothing comes back for it. A provider-side block at drawing
+> time is different: the row exists, `attempts` increments, `failureReason` records the provider's
+> words, and drawing on its own gives up after a threshold.
 
 ---
 
@@ -498,6 +501,14 @@ same reason it keeps its own text — an import must never cost you what you did
 
 ### It is a sweep, not a watcher
 
+**§09 REVISED — the work starts from the write, and there is no sweep.**
+[`plans/processing-flow.md`](plans/processing-flow.md) replaces the two engines below with one: a
+save queues an `enrich` job in the same transaction as the word, and `src/acervo/work/` runs it in
+the server. The half of the rule that mattered is kept — each step still asks the graph what the word
+lacks, so a job run twice draws nothing — while the half that cost is gone: the interface carries no
+pipeline, a word added by a script is drawn like any other, and no picture waits on a timer nobody
+can see. A redraw and a new brief are jobs too, so leaving the word does not lose them.
+
 You described a background service that monitors for new articles. The design's existing rule is
 sharper and it is the one that was kept: **derive the work from a query, never from a queue.** "Which
 senses have no live `imagePrompt` with an `imageRef`" is a `SELECT` on the server and a filter on the
@@ -527,8 +538,8 @@ else, and every run is idempotent by construction.
 > the worker is a different container; the chain's fall-through plus a backoff on exactly the three
 > transient codes *is* the pacing. A cross-process limiter would be inventing a problem.
 
-The interface deliberately does **not** sweep the backlog on open, and the server deliberately runs
-no daemon. Both were considered and both are worse: a tablet working through two thousand pictures
+*(Superseded, as above.)* The interface deliberately does **not** sweep the backlog on open, and the
+server deliberately runs no daemon. Both were considered and both are worse: a tablet working through two thousand pictures
 is not a tablet you can read on, and an in-process background task dies on every deploy, makes the
 process that must stay responsive into the orchestrator, and needs a job store — which would be
 owner-scoped domain data and would therefore replicate to every device, so a phone would carry a
@@ -581,16 +592,14 @@ either breaking that rule or writing the pipeline twice. Routing through `servic
 HTTP client of its own service, keeping the letter of the test while breaking exactly what it exists
 to protect.
 
-What stayed in `jobs/images/` is what is genuinely batch: the run directory that *is* the queue,
-the concurrent runner, `verify`, `publish`, and `sweep.py`. The sweep calls the service's **own
-routes** through `acervo.client`, which is the layering rule — a job's write path is a client's
-write path — and earns its keep twice here: the model call, the media write and the graph write all
-happen in one place, the sweep cannot become a second pipeline because it has no way to draw a
-picture itself, and the worker image needs neither LiteLLM nor Pillow.
+What stayed in `jobs/images/` is what is genuinely batch and runs on the laptop: the run directory
+that *is* the queue, the concurrent runner, `verify` and `publish`, writing the graph through
+`acervo.client` — a job's write path is a client's write path. (The unattended sweep that lived here
+is gone; the server's own `enrich` job took its place.)
 
 `ArticleView` is the reuse that matters. `build_articles` takes the `changes` mapping the graph route
-speaks, so the sweep feeds it a `client.pull_graph()` payload and `services/images.py` feeds it rows
-the repository projected — one view model, two feeders, the same idea `articleFor` and
+speaks, so the laptop run feeds it a `client.pull_graph()` payload and `services/images.py` feeds it
+rows the repository projected — one view model, two feeders, the same idea `articleFor` and
 `articleFromDraft` already use on the client.
 
 ### Phase A ran on the laptop, and that was right
@@ -616,7 +625,7 @@ the database those ids were derived from would be rebuilt; hence §00 and the re
 | **A** | Local generation: brief writer, style offering, renderer, contact sheet | reads only | **done** |
 | **B** | Import of a run into the graph and the media directory | writes | **done** |
 | **C** | The schema: `example`, `attempts`, `failureReason`, `suppressed` | writes, schema | **built; needs the reset** |
-| **D** | The routes, the sweep, the article, Settings ▸ Pictures, the export | writes | **built; needs C deployed** |
+| **D** | The routes, the enrichment job, the article, Settings ▸ Pictures, the export | writes | **built; needs C deployed** |
 | **E** | Landing the ~2,285 pictures drawn on the laptop | writes | **needs D deployed** |
 | **F** | Anki cards, one per example, with the sense image | | E, and the Anki generator, which does not exist |
 
@@ -652,11 +661,11 @@ Two operational lessons, both of which cost real work and both of which are now 
 - **Pace every model, not just the expensive one.** The image path had a gate and twelve retries; the
   brief path had neither, and one text-quota refusal silently lost every sense of that lexeme — ten
   senses in a thirteen-hour run. `BriefWriter.write` waits out an exhausted chain for this reason,
-  and the sweep retries on exactly the three transient codes.
+  and the runner retries on exactly the three transient codes.
 - **A terminal outcome must be recorded as terminal.** A writer refusal and a provider block are both
   finished, and both were being re-planned on every subsequent run until they were marked. That is
-  what `attempts`, `failureReason` and `suppressed` are for, and it is the difference between a sweep
-  that converges and one that spends every night on the same handful of senses.
+  what `attempts`, `failureReason` and `suppressed` are for, and it is the difference between work
+  that converges and work that spends every night on the same handful of senses.
 
 ### Phase A, concretely
 
@@ -760,8 +769,8 @@ Still open:
    beautiful; whether a glowing knot of woven threads recalls *abundar en un tema* specifically, or
    merely recalls "convergence", is a judgement only use answers.
 3. **Audio.** `docs/plans/pronunciation-and-audio.md` inherits all of this — the media directory, the
-   route, the sweep's shape, and `EnrichmentJob`'s `kind`, which is `"image" | "audio"` from the
-   start so that audio is a caller rather than a rewrite.
+   route, and the shape of the work, so that audio is a caller rather than a rewrite. It landed as
+   a step of the `enrich` job.
 
 ## §12 · What this deliberately does not do
 
@@ -778,8 +787,9 @@ Still open:
 - **No lexeme-level card images.** `Article.images` is still derived by `selectors.ts` and still
   rendered nowhere, because §02 decided nothing generates it. Left alone rather than removed: it is
   the shape a card image would take if one is ever wanted.
-- **No job store, and not for want of asking.** What is outstanding is a query — `imageWork` on the
-  client, `plan` on the server — and what is in flight is the session's own business, gone when the
-  tab closes, at which point the sweep finishes the word. See §09.
-- **No cross-process rate limiter** between the interface and the sweep. See §09.
+- **~~No job store~~.** There is one now, and it is the server's: a `jobs` row written in the same
+  transaction as the word, never replicated. What is *outstanding* is still a query, which is what
+  keeps every step idempotent. See §09 REVISED.
+- **~~No cross-process rate limiter~~.** One process does the work now, so the runner holds one
+  `Pace` per lane and there is nothing to share.
 - No Anki anything, and the Anki generator does not exist yet.

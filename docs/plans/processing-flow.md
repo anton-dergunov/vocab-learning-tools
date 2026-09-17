@@ -1,9 +1,25 @@
 # Processing flow · the server does the work
 
-**Status:** design only, not started. This document describes where and when Acervo's processing
-runs. It does not change *what* runs. The resolve → compose split, brief → draw, clip selection,
-alignment and translation, and every prompt stay exactly as they are; they were tuned separately and
-are out of scope here.
+**Status:** built. This document describes where and when Acervo's processing runs. It did not change
+*what* runs: the resolve → compose split, brief → draw, clip selection, alignment and translation,
+and every prompt are exactly as they were; they were tuned separately and were out of scope here.
+
+Four things came out differently from the plan below, each because building it showed something the
+design had not:
+
+- **A save says what it edited from.** `POST /articles` takes `base`, the revision the device holds
+  of every record of that entry. Without it, an edit made on a stale replica would have overwritten
+  newer changes silently, and a sense added on another device and not yet pulled would have been
+  tombstoned by a document that could not have mentioned it. §4.9 said "the stale-revision refusal"
+  and this is what that had to become once the diff moved off the device.
+- **A derived id is looked up before it is written.** A clip or picture sent without an id gets its
+  derived id, and the save now finds the row already stored under it. The device's diff had the same
+  bug; its test fake never checked revisions, so nothing failed.
+- **The picture dialog reads its prompt from a route** (`GET /images/prompts/{id}`), because a job
+  cannot hand a composed prompt back the way a request could. It shows it always now, rather than
+  only after a rewrite.
+- **`anki.pull` is declared and refused.** Switching it on is a 409 rather than a nightly failure,
+  because pulling Anki's review state still runs from the worker.
 
 This plan supersedes three things:
 

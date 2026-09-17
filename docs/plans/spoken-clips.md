@@ -178,9 +178,10 @@ same sentence, so this holds by construction — and a candidate where it does n
 
 ### 4a · A clip example's id is derived, for the reason an image prompt's is
 
-There are two writers here and they do not coordinate: the interface's enrichment engine, which
-searches the word you just saved, and the sweep, which walks the backlog. That is the same pair that
-draws pictures, and it is exactly why an `imagePrompt`'s id is a namespaced hash of its sense rather
+There are two writers here and they do not coordinate: the `enrich` job of the word you just saved,
+and a backfill walking words that predate it. (When this was written they were the interface and a
+worker sweep; [`processing-flow.md`](processing-flow.md) made both the server's, which does not
+change the argument.) That is the same pair that draws pictures, and it is exactly why an `imagePrompt`'s id is a namespaced hash of its sense rather
 than a random 15 characters — the lesson written into the data rules after a client that minted a
 random one gave an imported sense two rows and *nothing failed*.
 
@@ -274,14 +275,15 @@ were searched against a corpus that has since grown?* One field answers both.
 > **DECISION: `clipsSearchedAt` on the lexeme — the instant the corpus was last successfully
 > consulted, or null.**
 
-- Null → never consulted. The sweep picks it up. This is what an imported word looks like.
-- Set, no `subtitle` examples → consulted, nothing was good enough. The sweep leaves it alone, and
-  does not spend a model call re-learning that the corpus is thin.
+- Null → never consulted. The word's enrichment, or a backfill, picks it up. This is what an
+  imported word looks like.
+- Set, no `subtitle` examples → consulted, nothing was good enough. Nothing comes back for it, and
+  no model call is spent re-learning that the corpus is thin.
 - Set and older than the corpus's own `built_at` from `GET /status` → the corpus has moved on. That
   is the rescan predicate, available for free, with no rescan button built.
 
 It is written only on a **successful** consultation, so a retrieval service that was down leaves the
-word looking untouched and the sweep finds it later. This is why a save can never fail because the
+word looking untouched and Try again, or a backfill, finds it later. This is why a save can never fail because the
 corpus was unreachable: the word is already written before anything is asked.
 
 ### 9 · The browser reaches the corpus through Acervo
@@ -332,9 +334,10 @@ Settings; that is a limitation to fix in the retrieval repository rather than to
 
 ### 11 · A third enrichment kind, not a second engine
 
-`enrichment.ts` already says it: *audio is a second `kind`, not a second engine.* Clips are the third,
-in the same queue, showing in the same activity panel, and the word unit enqueued at save covers
-both a clip search and the picture work.
+Audio was already a second *kind* rather than a second engine, and clips are the third: one job per
+word, its steps in one order, showing in one place. (Written when that queue was
+`web/src/enrichment.ts`; [`processing-flow.md`](processing-flow.md) moved it into the server's
+`enrich` job, which changes where it runs and not the shape.)
 
 One change is needed and it is worth writing down. **The rest timer becomes per kind.** A picture is
 one image call metered by an image provider at roughly one a minute; a clip search is one text call
@@ -477,8 +480,10 @@ The version contract and nothing about words yet.
   index exists, so a readiness gate would fail the very first deployment of a perfectly good
   service. Readiness is a corpus fact and belongs in Settings ▸ Clips.
 - `install.sh` creates the directories and starts the third service; neither reset path can reach
-  the cache. `run-worker.sh index-clips` runs `update --once` through `exec`, for a cron line — the
-  same image that serves, so the analyzer recorded in the index always matches the one serving it.
+  the cache. Keeping the corpus fresh is the server's nightly `corpus.update` step, or Update now in
+  Settings ▸ Clips: both ask that service to update itself over HTTP, so the analyzer recorded in the
+  index always matches the one serving it. (It was `run-worker.sh index-clips` through `exec` until
+  [`processing-flow.md`](processing-flow.md) §4.12.)
 - `vendor/speech/` ships in the release archive the way compiled dictionaries do, because
   `compose.yaml` builds from the extracted release root.
 - The web build installs the pinned tarball, imported through `lazy()`.
@@ -501,8 +506,8 @@ No behaviour, only the shape, so that everything after it has somewhere to write
   records exactly one derived id.
 - `upgradeBundle` gives the three new fields their absent defaults — the one sanctioned place for
   that, because an exported bundle outlives the schema it was written under.
-- **§14's anchor set**, here rather than in step 3, so there is never a window in which the image
-  sweep can anchor a picture to a clip. `SenseView.anchor` filters `subtitle` out before its `min()`
+- **§14's anchor set**, here rather than in step 3, so there is never a window in which a picture
+  can be anchored to a clip. `SenseView.anchor` filters `subtitle` out before its `min()`
   and already returns `None` when nothing is left, which is the supported "the picture belongs to
   the sense" state. It is independently live today — `seed_data.py` already writes `subtitle`
   examples.
@@ -557,13 +562,13 @@ the activity panel.
 - The pane, shaped like Settings ▸ Dictionaries: does the service answer, what does its corpus hold,
   the channel list with enable/disable/add/remove through the proxy, and the switch that turns
   save-time searching off.
-- `jobs/clips/` — the sweep, which asks the graph for lexemes with a null `clipsSearchedAt` and runs
-  the same pipeline, bounded by `--limit`, writing through `client.py`. `acervo_worker.py clips`
-  and `run-worker.sh find-clips`.
-- Run it over the imported backlog.
+- The backlog. *(Built as [`processing-flow.md`](processing-flow.md) Step 10 rather than as a sweep:
+  `admin jobs enqueue enrich --missing`, behind `run-worker.sh backfill`, queues the ordinary
+  `enrich` job for every word with a null `clipsSearchedAt` — the same pipeline, bounded by
+  `--limit`, and not a second one.)*
 
-**Done when:** `find-clips plan` prints what it would do and spends nothing; `sweep --limit 20`
-walks twenty words; running it twice does the second half.
+**Done when:** `backfill --dry-run` prints what it would queue and spends nothing; `--limit 20`
+queues twenty words; running it twice queues nothing the second time.
 
 ### Step 7 · The player's target text
 
@@ -648,8 +653,8 @@ Beyond each step's own criterion:
 - `test_layering.py` extended: `acervo.clips` imports no settings, graph or database; `api/` does
   not import `jobs/`.
 - Shared vectors for the derived clip id, asserted from both `tests/unit/` and `web/src/ids.test.ts`,
-  the way `image_prompt_id` already is — and a test that the enrichment engine and the sweep, run
-  over one lexeme against one fake corpus, produce one row and not two.
+  the way `image_prompt_id` already is — and a test that two searches of one lexeme against one fake
+  corpus produce one row and not two.
 - A test asserting the retrieval operator token never appears in a proxied response body, in the
   shape of `test_it_never_returns_a_key_or_how_a_provider_is_reached`.
 - Reading a word's article with the retrieval service stopped, on a device with no network.
