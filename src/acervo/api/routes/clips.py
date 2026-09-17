@@ -21,7 +21,7 @@ from acervo.api.auth import owner_id
 from acervo.api.errors import data
 from acervo.api.payload import json_body
 from acervo.repository import graph
-from acervo.services.clips import apply_settings, find_clips, settings_view
+from acervo.services.clips import apply_settings, settings_view
 
 router = APIRouter()
 
@@ -37,21 +37,4 @@ async def write_settings(request: Request) -> JSONResponse:
     body = await json_body(request)
     return data(
         await run_in_threadpool(apply_settings, request.app.state.settings, owner, body)
-    )
-
-
-@router.post("/clips/lexemes/{lexeme_id}/find")
-async def find(lexeme_id: str, request: Request) -> JSONResponse:
-    """One search and one text call covering every sense of this word, in the threadpool.
-
-    A model call of up to two minutes on the event loop would stall every other request for as long
-    as it ran — the reason capture and the image brief do the same thing.
-    """
-    owner = owner_id(request)
-    body = await json_body(request)
-    device = graph.require_device(body.get("deviceId"))
-    return data(
-        await run_in_threadpool(
-            find_clips, request.app.state.settings, owner, device, lexeme_id
-        )
     )

@@ -13,9 +13,9 @@ usage() {
   echo "       run-worker.sh [--root PATH] draw-pictures <sweep arguments...>" >&2
   echo "         e.g. draw-pictures sweep --limit 50" >&2
   echo "              draw-pictures plan --language es" >&2
-  echo "       run-worker.sh [--root PATH] find-clips <sweep arguments...>" >&2
-  echo "         e.g. find-clips sweep --limit 50" >&2
-  echo "              find-clips plan --language es" >&2
+  echo "       run-worker.sh [--root PATH] backfill <arguments...>" >&2
+  echo "         e.g. backfill --owner-email learner@account.example.com --limit 50" >&2
+  echo "              backfill --owner-email learner@account.example.com --language es --dry-run" >&2
   exit 2
 }
 
@@ -25,15 +25,14 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) [ "$#" -ge 2 ] || usage; acervo_root=$2; shift 2 ;;
     --input-archive) [ "$#" -ge 2 ] || usage; input_archive=$2; shift 2 ;;
-    bootstrap-upload|push|export-state|pull-state|adopt-server|build-dictionary|draw-pictures|find-clips) operation=$1; shift; break ;;
+    bootstrap-upload|push|export-state|pull-state|adopt-server|build-dictionary|backfill) operation=$1; shift; break ;;
     *) usage ;;
   esac
 done
 [ "${operation:-}" ] || usage
 # The compiler's own flags are passed straight through, so building one dictionary and building
 # every Spanish one are the same command with different arguments rather than two wrappers.
-if [ "$operation" = build-dictionary ] || [ "$operation" = draw-pictures ] \
-   || [ "$operation" = find-clips ]; then
+if [ "$operation" = build-dictionary ] || [ "$operation" = backfill ]; then
   [ "$#" -ge 1 ] || usage
 else
   [ "$#" -eq 0 ] || usage
@@ -113,18 +112,12 @@ case "$operation" in
     # shellcheck disable=SC2086
     compose $common_args --profile tools run --rm --build acervo-worker dictionary build "$@"
     ;;
-  draw-pictures)
-    # The unattended half of sense images. A sweep rather than a watcher: it asks the graph what has
-    # no picture, so being run late or twice costs nothing. This is what a cron line calls, and it
-    # is one subcommand rather than a new container — the whole reason `acervo-worker` exists.
+  backfill)
+    # The corner case the event-driven design leaves: words that existed before it, or an import
+    # that asked for nothing. It queues the same `enrich` job a save queues, so it is not a second
+    # pipeline — and it runs in the *server*, which is what holds the database and the runner.
     # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm --build acervo-worker images "$@"
-    ;;
-  find-clips)
-    # The unattended half of clips: which words have never been searched is a query, so running it
-    # late, twice or never costs latency and nothing else. Distinct from growing the corpus, which
-    # the server now asks the retrieval service to do itself — nightly, or from Settings ▸ Clips.
-    # shellcheck disable=SC2086
-    compose $common_args --profile tools run --rm --build acervo-worker clips "$@"
+    compose $common_args exec -T server \
+      python -m acervo.admin jobs enqueue enrich --missing "$@"
     ;;
 esac

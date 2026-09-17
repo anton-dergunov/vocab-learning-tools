@@ -29,9 +29,7 @@ from acervo.repository import graph
 from acervo.services.images import (
     apply_settings,
     attach_picture,
-    brief_lexeme,
     prompt_view,
-    render_prompt,
     settings_view,
     suppress_prompt,
 )
@@ -54,38 +52,6 @@ async def write_settings(request: Request) -> JSONResponse:
     body = await json_body(request)
     return data(
         await run_in_threadpool(apply_settings, request.app.state.settings, owner, body)
-    )
-
-
-@router.post("/images/lexemes/{lexeme_id}/brief")
-async def brief(lexeme_id: str, request: Request) -> JSONResponse:
-    """One text call covering every sense of this word. Everything below runs in the threadpool.
-
-    A model call of up to two minutes on the event loop would stall every other request for as long
-    as it ran — the reason capture does the same thing, spelled out in `routes/capture.py`.
-    """
-    owner = owner_id(request)
-    body = await json_body(request)
-    device = graph.require_device(body.get("deviceId"))
-    return data(
-        await run_in_threadpool(
-            brief_lexeme, request.app.state.settings, owner, device, lexeme_id
-        )
-    )
-
-
-@router.post("/images/prompts/{prompt_id}/render")
-async def render(prompt_id: str, request: Request) -> JSONResponse:
-    """One image call. `prompt` and `styleId` in the body are edit-and-draw; without them the
-    stored brief is drawn again with a fresh seed, so a picture you disliked comes back different
-    rather than identical."""
-    owner = owner_id(request)
-    body = await json_body(request)
-    device = graph.require_device(body.get("deviceId"))
-    return data(
-        await run_in_threadpool(
-            render_prompt, request.app.state.settings, owner, device, prompt_id, body
-        )
     )
 
 

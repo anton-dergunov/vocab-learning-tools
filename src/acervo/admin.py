@@ -222,6 +222,31 @@ def cancel_jobs(settings: Settings, job_id: str | None, wait: float) -> int:
     return 0
 
 
+def enqueue_missing(settings: Settings, email: str, language: str, limit: int, dry_run: bool) -> int:
+    """Queue ordinary `enrich` jobs for words that are missing something.
+
+    The corner case the event-driven design leaves: words that existed before it, or an import that
+    asked for nothing. It is the same job, the same steps and the same progress view as a save's —
+    not a second pipeline — and nothing runs it on a schedule.
+    """
+    from acervo.work.enrich import incomplete
+
+    open_database(settings.database_path)
+    owner = accounts.by_email(email)
+    if owner is None:
+        print(f"No account for {email}.", file=sys.stderr)
+        return 2
+    words = incomplete(settings, owner["id"], language=language, limit=limit)
+    for word in words:
+        print(f"{word['headword']}  {', '.join(word['lacking'])}")
+        if not dry_run:
+            jobs.enqueue(owner["id"], "enrich", trigger="backfill",
+                         subject_kind="lexeme", subject_id=word["id"])
+    what = "would be enriched" if dry_run else "queued"
+    print(f"{len(words)} word(s) {what}.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="acervo.admin", description="Manage an Acervo server.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -251,6 +276,14 @@ def main(argv: list[str] | None = None) -> int:
         "--wait", type=float, default=30.0,
         help="seconds to wait for the runner before abandoning a job still in a model call",
     )
+    enqueue_parser = job_commands.add_parser("enqueue", help="queue work for words that lack it")
+    enqueue_parser.add_argument("kind", choices=("enrich",))
+    enqueue_parser.add_argument("--missing", action="store_true", required=True,
+                                help="every word missing a clip search, a picture or a recording")
+    enqueue_parser.add_argument("--owner-email", required=True)
+    enqueue_parser.add_argument("--language", default="", help="only this vocabulary")
+    enqueue_parser.add_argument("--limit", type=int, default=0, help="at most this many words")
+    enqueue_parser.add_argument("--dry-run", action="store_true", help="print them and queue nothing")
 
     serve_parser = commands.add_parser("serve", help="run the HTTP service")
     serve_parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 - the container's own port
@@ -271,6 +304,9 @@ def main(argv: list[str] | None = None) -> int:
             return open_jobs(settings, arguments.json)
         if arguments.job_command == "list":
             return list_jobs(settings)
+        if arguments.job_command == "enqueue":
+            return enqueue_missing(settings, arguments.owner_email, arguments.language,
+                                   arguments.limit, arguments.dry_run)
         return cancel_jobs(settings, None if arguments.all else arguments.job_id, arguments.wait)
     return serve(settings, arguments.host, arguments.port)
 

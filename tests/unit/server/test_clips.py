@@ -14,6 +14,8 @@ import httpx
 import pytest
 
 from acervo.clips.ids import clip_example_id
+from acervo.errors import ApiError
+from acervo.services.clips import find_clips
 
 from graph_records import attestation, example, lexeme, sense, vocabulary
 
@@ -92,8 +94,29 @@ def chooses(server, *pairs):
     ]}
 
 
+class Answered:
+    """A service call, read the way these tests were written to read a route's answer.
+
+    Searching for clips is a step of the `enrich` job now, not a route — but what it *does* is this
+    service function, and what a refusal carries is an `ApiError`'s status and code.
+    """
+
+    def __init__(self, status_code: int, body: dict) -> None:
+        self.status_code = status_code
+        self.body = body
+
+    def json(self) -> dict:
+        return self.body
+
+
 def find(server, entry):
-    return server.post(f"/clips/lexemes/{entry['id']}/find", {"deviceId": DEVICE})
+    """One corpus search and one model call for one word, as the `clips` step makes them."""
+    try:
+        return Answered(200, {"data": find_clips(server.settings, server.owner, DEVICE, entry["id"])})
+    except ApiError as refusal:
+        return Answered(
+            refusal.status, {"error": {"code": refusal.code, "message": refusal.message}}
+        )
 
 
 def segments():
@@ -288,7 +311,7 @@ def test_another_accounts_word_is_not_found(server, other, corpus):
     """One message for "no such word" and "somebody else's": telling them apart would answer
     whether an id exists in another account."""
     entry, _itch, _chop = word(server)
-    answer = other.post(f"/clips/lexemes/{entry['id']}/find", {"deviceId": DEVICE})
+    answer = find(other, entry)
     assert answer.status_code == 404
     assert answer.json()["error"]["code"] == "not_found"
 

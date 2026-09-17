@@ -10,12 +10,14 @@ from __future__ import annotations
 import litellm
 import pytest
 
+from acervo import admin
 from acervo.domain import SCHEMA_VERSION
 from acervo.images.ids import image_prompt_id
 from acervo.pronunciation.ids import pronunciation_id
 from acervo.repository import jobs
 from acervo.work.runner import Runner
 
+from conftest import OWNER_EMAIL
 from graph_records import example, lexeme, sense, vocabulary
 from test_clips import SPEECH_URL, CorpusStub, recorded
 from test_pronunciations import wav
@@ -338,3 +340,67 @@ def test_a_brief_the_writer_refuses_suppresses_the_sense_rather_than_failing(
     assert pictures[itch["id"]]["suppressed"] is True
     assert pictures[chop["id"]]["imageRef"]
     assert image_prompt_id(itch["id"]) == pictures[itch["id"]]["id"]
+
+
+# ── backfill ────────────────────────────────────────────────────────────────
+
+
+def test_the_backfill_queues_an_ordinary_enrich_for_what_is_missing(server, runner, everything, capsys):
+    """Words that predate the design, or an import that asked for nothing. The same job a save
+    queues, so it is not a second pipeline."""
+    entry, itch, chop, sentence, written = save(server)
+    answers(server, itch, chop)
+    runner.run_until_idle()  # this one is complete
+    jobs.request_cancel(server.owner, written["enrich"][entry["id"]])
+
+    second = lexeme(headword="toalla", lemma="toalla")
+    assert server.push({"lexemes": [second], "senses": [sense(second["id"])]}).status_code == 200
+    for job in jobs.open_jobs(server.owner):
+        jobs.request_cancel(server.owner, job["id"])
+
+    assert admin.main(["jobs", "enqueue", "enrich", "--missing",
+                       "--owner-email", OWNER_EMAIL]) == 0
+    printed = capsys.readouterr().out
+    assert "toalla" in printed and "picar" not in printed
+    assert "1 word(s) queued." in printed
+    queued = jobs.open_jobs(server.owner)
+    assert [(job["kind"], job["subject"]["id"], job["trigger"]) for job in queued] == [
+        ("enrich", second["id"], "backfill")
+    ]
+
+
+def test_the_backfill_can_be_looked_at_first_and_bounded(server, everything, capsys):
+    for headword in ("toalla", "sobremesa"):
+        word = lexeme(headword=headword, lemma=headword)
+        assert server.push({"lexemes": [word], "senses": [sense(word["id"])]}).status_code == 200
+    for job in jobs.open_jobs(server.owner):
+        jobs.request_cancel(server.owner, job["id"])
+
+    assert admin.main(["jobs", "enqueue", "enrich", "--missing", "--owner-email", OWNER_EMAIL,
+                       "--dry-run"]) == 0
+    assert "would be enriched" in capsys.readouterr().out
+    assert jobs.open_jobs(server.owner) == []
+
+    assert admin.main(["jobs", "enqueue", "enrich", "--missing", "--owner-email", OWNER_EMAIL,
+                       "--limit", "1"]) == 0
+    assert len(jobs.open_jobs(server.owner)) == 1
+
+
+def test_the_backfill_takes_one_vocabulary_at_a_time(server, everything, capsys):
+    assert server.push({"vocabularies": [vocabulary(language="en", definitionLang="en", order=1)]}).status_code == 200
+    english = lexeme(language="en", headword="towel", lemma="towel", reading=None)
+    assert server.push({"lexemes": [english], "senses": [sense(english["id"], definitionLang="en")]}).status_code == 200
+    for job in jobs.open_jobs(server.owner):
+        jobs.request_cancel(server.owner, job["id"])
+
+    assert admin.main(["jobs", "enqueue", "enrich", "--missing", "--owner-email", OWNER_EMAIL,
+                       "--language", "es"]) == 0
+    assert jobs.open_jobs(server.owner) == []
+    assert admin.main(["jobs", "enqueue", "enrich", "--missing", "--owner-email", OWNER_EMAIL,
+                       "--language", "en"]) == 0
+    assert [job["subject"]["id"] for job in jobs.open_jobs(server.owner)] == [english["id"]]
+
+
+def test_the_backfill_says_when_the_account_is_not_one(server, capsys):
+    assert admin.main(["jobs", "enqueue", "enrich", "--missing",
+                       "--owner-email", "nobody@account.example.com"]) == 2

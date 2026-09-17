@@ -23,6 +23,7 @@ from acervo.images.ids import image_prompt_id
 from acervo.pronunciation.ids import pronunciation_id
 from acervo.pronunciation.targets import COLLECTION, current, wanted
 from acervo.repository import clip_settings, graph, image_settings, pronunciation_settings
+from acervo.settings import Settings
 from acervo.services import clips, images, pronunciations
 from acervo.work import retry
 from acervo.work.kinds import Kind, register
@@ -175,6 +176,58 @@ def record_pronunciations(context: JobContext, step: Step) -> str | None:
     if failure is not None:
         raise failure
     return None
+
+
+# ── what is missing ─────────────────────────────────────────────────────────
+
+
+def lacking(settings: Settings, owner: str, lexeme_id: str) -> list[str]:
+    """Which steps would do something for this word, in step order. Empty means it is complete.
+
+    The same questions each step asks when it starts, asked without running anything — which is what
+    a backfill needs, and the reason it is one function rather than two sets of rules.
+    """
+    records = graph.article_records(owner, lexeme_id)
+    lexeme = next((row for row in live(records.get("lexemes", [])) if row["id"] == lexeme_id), None)
+    if lexeme is None:
+        return []
+    found = []
+    if settings.speech_url and clip_settings.settings(owner).search_enabled \
+            and not lexeme.get("clipsSearchedAt") and _senses(records, lexeme_id):
+        found.append("clips")
+    if image_settings.settings(owner).draw_enabled \
+            and (_unbriefed(records, lexeme_id) or _drawable(records, lexeme_id)):
+        found.append("pictures")
+    choice = pronunciation_settings.settings(owner).pregenerate
+    if any(choice.values()):
+        clips_held = {row["id"]: row for row in records.get("pronunciations", [])}
+        if any(not current(clips_held.get(pronunciation_id(target.kind, target.id)), target)
+               for target in wanted(records, lexeme_id, choice)):
+            found.append("pronunciations")
+    return found
+
+
+def incomplete(settings: Settings, owner: str, *, language: str = "",
+               limit: int = 0) -> list[dict[str, Any]]:
+    """The owner's words that are missing something, newest first.
+
+    A query against the graph rather than a list anybody keeps: running a backfill late, twice or
+    never costs latency and nothing else.
+    """
+    words = sorted(
+        (row for row in live(graph.pull(owner, 0)["changes"]["lexemes"])
+         if not language or row["language"] == language),
+        key=lambda row: (row["createdAt"], row["id"]),
+        reverse=True,
+    )
+    found = []
+    for word in words:
+        steps = lacking(settings, owner, word["id"])
+        if steps:
+            found.append({"id": word["id"], "headword": word["headword"], "lacking": steps})
+        if limit and len(found) >= limit:
+            break
+    return found
 
 
 def enrich(context: JobContext) -> None:

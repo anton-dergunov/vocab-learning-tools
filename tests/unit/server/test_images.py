@@ -7,11 +7,14 @@ file's own mock returns bytes.
 
 from __future__ import annotations
 
+import json
+
 import litellm
 import pytest
 
+from acervo.errors import ApiError
 from acervo.images.ids import image_prompt_id
-from acervo.services.images import MAX_ATTEMPTS
+from acervo.services.images import MAX_ATTEMPTS, brief_lexeme, render_prompt
 
 from graph_records import attestation, example, lexeme, sense, vocabulary
 
@@ -48,6 +51,38 @@ def word(server, **overrides):
     return entry, itch, chop, sentence
 
 
+class Answered:
+    """A service call, read the way these tests were written to read a route's answer.
+
+    Writing a brief and drawing a picture are jobs now (`work/images.py`), not routes — but what
+    they *do* is these service functions, and what a refusal carries is an `ApiError`'s status and
+    code. This keeps the assertions about both, one call closer to the work.
+    """
+
+    def __init__(self, status_code: int, body: dict) -> None:
+        self.status_code = status_code
+        self.body = body
+
+    def json(self) -> dict:
+        return self.body
+
+    @property
+    def text(self) -> str:
+        return json.dumps(self.body)
+
+
+def called(action, *args, **kwargs) -> Answered:
+    try:
+        return Answered(200, {"data": action(*args, **kwargs)})
+    except ApiError as refusal:
+        return Answered(refusal.status, {"error": {"code": refusal.code, "message": refusal.message}})
+
+
+def render(server, prompt_id, **overrides):
+    """One image call for one picture, as `image.redraw` makes it."""
+    return called(render_prompt, server.settings, server.owner, DEVICE, prompt_id, overrides or None)
+
+
 def a_brief_for(*senses, style="oil-painting"):
     return {"senses": [
         {"senseId": one["id"], "styleId": style, "anchorExampleId": anchor,
@@ -57,8 +92,9 @@ def a_brief_for(*senses, style="oil-painting"):
 
 
 def brief(server, entry, *senses, **overrides):
+    """One text call for the whole word, as `image.rebrief` makes it."""
     server.model.brief = a_brief_for(*senses, **overrides)
-    return server.post(f"/images/lexemes/{entry['id']}/brief", {"deviceId": DEVICE})
+    return called(brief_lexeme, server.settings, server.owner, DEVICE, entry["id"])
 
 
 def rows(answer):
@@ -113,7 +149,7 @@ def test_a_render_writes_the_file_and_the_row(server):
     entry, itch, chop, sentence = word(server)
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
 
-    answer = server.post(f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE})
+    answer = render(server, written[itch["id"]]["id"])
     assert answer.status_code == 200, answer.json()
     row = answer.json()["data"]
 
@@ -132,9 +168,7 @@ def test_the_media_route_serves_what_was_just_drawn(server):
     the interface can reach it — `<img src>` cannot carry a bearer token."""
     entry, itch, chop, sentence = word(server)
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
-    row = server.post(
-        f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE}
-    ).json()["data"]
+    row = render(server, written[itch["id"]]["id"]).json()["data"]
 
     served = server.client.get(f"/api/acervo/media/{row['imageRef']}", headers=server.auth)
     assert served.status_code == 200
@@ -147,10 +181,10 @@ def test_drawing_again_keeps_the_path_and_changes_the_seed(server):
     nothing accumulates orphans — and the seed moves so the picture is genuinely different."""
     entry, itch, chop, sentence = word(server)
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
-    path = f"/images/prompts/{written[itch['id']]['id']}/render"
+    prompt_id = written[itch["id"]]["id"]
 
-    first = server.post(path, {"deviceId": DEVICE}).json()["data"]
-    second = server.post(path, {"deviceId": DEVICE}).json()["data"]
+    first = render(server, prompt_id).json()["data"]
+    second = render(server, prompt_id).json()["data"]
 
     assert first["imageRef"] == second["imageRef"]
     assert second["attempts"] == 2
@@ -168,10 +202,8 @@ def test_editing_the_brief_draws_it_without_a_second_text_call(server):
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
     before = len(server.model.calls)
 
-    answer = server.post(
-        f"/images/prompts/{written[itch['id']]['id']}/render",
-        {"deviceId": DEVICE, "prompt": "A nose, enormous", "styleId": "film-noir"},
-    )
+    answer = render(server, written[itch["id"]]["id"],
+                    prompt="A nose, enormous", styleId="film-noir")
     assert answer.status_code == 200, answer.json()
     assert answer.json()["data"]["prompt"] == "A nose, enormous"
     assert answer.json()["data"]["styleId"] == "film-noir"
@@ -201,7 +233,7 @@ def test_a_provider_refusal_is_recorded_rather_than_raised(server):
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
     server.painter.data = None  # no image data: `call.image` reads this as a refusal
 
-    answer = server.post(f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE})
+    answer = render(server, written[itch["id"]]["id"])
     assert answer.status_code == 200, answer.json()
     row = answer.json()["data"]
     assert row["imageRef"] is None
@@ -219,7 +251,7 @@ def test_a_rate_limit_does_not_spend_one_of_the_senses_retries(server):
         message="provider details that must stay private", llm_provider="stub", model="gpt-image-1"
     )
 
-    answer = server.post(f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE})
+    answer = render(server, written[itch["id"]]["id"])
     assert answer.status_code == 503
     assert answer.json()["error"]["code"] == "llm_rate_limited"
     assert "provider details" not in answer.text
@@ -234,7 +266,7 @@ def test_a_writer_refusal_becomes_a_row_so_nothing_asks_again(server):
         {"senseId": itch["id"], "refused": True, "refusalReason": "nothing to picture here"},
         {"senseId": chop["id"], "styleId": "oil-painting", "brief": "An onion, quartered"},
     ]}
-    written = rows(server.post(f"/images/lexemes/{entry['id']}/brief", {"deviceId": DEVICE}))
+    written = rows(called(brief_lexeme, server.settings, server.owner, DEVICE, entry["id"]))
 
     refused = written[itch["id"]]
     assert refused["prompt"] == ""
@@ -281,9 +313,7 @@ def test_deleting_a_picture_removes_the_file_and_rules_the_sense_out(server):
     entry, itch, chop, sentence = word(server)
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
     prompt_id = written[itch["id"]]["id"]
-    reference = server.post(
-        f"/images/prompts/{prompt_id}/render", {"deviceId": DEVICE}
-    ).json()["data"]["imageRef"]
+    reference = render(server, prompt_id).json()["data"]["imageRef"]
     assert (server.media / reference).is_file()
 
     answer = server.delete(f"/images/prompts/{prompt_id}")
@@ -331,10 +361,7 @@ def test_drawing_over_an_attached_picture_stamps_the_version_it_was_composed_und
     prompt_id = written[itch["id"]]["id"]
     server.send(f"/images/senses/{itch['id']}/picture", PNG)
 
-    answer = server.post(
-        f"/images/prompts/{prompt_id}/render",
-        {"deviceId": DEVICE, "prompt": "A nose, enormous", "styleId": "film-noir"},
-    )
+    answer = render(server, prompt_id, prompt="A nose, enormous", styleId="film-noir")
     assert answer.status_code == 200, answer.json()
     row = answer.json()["data"]
     assert row["prompt"] == "A nose, enormous" and row["promptVersion"].startswith("img-")
@@ -346,10 +373,8 @@ def test_a_declined_prompt_is_kept_so_the_reason_has_something_to_sit_beside(ser
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
     server.painter.data = None
 
-    row = server.post(
-        f"/images/prompts/{written[itch['id']]['id']}/render",
-        {"deviceId": DEVICE, "prompt": "Something the provider will not draw", "styleId": "film-noir"},
-    ).json()["data"]
+    row = render(server, written[itch["id"]]["id"],
+                 prompt="Something the provider will not draw", styleId="film-noir").json()["data"]
     assert row["prompt"] == "Something the provider will not draw"
     assert row["styleId"] == "film-noir"
     assert row["failureReason"] and row["imageRef"] is None
@@ -433,17 +458,15 @@ def test_another_accounts_picture_is_not_found_rather_than_forbidden(server, oth
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
     prompt_id = written[itch["id"]]["id"]
 
-    assert other.post(f"/images/prompts/{prompt_id}/render", {"deviceId": DEVICE}).status_code == 404
-    assert other.post(f"/images/lexemes/{entry['id']}/brief", {"deviceId": DEVICE}).status_code == 404
+    assert render(other, prompt_id).status_code == 404
+    assert called(brief_lexeme, other.settings, other.owner, DEVICE, entry["id"]).status_code == 404
     assert other.delete(f"/images/prompts/{prompt_id}").status_code == 404
 
 
 def test_the_routes_need_a_signed_in_owner(server):
     entry, *_ = word(server)
-    assert server.client.post(
-        f"/api/acervo/v1/images/lexemes/{entry['id']}/brief", json={"deviceId": DEVICE}
-    ).status_code == 401
     assert server.client.get("/api/acervo/v1/images/settings").status_code == 401
+    assert server.client.get(f"/api/acervo/v1/images/prompts/{image_prompt_id(entry['id'])}").status_code == 401
 
 
 # ── settings ────────────────────────────────────────────────────────────────
@@ -468,7 +491,7 @@ def test_switching_drawing_off_is_stored_and_leaves_the_buttons_working(server):
     assert server.get("/images/settings").json()["data"]["drawEnabled"] is False
 
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
-    answer = server.post(f"/images/prompts/{written[itch['id']]['id']}/render", {"deviceId": DEVICE})
+    answer = render(server, written[itch["id"]]["id"])
     assert answer.status_code == 200, answer.json()
     assert answer.json()["data"]["imageRef"]
 
