@@ -460,6 +460,56 @@ export interface ClipSearchResult {
   usage: { provider?: string; model?: string; seconds?: number } | null;
 }
 
+/* ── jobs ─────────────────────────────────────────────────────────────────
+   Work the server does on the owner's behalf. Server state, never replicated: the interface shows
+   it and never does it. A job's results reach the replica the way every record does, on the pull
+   that its `revision` event prompts. */
+
+export type JobState = "queued" | "running" | "done" | "failed" | "cancelled";
+export type JobStepState = "pending" | "running" | "waiting" | "done" | "skipped" | "failed";
+
+export interface JobStep {
+  name: string;
+  state: JobStepState;
+  done?: number;
+  total?: number;
+  /** An `llm_*`-style code, and the owner-facing sentence that goes with it. */
+  error?: string;
+  message?: string;
+  /** How many times this step has waited out a busy provider. */
+  rests?: number;
+  /** Whatever a step reports beyond progress: `found` clips, `refused` pictures. */
+  detail?: Record<string, unknown>;
+}
+
+export interface Job {
+  id: string;
+  ownerId: string;
+  parentId: string | null;
+  kind: string;
+  subject: { kind: string; id: string } | null;
+  input: Record<string, unknown>;
+  state: JobState;
+  trigger: string;
+  steps: JobStep[];
+  rerun: boolean;
+  cancelRequested: boolean;
+  dismissed: boolean;
+  error: string | null;
+  message: string | null;
+  notBefore: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  children?: Job[];
+}
+
+export interface JobRequest {
+  kind: string;
+  subject: { kind: string; id: string };
+  trigger?: "manual" | "import";
+}
+
 export class AcervoApiError extends Error {
   constructor(message: string, readonly status: number, readonly code: string) { super(message); }
 }
@@ -508,6 +558,32 @@ class ApiClient {
       throw new AcervoApiError(envelope.error?.message || "The Acervo server returned an invalid response.", response.status, envelope.error?.code || "request_failed");
     }
     return envelope.data;
+  }
+
+  /**
+   * A response that is meant never to end, so it gets no timeout: the caller aborts it. Failures
+   * still arrive as the envelope's error.
+   */
+  async stream(path: string, signal: AbortSignal): Promise<Response> {
+    if (!this.session?.token) throw new AcervoApiError("Sign in to continue.", 401, "unauthenticated");
+    const baseUrl = this.session.baseUrl;
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}${API_PATH}${path}`, {
+        headers: { Accept: "text/event-stream", Authorization: `Bearer ${this.session.token}` },
+        cache: "no-store",
+        signal
+      });
+    } catch {
+      throw new AcervoApiError("The Acervo server could not be reached.", 0, "offline");
+    }
+    if (!response.ok || !response.body) {
+      if (response.status === 401) this.onUnauthorized?.();
+      let envelope: Envelope<unknown> = {};
+      try { envelope = await response.json() as Envelope<unknown>; } catch { /* no body to read */ }
+      throw new AcervoApiError(envelope.error?.message || "The Acervo server returned an invalid response.", response.status, envelope.error?.code || "request_failed");
+    }
+    return response;
   }
 
   /** A route that answers with bytes rather than an envelope, whose failures still arrive as one. */
@@ -583,6 +659,28 @@ export const backendSession = {
    */
   health(): Promise<ServerHealth> {
     return client.call<ServerHealth>("/health", {}, true);
+  },
+
+  /** The server's open jobs — what a client rebuilds its map from — or its recent ones. */
+  async jobs(open: boolean): Promise<Job[]> {
+    return (await client.call<{ jobs: Job[] }>(open ? "/jobs?open=true" : "/jobs")).jobs;
+  },
+  job(id: string): Promise<Job> {
+    return client.call<Job>(`/jobs/${encodeURIComponent(id)}`);
+  },
+  /** Try again, and an import's request for enrichment. A save never needs this. */
+  enqueueJob(request: JobRequest): Promise<Job> {
+    return client.call<Job>("/jobs", { method: "POST", body: JSON.stringify(request) });
+  },
+  cancelJob(id: string): Promise<Job> {
+    return client.call<Job>(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
+  },
+  dismissJob(id: string): Promise<Job> {
+    return client.call<Job>(`/jobs/${encodeURIComponent(id)}/dismiss`, { method: "POST", body: "{}" });
+  },
+  /** The event stream, read with `fetch` because `EventSource` cannot send the bearer header. */
+  events(signal: AbortSignal): Promise<Response> {
+    return client.stream("/events", signal);
   },
 
   pullGraph(since: number): Promise<PullResponse> {

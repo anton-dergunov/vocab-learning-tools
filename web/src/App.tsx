@@ -48,6 +48,7 @@ import SignIn from "./SignIn";
 import { setSearchScope, useSearchScope, type SearchScope } from "./searchScope";
 import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
+import { jobStream } from "./jobs";
 import { enrichment, senseIsBusy } from "./enrichment";
 import { ImageDialog } from "./ImageDialog";
 import { clearPictures, forget } from "./media";
@@ -297,6 +298,7 @@ export default function App() {
   useEffect(() => {
     backendSession.onUnauthorized(() => {
       syncEngine.stop();
+      jobStream.stop();
       enrichment.stop();
       void backendSession.reject().then(() => setSession(null));
     });
@@ -313,6 +315,7 @@ export default function App() {
       if (cancelled) return;
       setSnapshot(repository.snapshot());
       syncEngine.start();
+      jobStream.start();
       // The engine deliberately does not sweep the backlog on open — that is the server's job, and
       // a tablet working through two thousand pictures at one a minute is not one. `resume` only
       // undoes a sign-out's stop.
@@ -322,7 +325,7 @@ export default function App() {
       // out only if the server answers and rejects it.
       await backendSession.refresh();
     })();
-    return () => { cancelled = true; syncEngine.stop(); };
+    return () => { cancelled = true; syncEngine.stop(); jobStream.stop(); };
   }, [session]);
 
   useEffect(() => {
@@ -940,6 +943,7 @@ export default function App() {
 
   async function signOut() {
     syncEngine.stop();
+    jobStream.stop();
     // Stops after the unit in flight rather than mid-call: abandoning a picture the provider has
     // already been paid for buys nothing, and the sweep would draw it again anyway.
     enrichment.stop();

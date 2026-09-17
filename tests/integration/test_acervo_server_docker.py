@@ -141,6 +141,29 @@ def test_an_account_is_created_inside_the_container_and_can_then_sign_in(running
     assert payload["data"]["user"]["email"] == OWNER_EMAIL
 
 
+def test_the_event_stream_arrives_as_it_is_written_rather_than_when_it_ends(running):
+    """The in-process tests cannot read an endless response; a real server over a real socket can.
+    What matters is that the first frame arrives while the stream is still open — a buffering layer
+    anywhere in the image would hold it until the connection closed, which is never."""
+    import urllib.request
+
+    _, session = request(
+        running.base, "POST", f"{API}/session", {"email": OWNER_EMAIL, "password": OWNER_PASSWORD}
+    )
+    opened = urllib.request.urlopen(
+        urllib.request.Request(
+            f"{running.base}{API}/events",
+            headers={"Authorization": f"Bearer {session['data']['token']}"},
+        ),
+        timeout=5,
+    )
+    try:
+        assert opened.headers["Content-Type"].startswith("text/event-stream")
+        assert opened.readline() == b"event: ready\n"
+    finally:
+        opened.close()
+
+
 def test_the_deploy_preflight_sees_an_open_job_and_cancel_clears_it(running):
     """What `deploy.sh` reads before it ships, read the way it reads it: `admin jobs` in the running
     container. The job is held open by a far-future `not_before`, so the runner leaves it queued."""
