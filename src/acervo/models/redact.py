@@ -4,7 +4,7 @@ Providers routinely echo the request back in an error — the URL, the headers, 
 itself — and this repository is public. Every `detail` on every `ProviderError` goes through here at
 construction, so there is no path that reaches a log or a response without it.
 
-Lifted from `earworms_generator`'s `_redact_provider_text`, with its one weakness fixed: that
+Lifted from `lexibeat`'s `_redact_provider_text`, with its one weakness fixed: that
 version hardcoded three variable names, so a provider added later was unredacted until somebody
 remembered. This one reads the names from the catalogue, which is where they are already written
 down.
