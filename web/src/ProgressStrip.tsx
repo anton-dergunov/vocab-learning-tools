@@ -1,0 +1,93 @@
+import type { Job, JobStep } from "./api";
+import { isOpen } from "./jobs";
+
+/**
+ * One quiet line under an article's header, saying what the server is still doing to this word
+ * (`docs/plans/processing-flow.md` §5). It shows work and never does it: the only thing it can ask
+ * for is a new job, through Try again.
+ *
+ * It collapses when the job finishes. A failed step leaves one line until the owner dismisses it
+ * or leaves the word.
+ */
+
+export interface StripLine {
+  /** Each phase still ahead, in order; the one being worked on is `current`. */
+  phases: { text: string; current: boolean }[];
+  failure: string | null;
+}
+
+const PENDING = new Set(["pending", "running", "waiting"]);
+
+function phase(step: JobStep): string | null {
+  const waiting = step.state === "waiting" ? " (the provider is busy)" : "";
+  switch (step.name) {
+    case "clips":
+      return `Finding recorded examples${waiting}`;
+    case "pictures":
+      if (step.total) {
+        return `Drawing ${Math.min((step.done ?? 0) + 1, step.total)} of ${step.total}${waiting}`;
+      }
+      return `Drawing pictures${waiting}`;
+    case "pronunciations":
+      return `Recording audio${waiting}`;
+    default:
+      return null;
+  }
+}
+
+function failureOf(step: JobStep): string {
+  switch (step.name) {
+    case "clips":
+      return "Couldn't search recorded speech";
+    case "pictures": {
+      const refused = Number(step.detail?.refused ?? 0);
+      if (step.total && refused) return `${step.total - refused} of ${step.total} pictures drawn`;
+      return "The pictures could not be drawn";
+    }
+    case "pronunciations":
+      return "Some audio could not be recorded";
+    default:
+      return step.message || "Something could not be finished";
+  }
+}
+
+/** What the strip says for a job, or null when it should not be there at all. */
+export function stripOf(job: Job | undefined): StripLine | null {
+  if (!job || job.state === "cancelled" || job.state === "done") return null;
+  if (isOpen(job)) {
+    const phases = job.steps
+      .filter((step) => PENDING.has(step.state))
+      .map((step) => ({ text: phase(step), current: step.state !== "pending" }))
+      .filter((entry): entry is { text: string; current: boolean } => entry.text !== null);
+    if (!phases.length) return { phases: [{ text: "Waiting to start", current: false }], failure: null };
+    return { phases, failure: null };
+  }
+  const failed = job.steps.find((step) => step.state === "failed");
+  if (failed) return { phases: [], failure: failureOf(failed) };
+  return { phases: [], failure: job.error === "interrupted"
+    ? "Interrupted when the server restarted"
+    : job.message || "Something could not be finished" };
+}
+
+export default function ProgressStrip({ job, onRetry, onDismiss }: {
+  job: Job | undefined;
+  onRetry(): void;
+  onDismiss(): void;
+}) {
+  const line = stripOf(job);
+  if (!line) return null;
+  if (line.failure) {
+    return <div className="progress-strip failed" role="status">
+      <span>{line.failure}</span>
+      <span className="sep">·</span>
+      <button type="button" className="strip-action" onClick={onRetry}>Try again</button>
+      <button type="button" className="strip-dismiss" aria-label="Dismiss" onClick={onDismiss}>×</button>
+    </div>;
+  }
+  return <div className="progress-strip" role="status" aria-live="polite">
+    {line.phases.map((entry, index) => <span key={entry.text}>
+      {index > 0 && <span className="sep">·</span>}
+      <span className={entry.current ? "now" : undefined}>{entry.text}</span>
+    </span>)}
+  </div>;
+}

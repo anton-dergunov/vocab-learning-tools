@@ -265,45 +265,6 @@ export async function playRuns(runs: SpokenRun[]): Promise<void> {
   }
 }
 
-/* ── recording in advance ─────────────────────────────────────────────── */
-
-export interface RecordInAdvance {
-  headword: boolean;
-  definitions: boolean;
-  examples: boolean;
-}
-
-const sameLanguage = (one: string, other: string) =>
-  one.split("-")[0].toLowerCase() === other.split("-")[0].toLowerCase();
-
-/**
- * What recording in advance means for one word, read from the replica: the fields chosen, in the
- * language being learned only, that have no current clip. A query, never a queue — the rule the
- * picture work lives by, so a word saved twice asks for nothing it already has.
- *
- * Twinned with `acervo.pronunciation.targets.wanted` on the server, which a sweep would use.
- */
-export function recordingsWanted(graph: VocabularyGraph, lexemeId: string, choice: RecordInAdvance): SayTarget[] {
-  const lexeme = graph.lexemes.find((record) => record.id === lexemeId && !record.deleted);
-  if (!lexeme) return [];
-  const found: SayTarget[] = [];
-  if (choice.headword) found.push({ kind: "lexeme", id: lexeme.id, text: lexeme.headword, lang: lexeme.language });
-  graph.senses
-    .filter((sense) => sense.lexemeId === lexemeId && !sense.deleted)
-    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
-    .forEach((sense) => {
-      if (choice.definitions && sameLanguage(sense.definitionLang, lexeme.language)) {
-        found.push({ kind: "sense", id: sense.id, text: sense.definition, lang: sense.definitionLang });
-      }
-      if (!choice.examples) return;
-      graph.examples
-        .filter((example) => example.senseId === sense.id && !example.deleted && !example.videoRef
-          && sameLanguage(example.textLang, lexeme.language))
-        .forEach((example) => found.push({ kind: "example", id: example.id, text: example.text, lang: example.textLang }));
-    });
-  return found.filter((target) => !currentClip(graph, target));
-}
-
 /* ── keeping clips ───────────────────────────────────────────────────── */
 
 async function forget(reference: string): Promise<void> {

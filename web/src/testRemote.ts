@@ -2,13 +2,15 @@
    as the server's save hook does, and hands back what it stored. */
 
 import type { VocabularyGraph } from "./domain";
-import type { RemoteGraph, RemoteWrite } from "./repository";
+import type { RemoteGraph, RemoteWrite, WriteOptions } from "./repository";
 
 export interface FakeRemote extends RemoteGraph {
   calls: number;
   /** Set to make the next push fail, the way an unreachable or refusing server would. */
   fail: Error | null;
   sent: Partial<VocabularyGraph>[];
+  /** What each write asked of the server beyond its records, in order. */
+  options: (WriteOptions | undefined)[];
 }
 
 export function fakeRemote(datasetId = "dataset00000001"): FakeRemote {
@@ -17,9 +19,11 @@ export function fakeRemote(datasetId = "dataset00000001"): FakeRemote {
     calls: 0,
     fail: null,
     sent: [],
-    async push(changes) {
+    options: [],
+    async push(changes, options) {
       remote.calls += 1;
       remote.sent.push(structuredClone(changes));
+      remote.options.push(options);
       if (remote.fail) throw remote.fail;
       const records: Partial<VocabularyGraph> = {};
       (Object.keys(changes) as (keyof VocabularyGraph)[]).forEach((kind) => {

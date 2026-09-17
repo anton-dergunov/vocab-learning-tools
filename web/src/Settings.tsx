@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CaptureHealth } from "./api";
+import ActivitySettings from "./ActivitySettings";
 import { TopicEditor, VocabularyEditor } from "./Configuration";
 import DictionaryPanel from "./DictionaryPanel";
 import ClipPanel from "./ClipPanel";
@@ -23,7 +24,7 @@ const CONFIRMATION = "DELETE";
 
 export type Page =
   | "general" | "vocabularies" | "topics" | "models" | "images" | "pronunciation" | "clips" | "dictionaries" | "editor"
-  | "sync" | "data";
+  | "activity" | "sync" | "data";
 
 export default function Settings({ update, email, status, snapshot, language, captureHealth, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
   update?: UpdateStage;
@@ -120,6 +121,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
     { id: "clips", label: "Clips" },
     { id: "dictionaries", label: "Dictionaries" },
     { id: "editor", label: "Reading" },
+    { id: "activity", label: "Activity" },
     { id: "sync", label: "Sync" },
     { id: "data", label: "Data" }
   ];
@@ -227,6 +229,8 @@ export default function Settings({ update, email, status, snapshot, language, ca
         {page === "clips" && <ClipPanel onNotify={onNotify} />}
 
         {page === "dictionaries" && <DictionaryPanel onNotify={onNotify} />}
+
+        {page === "activity" && <ActivitySettings snapshot={snapshot} onNotify={onNotify} />}
 
         {page === "vocabularies" && snapshot && <VocabularyEditor snapshot={snapshot} onNotify={onNotify} onChanged={onChanged} />}
         {page === "topics" && snapshot && <TopicEditor snapshot={snapshot} language={language} onNotify={onNotify} onChanged={onChanged} />}

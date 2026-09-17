@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AcervoApiError, backendSession, type Job } from "./api";
-import { FrameReader, JobStream, enrichmentOf, isEnriching } from "./jobs";
+import { FrameReader, JobStream, clipSearchOf, drawingPictures, enrichmentOf, isEnriching } from "./jobs";
 import { syncEngine } from "./sync";
 
 function job(overrides: Partial<Job> = {}): Job {
@@ -157,5 +157,37 @@ describe("the map of jobs", () => {
     const stream = new JobStream();
     stream.apply(job({ kind: "image.redraw" }));
     expect(isEnriching(stream.getStatus(), "lexemepicar0001")).toBe(false);
+  });
+});
+
+describe("reading a word's enrichment", () => {
+  const withClips = (state: string, detail?: Record<string, unknown>, jobState: Job["state"] = "running") =>
+    job({ state: jobState, steps: [{ name: "clips", state: state as never, detail }] });
+
+  it("holds the clip slot while the search is ahead", () => {
+    expect(clipSearchOf(job(), null)).toBe("searching");
+    expect(clipSearchOf(withClips("pending"), null)).toBe("searching");
+    expect(clipSearchOf(withClips("waiting"), null)).toBe("searching");
+  });
+
+  it("keeps holding it until the clip it found has been pulled", () => {
+    expect(clipSearchOf(withClips("done", { found: 1 }), null)).toBe("searching");
+    expect(clipSearchOf(withClips("done", { found: 1 }), "2026-09-17T10:00:00.000Z")).toBe("none");
+  });
+
+  it("settles on nothing found, a failure, or nothing at all", () => {
+    expect(clipSearchOf(withClips("done", { found: 0 }, "done"), "2026-09-17T10:00:00.000Z")).toBe("none");
+    expect(clipSearchOf(withClips("failed", undefined, "failed"), null)).toBe("failed");
+    expect(clipSearchOf(withClips("skipped"), null)).toBeNull();
+    expect(clipSearchOf(undefined, null)).toBeNull();
+    // A word searched long ago, enriched again for a new sense, has nothing to wait for.
+    expect(clipSearchOf(job(), "2026-09-17T10:00:00.000Z")).toBeNull();
+  });
+
+  it("says pictures are ahead only while the job is open and their step is unfinished", () => {
+    expect(drawingPictures(job())).toBe(true);
+    expect(drawingPictures(job({ state: "running", steps: [{ name: "pictures", state: "running" }] }))).toBe(true);
+    expect(drawingPictures(job({ state: "running", steps: [{ name: "pictures", state: "done" }] }))).toBe(false);
+    expect(drawingPictures(job({ state: "failed", steps: [{ name: "pictures", state: "pending" }] }))).toBe(false);
   });
 });

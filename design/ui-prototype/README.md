@@ -26,3 +26,5 @@ Deep links keep screenshots reproducible: `?open=la obra&frame=phone&view=cards&
 plus `tr=on`, `theme=dark`, and `size=375x667` to resize the frame.
 `la obra` and `animarse` are copied from a real account; `picar` sense 1 has a
 deliberately overlong example, to show the one card that has to scroll.
+`la sobremesa` is still being filled in on the server: it shows the progress strip, the clip slot
+and the closed Cards switch. `fill=searching|none|failed|off` picks how its clip search ends.

@@ -191,3 +191,34 @@ describe("cards", () => {
     expect(play.querySelector(".go svg")).not.toBeNull();
   });
 });
+
+describe("a clip still to come", () => {
+  const clips = (search: "searching" | "none" | "failed" | null, retry = vi.fn()) =>
+    ({ search, retry, remove: vi.fn() });
+
+  it("holds a place at the end of a sense with no clip, and none where one is already", () => {
+    render(<LexemeArticle article={picar()} onNotify={() => undefined} clips={clips("searching")} />);
+    // The itching sense has no clip yet; the cooking sense already holds one.
+    expect(screen.getAllByRole("status", { name: "Looking for a recorded example" })).toHaveLength(1);
+  });
+
+  it("settles into one quiet line when nothing was found", () => {
+    render(<LexemeArticle article={picar()} onNotify={() => undefined} clips={clips("none")} />);
+    expect(screen.queryByRole("status", { name: "Looking for a recorded example" })).toBeNull();
+    expect(screen.getAllByText("No recorded example")).toHaveLength(1);
+  });
+
+  it("says a failed search once, with Try again", () => {
+    const retry = vi.fn();
+    render(<LexemeArticle article={picar()} onNotify={() => undefined} clips={clips("failed", retry)} />);
+    expect(screen.getAllByText(/Couldn't search recorded speech/)).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows nothing once the word is opened again", () => {
+    render(<LexemeArticle article={picar()} onNotify={() => undefined} clips={clips(null)} />);
+    expect(screen.queryByText("No recorded example")).toBeNull();
+    expect(screen.queryByRole("status", { name: "Looking for a recorded example" })).toBeNull();
+  });
+});

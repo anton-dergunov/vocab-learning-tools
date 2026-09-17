@@ -244,7 +244,7 @@ describe("reading a bundle", () => {
   it("gives an imported clip the derived id, so the clip search cannot write it twice", () => {
     // Every other id is re-minted at random, which is what stops a bundle depending on the account
     // it came from. A clip's cannot be: it is a function of the sense and the segment, and a random
-    // one here would let the sweep add a second row for the same pair with nothing failing.
+    // one here would let enrichment add a second row for the same pair with nothing failing.
     const word = draftFor(articleFor(testGraph(), "lexemepicar0001")!);
     const reminted = remintIds(word);
     const clip = reminted.senses.flatMap((sense) => sense.examples)
@@ -449,6 +449,43 @@ describe("putting pictures back", () => {
     );
     expect(forThisWord).toHaveLength(1);
     expect(restored).toEqual([senses[0].sense.id, senses[1].sense.id]);
+  });
+
+  it("asks for enrichment only once the pictures are back, so nothing is drawn over them", async () => {
+    const repository = new LocalAcervoRepository(new MemoryDatabase());
+    await repository.load(TEST_OWNER);
+    const remote = fakeRemote();
+    repository.attachRemote(remote);
+    const order: string[] = [];
+
+    const report = await importBundle(
+      repository, readBundle(bundle()), undefined, undefined, media(),
+      async (senseId) => { order.push(`picture ${senseId}`); },
+      null,
+      async (lexemeId) => { order.push(`enrich ${lexemeId}`); }
+    );
+
+    // Every word was saved asking the server not to enrich it on its own.
+    const saves = remote.sent.map((changes, index) => ({ changes, options: remote.options[index] }))
+      .filter(({ changes }) => changes.lexemes?.length);
+    expect(saves).toHaveLength(report.added);
+    expect(saves.every(({ options }) => options?.enrich === false)).toBe(true);
+    // And asked afterwards, once per word, after that word's pictures.
+    const graph = repository.snapshot() as VocabularyGraph;
+    const picar = lexemesIn(graph, "es").find((lexeme) => lexeme.headword === "picar")!;
+    expect(order.filter((line) => line.startsWith("enrich"))).toHaveLength(report.added);
+    const lastPicture = Math.max(...order.map((line, index) => line.startsWith("picture") ? index : -1));
+    expect(order.indexOf(`enrich ${picar.id}`)).toBeGreaterThan(lastPicture);
+  });
+
+  it("keeps a word whose enrichment could not be asked for", async () => {
+    const repository = await emptyReplica();
+    const report = await importBundle(
+      repository, readBundle(bundle()), undefined, undefined, new Map(), null, null,
+      async () => { throw new Error("offline"); }
+    );
+    expect(report.added).toBe(4);
+    expect(report.failed).toEqual([]);
   });
 
   it("keeps the word when a picture cannot be put back", async () => {

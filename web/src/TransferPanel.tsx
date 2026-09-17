@@ -244,7 +244,10 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
           restored += 1;
           if (restored % RESTORED_PER_PULL === 0) await syncEngine.syncNow();
         }
-      } : null
+      } : null,
+      (lexemeId) => backendSession.enqueueJob({
+        kind: "enrich", subject: { kind: "lexeme", id: lexemeId }, trigger: "import"
+      })
     );
 
     // And once at the end, so "import finished" means every picture is here, not merely uploaded.

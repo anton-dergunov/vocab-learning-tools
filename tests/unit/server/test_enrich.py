@@ -10,6 +10,7 @@ from __future__ import annotations
 import litellm
 import pytest
 
+from acervo.domain import SCHEMA_VERSION
 from acervo.images.ids import image_prompt_id
 from acervo.pronunciation.ids import pronunciation_id
 from acervo.repository import jobs
@@ -138,6 +139,18 @@ def test_a_new_sense_on_a_held_word_queues_it_again(server, runner, corpus):
     answer = server.push({"senses": [sense(entry["id"], definition="Morder un pez.", order=2)]})
     assert answer.status_code == 200, answer.json()
     assert [job["subject"]["id"] for job in jobs.open_jobs(server.owner)] == [entry["id"]]
+
+
+def test_a_writer_that_will_ask_later_queues_nothing(server):
+    """A bundle import restores its pictures first, then asks for the rest."""
+    entry = lexeme()
+    answer = server.post("/graph", {
+        "schemaVersion": SCHEMA_VERSION, "deviceId": "device000000001", "enrich": False,
+        "changes": {"vocabularies": [vocabulary()], "lexemes": [entry], "senses": [sense(entry["id"])]},
+    })
+    assert answer.status_code == 200, answer.json()
+    assert answer.json()["data"]["enrich"] == {}
+    assert jobs.open_jobs(server.owner) == []
 
 
 def test_a_word_saved_as_a_tombstone_queues_nothing(server):

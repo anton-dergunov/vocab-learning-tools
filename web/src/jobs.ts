@@ -24,7 +24,8 @@ const OPEN = new Set(["queued", "running"]);
 const FIRST_RETRY = 1_000;
 const LONGEST_RETRY = 30_000;
 
-export const isOpen = (job: Job | undefined | null): job is Job => Boolean(job && OPEN.has(job.state));
+export const isOpen = (job: Job | undefined | null): job is Job & { state: "queued" | "running" } =>
+  Boolean(job && OPEN.has(job.state));
 
 /** The job a word's page shows: its enrichment, open or just finished. */
 export function enrichmentOf(status: JobsStatus, lexemeId: string): Job | undefined {
@@ -35,6 +36,35 @@ export function enrichmentOf(status: JobsStatus, lexemeId: string): Job | undefi
 /** Whether a word is still filling in. */
 export function isEnriching(status: JobsStatus, lexemeId: string): boolean {
   return isOpen(enrichmentOf(status, lexemeId));
+}
+
+const UNFINISHED_STEP = new Set(["pending", "running", "waiting"]);
+
+/**
+ * Where a word's clip search stands, from its enrichment job and the replica's own mark.
+ *
+ * A search that found something stays "searching" until the pull brings the clip — the job's news
+ * arrives before its records do, and saying "nothing" in between would be a line that jumps.
+ */
+export function clipSearchOf(
+  job: Job | undefined, clipsSearchedAt: string | null
+): "searching" | "none" | "failed" | null {
+  if (!job || job.kind !== "enrich") return null;
+  const step = job.steps.find((entry) => entry.name === "clips");
+  if (!step) return isOpen(job) && clipsSearchedAt === null ? "searching" : null;
+  if (UNFINISHED_STEP.has(step.state)) return clipsSearchedAt === null ? "searching" : null;
+  if (step.state === "failed") return "failed";
+  if (step.state === "done") {
+    return Number(step.detail?.found ?? 0) > 0 && clipsSearchedAt === null ? "searching" : "none";
+  }
+  return null;
+}
+
+/** Whether a word's pictures are still ahead of its enrichment. */
+export function drawingPictures(job: Job | undefined): boolean {
+  if (!isOpen(job) || job.kind !== "enrich") return false;
+  const step = job.steps.find((entry) => entry.name === "pictures");
+  return !step || UNFINISHED_STEP.has(step.state);
 }
 
 type Sleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;

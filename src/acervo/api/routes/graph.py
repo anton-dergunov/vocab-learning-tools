@@ -35,9 +35,14 @@ async def write(request: Request) -> JSONResponse:
     graph.require_schema_version(body.get("schemaVersion"))
     device = graph.require_device(body.get("deviceId"))
     changes = body.get("changes")
+    # A save enriches the words it creates, unless the writer says it will ask later — which only a
+    # bundle import does, so the pictures it restores are in place before anything is drawn.
+    enqueue = None if body.get("enrich") is False else graph.SAVE
     return data(
         await run_in_threadpool(
-            graph.merge_graph, account, device, changes if isinstance(changes, dict) else {}
+            lambda: graph.merge_graph(
+                account, device, changes if isinstance(changes, dict) else {}, enqueue=enqueue
+            )
         )
     )
 

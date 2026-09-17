@@ -2,7 +2,7 @@
  * Changing one sense's picture: read the brief, edit it, draw it, replace it, or rule it out.
  *
  * This is the flow for the hard cases. Ordinary words come out well and get their pictures without
- * anyone being asked — the whole point of enrichment happening behind the article. What is here is
+ * anyone being asked — the whole point of the server enriching a word behind the article. What is here is
  * for the sense that is difficult to picture, where seeing the description that produced the bad
  * image is the only way to fix it.
  *
@@ -44,12 +44,11 @@ export function ImageDialog({
   /** Called after any write, so the caller can pull and re-render. */
   onChanged(row: ImagePromptRow | null): void;
   /**
-   * Hand a drawing to whatever owns the queue, and expect nothing back.
+   * Hand a drawing to the caller, and expect nothing back.
    *
    * Drawing is 30-60 seconds and providers meter roughly one a minute, so awaiting it here would
    * be a button that hangs. The dialog closes instead and the picture itself says it is being
-   * redrawn — which also puts a hand-asked redraw in the activity panel beside the automatic work,
-   * rather than in a second place.
+   * redrawn.
    */
   onDraw(overrides: { prompt: string; styleId: string }): void;
   /** Put this file where the drawn picture would go. Also not awaited — see `onDraw`. */

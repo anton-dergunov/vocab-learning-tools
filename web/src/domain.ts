@@ -85,13 +85,13 @@ export interface Lexeme extends SyncFields, OwnedFields {
   /**
    * When the spoken-usage corpus was last successfully consulted for this lexeme, or null.
    *
-   * One field answers two questions. Null means never consulted, which is what the sweep looks
-   * for and what an imported word looks like. Set with no `subtitle` examples means consulted and
+   * One field answers two questions. Null means never consulted, which is what the server's
+   * enrichment looks for and what an imported word looks like. Set with no `subtitle` examples means consulted and
    * nothing was good enough — a normal answer for most words, not a gap to fill again. Set and
    * older than the corpus's own `built_at` means the corpus has moved on since.
    *
    * Written only on a *successful* consultation, so a retrieval service that was down leaves the
-   * word looking untouched and the sweep finds it later.
+   * word looking untouched and Try again finds it.
    */
   clipsSearchedAt: string | null;
 }
@@ -156,7 +156,7 @@ export interface Example extends SyncFields, OwnedFields {
  * would be a fifth thing to keep in step with the four facts that already say all of this.
  *
  * `suppressed` is deliberately not a tombstone. An image prompt's id is derived from its `senseId`,
- * so a tombstoned row is invisible to the sweep, which re-briefs the sense and mints the same id —
+ * so a tombstoned row is invisible to enrichment, which re-briefs the sense and mints the same id —
  * tombstoning does not prevent regeneration, it guarantees a collision.
  */
 export interface ImagePrompt extends SyncFields, OwnedFields {

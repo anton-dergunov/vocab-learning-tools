@@ -4,7 +4,7 @@ import type { Pronunciation } from "./domain";
 import { setPronunciationCacheEnabled } from "./editorPreferences";
 import { MemoryMediaStore } from "./mediaStore";
 import {
-  clipBytes, currentClip, fill, forgetPronunciations, play, recordingsWanted, replaceStoreForTests
+  clipBytes, currentClip, fill, forgetPronunciations, play, replaceStoreForTests
 } from "./pronunciation";
 import { repository } from "./repository";
 import { syncEngine } from "./sync";
@@ -119,29 +119,3 @@ describe("playing a pronunciation", () => {
   });
 });
 
-describe("what is recorded in advance", () => {
-  beforeEach(async () => {
-    replaceStoreForTests(new MemoryMediaStore());
-    await repository.clear();
-    await repository.load(TEST_OWNER);
-    await repository.applyRemote(testGraph(), 1, "dataset00000001");
-  });
-
-  it("is the chosen fields, in the language being learned, that have no current clip", () => {
-    const graph = repository.snapshot();
-    const wanted = recordingsWanted(graph, "lexemepicar0001", { headword: true, definitions: true, examples: true });
-    // The headword already has a current clip, so it is not asked for again.
-    expect(wanted.some((target) => target.kind === "lexeme")).toBe(false);
-    expect(wanted.every((target) => target.lang === "es")).toBe(true);
-    expect(wanted.some((target) => target.kind === "example")).toBe(true);
-
-    expect(recordingsWanted(graph, "lexemepicar0001", { headword: false, definitions: false, examples: false })).toEqual([]);
-  });
-
-  it("leaves an English gloss-language example alone", () => {
-    const graph = repository.snapshot();
-    const english = graph.examples.filter((example) => example.textLang !== "es");
-    expect(recordingsWanted(graph, "lexemepicar0001", { headword: true, definitions: true, examples: true })
-      .some((target) => english.some((example) => example.id === target.id))).toBe(false);
-  });
-});

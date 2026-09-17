@@ -398,11 +398,27 @@ function SenseSection({ entry, index, headword, notesLang, pictures, clips, fold
       key={example.id} example={example} notesLang={notesLang} onListen={onListen} onPlayClip={onPlayClip}
       marks={marks} ask={ask} label={`example ${position + 1} of sense ${index + 1}`}
     />)}
-    {/* A search in flight says so; a search that finished empty shows **nothing at all**. The
-        asymmetry with pictures is deliberate: a missing picture is a gap to fill, so it gets a
-        frame, while a missing clip is the expected outcome for most words. */}
-    {clips?.searching && <p className="clip-waiting">Looking for a recorded example…</p>}
+    {/* A slot at the end of the examples while the search is pending, drawn where the clip will be
+        so nothing jumps when it lands. Nothing found settles into one muted line for as long as the
+        word stays open, and is absent the next time: for most words no clip is the expected answer. */}
+    {clips?.search === "searching" && !hasClip(examples) && mark !== "removed" && <ClipPlaceholder />}
+    {clips?.search === "none" && !hasClip(examples) && mark !== "removed"
+      && <p className="clip-none">No recorded example</p>}
+    {clips?.search === "failed" && index === 0 && <p className="clip-none failed">
+      Couldn't search recorded speech <span className="sep">·</span>{" "}
+      <button type="button" className="strip-action" onClick={clips.retry}>Try again</button>
+    </p>}
   </FoldingSection>;
+}
+
+const hasClip = (examples: Example[]) => examples.some((example) => !example.deleted && example.videoRef);
+
+/** A clip row still to come: the play glyph in outline and a few muted bars where the sentence goes. */
+function ClipPlaceholder() {
+  return <div className="clip-slot" role="status" aria-label="Looking for a recorded example">
+    <span className="clip-slot-play" aria-hidden="true" />
+    <span className="clip-slot-bars" aria-hidden="true"><span /><span /><span /></span>
+  </div>;
 }
 
 function AttestationBlock({ attestation, language, glossLang, marks, onListen }: {
@@ -793,8 +809,13 @@ function SelectionListen({ root, onListen }: { root: React.RefObject<HTMLElement
  * `articleFromDraft` mints are deliberately not valid record ids, so there is nothing to act on.
  */
 export interface ClipSlot {
-  /** One search covers every sense of the word, so this is per word rather than per sense. */
-  searching: boolean;
+  /**
+   * Where this word's clip search stands, per word because one search covers every sense: pending,
+   * settled with nothing for a sense, or failed. Null when there is nothing to show.
+   */
+  search: "searching" | "none" | "failed" | null;
+  /** Ask the server to try the word again. */
+  retry(): void;
   remove(exampleId: string): void;
 }
 

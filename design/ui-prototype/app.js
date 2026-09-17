@@ -274,6 +274,7 @@ function renderList() {
             <span class="gloss">${esc(shortGlossOf(x))}</span>
           </span>
           <span class="meta">
+            ${fillingOf(x) ? '<span class="working-mark" role="img" aria-label="Still filling in" title="Still filling in"></span>' : ""}
             ${x.senses.length > 1 ? `<span class="senses">${x.senses.length} senses</span>` : ""}
             ${x.status === "inbox" ? '<span class="prov">unreviewed</span>' : strength(x)}
           </span>
@@ -376,6 +377,42 @@ function clipLine(e) {
     </button>`;
 }
 
+/* ── the server's work on a word ──────────────────────────────────────
+   A word still being filled in carries `filling`. The application reads the same states from its
+   job stream; here they are a fixture, overridable with `?fill=searching|none|failed|off`. */
+function fillingOf(x) {
+  const asked = new URLSearchParams(location.search).get("fill");
+  if (!x.filling || asked === "off") return null;
+  return asked ? { ...x.filling, clips: asked } : x.filling;
+}
+
+function progressStrip(x) {
+  const filling = fillingOf(x);
+  if (!filling) return "";
+  if (filling.clips === "failed") {
+    return `<div class="progress-strip failed" role="status"><span>Couldn't search recorded speech</span>`
+      + '<span class="sep">·</span><button class="strip-action">Try again</button>'
+      + '<button class="strip-dismiss" aria-label="Dismiss">×</button></div>';
+  }
+  const phases = filling.phases.filter(([text]) => filling.clips === "searching" || !text.startsWith("Finding"));
+  return `<div class="progress-strip" role="status">${phases.map(([text, now], i) =>
+    `${i ? '<span class="sep">·</span>' : ""}<span${now ? ' class="now"' : ""}>${esc(text)}</span>`).join("")}</div>`;
+}
+
+function clipSlot(s, i, x) {
+  const filling = fillingOf(x);
+  if (!filling || s.examples.some(isClip)) return "";
+  if (filling.clips === "searching") {
+    return `<div class="clip-slot" role="status" aria-label="Looking for a recorded example">
+      <span class="clip-slot-play"></span><span class="clip-slot-bars"><span></span><span></span><span></span></span></div>`;
+  }
+  if (filling.clips === "none") return '<p class="clip-none">No recorded example</p>';
+  if (filling.clips === "failed" && i === 0) {
+    return '<p class="clip-none failed">Couldn\'t search recorded speech <span class="sep">·</span> <button class="strip-action">Try again</button></p>';
+  }
+  return "";
+}
+
 function pictureFrame(im) {
   /* `drawing` stands in for a picture the queue is drawing right now: the frame holds its place and
      says so, the same on the page and on a card. */
@@ -473,7 +510,8 @@ function senseSection(s, i, x) {
     </div>
     <div class="glosses">${s.glosses.map(glossLine).join("")}</div>
     ${s.images.map(pictureFrame).join("")}
-    ${orderedExamples(s).map(({ e, at }) => exampleBlock(e, at)).join("")}`;
+    ${orderedExamples(s).map(({ e, at }) => exampleBlock(e, at)).join("")}
+    ${clipSlot(s, i, x)}`;
   return section(`${x.id}:sense:${i}`, false, rail, body, mark);
 }
 
@@ -1109,7 +1147,10 @@ function render() {
     $("#artBar").style.display = "none";
     main.innerHTML = renderList();
   } else {
-    const view = state.mode === "read" ? currentView() : null;
+    // A word still filling in is read on the page, where the reserved slots keep it still.
+    const filling = Boolean(fillingOf(x));
+    const view = state.mode === "read" ? (filling ? "page" : currentView()) : null;
+    const cardsOff = filling ? ' disabled title="Cards open when pictures and clips are ready"' : "";
     $("#artBar").style.display = "";
     $("#artBar").innerHTML = `
       <button class="icon-btn" id="backBtn" aria-label="Back to the list">${ICON.back}</button>
@@ -1118,7 +1159,7 @@ function render() {
       <span class="spacer"></span>
       <div class="seg art-views">
         <button data-view="page" class="${view === "page" ? "on" : ""}">Page</button>
-        <button data-view="cards" class="${view === "cards" ? "on" : ""}">Cards</button>
+        <button data-view="cards" class="${view === "cards" ? "on" : ""}"${cardsOff}>Cards</button>
         <button data-mode="yaml" class="${state.mode === "yaml" ? "on" : ""}">YAML</button>
       </div>
       ${state.mode === "yaml" ? `<button class="icon-btn" id="editBtn" aria-label="Edit as YAML" title="Edit as YAML">${ICON.pencil}</button>` : ""}
@@ -1127,7 +1168,7 @@ function render() {
         <button class="icon-btn" id="moreBtn" aria-label="Article menu">${ICON.more}</button>
         <div class="menu" id="articleMenu">
           <button data-view="page" class="${view === "page" ? "on" : ""}">Page</button>
-          <button data-view="cards" class="${view === "cards" ? "on" : ""}">Cards</button>
+          <button data-view="cards" class="${view === "cards" ? "on" : ""}"${cardsOff}>Cards</button>
           <button data-mode="yaml" class="${state.mode === "yaml" ? "on" : ""}">YAML</button>
           <div class="menu-sep"></div>
           <button id="delBtn2" class="danger">Delete this word</button>
@@ -1135,7 +1176,8 @@ function render() {
       </div>`;
     $("#artBar").classList.toggle("carding", view === "cards");
     // Editing is a composer above, so only reading and the read-only projection get here.
-    main.innerHTML = view === "cards" ? renderCards(x) : view === "page" ? renderArticle(x) : renderYaml(x);
+    main.innerHTML = view === "cards" ? renderCards(x)
+      : view === "page" ? progressStrip(x) + renderArticle(x) : renderYaml(x);
     // The conversation belongs to Page: an edit that reorders senses needs every sense in view.
     $("#askSlot").innerHTML = view === "page" ? renderAsk(x) : "";
     $("#main").classList.toggle("cards-on", view === "cards");

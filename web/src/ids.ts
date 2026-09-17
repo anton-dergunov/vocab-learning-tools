@@ -21,8 +21,8 @@ export const nowInstant = () => new Date().toISOString();
    Two ids in Acervo are not random. An image prompt's is a function of the sense it belongs to, and
    a clip example's is a function of the sense *and* the corpus segment it quotes.
 
-   That is load-bearing rather than tidy. It is what lets the interface and the server's sweep both
-   work on a sense with no coordination at all — they compute the same id, so the second to arrive
+   That is load-bearing rather than tidy. It is what lets a saved document and the server's own
+   enrichment both work on a sense with no coordination at all — they compute the same id, so the second to arrive
    finds the work done or is refused as stale — and it is why a picture's `suppressed` is a field
    rather than a tombstone, since a tombstoned row would be re-created at the same id.
 

@@ -1,6 +1,6 @@
 import { AcervoApiError, backendSession, type PushResponse } from "./api";
 import type { VocabularyGraph } from "./domain";
-import { repository, type RemoteGraph, type RemoteWrite } from "./repository";
+import { repository, type RemoteGraph, type RemoteWrite, type WriteOptions } from "./repository";
 import { isNativeHost } from "./pwa";
 
 /**
@@ -132,10 +132,10 @@ class SyncEngine implements RemoteGraph {
   }
 
   /** `RemoteGraph.push` — the repository's only route to the server. */
-  async push(changes: Partial<VocabularyGraph>): Promise<RemoteWrite> {
+  async push(changes: Partial<VocabularyGraph>, options?: WriteOptions): Promise<RemoteWrite> {
     const snapshot = repository.snapshot();
     try {
-      const response = await backendSession.pushGraph(snapshot.deviceId, changes);
+      const response = await backendSession.pushGraph(snapshot.deviceId, changes, options);
       this.guardDataset(snapshot.datasetId, response.datasetId);
       // The cursor deliberately does not move on a write: leaving it alone means the next pull
       // re-delivers these rows harmlessly rather than skipping anything written in between.

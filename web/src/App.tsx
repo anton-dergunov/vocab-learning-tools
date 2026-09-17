@@ -35,26 +35,20 @@ import {
 } from "./pwa";
 import { repository, type ReplicaSnapshot } from "./repository";
 import {
-  articleFor, articleFromDraft, imageWork, inboxCount, languageOptions, lexemesIn, shortGlossOf,
-  topicOptions, visibleRows, type ImageWork, type SortKey, type TopicSelection
+  articleFor, articleFromDraft, inboxCount, languageOptions, lexemesIn, shortGlossOf,
+  topicOptions, visibleRows, type SortKey, type TopicSelection
 } from "./selectors";
 import Settings, { type Page as SettingsPage } from "./Settings";
-
-/** A stable empty result, so the memo does not hand a new object to every render before load. */
-const EMPTY_IMAGE_WORK: ImageWork = {
-  unbriefed: [], undrawn: [], failed: [], suppressed: [], drawn: []
-};
 import SignIn from "./SignIn";
 import { setSearchScope, useSearchScope, type SearchScope } from "./searchScope";
 import type { StoredSession } from "./session";
 import { syncEngine } from "./sync";
-import { jobStream } from "./jobs";
-import { enrichment, senseIsBusy } from "./enrichment";
+import { clipSearchOf, drawingPictures, enrichmentOf, isEnriching, isOpen, jobStream } from "./jobs";
+import ProgressStrip from "./ProgressStrip";
 import { ImageDialog } from "./ImageDialog";
 import { clearPictures, forget } from "./media";
 import { fill, forgetPronunciations } from "./pronunciation";
 import { SyncChip } from "./SyncStatus";
-import { ActivityChip, ActivityPanel } from "./ActivityPanel";
 import {
   draftFor, parseArticle, yamlFor, yamlForDraft, YamlProblems,
   type ArticleDraft, type YamlProblem
@@ -299,7 +293,6 @@ export default function App() {
     backendSession.onUnauthorized(() => {
       syncEngine.stop();
       jobStream.stop();
-      enrichment.stop();
       void backendSession.reject().then(() => setSession(null));
     });
     return () => backendSession.onUnauthorized(null);
@@ -315,11 +308,8 @@ export default function App() {
       if (cancelled) return;
       setSnapshot(repository.snapshot());
       syncEngine.start();
+      // The server does the work; this only listens, so a word saved elsewhere fills in here too.
       jobStream.start();
-      // The engine deliberately does not sweep the backlog on open — that is the server's job, and
-      // a tablet working through two thousand pictures at one a minute is not one. `resume` only
-      // undoes a sign-out's stop.
-      enrichment.resume();
       await syncEngine.syncNow();
       // Extending the token happens once the vocabulary is already on screen, and signs the owner
       // out only if the server answers and rejects it.
@@ -373,9 +363,16 @@ export default function App() {
     document.title = article ? `${article.lexeme.headword} — Acervo` : "Acervo";
   }, [article]);
 
+  /* The server's work on each word, as this device last heard it. */
+  const jobsStatus = useSyncExternalStore(jobStream.subscribe, jobStream.getStatus);
+  const enrichJob = article ? enrichmentOf(jobsStatus, article.lexeme.id) : undefined;
+  /* Cards re-flow as each result lands, so a word still filling in is read on the page, where the
+     reserved slots keep the layout still. Nothing is held back and nothing refreshes by hand. */
+  const enriching = isOpen(enrichJob);
+
   /* A proposal is reviewed on the page — its marks and the conversation that made it live there — so
      one being live overrides the choice rather than being hidden behind a card. */
-  const view: ArticleView = proposal ? "page" : viewChoice ?? defaultView;
+  const view: ArticleView = proposal || enriching ? "page" : viewChoice ?? defaultView;
   const reading = mode === "read";
   const carding = Boolean(article) && reading && view === "cards" && !external;
 
@@ -414,7 +411,6 @@ export default function App() {
      The article shows what the replica holds; the dialog is the only thing that changes a picture,
      and it writes through the image routes. A write is followed by a pull, so the record the server
      stored is what the article re-renders from rather than this component's optimism. */
-  const enrichmentStatus = useSyncExternalStore(enrichment.subscribe, enrichment.getStatus);
   const [imageStyles, setImageStyles] = useState<ImageStyle[]>([]);
   const [editingImage, setEditingImage] = useState<{ senseId: string; prompt: ImagePrompt | null } | null>(null);
 
@@ -427,17 +423,9 @@ export default function App() {
       .catch(() => notify("The style list could not be read from the server."));
   }, [editingImage, imageStyles.length, notify]);
 
-  const [activity, setActivity] = useState(false);
-  /* Senses whose picture is being replaced by a file or removed. Not the enrichment queue: neither
-     is a model call, so neither should wait behind one — your own file appearing in a second is the
-     whole point of choosing it. Local because it lasts exactly as long as the round trip. */
+  /* Senses whose picture is being replaced, removed or redrawn from this device. Local because it
+     lasts exactly as long as the round trip. */
   const [replacing, setReplacing] = useState<ReadonlySet<string>>(new Set());
-  /* Derived, never stored: "what is left" is a query against the replica, which is also how work
-     the server's sweep is doing shows up here with no job store to poll. */
-  const imageBacklog = useMemo(
-    () => (snapshot ? imageWork(snapshot) : EMPTY_IMAGE_WORK),
-    [snapshot]
-  );
 
   /**
    * A write that replaces a picture, with the sense marked while it runs.
@@ -466,37 +454,55 @@ export default function App() {
     }
   }, [notify]);
 
+  /** Try again: a new job, which the server runs whether or not this page stays open. */
+  const retryEnrichment = useCallback((lexemeId: string) => {
+    void backendSession.enqueueJob({ kind: "enrich", subject: { kind: "lexeme", id: lexemeId } })
+      .then((job) => jobStream.apply(job))
+      .catch((error) => notify(error instanceof Error ? error.message : "That could not be asked for again."));
+  }, [notify]);
+
+  const dismissEnrichment = useCallback((lexemeId: string) => {
+    const job = enrichmentOf(jobStream.getStatus(), lexemeId);
+    jobStream.forget(lexemeId);
+    if (job) void backendSession.dismissJob(job.id).catch(() => undefined);
+  }, []);
+
+  /* A finished job's outcome is shown for as long as its word stays open, and not the next time. */
+  const shownWord = useRef<string | null>(null);
+  useEffect(() => {
+    const left = shownWord.current;
+    shownWord.current = openId;
+    if (left && left !== openId) jobStream.forget(left);
+  }, [openId]);
+
   const pictures = useMemo<PictureSlot | null>(() => {
     if (!article || mode !== "read") return null;
+    const drawing = drawingPictures(enrichJob);
     return {
       open: (senseId, prompt) => setEditingImage({ senseId, prompt }),
-      // Only what this device is doing right now. Work the server's sweep is doing shows as a
-      // sense that is still blank, and turns into a picture on the next pull — there is no job
-      // store to ask, and deliberately none to build.
-      busy: (senseId) => replacing.has(senseId) || senseIsBusy(
-        enrichmentStatus, article.lexeme.id, senseId,
-        article.senses.find((entry) => entry.sense.id === senseId)?.images[0] ?? null
-      )
+      busy: (senseId) => {
+        if (replacing.has(senseId)) return true;
+        if (!drawing) return false;
+        // Only a sense the job will draw: one with a picture, or one ruled out, is not waiting.
+        const record = article.senses.find((entry) => entry.sense.id === senseId)?.images[0] ?? null;
+        return !record || (!record.imageRef && !record.suppressed && !record.failureReason);
+      }
     };
-  }, [article, mode, enrichmentStatus.active, enrichmentStatus.waiting, replacing]);
+  }, [article, mode, enrichJob, replacing]);
 
   const clips = useMemo<ClipSlot | null>(() => {
     if (!article || mode !== "read") return null;
     const lexemeId = article.lexeme.id;
-    const active = enrichmentStatus.active;
     return {
-      // Only what this device is doing. Work the server's sweep is doing shows up as clips
-      // appearing on the next pull — there is no job store to ask, and deliberately none to build.
-      searching:
-        (active?.kind === "clip" && active.lexemeId === lexemeId)
-        || enrichmentStatus.waiting.some((item) => item.lexemeId === lexemeId),
+      search: clipSearchOf(enrichJob, article.lexeme.clipsSearchedAt),
+      retry: () => retryEnrichment(lexemeId),
       remove: (exampleId) => {
         void repository.delete("examples", exampleId)
           .then(() => setSnapshot(repository.snapshot()))
           .catch((error) => notify(error instanceof Error ? error.message : "That clip could not be removed."));
       }
     };
-  }, [article, mode, enrichmentStatus.active, enrichmentStatus.waiting, notify]);
+  }, [article, mode, enrichJob, notify, retryEnrichment]);
 
   /* ── searching the dictionaries ───────────────────────────────────────
      Three speeds, and the difference between them is what each one costs. A dictionary stored on
@@ -696,9 +702,6 @@ export default function App() {
     const id = await applyYaml(text);
     if (!id) return;
     setMode("read");
-    // A sense the edit added has no picture, and this is the moment to notice. Already-drawn senses
-    // cost one query and no call, so asking unconditionally is cheaper than deciding here.
-    enrichment.enqueue(id, repository.snapshot().lexemes.find((one) => one.id === id)?.headword ?? "");
     notify("Saved to the server");
   }
 
@@ -707,11 +710,9 @@ export default function App() {
     if (!id) return;
     closeCapture();
     openLexeme(id);
-    /* Pictures are the enrichment phase, deliberately not part of making the entry: the article is
-       readable the moment it is saved, and its pictures arrive behind it one at a time. Only the
-       word you just saved — the backlog and anything the ingest script added belong to
-       `acervo-worker images sweep`, which this must not duplicate. */
-    enrichment.enqueue(id, repository.snapshot().lexemes.find((one) => one.id === id)?.headword ?? "");
+    /* The save queued the word's enrichment on the server. It opens on the page, whatever the
+       device's default, because that is where its clips and pictures land without moving it. */
+    setViewChoice("page");
     notify("Added to your vocabulary");
   }
 
@@ -852,8 +853,10 @@ export default function App() {
       return;
     }
     undoable.current = { id, text: previous };
+    // A sense the proposal added is enriched on the server, and filled in on the page.
+    const known = new Set(proposal.before.senses.map((sense) => sense.id));
+    if (proposal.after.senses.some((sense) => !known.has(sense.id))) setViewChoice("page");
     setProposal(null);
-    enrichment.enqueue(id, repository.snapshot().lexemes.find((one) => one.id === id)?.headword ?? "");
     notify("Saved to the server", { label: "Undo", run: () => void undoProposal() });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposal, openId, notify]);
@@ -944,9 +947,6 @@ export default function App() {
   async function signOut() {
     syncEngine.stop();
     jobStream.stop();
-    // Stops after the unit in flight rather than mid-call: abandoning a picture the provider has
-    // already been paid for buys nothing, and the sweep would draw it again anyway.
-    enrichment.stop();
     // The next session may be a different account on a different server, so nothing an external
     // source answered under this one survives into it.
     forgetCachedLookups();
@@ -1029,11 +1029,6 @@ export default function App() {
               app updates; sync status, signing out and deleting the vocabulary are operations on
               the vocabulary, which the host deliberately does not own — so they live here, and
               without this they were unreachable on macOS altogether. */}
-          <ActivityChip
-            status={enrichmentStatus}
-            outstanding={imageBacklog.unbriefed.length + imageBacklog.undrawn.length}
-            onOpen={() => setActivity(true)}
-          />
           <SyncChip status={syncStatus} onOpen={() => setSettings("general")} />
 
           <button
@@ -1140,9 +1135,11 @@ export default function App() {
                 <button className={reading && view === "page" ? "on" : ""} onClick={() => { setViewChoice("page"); setMode("read"); }}>Page</button>
                 <button
                   className={reading && view === "cards" ? "on" : ""}
-                  // Cards has nowhere to draw a proposal's marks, so it waits until one is saved or discarded.
-                  disabled={Boolean(proposal)}
-                  title={proposal ? "Save or discard the proposed changes first" : undefined}
+                  // Cards has nowhere to draw a proposal's marks, so it waits until one is saved or
+                  // discarded — and re-flows as results land, so it waits for a word to fill in too.
+                  disabled={Boolean(proposal) || enriching}
+                  title={proposal ? "Save or discard the proposed changes first"
+                    : enriching ? "Cards open when pictures and clips are ready" : undefined}
                   onClick={() => { setViewChoice("cards"); setMode("read"); }}
                 >Cards</button>
                 <button className={mode !== "read" ? "on" : ""} onClick={() => setMode("yaml")}>YAML</button>
@@ -1160,7 +1157,7 @@ export default function App() {
                   {([["page", "Page"], ["cards", "Cards"], ["yaml", "YAML"]] as const).map(([id, name]) => {
                     const on = id === "yaml" ? mode !== "read" : reading && view === id;
                     return <button key={id} role="menuitemradio" aria-checked={on} className={on ? "on" : ""}
-                      disabled={id === "cards" && Boolean(proposal)}
+                      disabled={id === "cards" && (Boolean(proposal) || enriching)}
                       onClick={() => {
                         setArticleMenu(false);
                         if (id === "yaml") setMode("yaml");
@@ -1172,6 +1169,11 @@ export default function App() {
                 </div>}
               </div>
             </div>}
+            {article && reading && !proposal && <ProgressStrip
+              job={enrichJob}
+              onRetry={() => retryEnrichment(article.lexeme.id)}
+              onDismiss={() => dismissEnrichment(article.lexeme.id)}
+            />}
 
             {!snapshot ? <p className="empty">Opening your vocabulary…</p>
               // An external entry replaces the list the way one of your own does, and reads in the
@@ -1182,6 +1184,7 @@ export default function App() {
                   topicLabel={topicLabel} topicIcon={topicIcon} query={query} sort={sort}
                   onSort={setSort} onOpen={openLexeme}
                   external={externalSearch}
+                  working={(id) => isEnriching(jobsStatus, id)}
                 />
               : mode === "read" ? <LexemeArticle
                   article={article} view={view} onNotify={notify} pictures={pictures} clips={clips}
@@ -1259,22 +1262,13 @@ export default function App() {
           backendSession.removeImage(held.id, snapshot?.deviceId ?? ""));
       }}
       onDraw={(overrides) => {
-        if (!editingImage.prompt) return;
-        // Handed to the queue, not awaited: the dialog closes and the picture says it is redrawing.
-        enrichment.redraw({
-          lexemeId: article.lexeme.id,
-          senseId: editingImage.senseId,
-          promptId: editingImage.prompt.id,
-          label: article.lexeme.headword,
-          ...overrides
-        });
+        const held = editingImage.prompt;
+        if (!held) return;
+        // The dialog closes and the picture says it is redrawing while the request runs.
+        void replacePicture(editingImage.senseId, () =>
+          backendSession.renderImage(held.id, snapshot?.deviceId ?? "", overrides));
       }}
       onNotify={notify}
-    />}
-    {activity && <ActivityPanel
-      status={enrichmentStatus}
-      work={imageBacklog}
-      onClose={() => setActivity(false)}
     />}
     <div className={`toast ${toast ? "show" : ""}`}>
       {toast}

@@ -273,10 +273,10 @@ describe("saving an article edited as YAML", () => {
   });
 
   it("derives a clip example's id from its sense and its segment, never at random", async () => {
-    /* The one example id that is not random, for the reason a picture's is not: the interface's
-       enrichment engine and the server's sweep do not coordinate, so a shared derivation is what
-       makes two writers that chose the same segment converge on one row. An import that minted a
-       random one instead would hand the sweep a sense it could clip a second time. */
+    /* The one example id that is not random, for the reason a picture's is not: a saved document and
+       the server's clip search do not coordinate, so a shared derivation is what makes two writers
+       that chose the same segment converge on one row. An import that minted a random one instead
+       would hand the server a sense it could clip a second time. */
     const { repository, draft } = await seeded();
     const clipped = draft();
     clipped.senses[0].examples.push({

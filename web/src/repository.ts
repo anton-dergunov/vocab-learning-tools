@@ -30,8 +30,16 @@ export interface RemoteWrite {
  * The write half of the server transport. `sync.ts` owns the routes and attaches this; the
  * repository never reaches the network itself, and the interface never reaches past the repository.
  */
+/**
+ * `enrich: false` asks the server not to queue enrichment for words this write creates. Only a
+ * bundle import says so, because it restores the bundle's pictures first and asks afterwards.
+ */
+export interface WriteOptions {
+  enrich?: boolean;
+}
+
 export interface RemoteGraph {
-  push(changes: Partial<VocabularyGraph>): Promise<RemoteWrite>;
+  push(changes: Partial<VocabularyGraph>, options?: WriteOptions): Promise<RemoteWrite>;
 }
 
 export interface ReplicaSnapshot extends VocabularyGraph {
@@ -52,7 +60,7 @@ export interface AcervoRepository {
   attachRemote(remote: RemoteGraph | null): void;
   applyRemote(changes: Partial<VocabularyGraph>, cursor: number, datasetId: string): Promise<number>;
   writeGraph(changes: Partial<VocabularyGraph>): Promise<void>;
-  saveArticle(draft: ArticleDraft, minted?: ReadonlySet<string>): Promise<string>;
+  saveArticle(draft: ArticleDraft, minted?: ReadonlySet<string>, options?: WriteOptions): Promise<string>;
   saveVocabulary(input: VocabularyInput, id?: string): Promise<Vocabulary>;
   saveTopic(input: TopicInput, id?: string): Promise<Topic>;
   saveLexeme(input: LexemeInput, id?: string): Promise<Lexeme>;
@@ -231,11 +239,11 @@ export class LocalAcervoRepository implements AcervoRepository {
    * Sends a change set to the server and stores what comes back. Nothing local moves until the
    * server has accepted it: offline, this throws and the replica is exactly as it was.
    */
-  private commit(changes: Partial<VocabularyGraph>): Promise<void> {
-    return this.serialize(() => this.send(changes));
+  private commit(changes: Partial<VocabularyGraph>, options?: WriteOptions): Promise<void> {
+    return this.serialize(() => this.send(changes, options));
   }
 
-  private async send(changes: Partial<VocabularyGraph>): Promise<void> {
+  private async send(changes: Partial<VocabularyGraph>, options?: WriteOptions): Promise<void> {
     if (!this.ready) throw new Error("Load the Acervo repository before writing.");
     const proposed = structuredClone(this.graph);
     (Object.entries(changes) as [EntityKind, Entity[]][]).forEach(([kind, records]) => {
@@ -250,7 +258,7 @@ export class LocalAcervoRepository implements AcervoRepository {
     if (!this.remote) {
       throw new Error("Acervo is not connected to the server, so this change was not saved.");
     }
-    const result = await this.remote.push(changes);
+    const result = await this.remote.push(changes, options);
     // One transaction for the records the server blessed and the stamp that says we wrote.
     await this.merge(result.records, result.cursor, result.datasetId, this.instant());
   }
@@ -299,7 +307,9 @@ export class LocalAcervoRepository implements AcervoRepository {
    * here and the server refuses it again. So the exception is an **argument**, not a field in the
    * document: nothing in the text says "I minted this", and a hand-typed document cannot claim it.
    */
-  async saveArticle(draft: ArticleDraft, minted: ReadonlySet<string> = new Set()): Promise<string> {
+  async saveArticle(
+    draft: ArticleDraft, minted: ReadonlySet<string> = new Set(), options?: WriteOptions
+  ): Promise<string> {
     if (!this.ready) throw new Error("Load the Acervo repository before writing.");
     const changed: Partial<VocabularyGraph> = {};
     const change = <T extends Entity>(store: EntityKind, value: T) => {
@@ -387,8 +397,8 @@ export class LocalAcervoRepository implements AcervoRepository {
     const prompt = (image: ImagePromptDraft, senseId: string | null): string => {
       const existing = claim(this.graph.imagePrompts, image.id, (record) => record.lexemeId === lexemeId);
       /* Derived from the sense, never random, and this is the one id in Acervo that works that way.
-         It is what lets the interface and the server's sweep both draw for a sense without
-         coordinating, and it is why `suppressed` is a field rather than a tombstone.
+         It is what lets a saved document and the server's enrichment both write for a sense
+         without coordinating, and it is why `suppressed` is a field rather than a tombstone.
          Minting a random one here broke that quietly: importing a bundle wrote the document's row
          under one id and the restored picture's under the derived one, so a sense ended up with two
          — an empty frame carrying the brief, and a picture carrying none. */
@@ -522,7 +532,7 @@ export class LocalAcervoRepository implements AcervoRepository {
       .filter((record) => record.lexemeId === lexemeId && record.targetKind !== "lexeme" && !kept[record.targetKind].has(record.targetId))
       .forEach((record) => tombstone("pronunciations", record));
 
-    await this.commit(changed);
+    await this.commit(changed, options);
     return lexemeId;
   }
 

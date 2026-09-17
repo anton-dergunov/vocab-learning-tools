@@ -2,8 +2,9 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 import App from "./App";
-import { AcervoApiError, backendSession, SCHEMA_VERSION, type CaptureHealth } from "./api";
+import { AcervoApiError, backendSession, SCHEMA_VERSION, type CaptureHealth, type Job } from "./api";
 import { hydrateGlosses, lookup as lookupDictionaries, searchDictionaries } from "./dictionaries";
+import { jobStream } from "./jobs";
 import { INSTALLED_EVENT, UPDATE_EVENT } from "./pwa";
 import { repository } from "./repository";
 import { TEST_OWNER, testGraph } from "./testGraph";
@@ -912,6 +913,101 @@ describe("Acervo application", () => {
 
     expect(await screen.findByText("Added to your vocabulary")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /sobremesa/ })).toBeInTheDocument();
+  });
+
+  it("saves a new word without asking for any enrichment, and opens it on the page", async () => {
+    /* The server enriches what a save creates. A device that also asked would spend every call
+       twice, so nothing model-shaped may leave from here — and Cards, the touch default, would
+       re-flow under the reader as results land. */
+    localStorage.setItem("acervo-article-view", "cards");
+    signedIn();
+    await openList();
+    acceptWrites();
+    const asked = [
+      vi.spyOn(backendSession, "renderImage"), vi.spyOn(backendSession, "briefLexeme"),
+      vi.spyOn(backendSession, "findClips"), vi.spyOn(backendSession, "pronounce")
+    ];
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    const sheet = within(screen.getByRole("region", { name: "Add a word" }));
+    fireEvent.click(sheet.getByRole("button", { name: "YAML" }));
+    await waitForEditor();
+    const view = editorView();
+    act(() => {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: view.state.doc.toString()
+        .replace('headword: ""', "headword: sobremesa")
+        .replace('definition: ""', "definition: Charla tras la comida.")
+        .replace('terms: [""]', "terms: [after-dinner talk]")
+        .replace('- text: ""', "- text: La sobremesa duró dos horas.")
+        .replace('translation: ""', "translation: The talk lasted two hours.") } });
+    });
+    fireEvent.click(sheet.getByRole("button", { name: "Validate & save" }));
+
+    expect(await screen.findByRole("heading", { name: /sobremesa/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Page" })).toHaveClass("on");
+    asked.forEach((spy) => expect(spy).not.toHaveBeenCalled());
+  });
+
+  it("keeps Cards closed while the server fills a word in, and shows how far it has got", async () => {
+    const working: Job = {
+      id: "job000000000001", ownerId: TEST_OWNER, parentId: null, kind: "enrich",
+      subject: { kind: "lexeme", id: "lexemepicar0001" }, input: {}, state: "running",
+      trigger: "save", rerun: false, cancelRequested: false, dismissed: false, error: null,
+      message: null, notBefore: null, createdAt: "2026-09-17T10:00:00.000Z",
+      startedAt: "2026-09-17T10:00:01.000Z", finishedAt: null,
+      steps: [
+        { name: "clips", state: "done", detail: { found: 0 } },
+        { name: "pictures", state: "running", done: 1, total: 2 },
+        { name: "pronunciations", state: "pending" }
+      ]
+    };
+    signedIn();
+    await openList();
+    act(() => jobStream.apply(working));
+    expect(await screen.findByRole("img", { name: "Still filling in" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    await screen.findByRole("heading", { name: "picar" });
+    const cards = screen.getByRole("button", { name: "Cards" });
+    expect(cards).toBeDisabled();
+    expect(cards).toHaveAttribute("title", "Cards open when pictures and clips are ready");
+    expect(screen.getByText("Drawing 2 of 2")).toHaveClass("now");
+    expect(screen.getByText("Recording audio")).not.toHaveClass("now");
+
+    act(() => jobStream.apply({
+      ...working, state: "done", steps: working.steps.map((step) => ({ ...step, state: "done" }))
+    }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Cards" })).toBeEnabled());
+    expect(screen.queryByText(/Drawing/)).toBeNull();
+    act(() => jobStream.stop());
+  });
+
+  it("leaves one line and a Try again when the server could not finish a word", async () => {
+    signedIn();
+    await openList();
+    const failed: Job = {
+      id: "job000000000002", ownerId: TEST_OWNER, parentId: null, kind: "enrich",
+      subject: { kind: "lexeme", id: "lexemepicar0001" }, input: {}, state: "failed",
+      trigger: "save", rerun: false, cancelRequested: false, dismissed: false, error: "image_refused",
+      message: null, notBefore: null, createdAt: "2026-09-17T10:00:00.000Z",
+      startedAt: null, finishedAt: "2026-09-17T10:02:00.000Z",
+      steps: [
+        { name: "clips", state: "skipped" },
+        { name: "pictures", state: "failed", done: 2, total: 2, error: "image_refused", detail: { refused: 1 } },
+        { name: "pronunciations", state: "skipped" }
+      ]
+    };
+    act(() => jobStream.apply(failed));
+    const again = vi.spyOn(backendSession, "enqueueJob").mockResolvedValue({
+      ...failed, id: "job000000000003", state: "queued", steps: [], createdAt: "2026-09-17T10:03:00.000Z"
+    });
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    expect(await screen.findByText("1 of 2 pictures drawn")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(again).toHaveBeenCalledWith({
+      kind: "enrich", subject: { kind: "lexeme", id: "lexemepicar0001" }
+    }));
+    expect(await screen.findByText("Waiting to start")).toBeInTheDocument();
+    act(() => jobStream.stop());
   });
 
   it("reports a refused save without changing anything locally", async () => {

@@ -100,7 +100,7 @@ export interface ImageStyle {
 }
 
 export interface ImageSettings {
-  /** Whether the unattended sweep may spend money while nobody is watching. */
+  /** Whether a saved word's pictures are drawn on their own, spending money while nobody is watching. */
   drawEnabled: boolean;
   /** The styles switched **off**, never the ones switched on — so a new style arrives on. */
   stylesOff: string[];
@@ -686,9 +686,13 @@ export const backendSession = {
   pullGraph(since: number): Promise<PullResponse> {
     return client.call<PullResponse>(`/graph?schemaVersion=${SCHEMA_VERSION}&since=${since}`);
   },
-  pushGraph(deviceId: string, changes: Partial<VocabularyGraph>): Promise<PushResponse> {
+  pushGraph(deviceId: string, changes: Partial<VocabularyGraph>, options: { enrich?: boolean } = {}): Promise<PushResponse> {
     return client.call<PushResponse>("/graph", {
-      method: "POST", body: JSON.stringify({ schemaVersion: SCHEMA_VERSION, deviceId, changes })
+      method: "POST",
+      body: JSON.stringify({
+        schemaVersion: SCHEMA_VERSION, deviceId, changes,
+        ...(options.enrich === false ? { enrich: false } : {})
+      })
     });
   },
   /**

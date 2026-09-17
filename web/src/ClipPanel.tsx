@@ -162,9 +162,9 @@ export default function ClipPanel({ onNotify }: { onNotify(message: string): voi
       <span>
         <strong>Look for clips</strong>
         <span>
-          A word you save is searched once, behind the article, and the server works through
-          anything never searched. Off, nothing is searched on its own. A word is only ever searched
-          once either way — adding a channel does not go back over words you already have.
+          A word you save is searched once, on the server, while you read it — whichever device or
+          script saved it. Off, nothing is searched on its own. A word is only ever searched once
+          either way — adding a channel does not go back over words you already have.
         </span>
       </span>
     </label>

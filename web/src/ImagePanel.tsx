@@ -107,9 +107,9 @@ export default function ImagePanel({ onNotify }: { onNotify(message: string): vo
       <span>
         <strong>Draw pictures</strong>
         <span>
-          A word you save gets its pictures on its own, and the server works through anything that
-          has none — including words added by a script. Off, nothing is drawn until you ask for it
-          on a sense, which is how you keep the ones you choose by hand and no others.
+          A word you save gets its pictures on its own, drawn on the server — including words added
+          by a script, and whether or not the page stays open. Off, nothing is drawn until you ask
+          for it on a sense, which is how you keep the ones you choose by hand and no others.
         </span>
       </span>
     </label>

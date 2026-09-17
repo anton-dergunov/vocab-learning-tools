@@ -276,6 +276,12 @@ const LEXEMES = [
       "Common collocations: <i>hacer sobremesa</i>, <i>una sobremesa larga</i>, <i>alargar la sobremesa</i>."
     ],
     createdAt: "2026-03-08", editedAt: "2026-03-08", revision: 1,
+    /* Still being filled in on the server, so the strip, the clip slot and the closed Cards switch
+       can be seen. `clips` is "searching", "none" or "failed"; `?fill=` overrides it. */
+    filling: {
+      clips: "searching",
+      phases: [["Finding recorded examples", true], ["Recording audio", false]]
+    },
     senses: [
       {
         definition: "Tiempo que se está a la mesa después de haber comido, charlando con los demás comensales.",

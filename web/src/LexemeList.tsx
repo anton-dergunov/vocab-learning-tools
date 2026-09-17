@@ -92,7 +92,7 @@ function ExternalSection({ query, search }: { query: string; search: ExternalSea
 }
 
 export default function LexemeList({
-  rows, languageName, topic, topicLabel, topicIcon, query, sort, onSort, onOpen, external
+  rows, languageName, topic, topicLabel, topicIcon, query, sort, onSort, onOpen, external, working
 }: {
   rows: ListRow[];
   languageName: string;
@@ -105,6 +105,8 @@ export default function LexemeList({
   onOpen(id: string): void;
   /** Absent when nothing is being searched — an empty topic list has no external half. */
   external?: ExternalSearch;
+  /** Whether the server is still filling a word in, so it can be found without opening it. */
+  working?: (id: string) => boolean;
 }) {
   const trimmed = query.trim();
   let title = topicLabel;
@@ -144,6 +146,7 @@ export default function LexemeList({
             <span className="gloss">{row.shortGloss}</span>
           </span>
           <span className="meta">
+            {working?.(row.id) && <span className="working-mark" role="img" aria-label="Still filling in" title="Still filling in" />}
             {row.senseCount > 1 && <span className="senses">{row.senseCount} senses</span>}
             {row.status === "inbox" ? <span className="prov">unreviewed</span> : <Strength row={row} />}
           </span>
