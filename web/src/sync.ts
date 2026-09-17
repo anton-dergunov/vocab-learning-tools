@@ -1,6 +1,9 @@
 import { AcervoApiError, backendSession, type PushResponse } from "./api";
 import type { VocabularyGraph } from "./domain";
-import { repository, type RemoteGraph, type RemoteWrite, type WriteOptions } from "./repository";
+import {
+  repository, type ArticleWrite, type RemoteGraph, type RemoteWrite, type WriteOptions
+} from "./repository";
+import type { ArticleDraft } from "./yaml";
 import { isNativeHost } from "./pwa";
 
 /**
@@ -140,6 +143,24 @@ class SyncEngine implements RemoteGraph {
       // The cursor deliberately does not move on a write: leaving it alone means the next pull
       // re-delivers these rows harmlessly rather than skipping anything written in between.
       return { records: response.records, cursor: snapshot.cursor, datasetId: response.datasetId };
+    } catch (error) {
+      this.update(this.failure(error));
+      throw error;
+    }
+  }
+
+  /** `RemoteGraph.saveArticle` — an article goes to the server as the document it is. */
+  async saveArticle(
+    draft: ArticleDraft, minted: ReadonlySet<string>, base: Record<string, number>, options?: WriteOptions
+  ): Promise<ArticleWrite> {
+    const snapshot = repository.snapshot();
+    try {
+      const response = await backendSession.saveArticle(snapshot.deviceId, draft, [...minted], base, options);
+      this.guardDataset(snapshot.datasetId, response.datasetId);
+      return {
+        records: response.records, cursor: snapshot.cursor, datasetId: response.datasetId,
+        lexemeId: response.lexemeId, jobId: response.jobId
+      };
     } catch (error) {
       this.update(this.failure(error));
       throw error;

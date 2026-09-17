@@ -23,7 +23,7 @@ from acervo.api.payload import json_body
 from acervo.errors import ApiError
 from acervo.models import Answer
 from acervo.repository import graph
-from acervo.services.capture.apply import apply_draft
+from acervo.services.articles import save_article
 from acervo.services.capture.coerce import reference_of, trimmed
 from acervo.services.capture.compose import compose
 from acervo.services.capture.draft import draft_from
@@ -116,7 +116,13 @@ def run_capture(settings: Settings, account: str, device: str, body: dict[str, A
 
     applied = None
     if body.get("apply") is True:
-        applied = {"lexemeId": apply_draft(account, device, draft, topics)}
+        # Applied with nobody reviewing it — an ingestion script, a headless transport — which is
+        # exactly what the Inbox is for. The same save the interface makes, so nothing about capture
+        # gets a private way into the store.
+        saved = save_article(
+            account, device, draft, enqueue=graph.Enqueue("ingest"), status="inbox"
+        )
+        applied = {"lexemeId": saved["lexemeId"]}
     return {
         "resolution": resolution, "duplicates": [], "draft": draft, "applied": applied,
         "passedOver": _passed_over(resolving, composing),

@@ -7,6 +7,7 @@ import { hydrateGlosses, lookup as lookupDictionaries, searchDictionaries } from
 import { jobStream } from "./jobs";
 import { INSTALLED_EVENT, UPDATE_EVENT } from "./pwa";
 import { repository } from "./repository";
+import { articleChanges } from "./testArticles";
 import { TEST_OWNER, testGraph } from "./testGraph";
 
 vi.mock("virtual:pwa-register", () => ({ registerSW: vi.fn() }));
@@ -91,6 +92,21 @@ function acceptWrites() {
     return {
       schemaVersion: SCHEMA_VERSION, datasetId: DATASET, cursor: allocated,
       serverTime: "2026-08-29T12:00:01.000Z", records
+    };
+  });
+  /* An article is diffed by the server. The replica mirrors it here, so it stands in for what the
+     server holds. */
+  vi.spyOn(backendSession, "saveArticle").mockImplementation(async (deviceId, draft, minted) => {
+    const snapshot = repository.snapshot();
+    const { lexemeId, changes } = articleChanges(
+      snapshot, draft, new Set(minted), { ownerId: snapshot.ownerId, deviceId },
+      new Date(Date.parse("2026-08-29T12:00:01.000Z") + allocated).toISOString()
+    );
+    const records = Object.fromEntries(Object.entries(changes).map(([kind, list]) =>
+      [kind, (list ?? []).map((record) => ({ ...record, revision: ++allocated }))]));
+    return {
+      schemaVersion: SCHEMA_VERSION, datasetId: DATASET, cursor: allocated,
+      serverTime: "2026-08-29T12:00:01.000Z", records, lexemeId, jobId: null
     };
   });
 }
@@ -1013,7 +1029,7 @@ describe("Acervo application", () => {
   it("reports a refused save without changing anything locally", async () => {
     signedIn();
     await openList();
-    vi.spyOn(backendSession, "pushGraph")
+    vi.spyOn(backendSession, "saveArticle")
       .mockRejectedValue(new AcervoApiError("This entry was changed somewhere else.", 409, "stale_record"));
     fireEvent.click(screen.getByRole("button", { name: /picar/ }));
     await editAsYaml();
@@ -1253,6 +1269,7 @@ describe("asking about an article", () => {
       .toHaveClass("mark-cut");
     // Nothing is written until a second press.
     expect(backendSession.pushGraph).not.toHaveBeenCalled();
+    expect(backendSession.saveArticle).not.toHaveBeenCalled();
   });
 
   it("saves a reviewed proposal as one ordinary write, and undoes it as another", async () => {
@@ -1267,14 +1284,14 @@ describe("asking about an article", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Review" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Save/ }));
 
-    await waitFor(() => expect(backendSession.pushGraph).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(backendSession.saveArticle).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect(repository.snapshot().lexemes.find((one) => one.id === "lexemepicar0001")!.notes)
         .toContain("Not «rascar»."));
 
     // Undo is the previous document, saved again — an ordinary online write like everything else.
     fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
-    await waitFor(() => expect(backendSession.pushGraph).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(backendSession.saveArticle).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(repository.snapshot().lexemes.find((one) => one.id === "lexemepicar0001")!.notes)
         .not.toContain("Not «rascar»."));

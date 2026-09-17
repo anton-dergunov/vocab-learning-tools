@@ -549,6 +549,26 @@ def pronunciation(owner: str, pronunciation_id: str) -> dict[str, Any] | None:
     return projected(collection, row) if row is not None else None
 
 
+def owned_records(owner: str, key: str, ids: list[str]) -> dict[str, dict[str, Any]]:
+    """This owner's records of one collection by id, tombstones included, in the wire shape.
+
+    For a save that has to know whether an id it was handed belongs to the entry being saved, to a
+    different one, or to nothing. An id another account holds is simply absent here; the merge
+    refuses it on its own.
+    """
+    wanted = sorted({identifier for identifier in ids if identifier})
+    if not wanted:
+        return {}
+    collection = COLLECTION_BY_KEY[key]
+    with reading() as connection:
+        rows = connection.execute(
+            select(collection.table).where(
+                collection.table.c.owner == owner, collection.table.c.id.in_(wanted)
+            )
+        ).mappings()
+        return {row["id"]: projected(collection, row) for row in rows}
+
+
 def held_ids(owner: str) -> set[str]:
     """Every record id this owner already holds, across all nine tables."""
     found: set[str] = set()

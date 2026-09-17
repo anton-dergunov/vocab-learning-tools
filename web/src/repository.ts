@@ -6,17 +6,17 @@ import {
   type Vocabulary, type VocabularyInput, type VocabularyGraph
 } from "./domain";
 import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase, type ReplicaMeta } from "./localDatabase";
-import { clipExampleId, imagePromptId, newDeviceId, newId, nowInstant } from "./ids";
-import type { ArticleDraft, ImagePromptDraft } from "./yaml";
+import { newDeviceId, newId, nowInstant } from "./ids";
+import type { ArticleDraft } from "./yaml";
 
 export const LOCAL_SCHEMA_VERSION = 10;
 
-const EMPTY_GRAPH = (): VocabularyGraph => ({
+export const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],
   pronunciations: [], studyStates: []
 });
 
-type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | Pronunciation | StudyState;
+export type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | Pronunciation | StudyState;
 type EntityInput = VocabularyInput | TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput;
 
 /** What the server returns for a batch of applied records. */
@@ -38,8 +38,17 @@ export interface WriteOptions {
   enrich?: boolean;
 }
 
+export interface ArticleWrite extends RemoteWrite {
+  lexemeId: string;
+  /** The server job enriching what the save created, or null when it created nothing to enrich. */
+  jobId: string | null;
+}
+
 export interface RemoteGraph {
   push(changes: Partial<VocabularyGraph>, options?: WriteOptions): Promise<RemoteWrite>;
+  saveArticle(
+    draft: ArticleDraft, minted: ReadonlySet<string>, base: Record<string, number>, options?: WriteOptions
+  ): Promise<ArticleWrite>;
 }
 
 export interface ReplicaSnapshot extends VocabularyGraph {
@@ -286,254 +295,51 @@ export class LocalAcervoRepository implements AcervoRepository {
   saveStudyState(input: StudyStateInput, id?: string) { return this.save("studyStates", input, id) as Promise<StudyState>; }
 
   /**
-   * Applies a whole article, edited as YAML, in one write.
+   * Saves a whole article, edited as YAML, in one write — on the server.
    *
-   * The document is the complete article, so the diff needs no content matching: a record carrying
-   * an id is the one it names, a record without one is new, and a stored record the document no
-   * longer mentions is removed. Nothing is recreated — ids stay put across an edit, which is what
-   * keeps the Anki note join (§10), the image seed derived from the lexeme id (§09) and `createdAt`
-   * from being reset every time a typo is fixed.
+   * The document goes as the draft `parseArticle` produced, and `POST /articles` works out what it
+   * means for the stored entry: a record carrying an id is the one it names, a record without one is
+   * new, and a stored record the document no longer mentions is tombstoned. Nothing is recreated, so
+   * the Anki note join, the image seed and `createdAt` survive a fixed typo. One round trip, all or
+   * nothing, and nothing local moves until the server has accepted it.
    *
-   * One batch, one round trip, all or nothing: half an applied article is worse than none.
-   */
-  /**
-   * `minted` names ids this save is *creating* rather than naming, and is empty for every caller
-   * but one.
+   * `base` is what this replica holds of the entry, at the revisions it holds them: the server states
+   * those revisions, so an edit made from a stale copy is refused, and it tombstones only records
+   * this device could have seen.
    *
-   * A document editing a stored entry may not carry ids its producer minted — that rule is what
-   * `claim` below enforces, and it stays exactly as strong. But a chat proposal that adds an
-   * example drawn from a sentence you just supplied needs both records in one save, and the example
-   * has to name the attestation: `origin: "attestation"` must resolve or `validateGraph` refuses it
-   * here and the server refuses it again. So the exception is an **argument**, not a field in the
-   * document: nothing in the text says "I minted this", and a hand-typed document cannot claim it.
+   * `minted` names ids this save is *creating* rather than naming, and is empty for every caller but
+   * one: a chat proposal that adds an example drawn from a sentence you just supplied needs both
+   * records in one save. The exception is an **argument**, not a field in the document, so a
+   * hand-typed document cannot claim it.
    */
   async saveArticle(
     draft: ArticleDraft, minted: ReadonlySet<string> = new Set(), options?: WriteOptions
   ): Promise<string> {
-    if (!this.ready) throw new Error("Load the Acervo repository before writing.");
-    const changed: Partial<VocabularyGraph> = {};
-    const change = <T extends Entity>(store: EntityKind, value: T) => {
-      const list = (changed[store] ?? []) as T[];
-      list.push(value);
-      changed[store] = list as never;
-    };
-    const live = <T extends Entity>(records: T[]): T[] => records.filter((record) => !record.deleted);
-    const find = <T extends Entity>(records: T[], id: string | null): T | undefined =>
-      id ? records.find((record) => record.id === id) : undefined;
-
-    const lexemeId = draft.id ?? newId();
-    const existingLexeme = find(this.graph.lexemes, draft.id);
-    if (draft.id && (!existingLexeme || existingLexeme.deleted)) {
-      throw new Error("This document names an entry that is not in your vocabulary, so it was not saved.");
-    }
-
-    const topicIds = draft.topics.map((name) => {
-      const topic = live(this.graph.topics)
-        .find((candidate) => candidate.name.toLowerCase() === name.trim().toLowerCase());
-      if (!topic) {
-        const known = live(this.graph.topics).map((candidate) => candidate.name).sort().join(", ");
-        throw new Error(
-          `There is no topic called "${name}". Topics are created deliberately; the ones you have are: ${known || "none yet"}.`
-        );
+    return this.serialize(async () => {
+      if (!this.ready) throw new Error("Load the Acervo repository before writing.");
+      if (!this.remote) {
+        throw new Error("Acervo is not connected to the server, so this change was not saved.");
       }
-      return topic.id;
+      const result = await this.remote.saveArticle(draft, minted, this.baseOf(draft.id), options);
+      await this.merge(result.records, result.cursor, result.datasetId, this.instant());
+      return result.lexemeId;
     });
+  }
 
-    change("lexemes", {
-      ...existingLexeme,
-      id: lexemeId,
-      language: draft.language,
-      headword: draft.headword,
-      lemma: draft.lemma,
-      reading: draft.reading,
-      ipa: draft.ipa,
-      pos: draft.pos,
-      gender: draft.gender,
-      register: draft.register,
-      dialect: draft.dialect,
-      emoji: draft.emoji,
-      topicIds,
-      status: draft.status,
-      shortGloss: draft.shortGloss,
-      notes: draft.notes,
-      // Server-written state, like an image prompt's attempt counter: a document cannot assert it,
-      // so a save carries whatever is stored and a new lexeme starts never-consulted.
-      clipsSearchedAt: existingLexeme?.clipsSearchedAt ?? null,
-      ...this.stamp(existingLexeme)
-    } as Lexeme);
-
-    /**
-     * An id in the document that belongs to a different entry would silently steal that record.
-     *
-     * An id naming nothing at all is refused for the same reason — with one exception. A brand-new
-     * article cannot legitimately reference a stored child, so every id such a document carries is
-     * one its producer minted, and generation needs exactly that: an example that names the
-     * attestation it was drawn from, both created by the same save. The server still refuses an id
-     * another account holds, so this cannot reach anyone else's record.
-     */
-    const minting = draft.id === null;
-    const claim = <T extends Entity>(records: T[], id: string | null, owner: (record: T) => boolean): T | undefined => {
-      const existing = find(records, id);
-      if (!existing) {
-        if (id && !minting && !minted.has(id)) throw new Error(`This document names a record that is not in your vocabulary (${id}), so it was not saved.`);
-        return undefined;
-      }
-      if (!owner(existing)) {
-        throw new Error(`The id ${id} belongs to a different entry, so this document was not saved.`);
-      }
-      return existing;
-    };
-
-    /**
-     * A document says what a picture is *of*; it does not say what the server did about it.
-     *
-     * `attempts`, `failureReason` and `suppressed` are deliberately not named below. The
-     * `...existing` spread carries them through untouched, so editing a word's YAML cannot
-     * un-suppress a picture you deleted or zero an attempt counter — and the defaults after it are
-     * reached only when there is no existing row. The cast is why this has to be deliberate: it
-     * silences the compiler, so a field left out here is a field silently reset rather than a
-     * build error.
-     */
-    const prompt = (image: ImagePromptDraft, senseId: string | null): string => {
-      const existing = claim(this.graph.imagePrompts, image.id, (record) => record.lexemeId === lexemeId);
-      /* Derived from the sense, never random, and this is the one id in Acervo that works that way.
-         It is what lets a saved document and the server's enrichment both write for a sense
-         without coordinating, and it is why `suppressed` is a field rather than a tombstone.
-         Minting a random one here broke that quietly: importing a bundle wrote the document's row
-         under one id and the restored picture's under the derived one, so a sense ended up with two
-         — an empty frame carrying the brief, and a picture carrying none. */
-      const id = image.id ?? (senseId ? imagePromptId(senseId) : newId());
-      change("imagePrompts", {
-        attempts: 0,
-        failureReason: null,
-        suppressed: false,
-        ...existing,
-        id,
-        lexemeId,
-        senseId,
-        exampleId: image.exampleId,
-        prompt: image.prompt,
-        styleId: image.styleId,
-        seed: image.seed,
-        modelId: image.modelId,
-        promptVersion: image.promptVersion,
-        imageRef: image.imageRef,
-        imageModelId: image.imageModelId,
-        ...this.stamp(existing)
-      } as ImagePrompt);
-      return id;
-    };
-
-    const keptSenses = new Set<string>();
-    const keptExamples = new Set<string>();
-    const keptAttestations = new Set<string>();
-    const keptPrompts = new Set<string>();
-
-    draft.attestations.forEach((attestation) => {
-      const existing = claim(this.graph.attestations, attestation.id, (record) => record.lexemeId === lexemeId);
-      const id = attestation.id ?? newId();
-      keptAttestations.add(id);
-      change("attestations", {
-        ...existing,
-        id,
-        lexemeId,
-        text: attestation.text,
-        translation: attestation.translation,
-        sourceUrl: attestation.sourceUrl,
-        sourceTitle: attestation.sourceTitle,
-        sourceKind: attestation.sourceKind,
-        // Editable like any other field; a new attestation that does not name one is captured now.
-        capturedAt: attestation.capturedAt.trim() || existing?.capturedAt || this.instant(),
-        ...this.stamp(existing)
-      } as Attestation);
-    });
-
-    draft.senses.forEach((sense) => {
-      const existing = claim(this.graph.senses, sense.id, (record) => record.lexemeId === lexemeId);
-      const senseId = sense.id ?? newId();
-      keptSenses.add(senseId);
-      change("senses", {
-        ...existing,
-        id: senseId,
-        lexemeId,
-        definition: sense.definition,
-        definitionLang: sense.definitionLang,
-        glosses: sense.glosses,
-        domain: sense.domain,
-        emoji: sense.emoji,
-        order: sense.order,
-        ...this.stamp(existing)
-      } as Sense);
-
-      sense.examples.forEach((example) => {
-        // An example belongs to this article when the sense it is stored under does. That also
-        // allows moving one between senses of the same entry: the id is kept, the parent changes.
-        const current = claim(this.graph.examples, example.id, (record) =>
-          this.graph.senses.some((candidate) => candidate.id === record.senseId && candidate.lexemeId === lexemeId));
-        /* A clip's id is derived from its sense and the segment it quotes, for the reason a
-           picture's is derived from its sense: two writers that pick the same segment converge on
-           one row instead of giving the sense the same clip twice. Everything else is random. */
-        const id = example.id ?? (example.clipRef ? clipExampleId(senseId, example.clipRef) : newId());
-        keptExamples.add(id);
-        change("examples", {
-          ...current,
-          id,
-          senseId,
-          text: example.text,
-          textLang: example.textLang,
-          translation: example.translation,
-          translationLang: example.translationLang,
-          origin: example.origin,
-          sourceAttestationId: example.sourceAttestationId,
-          modelId: example.modelId,
-          videoRef: example.videoRef,
-          videoTitle: example.videoTitle,
-          videoChannel: example.videoChannel,
-          videoStart: example.videoStart,
-          videoEnd: example.videoEnd,
-          clipRef: example.clipRef,
-          imageRef: example.imageRef,
-          emotion: example.emotion,
-          note: example.note,
-          matchedForm: example.matchedForm,
-          matchedTranslationForm: example.matchedTranslationForm,
-          ...this.stamp(current)
-        } as Example);
-      });
-
-      sense.images.forEach((image) => keptPrompts.add(prompt(image, senseId)));
-    });
-
-    draft.images.forEach((image) => keptPrompts.add(prompt(image, null)));
-
-    // Whatever the document stopped mentioning. A tombstone rather than a deletion, because a pull
-    // asks for `revision > cursor` and a row that is simply gone has no revision left to send.
-    const tombstone = <T extends Entity>(store: EntityKind, record: T) => {
-      change(store, { ...record, ...this.stamp(record), deleted: true } as T);
-    };
-    const senseIds = new Set(live(this.graph.senses).filter((record) => record.lexemeId === lexemeId).map((record) => record.id));
-    live(this.graph.senses)
-      .filter((record) => record.lexemeId === lexemeId && !keptSenses.has(record.id))
-      .forEach((record) => tombstone("senses", record));
-    live(this.graph.attestations)
-      .filter((record) => record.lexemeId === lexemeId && !keptAttestations.has(record.id))
-      .forEach((record) => tombstone("attestations", record));
-    // Covers both an example removed on its own and one carried away by its sense.
-    live(this.graph.examples)
-      .filter((record) => senseIds.has(record.senseId) && !keptExamples.has(record.id))
-      .forEach((record) => tombstone("examples", record));
-    live(this.graph.imagePrompts)
-      .filter((record) => record.lexemeId === lexemeId && !keptPrompts.has(record.id))
-      .forEach((record) => tombstone("imagePrompts", record));
-    // A clip of something the document removed reads words that no longer exist. The headword's
-    // clip is never among them: the lexeme stays, and an edited headword only makes its clip stale.
-    const kept: Record<string, Set<string>> = { sense: keptSenses, example: keptExamples, attestation: keptAttestations };
-    live(this.graph.pronunciations)
-      .filter((record) => record.lexemeId === lexemeId && record.targetKind !== "lexeme" && !kept[record.targetKind].has(record.targetId))
-      .forEach((record) => tombstone("pronunciations", record));
-
-    await this.commit(changed, options);
-    return lexemeId;
+  /** Every record of one entry this replica holds, at the revision it holds it. */
+  private baseOf(lexemeId: string | null): Record<string, number> {
+    if (!lexemeId) return {};
+    const graph = this.graph;
+    const senses = new Set(graph.senses.filter((one) => one.lexemeId === lexemeId).map((one) => one.id));
+    const records: Entity[] = [
+      ...graph.lexemes.filter((one) => one.id === lexemeId),
+      ...graph.senses.filter((one) => one.lexemeId === lexemeId),
+      ...graph.examples.filter((one) => senses.has(one.senseId)),
+      ...graph.attestations.filter((one) => one.lexemeId === lexemeId),
+      ...graph.imagePrompts.filter((one) => one.lexemeId === lexemeId),
+      ...graph.pronunciations.filter((one) => one.lexemeId === lexemeId)
+    ];
+    return Object.fromEntries(records.map((record) => [record.id, record.revision]));
   }
 
   async delete(kind: EntityKind, id: string): Promise<void> {

@@ -188,6 +188,8 @@ export interface ServerHealth {
 
 export type PullResponse = SyncEnvelope & { changes: VocabularyGraph };
 export type PushResponse = SyncEnvelope & { records: Partial<VocabularyGraph> };
+/** A saved article: the records the server wrote, the entry's id, and the job enriching it. */
+export type ArticleSaveResponse = PushResponse & { lexemeId: string; jobId: string | null };
 export type ResetResponse = SyncEnvelope & { deleted: number };
 
 const API_PATH = "/api/acervo/v1";
@@ -691,6 +693,22 @@ export const backendSession = {
       method: "POST",
       body: JSON.stringify({
         schemaVersion: SCHEMA_VERSION, deviceId, changes,
+        ...(options.enrich === false ? { enrich: false } : {})
+      })
+    });
+  },
+  /**
+   * One article, as the document the device parsed. The server works out what it means for the
+   * stored entry and writes it in one transaction; `base` is the revision this replica holds of
+   * each of the entry's records, so an edit made from a stale copy is refused rather than laid over
+   * a newer one.
+   */
+  saveArticle(deviceId: string, draft: ArticleDraft, minted: string[], base: Record<string, number>,
+              options: { enrich?: boolean } = {}): Promise<ArticleSaveResponse> {
+    return client.call<ArticleSaveResponse>("/articles", {
+      method: "POST",
+      body: JSON.stringify({
+        schemaVersion: SCHEMA_VERSION, deviceId, draft, minted, base,
         ...(options.enrich === false ? { enrich: false } : {})
       })
     });

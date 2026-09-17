@@ -1,9 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryDatabase } from "./localDatabase";
 import { LOCAL_SCHEMA_VERSION, LocalAcervoRepository } from "./repository";
 import { fakeRemote } from "./testRemote";
 import { articleFor } from "./selectors";
-import { clipExampleId } from "./ids";
 import { parseArticle, YAML_TEMPLATE, yamlFor } from "./yaml";
 
 const lexemeInput = {
@@ -210,7 +209,10 @@ describe("the Acervo repository", () => {
 });
 
 describe("saving an article edited as YAML", () => {
-  /** A repository holding one seeded entry, ready to be edited through its YAML projection. */
+  /* What the save *means* is the server's — `tests/unit/server/test_articles.py` is that suite.
+     What is left here is the device's half: one round trip carrying the draft, the ids it minted
+     and what the replica held, and nothing local moving until the server has answered. */
+
   async function seeded() {
     const database = new MemoryDatabase();
     const repository = new LocalAcervoRepository(database);
@@ -234,217 +236,47 @@ describe("saving an article edited as YAML", () => {
     return { database, repository, remote, draft };
   }
 
-  it("sends an update, a creation and a removal as one batch", async () => {
+  it("sends the document once and stores what the server wrote", async () => {
     const { repository, remote, draft } = await seeded();
-    const article = draft();
-    article.emoji = "🫠";
-    article.senses[0].examples[0].id = null;          // replaced rather than edited
-    article.senses.push({
-      id: null, order: 1, definition: "Sentir una emoción intensa.", definitionLang: "es",
-      glosses: [{ lang: "en", terms: ["to swoon"] }], domain: null, emoji: null, examples: [], images: []
-    });
-    const before = remote.sent.length;
-    await repository.saveArticle(article);
-
-    expect(remote.sent.length - before).toBe(1);
-    const snapshot = repository.snapshot();
-    expect(snapshot.lexemes[0].emoji).toBe("🫠");
-    expect(snapshot.senses.filter((sense) => !sense.deleted)).toHaveLength(2);
-    // The example whose id was dropped is replaced: a new row, and the old one tombstoned.
-    expect(snapshot.examples.find((example) => example.id === "example00000001")!.deleted).toBe(true);
-    expect(snapshot.examples.filter((example) => !example.deleted)).toHaveLength(1);
-  });
-
-  it("keeps every id it was given, so nothing is recreated by an ordinary edit", async () => {
-    const { repository, draft } = await seeded();
-    const created = repository.snapshot().lexemes[0].createdAt;
+    const save = vi.spyOn(remote, "saveArticle");
     const article = draft();
     article.headword = "desvanecerse";
-    await repository.saveArticle(article);
+    const minted = new Set(["attest000000077"]);
 
+    expect(await repository.saveArticle(article, minted)).toBe("lexeme000000001");
+
+    expect(save).toHaveBeenCalledTimes(1);
+    const [sent, named, base] = save.mock.calls[0];
+    expect(sent).toEqual(article);
+    expect(named).toBe(minted);
+    // Every record of the entry, at the revision this replica holds it — nothing else.
     const snapshot = repository.snapshot();
-    // Not one tombstone between them: the ids the document carried are the ids that were written.
-    expect(snapshot.lexemes.map((lexeme) => lexeme.id)).toEqual(["lexeme000000001"]);
-    expect(snapshot.senses.map((sense) => sense.id)).toEqual(["sense0000000001"]);
-    expect(snapshot.examples.map((example) => example.id)).toEqual(["example00000001"]);
-    // The Anki join and the image seed hang off these, and provenance off createdAt.
-    expect(snapshot.lexemes[0].createdAt).toBe(created);
+    expect(Object.keys(base).sort()).toEqual(["example00000001", "lexeme000000001", "sense0000000001"]);
+    expect(base.lexeme000000001).toBeLessThan(snapshot.lexemes[0].revision);
     expect(snapshot.lexemes[0].headword).toBe("desvanecerse");
   });
 
-  it("derives a clip example's id from its sense and its segment, never at random", async () => {
-    /* The one example id that is not random, for the reason a picture's is not: a saved document and
-       the server's clip search do not coordinate, so a shared derivation is what makes two writers
-       that chose the same segment converge on one row. An import that minted a random one instead
-       would hand the server a sense it could clip a second time. */
-    const { repository, draft } = await seeded();
-    const clipped = draft();
-    clipped.senses[0].examples.push({
-      id: null, text: "Se desmayó en pleno directo.", textLang: "es",
-      translation: "She passed out live on air.", translationLang: "en", origin: "subtitle",
-      sourceAttestationId: null, modelId: null, videoRef: "https://youtu.be/od_YtGbRC48",
-      videoTitle: "Informe semanal", videoChannel: "DW Español", videoStart: 252, videoEnd: 258,
-      clipRef: "seg_4b1c7d2e9a350f68cd41", imageRef: null, emotion: null, note: null,
-      matchedForm: null, matchedTranslationForm: null
-    });
-    await repository.saveArticle(clipped);
-
-    const senseId = clipped.senses[0].id!;
-    const written = repository.snapshot().examples.find((example) => example.origin === "subtitle")!;
-    expect(written.id).toBe(clipExampleId(senseId, "seg_4b1c7d2e9a350f68cd41"));
-
-    // Saving the same document again is the second writer: it finds the row, it does not add one.
-    await repository.saveArticle(clipped);
-    expect(repository.snapshot().examples.filter((example) => !example.deleted && example.origin === "subtitle"))
-      .toHaveLength(1);
-  });
-
-  it("carries the examples of a removed sense away with it", async () => {
-    const { repository, draft } = await seeded();
-    const added = draft();
-    added.senses.push({
-      id: null, order: 1, definition: "Sentir una emoción intensa.", definitionLang: "es",
-      glosses: [{ lang: "en", terms: ["to swoon"] }], domain: null, emoji: null, images: [],
-      examples: [{
-        id: null, text: "Casi me desmayo de la emoción.", textLang: "es", translation: null,
-        translationLang: null, origin: "manual", sourceAttestationId: null, modelId: null,
-        videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
-        clipRef: null, imageRef: null, emotion: null,
-        note: null, matchedForm: null, matchedTranslationForm: null
-      }]
-    });
-    await repository.saveArticle(added);
-
-    // Now drop the original sense. Its example is never mentioned again, and must not survive it.
-    const trimmed = draft();
-    trimmed.senses = trimmed.senses.filter((sense) => sense.id !== "sense0000000001");
-    await repository.saveArticle(trimmed);
-
-    const snapshot = repository.snapshot();
-    expect(snapshot.senses.find((sense) => sense.id === "sense0000000001")!.deleted).toBe(true);
-    expect(snapshot.examples.find((example) => example.id === "example00000001")!.deleted).toBe(true);
-    expect(snapshot.examples.filter((example) => !example.deleted)).toHaveLength(1);
-  });
-
-  it("creates a whole entry when the document carries no ids", async () => {
+  it("names no base for an entry that does not exist yet", async () => {
     const { repository, remote } = await seeded();
+    const save = vi.spyOn(remote, "saveArticle");
     const article = parseArticle(YAML_TEMPLATE
       .replace('headword: ""', "headword: sobremesa")
-      .replace('topics: []', "topics: [Health]")
       .replace('definition: ""', "definition: Charla tras la comida.")
       .replace('terms: [""]', "terms: [after-dinner talk]")
       .replace('- text: ""', "- text: La sobremesa duró dos horas.")
       .replace('translation: ""', "translation: The talk lasted two hours."));
-    const before = remote.sent.length;
     const id = await repository.saveArticle(article);
-
-    expect(remote.sent.length - before).toBe(1);
-    expect(id).toMatch(/^[a-z0-9]{15}$/);
-    const created = repository.snapshot().lexemes.find((lexeme) => lexeme.id === id)!;
-    expect(created.headword).toBe("sobremesa");
-    expect(created.topicIds).toEqual(["topic0000000001"]);
+    expect(save.mock.calls[0][2]).toEqual({});
+    expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === id)!.headword).toBe("sobremesa");
   });
 
-  it("creates the ids a generated document minted, so an example can name its attestation", async () => {
-    const { repository, remote } = await seeded();
-    const before = remote.sent.length;
-    // What the ingest endpoint proposes: a new entry whose example points at an attestation that
-    // does not exist yet, because both are created by this one save.
-    const id = await repository.saveArticle({
-      id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null, ipa: null,
-      pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "\u{1FA9D}",
-      topics: ["Health"], status: "inbox", shortGloss: "hook", notes: [], images: [],
-      senses: [{
-        id: "sense0000000091", order: 0, definition: "Gancho de metal curvo.", definitionLang: "es",
-        glosses: [{ lang: "en", terms: ["hook"] }], domain: null, emoji: null, images: [],
-        examples: [{
-          id: "example00000091", text: "Viene con un garfio.", textLang: "es",
-          translation: "It comes with a hook.", translationLang: "en", origin: "attestation",
-          sourceAttestationId: "attest000000091", modelId: null, videoRef: null, videoTitle: null,
-          videoChannel: null, videoStart: null, videoEnd: null, clipRef: null,
-          imageRef: null, emotion: null, note: null, matchedForm: null,
-          matchedTranslationForm: null
-        }]
-      }],
-      attestations: [{
-        id: "attest000000091", text: "Viene con un garfio.", translation: null, sourceUrl: null,
-        sourceTitle: null, sourceKind: "unknown", capturedAt: "2026-08-29T12:00:00.000Z"
-      }]
-    });
-
-    expect(remote.sent.length - before).toBe(1);
-    const saved = repository.snapshot();
-    expect(saved.senses.find((sense) => sense.id === "sense0000000091")?.lexemeId).toBe(id);
-    expect(saved.attestations.find((record) => record.id === "attest000000091")?.lexemeId).toBe(id);
-    expect(saved.examples.find((record) => record.id === "example00000091")?.sourceAttestationId)
-      .toBe("attest000000091");
+  it("passes on a request to hold enrichment back", async () => {
+    const { repository, remote, draft } = await seeded();
+    await repository.saveArticle(draft(), undefined, { enrich: false });
+    expect(remote.options.at(-1)).toEqual({ enrich: false });
   });
 
-  it("still refuses an unknown id when the document edits an entry that exists", async () => {
-    const { repository, draft } = await seeded();
-    const article = draft();
-    // The article is stored, so every id in it should name a stored record. One that names nothing
-    // is a typo or a paste from elsewhere, and silently creating a record under it would hide that.
-    article.senses[0].id = "sense0000000099";
-    await expect(repository.saveArticle(article)).rejects.toThrow("not in your vocabulary");
-  });
-
-  it("creates a record whose id the caller minted, when the caller says it minted it", async () => {
-    /* The one exception, and it is an argument rather than anything in the document: a chat
-       proposal that adds an example drawn from a sentence you just supplied needs both records in
-       one save, and the example has to name the attestation for `origin: "attestation"` to
-       validate. Nothing in the text claims this — a hand-typed document cannot ask for it. */
-    const { repository, draft } = await seeded();
-    const article = draft();
-    article.attestations.push({
-      id: "attest000000077", text: "Se desmayó en el metro.", translation: "He fainted on the metro.",
-      sourceUrl: null, sourceTitle: "Radio", sourceKind: "video",
-      capturedAt: "2026-08-28T12:00:00.000Z"
-    });
-    article.senses[0].examples.push({
-      id: null, text: "Se desmayó en el metro.", textLang: "es",
-      translation: "He fainted on the metro.", translationLang: "en",
-      origin: "attestation", sourceAttestationId: "attest000000077", modelId: null,
-      videoRef: null, videoTitle: null, videoChannel: null, videoStart: null, videoEnd: null,
-      clipRef: null, imageRef: null, emotion: null, note: null,
-      matchedForm: null, matchedTranslationForm: null
-    });
-    await repository.saveArticle(article, new Set(["attest000000077"]));
-    const stored = articleFor(repository.snapshot(), article.id!)!;
-    expect(stored.attestations.some((one) => one.id === "attest000000077")).toBe(true);
-    expect(stored.senses[0].examples.at(-1)!.sourceAttestationId).toBe("attest000000077");
-  });
-
-  it("refuses the same document when nothing says the id was minted", async () => {
-    // The rule stays exactly as strong for every other caller, which is the point of making the
-    // exception an argument rather than a field.
-    const { repository, draft } = await seeded();
-    const article = draft();
-    article.attestations.push({
-      id: "attest000000078", text: "Se desmayó en el metro.", translation: null,
-      sourceUrl: null, sourceTitle: null, sourceKind: "unknown",
-      capturedAt: "2026-08-28T12:00:00.000Z"
-    });
-    await expect(repository.saveArticle(article)).rejects.toThrow("not in your vocabulary");
-  });
-
-  it("refuses a topic that does not exist, and names the ones that do", async () => {
-    const { repository, draft } = await seeded();
-    const article = draft();
-    article.topics = ["Cooking"];
-    await expect(repository.saveArticle(article)).rejects.toThrow('There is no topic called "Cooking"');
-    await expect(repository.saveArticle(article)).rejects.toThrow("Health");
-  });
-
-  it("refuses an id belonging to another entry rather than stealing the record", async () => {
-    const { repository, draft } = await seeded();
-    await repository.saveLexeme({ ...lexemeInput, headword: "mareo" }, "lexeme000000002");
-    const article = draft();
-    article.id = "lexeme000000002";
-    await expect(repository.saveArticle(article)).rejects.toThrow("belongs to a different entry");
-  });
-
-  it("changes nothing locally when the server refuses the batch", async () => {
+  it("changes nothing locally when the server refuses the save", async () => {
     const { database, repository, remote, draft } = await seeded();
     const before = await database.read();
     const article = draft();
@@ -455,5 +287,11 @@ describe("saving an article edited as YAML", () => {
 
     expect(await database.read()).toEqual(before);
     expect(repository.snapshot().lexemes[0].headword).toBe("desmayarse");
+  });
+
+  it("refuses to save without a server, and changes nothing", async () => {
+    const { repository, draft } = await seeded();
+    repository.attachRemote(null);
+    await expect(repository.saveArticle(draft())).rejects.toThrow("not connected to the server");
   });
 });

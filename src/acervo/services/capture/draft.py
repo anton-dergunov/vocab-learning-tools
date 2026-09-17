@@ -206,7 +206,7 @@ def draft_from(
             topic_names[name.lower()] for name in text_list(answer.get("topics")) if name.lower() in topic_names
         ],
         # A draft is a proposal a person reads before saving, so saving it files an ordinary word. The
-        # Inbox is for what arrived without anyone reading it, which `apply_draft` decides.
+        # Inbox is for what arrived without anyone reading it, which the headless save decides.
         "status": "active",
         "shortGloss": trimmed(answer.get("shortGloss")) or None,
         "notes": text_list(answer.get("notes")),
