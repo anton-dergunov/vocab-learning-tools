@@ -8,10 +8,9 @@ the only reason per-sense images beat one picture per word.
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Sequence
 
 from acervo.models import ChainExhausted, TextResult, call, chain, journal
 from acervo.models.errors import SHAPE_TRIES, ProviderUnavailable
@@ -166,29 +165,24 @@ class BriefWriter:
         self.weights = weights
         self.boost_variety = boost_variety
 
-    def write(self, article: ArticleView, attempts: int = 6,
-              wait: Callable[[float], None] = time.sleep) -> tuple[list[SenseBrief], dict[str, Any]]:
-        """Write the briefs, waiting out a chain that is entirely over quota.
+    def write(self, article: ArticleView) -> tuple[list[SenseBrief], dict[str, Any]]:
+        """Write the briefs: one walk of the chain, and one more only for a malformed answer.
 
-        The chain handles one provider being rate limited by moving to the next, so this loop only
-        runs when *every* pair has refused — which is the single-provider case, and the long sweep
-        that eventually meets a daily allowance. Without it a 429 loses every sense of that lexeme,
-        which is how ten English senses went missing from an otherwise clean 13-hour run.
+        **Whether to wait out a quota is not decided here.** The chain handles one provider being
+        rate limited by moving to the next; a chain that is entirely over quota is the caller's
+        condition to wait out — the server's job runner (`acervo/work/`) and the laptop image run
+        each do that in the one place they decide retries. A ladder here was a second layer that
+        neither of them knew about.
 
-        **The ladder is for quota, and only quota.** A chain that failed because no model would hold
-        the shape is not waiting for anything: the same prompt and the same models produce the same
-        malformed answer in four minutes' time. Such a chain is retried **once, immediately** — a
-        second sample is worth one try and no more — and then reported. Sleeping there was pure
-        latency, and it is what made a single bad schema read as a hung request.
+        A chain that failed because no model would hold the shape is re-sampled **once,
+        immediately** — a second sample is worth one try and no more — and then reported.
         """
-        for attempt in range(1, attempts + 1):
+        for attempt in range(1, SHAPE_TRIES + 1):
             try:
                 return self._write_once(article)
             except ChainExhausted as exhausted:
-                if attempt == attempts or (exhausted.waited_on_nothing and attempt >= SHAPE_TRIES):
+                if attempt == SHAPE_TRIES or not exhausted.waited_on_nothing:
                     raise
-                if not exhausted.waited_on_nothing:
-                    wait(min(15.0 * 2 ** (attempt - 1), 240.0))
         raise AssertionError("unreachable")
 
     def _write_once(self, article: ArticleView) -> tuple[list[SenseBrief], dict[str, Any]]:

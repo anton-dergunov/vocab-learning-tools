@@ -33,12 +33,10 @@ from acervo.settings import Settings
 # What a chosen clip is written as: an ordinary example whose origin says it was spoken.
 CLIP_ORIGIN = "subtitle"
 
-# How many whole-chain walks a *request* is worth, as in `services/images.py` and for the same
-# reason: the sweep's default exists to outlast a daily allowance, and nobody is waiting on it.
-REQUEST_ATTEMPTS = 2
+# One attempt, as in `services/images.py`: retrying is the job runner's decision.
 
-# `searchEnabled` is checked by the two things that search *on their own* — the sweep and the
-# interface's enrichment engine — and deliberately not by the route below. A route searches what it
+# `searchEnabled` is checked by the thing that searches *on its own* — the `enrich` job — and
+# deliberately not by the route below. A route searches what it
 # is asked, because every caller of it other than those two is a person pressing a button.
 
 CORPUS_REFUSALS: dict[str, tuple[int, str, str]] = {
@@ -170,13 +168,9 @@ def find_clips(settings: Settings, owner: str, device: str, lexeme_id: str) -> d
     selector = ClipSelector(load_catalogue(), resolved, template)
     gloss_lang = (article.gloss_langs or ["en"])[0]
     try:
-        # Two walks, not four: this is the request path and somebody is watching the article. The
-        # sweep keeps the longer default, where waiting out a daily allowance is the whole point.
         # Nothing is stamped on any path that raises, so a word refused here stays unconsulted and
-        # the sweep will find it again — which is exactly what must happen when no model answered.
-        selections, dropped, usage = selector.select(
-            article, candidates, gloss_lang, attempts=REQUEST_ATTEMPTS
-        )
+        # a later job will find it again — which is exactly what must happen when no model answered.
+        selections, dropped, usage = selector.select(article, candidates, gloss_lang)
     except ChainExhausted as exhausted:
         raise refusal(exhausted.last) from None
     except ProviderError as error:
@@ -208,7 +202,7 @@ def _write(owner: str, device: str, article: ArticleView, records: dict[str, lis
     changes: dict[str, list[dict]] = {"lexemes": [lexeme]}
     if examples:
         changes["examples"] = examples
-    graph.merge_graph(owner, device, changes)
+    graph.merge_graph(owner, device, changes, enqueue=None)
     return _answer(article, examples, dropped, usage, searched=True, skipped=skipped)
 
 

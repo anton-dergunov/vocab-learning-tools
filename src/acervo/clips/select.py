@@ -29,9 +29,8 @@ pipeline rather than two pipelines.
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Any, Sequence
 
 from acervo.article import ArticleView
 from acervo.models import ChainExhausted, TextResult, call, chain, journal
@@ -245,25 +244,19 @@ class ClipSelector:
         self.candidates = tuple(candidates)
         self.template = template
 
-    def select(self, article: ArticleView, candidates: Sequence[Candidate], gloss_lang: str,
-               attempts: int = 4,
-               wait: Callable[[float], None] = time.sleep) -> tuple[list[Selection], int, dict[str, Any]]:
-        """Wait out a chain that is entirely over quota, the way `BriefWriter.write` does.
+    def select(self, article: ArticleView, candidates: Sequence[Candidate],
+               gloss_lang: str) -> tuple[list[Selection], int, dict[str, Any]]:
+        """One walk of the chain, and one more only for a malformed answer.
 
-        The chain handles one provider being rate limited by moving to the next, so this loop only
-        runs when *every* pair has refused — the single-provider case, and the long sweep that
-        eventually meets a daily allowance.
+        A chain entirely over quota is raised for the caller to wait out, as in `BriefWriter.write`:
+        retrying is the job runner's decision, made in one place.
         """
-        for attempt in range(1, attempts + 1):
+        for attempt in range(1, SHAPE_TRIES + 1):
             try:
                 return self._select_once(article, candidates, gloss_lang)
             except ChainExhausted as exhausted:
-                if attempt == attempts or (exhausted.waited_on_nothing and attempt >= SHAPE_TRIES):
+                if attempt == SHAPE_TRIES or not exhausted.waited_on_nothing:
                     raise
-                # Only a quota or an outage is worth sleeping on; a chain that answered with the
-                # wrong shape will answer the same way after any delay. See `BriefWriter.write`.
-                if not exhausted.waited_on_nothing:
-                    wait(min(15.0 * 2 ** (attempt - 1), 240.0))
         raise AssertionError("unreachable")
 
     def _select_once(self, article: ArticleView, candidates: Sequence[Candidate],

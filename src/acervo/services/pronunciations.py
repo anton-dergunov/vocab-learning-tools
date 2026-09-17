@@ -341,7 +341,7 @@ def _store(settings: Settings, owner: str, device: str, target: Target, existing
         "revision": (existing or {}).get("revision", 0),
     }
     try:
-        graph.merge_graph(owner, device, {"pronunciations": [row]})
+        graph.merge_graph(owner, device, {"pronunciations": [row]}, enqueue=None)
     except Exception:
         if reference != (existing or {}).get("audioRef"):
             destination.unlink(missing_ok=True)

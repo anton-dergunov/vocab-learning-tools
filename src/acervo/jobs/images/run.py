@@ -24,9 +24,13 @@ from acervo.images.compose import compose, prompt_version
 from acervo.images.ids import image_prompt_id, seed_for
 from acervo.images.render import Rendered, Renderer
 from acervo.images.styles import StyleTable
-from acervo.models import ProviderRefused, ProviderUnavailable, chain
+from acervo.models import ChainExhausted, ProviderRefused, ProviderUnavailable, chain
 from acervo.models.cooldown import retry_after_of
 from acervo.models.pacing import Key, ModelPool
+
+
+# Whole-chain walks a brief is worth before the run gives up on that word.
+BRIEF_ATTEMPTS = 6
 
 
 @dataclass
@@ -136,7 +140,8 @@ class Runner:
     def __init__(self, store: Store, writer: BriefWriter, renderer: Renderer, styles: StyleTable,
                  template_path: str | Path, *, candidates: Sequence[chain.Candidate],
                  workers: int = 6, rate_limit: int = 0,
-                 attempts: int = 4, report: Callable[[str], None] = print) -> None:
+                 attempts: int = 4, report: Callable[[str], None] = print,
+                 wait: Callable[[float], None] = time.sleep) -> None:
         self.store = store
         self.writer = writer
         self.renderer = renderer
@@ -144,6 +149,7 @@ class Runner:
         self.version = prompt_version(template_path, styles.digest)
         self.workers = workers
         self.attempts = max(1, attempts)
+        self.wait = wait
         self.candidates = tuple(candidates)
         if not self.candidates:
             raise ValueError("An image run needs at least one (provider, model) pair.")
@@ -175,6 +181,22 @@ class Runner:
         with self._lock:
             return self._brief_locks.setdefault(lexeme_id, threading.Lock())
 
+    def _write(self, article: ArticleView) -> tuple[list[SenseBrief], dict[str, Any]]:
+        """Write the briefs, waiting out a chain that is entirely over quota.
+
+        This run is the one place that decides to wait: a long unattended run eventually meets a
+        daily allowance, and without the ladder a 429 loses every sense of that lexeme. A chain that
+        only answered badly is not waiting for anything, so it is raised at once.
+        """
+        for attempt in range(1, BRIEF_ATTEMPTS + 1):
+            try:
+                return self.writer.write(article)
+            except ChainExhausted as exhausted:
+                if attempt == BRIEF_ATTEMPTS or exhausted.waited_on_nothing:
+                    raise
+                self.wait(min(15.0 * 2 ** (attempt - 1), 240.0))
+        raise AssertionError("unreachable")
+
     def _briefs_for(self, article: ArticleView,
                     refresh: bool = False) -> tuple[dict[str, SenseBrief], str]:
         """One text call per lexeme, cached, and reused by every sense of that lexeme in this run.
@@ -205,7 +227,7 @@ class Runner:
                     )
                     for item in cached.get("senses", [])
                 }, written_by
-            briefs, usage = self.writer.write(article)
+            briefs, usage = self._write(article)
             self.store.write(path, {
                 "lexemeId": article.id,
                 "headword": article.headword,

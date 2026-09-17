@@ -366,27 +366,26 @@ def test_a_provider_block_is_not_planned_again(tmp_path: Path):
     assert len(plan(articles, store, drawn=set(), redo=True)) == 2
 
 
-def test_the_brief_writer_waits_out_a_chain_that_is_entirely_over_quota():
+def test_the_laptop_run_waits_out_a_chain_that_is_entirely_over_quota():
     """A text 429 used to lose every sense of that lexeme outright. With a chain the first 429 is
-    answered by the next provider, so this waits only when every pair has refused."""
-    from acervo.images.brief import BriefWriter
+    answered by the next provider, so the run waits only when every pair has refused — and the run
+    is where that waiting lives, not the brief writer."""
+    from acervo.jobs.images.run import Runner
     from acervo.models import ChainExhausted, ProviderUnavailable
 
-    class Flaky(BriefWriter):
-        def __init__(self):                    # no catalogue, no template read
-            self.calls = 0
+    class Flaky:
+        calls = 0
 
-        def _write_once(self, article):
+        def write(self, article):
             self.calls += 1
             if self.calls < 3:
-                # Not a string to sniff: the chain has already tried every pair and every one of
-                # them refused, which is the only case this retry is for.
                 raise ChainExhausted((("vertex", "m"),), ProviderUnavailable("rate_limited", "429"))
             return ["ok"], {"model": "m"}
 
-    writer, slept = Flaky(), []
-    briefs, _ = writer.write(build_articles(changes(), "es")[0], wait=slept.append)
-    assert briefs == ["ok"] and writer.calls == 3
+    runner, slept = Runner.__new__(Runner), []
+    runner.writer, runner.wait = Flaky(), slept.append
+    briefs, _ = runner._write(build_articles(changes(), "es")[0])
+    assert briefs == ["ok"] and runner.writer.calls == 3
     assert slept == [15.0, 30.0]               # and it backs off rather than hammering
 
 
@@ -403,7 +402,7 @@ def test_a_brief_failure_that_is_not_quota_is_raised_at_once():
 
     writer = Broken()
     with pytest.raises(ValueError):
-        writer.write(build_articles(changes(), "es")[0], wait=lambda _: None)
+        writer.write(build_articles(changes(), "es")[0])
     assert writer.calls == 1
 
 
@@ -506,7 +505,7 @@ def _runner(tmp_path, renderer, candidates, briefs, **extra):
     styles = load_styles(STYLES)
 
     class Writer:
-        def write(self, article, attempts=6, wait=None):
+        def write(self, article):
             return briefs(article, styles), {"model": "brief-model", "costUsd": 0.001}
 
     return Runner(store=Store(tmp_path), writer=Writer(), renderer=renderer, styles=styles,
@@ -657,7 +656,6 @@ def test_a_chain_that_only_answered_badly_is_retried_at_once_and_then_reported(m
     """
     from acervo.models.errors import ChainExhausted
 
-    slept: list[float] = []
     walks = []
     def once(article):
         walks.append(1)
@@ -665,20 +663,20 @@ def test_a_chain_that_only_answered_badly_is_retried_at_once_and_then_reported(m
     monkeypatch.setattr(_writer().__class__, "_write_once", staticmethod(once))
 
     with pytest.raises(ChainExhausted):
-        _writer().write(object(), wait=slept.append)
-    assert slept == []
+        _writer().write(object())
     assert len(walks) == 2
 
 
-def test_a_chain_that_ran_out_of_quota_still_climbs_the_ladder(monkeypatch):
-    """Untouched, because that is what the ladder was written for: a 429 passes with time."""
+def test_a_chain_that_ran_out_of_quota_is_left_to_the_caller_to_wait_out(monkeypatch):
+    """The writer makes one walk. Waiting is the job runner's decision, or the laptop run's."""
     from acervo.models.errors import ChainExhausted
 
-    slept: list[float] = []
+    walks = []
     def once(article):
+        walks.append(1)
         raise _exhausted("rate_limited")
     monkeypatch.setattr(_writer().__class__, "_write_once", staticmethod(once))
 
     with pytest.raises(ChainExhausted):
-        _writer().write(object(), attempts=4, wait=slept.append)
-    assert slept == [15.0, 30.0, 60.0]
+        _writer().write(object())
+    assert len(walks) == 1

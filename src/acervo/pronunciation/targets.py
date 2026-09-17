@@ -102,7 +102,9 @@ def wanted(changes: Mapping[str, list[dict]], lexeme_id: str, choice: Mapping[st
             found.append(target_in(changes, "sense", sense["id"]))
         if choice.get("examples"):
             for example in live(changes.get("examples", [])):
-                if example.get("senseId") == sense["id"] and _same_language(example.get("textLang", ""), language):
+                # A clip example is recorded speech already, and is never recorded again.
+                if (example.get("senseId") == sense["id"] and not example.get("videoRef")
+                        and _same_language(example.get("textLang", ""), language)):
                     found.append(target_in(changes, "example", example["id"]))
     return [target for target in found if target is not None]
 

@@ -68,5 +68,5 @@ def apply_draft(owner: str, device: str, draft: dict[str, Any], topics: list[dic
 
     # The same route every other writer uses: same validation, same revision allocation, same
     # transaction. Nothing about capture gets a private way into the store.
-    graph.merge_graph(owner, device, changes)
+    graph.merge_graph(owner, device, changes, enqueue=graph.Enqueue("ingest"))
     return lexeme_id

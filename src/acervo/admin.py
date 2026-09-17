@@ -85,7 +85,9 @@ def seed(settings: Settings, email: str) -> int:
 
     written = sum(len(records) for records in changes.values())
     if written:
-        graph.merge_graph(owner["id"], SEED_DEVICE, changes)
+        # Disposable demonstration words: enriching them would spend the owner's allowances on
+        # vocabulary nobody meant to keep.
+        graph.merge_graph(owner["id"], SEED_DEVICE, changes, enqueue=None)
     print(f"Seeded {written} records for {email}; {skipped} already held.")
     return 0
 

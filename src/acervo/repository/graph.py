@@ -13,10 +13,12 @@ the only thing that stops a client asking for revisions the new database has not
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import Connection, func, or_, select
 
+from acervo import notify
 from acervo.db import tables
 from acervo.db.tables import TABLES
 from acervo.domain import validation
@@ -29,6 +31,7 @@ from acervo.domain.projection import (
     projected,
 )
 from acervo.errors import ApiError, RecordRefused
+from acervo.repository import jobs
 from acervo.repository.session import reading, transaction
 from acervo.domain import SCHEMA_VERSION
 
@@ -178,8 +181,11 @@ def merge_record(
     owner: str,
     device: str,
     value: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Apply one client record.
+) -> tuple[dict[str, Any], bool]:
+    """Apply one client record. Returns it, and whether it has just come into being.
+
+    A record comes into being when it is inserted, and also when a tombstone is revived — a derived
+    or re-used id makes those the same event for whoever needs to react to it.
 
     The whole batch is refused if anything here raises: a save is one article, and half an article is
     worse than none.
@@ -233,22 +239,81 @@ def merge_record(
         connection.execute(table.insert().values(**row))
     else:
         connection.execute(table.update().where(table.c.id == identifier).values(**row))
-    return projected(collection, row)
+    arrived = (stored is None or bool(stored["deleted"])) and not row["deleted"]
+    return projected(collection, row), arrived
 
 
-def merge_graph(owner: str, device: str, changes: Mapping[str, Any]) -> dict[str, Any]:
-    """Apply a change set in graph order, so a record's relations always resolve before it lands."""
+@dataclass(frozen=True)
+class Enqueue:
+    """What a write that creates a word, or a sense of one, asks the server to do about it.
+
+    `merge_graph` enqueues `enrich` in the **same transaction** as the write, which is what lets a
+    save start enrichment without a queue ever being the only record that work is needed
+    (`docs/plans/processing-flow.md` §4.3). A client never asks for enrichment; it saves.
+    """
+
+    trigger: str = "save"
+    parent: str | None = None
+
+
+SAVE = Enqueue()
+
+
+def _live_lexeme(connection: Connection, owner: str, lexeme_id: str) -> bool:
+    return connection.execute(
+        select(tables.lexemes.c.id).where(
+            tables.lexemes.c.id == lexeme_id,
+            tables.lexemes.c.owner == owner,
+            tables.lexemes.c.deleted.is_(False),
+        )
+    ).first() is not None
+
+
+def merge_graph(
+    owner: str, device: str, changes: Mapping[str, Any], *, enqueue: Enqueue | None = SAVE
+) -> dict[str, Any]:
+    """Apply a change set in graph order, so a record's relations always resolve before it lands.
+
+    A word that arrives, or gains a sense, is enqueued for enrichment in the same transaction unless
+    `enqueue` is None — which is what an enrichment's own writes pass, and a bundle import that
+    restores pictures before it asks for the rest. Editing a sense's text enqueues nothing: a picture
+    that no longer fits is the owner's call, through Redraw.
+    """
+    queued: list[dict[str, Any]] = []
     with transaction() as connection:
-        written = {
-            collection.key: [
-                merge_record(connection, collection, owner, device, value)
-                for value in (changes.get(collection.key) or [])
-                if isinstance(value, Mapping)
+        written: dict[str, list[dict[str, Any]]] = {}
+        words: dict[str, None] = {}
+        for collection in COLLECTIONS:
+            rows = []
+            for value in changes.get(collection.key) or []:
+                if not isinstance(value, Mapping):
+                    continue
+                record, arrived = merge_record(connection, collection, owner, device, value)
+                rows.append(record)
+                if arrived and collection.key == "lexemes":
+                    words[record["id"]] = None
+                elif arrived and collection.key == "senses":
+                    words[record["lexemeId"]] = None
+            written[collection.key] = rows
+        if enqueue is not None:
+            queued = [
+                jobs.enqueue_enrich(
+                    connection, owner, lexeme_id, trigger=enqueue.trigger, parent=enqueue.parent
+                )
+                for lexeme_id in words
+                if _live_lexeme(connection, owner, lexeme_id)
             ]
-            for collection in COLLECTIONS
-        }
         sequence = ensure_sequence(connection, owner)
-        return {**_envelope(connection, owner, sequence), "records": written}
+        result = {
+            **_envelope(connection, owner, sequence),
+            "records": written,
+            # Which job will enrich each word this write created, so the caller can follow it.
+            "enrich": {job["subject"]["id"]: job["id"] for job in queued},
+        }
+    for job in queued:
+        notify.queued(owner, job)
+    notify.revision(owner, result["cursor"])
+    return result
 
 
 def tombstone_all_words(owner: str, device: str) -> dict[str, Any]:
@@ -276,7 +341,9 @@ def tombstone_all_words(owner: str, device: str) -> dict[str, Any]:
                 )
                 count += 1
         sequence = ensure_sequence(connection, owner)
-        return {**_envelope(connection, owner, sequence), "deleted": count}
+        result = {**_envelope(connection, owner, sequence), "deleted": count}
+    notify.revision(owner, result["cursor"])
+    return result
 
 
 # ── what capture needs to know about the owner ──────────────────────────────

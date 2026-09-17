@@ -20,10 +20,10 @@ from pathlib import Path
 import pytest
 
 from acervo.client import API_PATH, AcervoClient, AcervoError
+from acervo.domain import SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parents[2]
 API = API_PATH
-SCHEMA_VERSION = 6
 
 pytestmark = pytest.mark.integration
 
@@ -160,8 +160,9 @@ def test_the_deploy_preflight_sees_an_open_job_and_cancel_clears_it(running):
         "from acervo.settings import settings\n"
         "open_database(settings().database_path)\n"
         f"owner = accounts.by_email({email!r})['id']\n"
-        "job = jobs.enqueue(owner, 'corpus.update', trigger='manual')\n"
+        # One transaction, so the runner never sees the job before it is held back.
         "with transaction() as c:\n"
+        "    job = jobs._insert(c, owner, 'corpus.update', trigger='manual')\n"
         "    c.execute(update(tables.jobs).where(tables.jobs.c.id == job['id'])"
         ".values(not_before='9999-12-31T00:00:00.000Z'))\n",
     )
