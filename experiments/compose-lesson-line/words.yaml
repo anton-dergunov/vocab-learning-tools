@@ -1,0 +1,180 @@
+# The fixed word list. Tracked, so two runs compare the same thing.
+#
+# Chosen to span what is hard rather than what is typical: a word whose single most common
+# translation is obvious, several where it is contested, two where no single term exists at all, and
+# one that should honestly produce `emotion: null`. Four languages, because a prompt written while
+# looking at Spanish is a prompt that works in Spanish.
+#
+# `vocabularies` reuses seed_data.py's STARTER_VOCABULARIES verbatim. Note that English glosses into
+# Russian and Chinese into Russian-then-English: `primaryGloss` follows the FIRST gloss language, so
+# an English-shaped answer there is a rule violation the scorer can see.
+
+vocabularies:
+  es: {language: es, definitionLang: es, glossLangs: [en], notesLang: en}
+  en: {language: en, definitionLang: en, glossLangs: [ru], notesLang: ru}
+  ru: {language: ru, definitionLang: ru, glossLangs: [en], notesLang: en}
+  zh-Hans: {language: zh-Hans, definitionLang: en, glossLangs: [ru, en], notesLang: ru}
+
+topics: [Emotions, Actions, Nature, Culture, Food, Health, Appearance, Technology, Travel, Slang, Social, Places, Misc]
+
+words:
+  - id: la-casa
+    language: es
+    headword: la casa
+    lemma: casa
+    pos: noun
+    why: a plain concrete noun with one obvious term - the easy case, and the control
+
+  - id: picar
+    language: es
+    headword: picar
+    lemma: picar
+    pos: verb
+    why: heavily overloaded - itch, sting, chop, nibble. Which one is "most common" is contested
+    sentences:
+      - text: "Me pica todo el cuerpo desde que dormí en el suelo."
+        translation: "My whole body has been itching since I slept on the floor."
+
+  - id: dar-bronca
+    language: es
+    headword: dar bronca
+    lemma: dar bronca
+    pos: phrase
+    why: multiword idiom carrying a strong feeling
+    topics: [Emotions]
+
+  - id: asco
+    language: es
+    headword: el asco
+    lemma: asco
+    pos: noun
+    why: the strongest feeling in the list - the emotion field should be vivid here
+    topics: [Emotions]
+    sentences:
+      - text: "¡Qué asco de olor, por favor abre la ventana!"
+        translation: "What a disgusting smell, please open the window!"
+
+  - id: el-miercoles
+    language: es
+    headword: el miércoles
+    lemma: miércoles
+    pos: noun
+    why: "deliberately flat. A correct answer is `emotion: null`; a forced feeling here is the failure"
+
+  - id: resulta-que
+    language: es
+    headword: resulta que
+    lemma: resultar
+    pos: phrase
+    why: a discourse marker - no noun-shaped translation, so one term is genuinely awkward
+
+  - id: la-sobremesa
+    language: es
+    headword: la sobremesa
+    lemma: sobremesa
+    pos: noun
+    why: culture-bound, no single English word. Tests whether one term is forced or chosen well
+    topics: [Food, Culture]
+    sentences:
+      - text: "La sobremesa duró más que la comida."
+        translation: "The after-lunch conversation lasted longer than the meal."
+
+  - id: currar
+    language: es
+    headword: currar
+    lemma: currar
+    pos: verb
+    why: colloquial register - the register field should not be neutral
+    topics: [Slang]
+
+  - id: ponerse-malo
+    language: es
+    headword: ponerse malo
+    lemma: ponerse malo
+    pos: phrase
+    why: phrasal, and the gloss shifts with region
+    topics: [Health]
+
+  - id: el-atasco
+    language: es
+    headword: el atasco
+    lemma: atasco
+    pos: noun
+    why: a clean single gloss - traffic jam. The case primaryGloss should find trivially
+    topics: [Travel]
+
+  - id: desmayarse
+    language: es
+    headword: desmayarse
+    lemma: desmayarse
+    pos: verb
+    why: reflexive, and the English is a two-word phrasal verb
+    topics: [Health]
+
+  - id: che
+    language: es
+    headword: che
+    lemma: che
+    pos: expression
+    why: genuinely regional - dialect should be es-AR rather than null
+
+  - id: hoax
+    language: en
+    headword: hoax
+    lemma: hoax
+    pos: noun
+    why: English glosses into RUSSIAN here, so primaryGloss must be Russian
+
+  - id: turmoil
+    language: en
+    headword: turmoil
+    lemma: turmoil
+    pos: noun
+    why: abstract and charged, glossed into Russian
+
+  - id: put-up-with
+    language: en
+    headword: to put up with
+    lemma: put up with
+    pos: phrase
+    why: multiword verb, glossed into Russian where one verb does exist
+
+  - id: magazine
+    language: en
+    headword: magazine
+    lemma: magazine
+    pos: noun
+    why: a false friend for a Russian speaker - notes should say so, and they are written in Russian
+
+  - id: mafan
+    language: zh-Hans
+    headword: 麻烦
+    lemma: 麻烦
+    pos: adj
+    why: reading is REQUIRED for Chinese, and its absence is one of the two hard refusals
+    topics: [Social]
+
+  - id: jiayou
+    language: zh-Hans
+    headword: 加油
+    lemma: 加油
+    pos: expression
+    why: no single word in any target language, and a strong feeling. Glossed into Russian first
+
+  - id: toska
+    language: ru
+    headword: тоска
+    lemma: тоска
+    pos: noun
+    why: famously resists a single English term - the hardest primaryGloss in the list
+    topics: [Emotions]
+    sentences:
+      - text: "На него напала такая тоска, что он неделю не выходил из дома."
+        translation: "Such melancholy came over him that he did not leave the house for a week."
+
+  - id: nichego
+    language: ru
+    headword: ничего
+    lemma: ничего
+    pos: expression
+    why: polysemous discourse word - nothing, never mind, not bad. Choosing one is the whole test

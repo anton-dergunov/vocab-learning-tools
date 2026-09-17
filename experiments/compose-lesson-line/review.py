@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""Layer 3: twenty-five screens, and what they are worth.
+
+The human is not the measurement here — the judge is, over all 180 pairs. These screens are the
+**calibration set** that says how much the judge's verdict can be trusted, as a number (Cohen's κ)
+that every later prompt experiment inherits.
+
+Stratified, because sampling uniformly spends most of the attention on pairs nobody disagrees about:
+the judge's confident calls, the ones where it flipped between orderings, the ones where it
+disagrees with the counts, a random anchor — and four **controls** that are two repeats of the same
+arm. A declared winner on a control is a false positive, and that rate is the reader's own noise
+floor. Without it there is no way to know how much of any signal is real, so nothing on screen says
+which four they are.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import random
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any
+
+import dataset
+import render
+
+from acervo.errors import ApiError
+from acervo.services.capture.draft import draft_from
+
+HERE = Path(__file__).resolve().parent
+SEED = 20260918
+WANTED = {"confident": 8, "flipped": 5, "disagrees": 5, "random": 3, "control": 4}
+
+
+def records_of(run_dir: Path) -> dict[tuple, dict[str, Any]]:
+    out: dict[tuple, dict[str, Any]] = {}
+    for path in sorted(run_dir.rglob("*.json")):
+        if path.name in ("manifest.json", "summary.json") or path.parent.parent.name == "judged":
+            continue
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if "wordId" in record and "arm" in record:
+            out[(record["arm"], record["provider"], record["model"], record["wordId"], record["repeat"])] = record
+    return out
+
+
+def judgements(run_dir: Path) -> dict[tuple, dict[str, str | None]]:
+    """Per comparison: the arm each ordering chose, so a flip is visible."""
+    out: dict[tuple, dict[str, str | None]] = defaultdict(dict)
+    for path in sorted((run_dir / "judged").rglob("*.json")) if (run_dir / "judged").exists() else []:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if record.get("ok"):
+            key = (record["provider"], record["model"], record["wordId"], record["repeat"])
+            out[key][record["order"]] = record.get("winnerArm")
+    return out
+
+
+def consensus(votes: dict[str, str | None]) -> tuple[str, bool]:
+    """The judge's answer for one comparison, and whether the two orderings disagreed."""
+    values = [v for v in votes.values() if v]
+    if len(values) < 2:
+        return (values[0] if values else "same", False)
+    if values[0] != values[1]:
+        return ("same", True)
+    return (values[0], False)
+
+
+def draft_for(record: dict[str, Any], word: dict[str, Any]) -> dict[str, Any] | None:
+    if not record.get("parsedJson") or not isinstance(record.get("reply"), dict):
+        return None
+    try:
+        return draft_from(record["reply"], dataset.resolution_for(word), dataset.request_for(word),
+                          dataset.vocabulary_for(word), dataset.topics(), record["model"])
+    except ApiError:
+        return None
+
+
+def build(run_dir: Path) -> int:
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    rows = {(r["arm"], r["provider"], r["model"], r["wordId"], r["repeat"]): r for r in summary["rows"]}
+    records = records_of(run_dir)
+    votes = judgements(run_dir)
+    by_id = {word["id"]: word for word in dataset.words()}
+    rng = random.Random(SEED)
+
+    pools: dict[str, list[tuple]] = defaultdict(list)
+    for key, vote in votes.items():
+        arm_winner, flipped = consensus(vote)
+        before = rows.get(("before", key[0], key[1], key[2], key[3]))
+        after = rows.get(("after", key[0], key[1], key[2], key[3]))
+        if not before or not after or not before.get("draftBuilt") or not after.get("draftBuilt"):
+            continue
+        counts_favour = "same"
+        if after["senses"] > before["senses"] or after["noteChars"] > before["noteChars"] * 1.25:
+            counts_favour = "after"
+        elif after["senses"] < before["senses"] or after["noteChars"] * 1.25 < before["noteChars"]:
+            counts_favour = "before"
+        if flipped:
+            pools["flipped"].append(key)
+        elif arm_winner != "same" and counts_favour not in ("same", arm_winner):
+            pools["disagrees"].append(key)
+        elif arm_winner != "same":
+            pools["confident"].append(key)
+        pools["random"].append(key)
+
+    screens: list[dict[str, Any]] = []
+    taken: set[tuple] = set()
+    for stratum in ("confident", "flipped", "disagrees", "random"):
+        candidates = [k for k in pools[stratum] if k not in taken]
+        rng.shuffle(candidates)
+        for key in candidates[:WANTED[stratum]]:
+            taken.add(key)
+            provider, model, word_id, repeat = key
+            left_arm, right_arm = ("before", "after") if rng.random() < 0.5 else ("after", "before")
+            screens.append({
+                "kind": "real", "stratum": stratum, "wordId": word_id, "repeat": repeat,
+                "provider": provider, "model": model, "leftArm": left_arm, "rightArm": right_arm,
+                "judge": consensus(votes[key])[0], "flipped": consensus(votes[key])[1],
+            })
+
+    # Controls: two repeats of the SAME arm, shown exactly like a real pair.
+    controls: list[tuple] = []
+    for (arm, provider, model, word_id, repeat), row in rows.items():
+        if arm != "before" or not row.get("draftBuilt") or repeat != 0:
+            continue
+        other = rows.get((arm, provider, model, word_id, 1))
+        if other and other.get("draftBuilt"):
+            controls.append((provider, model, word_id))
+    rng.shuffle(controls)
+    for provider, model, word_id in controls[:WANTED["control"]]:
+        screens.append({
+            "kind": "control", "stratum": "control", "wordId": word_id,
+            "provider": provider, "model": model, "leftRepeat": 0, "rightRepeat": 1, "arm": "before",
+        })
+
+    rng.shuffle(screens)
+    pages = []
+    for index, screen in enumerate(screens, start=1):
+        word = by_id[screen["wordId"]]
+        if screen["kind"] == "real":
+            left = records[(screen["leftArm"], screen["provider"], screen["model"], screen["wordId"], screen["repeat"])]
+            right = records[(screen["rightArm"], screen["provider"], screen["model"], screen["wordId"], screen["repeat"])]
+        else:
+            left = records[(screen["arm"], screen["provider"], screen["model"], screen["wordId"], 0)]
+            right = records[(screen["arm"], screen["provider"], screen["model"], screen["wordId"], 1)]
+        drafts = (draft_for(left, word), draft_for(right, word))
+        if not all(drafts):
+            continue
+        screen["id"] = f"s{index:02d}"
+        pages.append({
+            "id": screen["id"], "headword": word["headword"], "language": word["language"],
+            "left": render.as_yaml(drafts[0], left.get("reply"), blind=True),
+            "right": render.as_yaml(drafts[1], right.get("reply"), blind=True),
+        })
+
+    out = run_dir / "review"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "index.html").write_text(page_html(pages), encoding="utf-8")
+    (run_dir / "review-key.json").write_text(
+        json.dumps({"seed": SEED, "screens": screens}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
+    counts = Counter(s["stratum"] for s in screens if "id" in s)
+    print(f"{len(pages)} screen(s) in {out / 'index.html'}")
+    print("  " + " · ".join(f"{name} {counts[name]}" for name in WANTED))
+    print(f"  key written to {run_dir / 'review-key.json'} — not shown on the page")
+    return 0
+
+
+def page_html(pages: list[dict[str, Any]]) -> str:
+    data = json.dumps(pages, ensure_ascii=False)
+    return """<!doctype html>
+<meta charset="utf-8">
+<title>compose-lesson-line · blind review</title>
+<style>
+ :root { color-scheme: light dark; }
+ body { margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; }
+ header { display: flex; gap: 16px; align-items: baseline; padding: 10px 16px;
+          border-bottom: 1px solid #8884; position: sticky; top: 0; background: Canvas; }
+ h1 { font-size: 15px; margin: 0; font-weight: 600; }
+ .word { font-size: 18px; font-weight: 600; }
+ .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+ .col { padding: 12px 16px; min-width: 0; }
+ .col + .col { border-left: 1px solid #8884; }
+ .tag { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; opacity: .55; }
+ pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.55 ui-monospace, monospace;
+       margin: 6px 0 0; }
+ footer { position: sticky; bottom: 0; background: Canvas; border-top: 1px solid #8884;
+          padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+ button { font: inherit; padding: 5px 12px; border: 1px solid #8886; border-radius: 6px;
+          background: transparent; cursor: pointer; }
+ button.on { background: #4884; }
+ .spacer { flex: 1; }
+ .done { padding: 40px 16px; font-size: 16px; }
+ kbd { font: 12px ui-monospace, monospace; border: 1px solid #8886; border-radius: 4px;
+       padding: 0 4px; }
+</style>
+<header>
+ <h1>blind review</h1>
+ <span class="word" id="word"></span>
+ <span class="tag" id="lang"></span>
+ <span class="spacer"></span>
+ <span class="tag" id="progress"></span>
+</header>
+<div id="body">
+ <div class="grid">
+  <div class="col"><span class="tag">A</span><pre id="left"></pre></div>
+  <div class="col"><span class="tag">B</span><pre id="right"></pre></div>
+ </div>
+</div>
+<footer>
+ <button data-choice="left">&larr; A better</button>
+ <button data-choice="same">= no difference</button>
+ <button data-choice="right">B better &rarr;</button>
+ <span class="tag">how much</span>
+ <button data-mag="1">1 slight</button>
+ <button data-mag="2">2 clear</button>
+ <button data-mag="3">3 large</button>
+ <span class="spacer"></span>
+ <button id="back">back</button>
+ <button id="save"><b>download ratings.json</b></button>
+</footer>
+<script>
+const PAGES = __DATA__;
+const ratings = JSON.parse(localStorage.getItem("clr-ratings") || "{}");
+let at = 0, magnitude = 2;
+const $ = (id) => document.getElementById(id);
+function draw() {
+  if (at >= PAGES.length) {
+    $("body").innerHTML = '<div class="done">All ' + PAGES.length +
+      ' done. Press <b>download ratings.json</b> and drop the file into the run directory.</div>';
+    $("word").textContent = ""; $("lang").textContent = "";
+    $("progress").textContent = PAGES.length + " / " + PAGES.length;
+    return;
+  }
+  const page = PAGES[at];
+  $("word").textContent = page.headword;
+  $("lang").textContent = page.language;
+  $("left").textContent = page.left;
+  $("right").textContent = page.right;
+  $("progress").textContent = (at + 1) + " / " + PAGES.length;
+  for (const b of document.querySelectorAll("[data-mag]"))
+    b.classList.toggle("on", Number(b.dataset.mag) === magnitude);
+}
+function choose(choice) {
+  if (at >= PAGES.length) return;
+  ratings[PAGES[at].id] = { choice, magnitude: choice === "same" ? 0 : magnitude };
+  localStorage.setItem("clr-ratings", JSON.stringify(ratings));
+  at += 1; draw();
+}
+for (const b of document.querySelectorAll("[data-choice]"))
+  b.onclick = () => choose(b.dataset.choice);
+for (const b of document.querySelectorAll("[data-mag]"))
+  b.onclick = () => { magnitude = Number(b.dataset.mag); draw(); };
+$("back").onclick = () => { at = Math.max(0, at - 1); draw(); };
+$("save").onclick = () => {
+  const blob = new Blob([JSON.stringify(ratings, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "ratings.json"; a.click();
+};
+addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft") choose("left");
+  else if (e.key === "ArrowRight") choose("right");
+  else if (e.key === "=" || e.key === " ") { e.preventDefault(); choose("same"); }
+  else if (["1", "2", "3"].includes(e.key)) { magnitude = Number(e.key); draw(); }
+  else if (e.key === "Backspace") { e.preventDefault(); at = Math.max(0, at - 1); draw(); }
+});
+draw();
+</script>
+""".replace("__DATA__", data)
+
+
+def kappa(one: list[str], two: list[str]) -> float | None:
+    """Cohen's κ over the three-way label."""
+    if not one:
+        return None
+    labels = sorted(set(one) | set(two))
+    agree = sum(a == b for a, b in zip(one, two)) / len(one)
+    expected = sum((one.count(k) / len(one)) * (two.count(k) / len(two)) for k in labels)
+    return None if expected >= 1 else round((agree - expected) / (1 - expected), 3)
+
+
+def score(run_dir: Path) -> int:
+    key = json.loads((run_dir / "review-key.json").read_text(encoding="utf-8"))
+    path = run_dir / "ratings.json"
+    if not path.exists():
+        raise SystemExit(f"no ratings.json in {run_dir} — download it from the page first")
+    ratings = json.loads(path.read_text(encoding="utf-8"))
+    screens = {s["id"]: s for s in key["screens"] if "id" in s}
+
+    controls = [s for s in screens.values() if s["kind"] == "control" and s["id"] in ratings]
+    called = [s for s in controls if ratings[s["id"]]["choice"] != "same"]
+    print("\n### The controls — two articles from the same arm\n")
+    print(f"{len(called)} of {len(controls)} control screens were given a winner. "
+          f"That is the reader's false-positive rate: **{len(called) / len(controls) * 100:.0f}%**"
+          if controls else "no control screens were rated")
+
+    mine: list[str] = []
+    theirs: list[str] = []
+    for screen in screens.values():
+        if screen["kind"] != "real" or screen["id"] not in ratings:
+            continue
+        choice = ratings[screen["id"]]["choice"]
+        mine.append("same" if choice == "same" else screen[f"{choice}Arm"])
+        theirs.append(screen["judge"])
+    print("\n### Against the judge\n")
+    if mine:
+        agree = sum(a == b for a, b in zip(mine, theirs)) / len(mine)
+        print(f"| n | agreement | Cohen's κ | you said | the judge said |")
+        print(f"| ---: | ---: | ---: | --- | --- |")
+        print(f"| {len(mine)} | {agree * 100:.0f}% | {kappa(mine, theirs)} "
+              f"| {dict(Counter(mine))} | {dict(Counter(theirs))} |")
+    else:
+        print("no real screens were rated")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("build", "score"))
+    parser.add_argument("run")
+    args = parser.parse_args()
+    run_dir = Path(args.run)
+    if not run_dir.is_absolute() and not run_dir.exists():
+        run_dir = HERE / args.run
+    return build(run_dir) if args.action == "build" else score(run_dir)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

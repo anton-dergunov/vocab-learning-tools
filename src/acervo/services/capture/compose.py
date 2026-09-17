@@ -20,14 +20,18 @@ from acervo.services.prompts import prompt_text
 from acervo.settings import Settings
 
 
-def compose(
-    settings: Settings,
-    owner: str,
+def build_user_message(
     resolution: dict[str, Any],
     request: dict[str, Any],
     vocabulary: dict[str, Any],
     topics: list[dict[str, Any]],
-) -> tuple[dict[str, Any], Answer]:
+) -> str:
+    """Everything the model is told about this word, beside the prompt itself.
+
+    Lifted out of `compose` so that a measurement can send the *shipped* request rather than a copy
+    of it — `experiments/compose-lesson-line/` compares two versions of the prompt, and a second
+    implementation of this assembly would quietly be part of what it measured.
+    """
     reference = reference_of(request)
     names = {topic["name"].lower(): topic["name"] for topic in topics}
     preferred = [names[name.lower()] for name in text_list(request.get("topics")) if name.lower() in names]
@@ -81,6 +85,18 @@ def compose(
         ]
         if line != ""
     )
+    return user
+
+
+def compose(
+    settings: Settings,
+    owner: str,
+    resolution: dict[str, Any],
+    request: dict[str, Any],
+    vocabulary: dict[str, Any],
+    topics: list[dict[str, Any]],
+) -> tuple[dict[str, Any], Answer]:
+    user = build_user_message(resolution, request, vocabulary, topics)
 
     answer, call = llm_json(
         settings, owner, prompt_text(settings.prompts_path, "acervo_compose"), user,

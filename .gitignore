@@ -68,3 +68,9 @@ Caddyfile
 # is in its README, and re-scoring an existing run is free, so the archive is not worth a
 # repository — the same call photo-capture/runs/ made.
 /experiments/clip-translation/runs/
+
+# The compose-lesson-line runs: 360 raw articles per run, plus the judge's verdicts and the review
+# page built from them. Re-scoring an existing run costs nothing and every number the experiment
+# claims is in its README, so the archive is not worth a repository — the same call the two above
+# made. `ratings.json` and `review-key.json` go with them: the key would reveal the blind.
+/experiments/compose-lesson-line/runs/
