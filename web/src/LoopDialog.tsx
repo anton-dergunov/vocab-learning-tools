@@ -8,8 +8,12 @@
  *
  * The families are the generator's own catalogue, read from `GET /loops/schema` and never copied
  * into Acervo: a family added in a later version of it appears here with nothing changing on this
- * side. Whether that deployment has its sample pack is reported at the foot, because it is the
- * difference between recorded instruments and oscillators and it is worth knowing before you ask.
+ * side.
+ *
+ * **Without the sample pack this refuses rather than warns.** Fifteen of the generator's sixteen bed
+ * families name instruments loaded from its catalogue, so a pack-less render dies partway through on
+ * a missing sample — after minutes of work, with a message about a file nobody has heard of. The
+ * server refuses the same request for the same reason; this is only the earlier, kinder half of it.
  *
  * A word with no single term to say is not eligible — a loop has to choose one meaning — and the
  * count says how many there are rather than letting you ask for more than exist.
@@ -37,6 +41,7 @@ export default function LoopDialog({ graph, query, deviceId, onClose, onMade, on
   const [trouble, setTrouble] = useState<string | null>(null);
   const [family, setFamily] = useState("auto");
   const eligible = loopCandidates(graph, query).length;
+  const noSamples = Boolean(schema && !schema.productionBundle);
   const most = Math.min(schema?.maxItems ?? 24, Math.max(4, eligible));
   const [words, setWords] = useState(Math.min(DEFAULT_WORDS, Math.max(4, eligible)));
   const [asking, setAsking] = useState(false);
@@ -118,20 +123,26 @@ export default function LoopDialog({ graph, query, deviceId, onClose, onMade, on
           word whose <em>one term</em> has not been written down has none to choose.
         </p>
 
+        {noSamples && <p className="config-help warn">
+          This server has no sample pack, so a loop cannot be made. Install it once with{" "}
+          <code>./deploy.sh --install-samples</code>.
+        </p>}
+
         <div className="loop-engine">
           {trouble
             ? <span className="warn">{trouble}</span>
             : schema
               ? `engine ${schema.engineVersion} · ${schema.productionBundle
                 ? "sample pack installed"
-                : "no sample pack — beds will be synthesised"}`
+                : "no sample pack"}`
               : "asking the generator what it can do…"}
         </div>
 
         <div className="loop-actions">
           <button className="tb-btn" onClick={onClose}>Cancel</button>
           <button
-            className="tb-btn primary" disabled={asking || eligible === 0 || Boolean(trouble)}
+            className="tb-btn primary"
+            disabled={asking || eligible === 0 || Boolean(trouble) || noSamples}
             onClick={() => void make()}
           >{asking ? "Asking…" : "Make the loop"}</button>
         </div>

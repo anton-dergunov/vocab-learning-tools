@@ -39,6 +39,16 @@ MAX_WORDS = 40
 
 TRACK_LIMIT = 64 * 1024 * 1024
 
+# Without the sample pack, fifteen of the generator's sixteen bed families name instruments that are
+# loaded from its catalogue, so a render dies on `No samples cached for …` — how far it gets depends
+# on which voices the seed happens to draw. §2.2 once said a pack-less server warns rather than
+# refuses; that was written believing the render falls back to the synthesised palette, and it does
+# not. Refusing in one second beats failing in four minutes, and this sentence says what to do.
+NO_SAMPLES = (
+    "This server has no sample pack, so a loop cannot be made. "
+    "Install it once with ./deploy.sh --install-samples."
+)
+
 LOOP_REFUSALS: dict[str, tuple[int, str, str]] = {
     "unreachable": (502, "loops_unreachable", "The loop generator could not be reached, so nothing was made."),
     "busy": (503, "loops_busy", "The loop generator is busy; try again in a moment."),
@@ -61,8 +71,16 @@ def service(settings: Settings) -> LoopService:
 
 
 def refusal(error: LoopError) -> ApiError:
+    """Acervo's wire vocabulary, **and** whatever the generator said.
+
+    The code is ours because the interface branches on it; the sentence is largely theirs because
+    only they know what went wrong. Keeping just the constant is how "No samples cached for
+    'salamander'" became "The loop generator refused the request, so nothing was made." — a message
+    that named nothing and left the owner with a four-minute failure and no next step.
+    """
     status, code, message = LOOP_REFUSALS.get(error.code, LOOP_REFUSALS["refused"])
-    return ApiError(status, code, message)
+    said = (error.message or "").strip()
+    return ApiError(status, code, f"{message} {said}"[:500].strip() if said else message)
 
 
 def schema(settings: Settings) -> dict[str, Any]:
@@ -102,6 +120,16 @@ def create(settings: Settings, owner: str, device: str, body: dict[str, Any]) ->
         raise ApiError(400, "invalid_input", f"A loop takes between {MIN_WORDS} and {MAX_WORDS} words.")
     if len(set(wanted)) != len(wanted):
         raise ApiError(400, "invalid_input", "A loop cannot teach the same word twice.")
+
+    # Asked before anything is written, so a server without its samples refuses in a second rather
+    # than writing rows, queueing a job and failing minutes later with the generator's own wording
+    # about a missing `salamander`. One extra call on an operation that already takes minutes.
+    offered = schema(settings)
+    if not offered.get("productionBundle"):
+        raise ApiError(409, "loops_no_samples", NO_SAMPLES)
+    family = str(body.get("family") or "").strip()
+    if family and family not in offered.get("families", []):
+        raise ApiError(400, "invalid_input", f"The generator has no “{family}” music.")
 
     held = graph.owned_records(owner, "lexemes", wanted)
     items: list[dict[str, Any]] = []

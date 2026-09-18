@@ -1339,12 +1339,16 @@ function renderLoops() {
     return `<section class="loops">
       <div class="loops-back">
         <button class="icon-btn" id="loopBack" aria-label="Back to the loops">${ICON.back}</button>
-        <span class="label">${esc(loopTitle(open, 2))}</span>
+        <span class="label">Loops</span><span class="spacer"></span>
       </div>
       <div class="loop-play">${lyricBlock(open)}${playerBlock(open)}</div>
     </section>`;
   }
   return `<section class="loops">
+    <div class="loops-back">
+      <button class="icon-btn" id="loopsClose" aria-label="Back to the list">${ICON.back}</button>
+      <span class="label">Your words</span><span class="spacer"></span>
+    </div>
     <div class="loops-head"><h2>Loops</h2><span class="spacer"></span>
       <button class="tb-btn primary" id="makeLoop">${ICON.plus}<span>Make a loop</span></button></div>
     <div class="loops-list">${loops.map(loopRow).join("")}</div>
@@ -1556,7 +1560,8 @@ $("#main").addEventListener("click", (ev) => {
     return;
   }
   if (ev.target.closest("#makeLoop")) { openLoopDialog(); return; }
-  if (ev.target.closest("#loopBack")) { state.loopOpen = null; render(); }
+  if (ev.target.closest("#loopBack")) { state.loopOpen = null; render(); return; }
+  if (ev.target.closest("#loopsClose")) { state.loops = false; state.loopOpen = null; render(); }
 });
 
 function wireLoopControls(root) {
@@ -1596,7 +1601,7 @@ function render() {
   // Not `&& !composing`: the loops surface *is* a composing surface — it owns its height so its
   // controls cannot drift — and excluding it here left the rail on screen behind the player.
   $(".app").classList.toggle("loops-open", state.loops);
-  $(".app").classList.toggle("article-open", Boolean((state.openId || state.openExt) && !state.add) || state.loops);
+  $(".app").classList.toggle("article-open", Boolean((state.openId || state.openExt) && !state.add));
   $("#loopbar").innerHTML = renderLoopBar();
   $("#loopChip").innerHTML = renderLoopChip();
   paintLoops();
@@ -1821,6 +1826,7 @@ document.addEventListener("click", (ev) => {
 });
 
 $("#q").addEventListener("input", (ev) => {
+  state.loops = false;
   state.query = ev.target.value;
   state.openId = null;
   state.openExt = null;

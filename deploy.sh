@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=9
+helper_protocol=10
 worker_arguments=
 
 mode=
@@ -61,6 +61,10 @@ usage:
                       while they run. A deploy never carries a job across versions
   --create-account    create one account on the running server, reading the address
                       and password from the terminal
+  --install-samples   fetch the loop generator's sample pack — about 1.9 GB, once —
+                      into the directory the running service mounts. Without it no
+                      loop can be made. The URL and digest come from the pin, so
+                      neither is typed by hand
   --configure-llm     update only the server's durable llm.env; existing server,
                       Anki and other providers' credentials are retained
   --llm-chain IDS     which providers answer, in order, as comma-separated ids
@@ -129,6 +133,7 @@ while [ "$#" -gt 0 ]; do
     # tell an operation's flags apart from this script's.
     --worker) choose_action worker; shift; worker_arguments=$*; break ;;
     --create-account) choose_action create-account; shift ;;
+    --install-samples) choose_action install-samples; shift ;;
     --reset-data) reset_data=true; shift ;;
     --reset-database) reset_database=true; shift ;;
     --cancel-jobs) cancel_jobs=true; shift ;;
@@ -440,10 +445,42 @@ refuse_open_jobs() {
 
 jobs_command='docker exec acervo-server-1 python -m acervo.admin jobs'
 
+# The sample pack's URL and digest, from the pin rather than from the owner's memory. Read on this
+# side, where the repository is; the far side only checks that they are the shape they should be.
+read_pin_url() {
+  pin=$(dirname "$0")/deploy/acervo/lexibeat/pin.json
+  [ -f "$pin" ] || { echo "Missing pin: $pin" >&2; exit 1; }
+  # Concatenation rather than an f-string: same-quoted nesting inside one is a syntax error before
+  # Python 3.12, and this runs on whatever `python3` the invoking machine happens to have.
+  bundle_url=$(python3 -c '
+import json, sys
+pin = json.load(open(sys.argv[1], encoding="utf-8"))
+print(pin["repository"] + "/releases/download/" + pin["tag"] + "/" + pin["bundle"]["file"])
+' "$pin")
+  bundle_sha=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1], encoding="utf-8"))["bundle"]["sha256"])
+' "$pin")
+}
+
 if [ "$mode" = local ]; then
   if [ "$action" = create-account ]; then
     prompt_account
     printf '%s\n' "$account_password" | $create_account_command "$account_email"
+    exit $?
+  fi
+  if [ "$action" = install-samples ]; then
+    # Locally there is no launcher and no ssh: the same compose invocation, run here. The env file
+    # is the point of it either way — without it compose falls back to a named volume and the
+    # bundle lands somewhere the service does not mount.
+    read_pin_url
+    docker compose -p "${ACERVO_COMPOSE_PROJECT:-acervo}" \
+      --env-file "$acervo_root/deployment.env" \
+      --env-file "$acervo_root/secrets.env" \
+      --env-file "$acervo_root/llm.env" \
+      -f "$(dirname "$0")/deploy/acervo/compose.yaml" \
+      run --rm lexibeat lexibeat-bundle fetch --into /var/lib/lexibeat/bundle \
+      --from "$bundle_url" --sha256 "$bundle_sha"
     exit $?
   fi
   if [ "$action" = status ]; then
@@ -560,6 +597,18 @@ if [ "$action" = worker ]; then
   exit $?
 fi
 
+
+if [ "$action" = install-samples ]; then
+  # The URL and the digest come from the pin on this side, where the repository is — so the owner
+  # never copies a 64-character digest, and the far side only checks their shape.
+  read_pin_url
+  if [ "$remote_mode" = root ]; then
+    echo "--install-samples needs the reviewed launcher; install it once with ./deploy.sh --install-helper" >&2
+    exit 2
+  fi
+  ssh -T "$target" "sudo -n $helper_path install-samples --from '$bundle_url' --sha256 '$bundle_sha'"
+  exit $?
+fi
 
 if [ "$action" = create-account ]; then
   prompt_account

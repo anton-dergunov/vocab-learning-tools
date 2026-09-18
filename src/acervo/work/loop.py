@@ -51,9 +51,10 @@ def _render(context: JobContext, step: Step, loop_id: str) -> str | None:
         request = loops.render_request(context.settings, context.owner, loop_id)
         # Read for the record. The generator cannot work out which order speaks a loop, and does not
         # receive it yet — see `services/loops.delivery`.
-        operation = loops.start(context.settings, request)
+        family = str(context.input.get("family") or "").strip()
+        operation = loops.start(context.settings, request, **({"family": family} if family else {}))
         step.note(operationId=operation.id, delivery=loops.delivery(context.owner),
-                  words=len(request["items"]))
+                  family=family or "auto", words=len(request["items"]))
 
     if not operation.finished:
         polls = int(detail.get("polls") or 0) + 1

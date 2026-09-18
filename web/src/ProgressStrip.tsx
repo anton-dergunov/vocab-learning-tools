@@ -69,10 +69,15 @@ function failureOf(step: JobStep): string {
     }
     case "pronunciations":
       return "Some audio could not be recorded";
+    /* Lead with what happened and then say why. The `default` branch below already prefers
+       `step.message`; returning a constant here threw away the one sentence that names the cause —
+       which is how a render that died on a missing sample pack read as "could not be made". */
     case "loop.render":
-      return "The loop could not be made";
+      return step.message ? `The loop could not be made — ${step.message}` : "The loop could not be made";
     case "loop.store":
-      return "The loop was made but its track could not be stored";
+      return step.message
+        ? `The loop was made but its track could not be stored — ${step.message}`
+        : "The loop was made but its track could not be stored";
     case "corpus.update":
       return "The recorded-speech corpus could not be updated";
     default:

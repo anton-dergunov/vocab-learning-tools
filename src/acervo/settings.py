@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     call_log_bytes: int = Field(default=5_000_000, alias="ACERVO_CALL_LOG_BYTES")
     call_log_keep: int = Field(default=3, alias="ACERVO_CALL_LOG_KEEP")
 
+    # And every job the runner takes, the same way and for the same reasons. A separate file rather
+    # than a level in the first: one is written on every model call and is read for timings, the
+    # other is written a few times a job and is read when something failed. Mixing them would make
+    # both greps worse. Smaller, because a job writes three lines where a capture writes thirty.
+    job_log_path: Path = Field(
+        default=Path("/var/lib/acervo/server/jobs.log"), alias="ACERVO_JOB_LOG_PATH"
+    )
+    job_log_bytes: int = Field(default=2_000_000, alias="ACERVO_JOB_LOG_BYTES")
+    job_log_keep: int = Field(default=3, alias="ACERVO_JOB_LOG_KEEP")
+
     @property
     def takes_path(self) -> Path:
         """The take cache, beside the database and the call log rather than on the media volume.

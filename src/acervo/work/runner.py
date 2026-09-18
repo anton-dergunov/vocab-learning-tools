@@ -23,7 +23,7 @@ from acervo.domain.ids import instant_of
 from acervo.errors import ApiError
 from acervo.repository import jobs
 from acervo.settings import Settings
-from acervo.work import kinds, retry
+from acervo.work import journal, kinds, retry
 
 log = logging.getLogger("acervo.work")
 
@@ -163,18 +163,34 @@ class JobContext:
                     raise Requeue(delay) from refusal
             record.update(state="failed", error=refusal.code, message=refusal.message[:500])
             self.save()
+            journal.step(self.id, self.kind.name, name, "failed", error=refusal.code,
+                         message=refusal.message, **self._note())
             return "failed"
         except Exception as crash:  # noqa: BLE001 - a step's crash is recorded, not propagated
             log.exception("job %s step %s crashed", self.id, name)
             record.update(state="failed", error="server_error", message=str(crash)[:500])
             self.save()
+            journal.step(self.id, self.kind.name, name, "failed", error="server_error",
+                         message=str(crash), **self._note())
             return "failed"
         if lane is not None:
             self.runner.lanes[lane].succeeded()
         record["state"] = "skipped" if outcome == "skipped" else "done"
         record.pop("error", None)
         self.save()
+        journal.step(self.id, self.kind.name, name, record["state"], **self._note())
         return record["state"]
+
+
+    def _note(self) -> dict[str, Any]:
+        """The identifiers that join this log to somebody else's.
+
+        `operationId` is the only id shared with the loop generator's container, and until this line
+        existed it lived in the database and in no log at all — so a failed render here could not be
+        matched to its cause there.
+        """
+        detail = (self.record("loop.render").get("detail") or {}) if self.kind.name == "loop" else {}
+        return {"operationId": detail.get("operationId")}
 
 
 def _pending(name: str) -> dict[str, Any]:
@@ -193,6 +209,11 @@ class Runner:
         self.clock = clock
         self.poll = poll
         self.lanes = retry.lanes()
+        journal.open_job_log(settings)
+        # When the job now running was taken, so the end line can say how long it took. A job that
+        # was requeued reports the time since it was last taken, which is the honest number: the
+        # rests in between are not work.
+        self._began = clock()
         # Called on every pass of the loop, before looking for a job: the nightly timer hangs here.
         self.ticks: list[Callable[[], None]] = []
         self._stopping = threading.Event()
@@ -270,7 +291,9 @@ class Runner:
     def execute(self, job: dict[str, Any]) -> None:
         owner = job["ownerId"]
         self.current = job["id"]
+        self._began = self.clock()
         try:
+            journal.started(job)
             notify.job(owner, job)
             kind = kinds.find(job["kind"])
             if kind is None:
@@ -303,14 +326,21 @@ class Runner:
                              str(crash))
                 return
             state = "failed" if context.failed() else "done"
-            error = next((s.get("error") for s in context.steps if s["state"] == "failed"), None)
-            self._finish(owner, job["id"], state, context.steps, error)
+            # Both, from the same step: the code is what the interface branches on and the message
+            # is the only thing that says *why*. Passing the code alone left every ordinary failure
+            # with a NULL message on the row and the sentence buried in the steps JSON.
+            failed = next((s for s in context.steps if s["state"] == "failed"), None)
+            self._finish(owner, job["id"], state, context.steps,
+                         failed.get("error") if failed else None,
+                         failed.get("message") if failed else None)
         finally:
             self.current = None
 
     def _finish(self, owner: str, job_id: str, state: str, steps: Any,
                 error: str | None = None, message: str | None = None) -> None:
         finished, follow_up = jobs.finish(job_id, state, steps=steps, error=error, message=message)
+        if finished is not None:
+            journal.finished(finished, state, self.clock() - self._began, error, message)
         if finished is not None:
             notify.job(owner, finished)
         if follow_up is not None:

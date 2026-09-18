@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PROTOCOL=9
+PROTOCOL=10
 HELPER_PATH=/usr/local/sbin/deploy-acervo
 SUDOERS_PATH=/etc/sudoers.d/deploy-acervo
 PATH="$PATH:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
@@ -346,6 +346,79 @@ deploy_release() {
 # already: `deploy` extracts an installer out of a streamed archive and runs it as root. What is
 # checked here is only that the operation is a bare word, so nothing path-like or flag-like can
 # arrive where a subcommand is expected.
+# The sample pack: ~1.9 GB of audio, fetched once into the directory the running service actually
+# mounts. **That last clause is the whole reason this exists.** The obvious command —
+# `docker compose -f compose.yaml run --rm lexibeat lexibeat-bundle fetch …` — omits the deployment's
+# env file, so `ACERVO_LEXIBEAT_BUNDLE` is unset, compose falls back to a *named volume*, and the
+# bundle unpacks, verifies and reports success into a store nothing serves from. It is a silent
+# failure that costs two gigabytes and looks exactly like a success.
+#
+# The URL and the digest come from the pin on the calling side, where the repository is: this end
+# only checks that they are the shape they should be, so the operation list stays as narrow as the
+# rest of it.
+install_samples() {
+  bundle_url=
+  bundle_sha=
+  acervo_root=
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --from) [ "$#" -ge 2 ] || exit 2; bundle_url=$2; shift 2 ;;
+      --sha256) [ "$#" -ge 2 ] || exit 2; bundle_sha=$2; shift 2 ;;
+      --root) [ "$#" -ge 2 ] || exit 2; acervo_root=$2; shift 2 ;;
+      *) echo "install-samples takes --from, --sha256 and --root" >&2; exit 2 ;;
+    esac
+  done
+  case "$bundle_url" in
+    https://github.com/*.tar) ;;
+    *) echo "install-samples needs a https://github.com/… .tar release URL" >&2; exit 2 ;;
+  esac
+  case "$bundle_sha" in
+    *[!0-9a-f]*|"") echo "install-samples needs a hex sha256" >&2; exit 2 ;;
+    *) [ "${#bundle_sha}" -eq 64 ] || { echo "install-samples needs a 64-character sha256" >&2; exit 2; } ;;
+  esac
+
+  acervo_root=$(resolve_root "$acervo_root")
+  [ -f "$acervo_root/current-release" ] || {
+    echo "No deployed release at $acervo_root; deploy before installing the samples" >&2
+    exit 2
+  }
+  IFS= read -r release <"$acervo_root/current-release"
+  compose_file="$release/deploy/acervo/compose.yaml"
+  [ -f "$compose_file" ] || { echo "The current release has no compose file at $compose_file" >&2; exit 2; }
+
+  docker=$(docker_path)
+  set -- -p "${ACERVO_COMPOSE_PROJECT:-acervo}" \
+    --env-file "$acervo_root/deployment.env" \
+    --env-file "$acervo_root/secrets.env" \
+    --env-file "$acervo_root/llm.env" \
+    -f "$compose_file"
+  echo "Fetching the sample pack — about 1.9 GB, once." >&2
+  "$docker" compose "$@" run --rm lexibeat \
+    lexibeat-bundle fetch --into /var/lib/lexibeat/bundle \
+    --from "$bundle_url" --sha256 "$bundle_sha" || exit $?
+  # The engine reads the catalogue per request, so a restart is not strictly needed — but the
+  # entrypoint's one-line verdict is, and it is printed only at start.
+  "$docker" compose "$@" up -d --force-recreate lexibeat >&2 || exit $?
+  sleep 2
+  "$docker" logs --tail 5 "${ACERVO_COMPOSE_PROJECT:-acervo}-lexibeat-1" 2>&1 | head -5
+}
+
+resolve_root() {
+  candidate=$1
+  if [ -z "$candidate" ]; then
+    # The same resolution `run-worker.sh` and the installer use.
+    if [ -f /etc/acervo-root ]; then
+      IFS= read -r candidate </etc/acervo-root
+    elif [ -d /volume1 ]; then
+      candidate=/volume1/docker/acervo
+    else
+      candidate=/opt/acervo
+    fi
+  fi
+  case "$candidate" in /*/acervo) ;; *) echo "Refusing unexpected Acervo root: $candidate" >&2; exit 2 ;; esac
+  printf '%s\n' "$candidate"
+}
+
 run_worker() {
   acervo_root=
   while [ "$#" -gt 0 ]; do
@@ -398,6 +471,7 @@ case "$command_name" in
   create-account) [ "$#" -eq 1 ] || exit 2; create_account ;;
   deploy) shift; deploy_release "$@" ;;
   worker) shift; run_worker "$@" ;;
+  install-samples) shift; install_samples "$@" ;;
   jobs) [ "$#" -eq 2 ] || exit 2; server_jobs "$2" ;;
-  *) echo "deploy-acervo accepts only check, create-account, deploy, jobs, status, worker, or configure-https" >&2; exit 2 ;;
+  *) echo "deploy-acervo accepts only check, create-account, deploy, install-samples, jobs, status, worker, or configure-https" >&2; exit 2 ;;
 esac

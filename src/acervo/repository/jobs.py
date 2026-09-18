@@ -428,6 +428,22 @@ def open_jobs(owner: str | None = None) -> list[dict[str, Any]]:
         return [project(row) for row in rows]
 
 
+def latest(limit: int = 30) -> list[dict[str, Any]]:
+    """Every owner's recent jobs, newest first — what `admin jobs list` reads.
+
+    `recent` is one owner's, because Settings ▸ Activity is one account's. This is the operator's
+    view, and it deliberately includes finished and failed ones: `open_jobs` alone meant a render
+    that failed four minutes ago could not be seen from the command line at all.
+    """
+    with reading() as connection:
+        rows = connection.execute(
+            select(_jobs)
+            .order_by(_jobs.c.created_at.desc(), _jobs.c.id)
+            .limit(max(1, min(limit, 500)))
+        ).mappings()
+        return [project(row) for row in rows]
+
+
 def recent(owner: str, limit: int = 50) -> list[dict[str, Any]]:
     """What Settings ▸ Activity lists: everything not dismissed, newest first."""
     with reading() as connection:

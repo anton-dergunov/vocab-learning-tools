@@ -853,6 +853,55 @@ describe("Acervo application", () => {
     expect(screen.queryByRole("region", { name: "Add a word" })).not.toBeInTheDocument();
   });
 
+  /* A surface that replaces the list has to carry the way back out of itself. Loops shipped with
+     two accidental exits — the Add button, which starts a composition you did not want, and changing
+     language — and every obvious one was a dead end: the search box updated a list that was not
+     drawn, and Escape did nothing. These are the three that should work. */
+  describe("getting back out of Loops", () => {
+    const openLoops = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Loops" }));
+      await screen.findByRole("heading", { name: "Loops" });
+      // The list is gone rather than covered — the surface owns the height so its controls cannot
+      // scroll away. Keyed on the list's own heading, because a loop row names words too.
+      expect(screen.queryByRole("heading", { name: /All words/ })).not.toBeInTheDocument();
+    };
+
+    it("goes back to the words with the back arrow", async () => {
+      signedIn();
+      await openList();
+      await openLoops();
+      fireEvent.click(screen.getByRole("button", { name: "Back to the list" }));
+      expect(await screen.findByRole("heading", { name: /All words/ })).toBeInTheDocument();
+    });
+
+    it("leaves when you type in the search box, because that is asking for the list", async () => {
+      signedIn();
+      await openList();
+      await openLoops();
+      fireEvent.change(screen.getByPlaceholderText("Search your words…"), { target: { value: "itch" } });
+      expect(await screen.findByRole("heading", { name: /Search/ })).toBeInTheDocument();
+    });
+
+    it("leaves on Escape, like every other surface that replaces the list", async () => {
+      signedIn();
+      await openList();
+      await openLoops();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(await screen.findByRole("heading", { name: /All words/ })).toBeInTheDocument();
+    });
+
+    it("keeps the topic rail, which an open article does not", async () => {
+      signedIn();
+      await openList();
+      await openLoops();
+      // A topic files a *word*, so it has nothing to say here — but there is room for it wherever
+      // there is room at all, and only a phone drops it. `styles.css` is what drops it there, and
+      // jsdom applies no stylesheet, so this asserts the class the rule keys on.
+      expect(document.querySelector(".app.loops-open")).not.toBeNull();
+      expect(document.querySelector(".app.article-open")).toBeNull();
+    });
+  });
+
   it("edits an article in the same composer, not inside the scrolling pane", async () => {
     signedIn();
     await openList();

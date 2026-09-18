@@ -793,13 +793,14 @@ details.fold .fold-body { padding: 4px 0 18px; }
    article's change marks live by, and it matters more here, because this is the one surface meant
    to be looked at sideways for four minutes at a time. */
 
-/* ── the surface takes the window ──
-   The topic rail files *words*; nothing on this surface is filed, so it goes — at every width, not
-   only on a phone. The brand goes with it because it sits in the rail's column. */
-.app.loops-open { grid-template-columns: 0 minmax(0, 1fr); }
-.app.loops-open .rail, .app.loops-open .brand { display: none; }
-/* …and the bar goes too: the controls are already on screen, and a second set of them at
-   the foot is the mini-player every music player hides while its own screen is open. */
+/* ── what the surface keeps ──
+   The topic rail stays wherever there is room for it. A loop is a thing you put on and then go
+   looking for the next word, so search, the language menu and the topics are all still what you
+   want in reach; only a phone, which has room for one thing at a time, drops the rail — and there
+   it drops it for an article too, so the two surfaces behave alike where it matters.
+
+   The bar goes, though: the controls are already on screen, and a second set of them at the foot is
+   the mini-player every music player hides while its own screen is open. */
 .app.loops-open .loopbar { display: none; }
 
 /* ── the bar at the foot ──
@@ -2291,6 +2292,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
      still what you want in reach. The rail goes either way: a topic files a word. */
   .app.loops-open { grid-template-rows: var(--topbar) 0 minmax(0,1fr) auto; }
   .app.loops-open .topbar { display: flex; }
+  .app.loops-open .rail { display: none; }
   .app.article-open .main .pane { padding-top: max(12px, env(safe-area-inset-top)); }
   /* One line per section heading: "01 · 🎭 theater", "✳ Where you met it". */
   .sec > .rail-l { margin-bottom: 8px; }

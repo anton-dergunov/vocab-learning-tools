@@ -38,7 +38,13 @@ ENQUEUEABLE: dict[str, str] = {
 # Kinds about one fixed thing rather than a record the request names.
 FIXED_SUBJECTS: dict[str, str] = {"corpus.update": "corpus"}
 # What a request may carry into its job, per kind. Edit-and-draw is a redraw with its own wording.
-INPUTS: dict[str, tuple[str, ...]] = {"image.redraw": ("prompt", "styleId")}
+INPUTS: dict[str, tuple[str, ...]] = {
+    "image.redraw": ("prompt", "styleId"),
+    # Try again on a loop keeps the music that was asked for, which the interface re-sends from the
+    # job it is retrying. Without it here the field would be dropped and the retry would differ from
+    # the original in a way nobody asked for.
+    "loop": ("family",),
+}
 TRIGGERS = ("manual", "import")
 
 NOT_FOUND = ApiError(404, "not_found", "There is no such job.")

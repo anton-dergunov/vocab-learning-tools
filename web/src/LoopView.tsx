@@ -2,8 +2,12 @@
  * The Loops surface: the loops you have, and the one you are playing.
  *
  * A player is a place you go to, so it takes the column rather than sitting over the list — and it
- * takes the whole height, so the controls are a footer that cannot scroll away. The topic rail is
- * hidden while this is open: a topic files a *word*, and nothing here is filed.
+ * takes the whole height, so the controls are a footer that cannot scroll away.
+ *
+ * **One back arrow, and its meaning follows the level**: on an open loop it returns to the loops,
+ * and on the loops it returns to your words. Modelled on the article's `.art-bar`, and present at
+ * every width for the reason that one is — a surface that replaces the list has to carry the way
+ * back out of itself, and a phone has no rail to fall back on.
  *
  * A loop's state is derived and there is no status column: an empty `audioRef` is the whole of what
  * "not rendered yet" means, and the job says how far along it is. So a loop whose render failed
@@ -12,6 +16,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { jobFor, jobStream, isOpen as jobIsOpen } from "./jobs";
+import { stripOf } from "./ProgressStrip";
 import type { VocabularyGraph } from "./domain";
 import { BackIcon, HourglassIcon, PauseIcon, PlayIcon, PlusIcon } from "./icons";
 import * as player from "./loops";
@@ -23,10 +28,12 @@ function clock(seconds: number | null): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-export default function LoopView({ graph, language, onMake }: {
+export default function LoopView({ graph, language, onMake, onClose }: {
   graph: VocabularyGraph;
   language: string;
   onMake(): void;
+  /** Back to the words. The loop keeps playing; the bar and the chip are what it plays behind. */
+  onClose(): void;
 }) {
   const playback = player.usePlayback();
   const live = useSyncExternalStore(jobStream.subscribe, jobStream.getStatus);
@@ -46,13 +53,20 @@ export default function LoopView({ graph, language, onMake }: {
     return <section className="loops">
       <div className="loops-back">
         <button className="icon-btn" onClick={() => setOpenId(null)} aria-label="Back to the loops"><BackIcon /></button>
-        <span className="label">{loopTitle(graph, open, 2)}</span>
+        <span className="label">Loops</span>
+        <span className="spacer" />
       </div>
       <LoopPlayer loop={open} items={items} />
     </section>;
   }
 
   return <section className="loops">
+    <div className="loops-back">
+      <button className="icon-btn" onClick={onClose} aria-label="Back to the list"><BackIcon /></button>
+      <span className="label">Your words</span>
+      <span className="spacer" />
+    </div>
+
     <div className="loops-head">
       <h2>Loops</h2>
       <span className="spacer" />
@@ -70,6 +84,9 @@ export default function LoopView({ graph, language, onMake }: {
         const ready = loopIsReady(loop);
         const job = jobFor(live, "loop", loop.id);
         const making = jobIsOpen(job);
+        const failure = job?.state === "failed"
+          ? job.message || stripOf(job)?.failure || job.error || ""
+          : "";
         const here = playback.loopId === loop.id && playback.playing;
         return <button
           key={loop.id} className={`loop-row${playback.loopId === loop.id ? " on" : ""}`}
@@ -89,7 +106,9 @@ export default function LoopView({ graph, language, onMake }: {
                 ? `${items.length} words · ${clock(loop.durationSeconds)}`
                 : making
                   ? <span className="doing">Being made…</span>
-                  : <span className="warn">Never made · Try again in Settings ▸ Activity</span>}
+                  /* Why, not only that. The reason is on the job the whole time; saying "never
+                     made" and nothing else is what left a failure with no next step. */
+                  : <span className="warn">{failure ? `Never made · ${failure}` : "Never made"}</span>}
             </span>
           </span>
         </button>;

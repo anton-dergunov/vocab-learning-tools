@@ -51,8 +51,12 @@ async def make(request: Request) -> JSONResponse:
     loop = await run_in_threadpool(create, request.app.state.settings, owner, device, body)
     # The row exists whether or not this succeeds, which is the point: a queue that failed leaves a
     # loop that was asked for and not made, and that is exactly what an empty `audioRef` says.
+    # The chosen music rides on the job rather than on the row: it is an instruction for the render,
+    # not a fact about the loop — the loop's own `styleId` is what the render *chose*. Carrying it
+    # here is also what makes Try again ask for the same music, since a re-enqueue reuses `input`.
+    family = str(body.get("family") or "").strip()
     queued = await run_in_threadpool(
         lambda: jobs.enqueue(owner, "loop", trigger="manual", subject_kind="loop",
-                             subject_id=loop["id"], input={})
+                             subject_id=loop["id"], input={"family": family} if family else {})
     )
     return data({"loop": loop, "job": queued}, status=202)

@@ -30,7 +30,9 @@ class GeneratorStub:
         self.calls: list[httpx.Request] = []
         self.bodies: list[dict] = []
         self.operation = recorded("queued")
+        self.schema = recorded("schema")
         self.failure: Exception | None = None
+        self.started: list[dict] = []
 
     def request(self, method: str, url: str, **kwargs) -> httpx.Response:
         request = httpx.Request(method, url, json=kwargs.get("json"))
@@ -41,9 +43,11 @@ class GeneratorStub:
             raise self.failure
         path = httpx.URL(url).path
         if path.endswith("/schema"):
-            return httpx.Response(200, json=recorded("schema"))
+            return httpx.Response(200, json=self.schema)
         if path.endswith("/health"):
             return httpx.Response(200, json=recorded("health"))
+        if method == "POST":
+            self.started.append(kwargs.get("json") or {})
         return httpx.Response(200, json=self.operation)
 
     def get(self, url: str, **kwargs) -> httpx.Response:
@@ -204,3 +208,55 @@ def test_trying_again_on_a_loop_that_is_not_yours_is_not_found(server, generator
     assert server.post(
         "/jobs", {"kind": "loop", "subject": {"kind": "loop", "id": "aaaaaaaaaaaaaaa"}}
     ).status_code == 404
+
+
+# ── a server without its samples ────────────────────────────────────────────
+
+
+def test_a_loop_is_refused_before_anything_is_written_when_there_is_no_sample_pack(server, generator):
+    """Fifteen of the sixteen bed families name sampled instruments, so a pack-less render dies on
+    `No samples cached for …` — how far it gets depends on which voices the seed draws. Refusing in
+    a second beats failing in four minutes, and the sentence says what to do about it."""
+    generator.schema = {**recorded("schema"), "production_bundle": False}
+    made = words(server, 1)
+    answer = server.post("/loops", {"deviceId": "device000000001", "language": "es",
+                                    "lexemeIds": [made[0]["id"]]})
+    assert answer.status_code == 409
+    body = answer.json()["error"]
+    assert body["code"] == "loops_no_samples"
+    assert "--install-samples" in body["message"]
+    # Nothing was written: no row, and therefore no job either.
+    assert server.pull().json()["data"]["changes"]["loops"] == []
+    assert generator.started == []
+
+
+def test_the_music_the_dialog_chose_reaches_the_render(server, generator):
+    made = words(server, 1)
+    answer = server.post("/loops", {"deviceId": "device000000001", "language": "es",
+                                    "lexemeIds": [made[0]["id"]], "family": "acoustic-flow"})
+    assert answer.status_code == 202
+    # It rides on the job rather than on the row: an instruction for the render, not a fact about
+    # the loop — whose own `styleId` records what the render *chose*.
+    assert answer.json()["data"]["job"]["input"] == {"family": "acoustic-flow"}
+
+
+def test_music_the_generator_does_not_offer_is_refused_rather_than_sent(server, generator):
+    made = words(server, 1)
+    answer = server.post("/loops", {"deviceId": "device000000001", "language": "es",
+                                    "lexemeIds": [made[0]["id"]], "family": "polka"})
+    assert answer.status_code == 400
+    assert "polka" in answer.json()["error"]["message"]
+
+
+def test_the_generators_own_words_survive_into_acervos_refusal():
+    """The code is ours because the interface branches on it; the sentence is theirs because only
+    they know what went wrong. Keeping only the constant is how "No samples cached for 'salamander'"
+    became "the loop generator refused the request"."""
+    from acervo.loops.client import LoopError
+    from acervo.services.loops import refusal
+
+    raised = refusal(LoopError("refused", "No samples cached for 'salamander'."))
+    assert raised.code == "loops_failed"
+    assert "salamander" in raised.message
+    # And a refusal that said nothing still reads as a sentence rather than trailing off.
+    assert refusal(LoopError("busy", "")).message.endswith(".")

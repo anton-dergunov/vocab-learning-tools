@@ -117,6 +117,15 @@ Its healthcheck asserts **liveness**, and not that the sample bundle is present:
 has no bundle and still serves. Readiness gating would fail the install of a working service, which
 is the lesson `spoken-clips.md` §2.2 paid for.
 
+**It serves without the bundle; it cannot render without it** — and this paragraph said otherwise
+until step 9. The claim was that a pack-less render falls back to the synthesised `electronic`
+palette, so the interface should warn rather than refuse. It does not: fifteen of the sixteen bed
+families name instruments loaded from the catalogue, so the render dies partway through on a missing
+sample and how far it gets depends on which voices the seed happens to draw. `POST /loops` therefore
+refuses with `loops_no_samples` before writing a row. The healthcheck is unchanged and still
+deliberately does not gate on it — *installing* a server without its samples is fine, and the
+refusal belongs on the one route that needs them.
+
 ### 3 · LexiBeat synthesises; Acervo lends it a voice
 
 **The service receives words, not audio.** `{items: [{source, target, emotion}], pattern, family,
@@ -760,6 +769,42 @@ this deployment wants; `services/loops.delivery` reads the owner's choice and th
 the step's detail, so it is visible without being transmitted. Sending it is a field on LexiBeat's
 request body that 0.2.0's model forbids as unknown — a version bump and a re-pin, together with the
 misleading `librosa` fallback message found in step 6.
+
+### Step 9 · What the deployment taught — **done**
+
+Step 8 shipped and the feature did not work on the server. Three faults, one causing another, and
+the reversal of a decision that had been made on a false premise.
+
+- **The sample pack was in a store the service never mounts.** The documented fetch —
+  `docker compose -f compose.yaml run --rm lexibeat lexibeat-bundle fetch …` — omits the
+  deployment's env file, so `ACERVO_LEXIBEAT_BUNDLE` is unset, compose falls back to a *named
+  volume*, and 1.9 GB unpacks, verifies its manifest and reports success into a directory nothing
+  serves from. It is a silent failure that looks exactly like a success. `./deploy.sh
+  --install-samples` is now the only documented way: it reads the URL and digest from the pin and
+  passes the project name and every env file, and the entrypoint's own hint — the thing an operator
+  reads at the moment they hit this — prints it instead of the command that caused it.
+- **§2.2 is reversed: no pack, no loop.** That section said a pack-less server warns rather than
+  refuses, on the understanding that the render falls back to the synthesised palette. It does not:
+  fifteen of the generator's sixteen bed families name instruments loaded from its catalogue, so a
+  render dies partway through on a missing sample and how far it gets depends on which voices the
+  seed draws. `POST /loops` refuses with `loops_no_samples` before writing a row and the dialog
+  disables its button. Refusing in a second beats failing in four minutes.
+- **A failure's sentence was thrown away three times** — by `services/loops.refusal`, which kept only
+  its own constant; by the runner's rollup, which copied the failed step's `error` but not its
+  `message`; and by `ProgressStrip`, whose `loop.render` case returned a fixed string where the
+  `default` branch would have used the message. Each is one line, and between them they turned "No
+  samples cached for 'salamander'" into "the loop could not be made".
+- **`work/journal.py`**, the second log, and `admin jobs list` showing recent jobs with their error
+  and message rather than open ones with neither. The wider question is
+  [`observability.md`](observability.md).
+- **The Loops surface could not be left.** Two accidental exits existed — Add, and changing language
+  — and every obvious one was a dead end: the search box updated a list that was not drawn, and
+  Escape was a no-op. There is now one back arrow whose meaning follows the level, and search, ⌘K
+  and Escape all leave. The topic rail, which the surface was hiding at every width by borrowing
+  `article-open`, now stays wherever there is room and goes only on a phone.
+- **The dialog's Music selector was a no-op**: `family` was read by nobody and `POST /loops` enqueued
+  with an empty `input`. It is validated against the generator's own catalogue, carried on the job,
+  and passed to the render — so Try again asks for the same music too.
 
 ### Step 8 · The interface — **done**
 

@@ -55,13 +55,14 @@ export default function LoopPanel({ onNotify }: { onNotify(message: string): voi
         Engine {schema.engineVersion} · up to {schema.maxItems} words a loop ·{" "}
         {schema.families.length} {schema.families.length === 1 ? "kind" : "kinds"} of music.
       </p>
-      {/* Worth saying plainly rather than only in a log: without the sample pack every bed is
-          oscillators instead of recorded instruments, which is a different category of sound and
-          not a plainer one. It installs on the server, so it is a thing to go and do. */}
+      {/* Not "plainer": without the pack, fifteen of the generator's sixteen bed families name
+          instruments loaded from its catalogue, so a render dies partway through rather than
+          sounding thinner. It installs on the server, so this names the command. */}
       <p className={`config-help${schema.productionBundle ? "" : " warn"}`}>
         {schema.productionBundle
           ? "The sample pack is installed, so beds are built from recorded instruments."
-          : "The sample pack is not installed on this server, so every bed is synthesised — audibly plainer than the recorded instruments a loop is meant to use."}
+          : <>Loops cannot be made: the sample pack is not installed on this server. Install it once
+            with <code>./deploy.sh --install-samples</code>.</>}
       </p>
     </>}
 

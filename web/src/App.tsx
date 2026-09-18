@@ -693,6 +693,9 @@ export default function App() {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "k") {
         event.preventDefault();
+        // Reaching for search is asking for the list, and the list is not drawn while a loop
+        // surface owns the pane. The loop itself plays on; the bar is what it plays behind.
+        setLoops(false);
         search.current?.focus();
         search.current?.select();
       }
@@ -702,11 +705,12 @@ export default function App() {
         else if (mode === "edit") { setProblems([]); setMode("read"); }
         else if (external) setExternal(null);
         else if (openId) setOpenId(null);
+        else if (loops) setLoops(false);
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [addTab, closeCapture, external, mode, openId]);
+  }, [addTab, closeCapture, external, loops, mode, openId]);
 
   /**
    * The one path a YAML document takes, whether it came from the article editor or the add sheet.
@@ -1013,9 +1017,10 @@ export default function App() {
   return <>
     <div className="viewport" onClick={() => { setLangMenu(false); setScopeMenu(false); setArticleMenu(false); }}>
       {/* Reading a word on a phone or a tablet does not need the topic rail beside it. */}
-      {/* A topic files a *word*, so the rail has nothing to say while a loop plays — and it is the
-          same class an open article uses, which is why it also takes the rail away on a phone. */}
-      <div className={`app${((article || external) && !addTab) || loops ? " article-open" : ""}${loops ? " loops-open" : ""}`}>
+      {/* Reading a word on a phone or a tablet does not need the topic rail beside it. The loops
+          surface is *not* given `article-open`: it keeps the rail wherever there is room for it,
+          and drops it only on a phone, where an article drops it too. */}
+      <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops ? " loops-open" : ""}`}>
         <div className="brand"><span className="mark">A.</span></div>
 
         <header className="topbar">
@@ -1024,10 +1029,12 @@ export default function App() {
             <input
               ref={search} type="search" placeholder="Search your words…" autoComplete="off" spellCheck={false}
               value={query}
-              onChange={(event) => { setQuery(event.target.value); setOpenId(null); setExternal(null); }}
+              // Typing is asking for the list, so it leaves the loops surface. Whatever is playing
+              // keeps playing — that is what the bar and the chip are for.
+              onChange={(event) => { setQuery(event.target.value); setOpenId(null); setExternal(null); setLoops(false); }}
               // ⏎ is the only thing that ever reaches an online dictionary. Everything else here
               // answers off this device or off your own server.
-              onKeyDown={(event) => { if (event.key === "Enter") searchOnline(); }}
+              onKeyDown={(event) => { if (event.key === "Enter") { setLoops(false); searchOnline(); } }}
             />
             <span className="kbd">⌘K</span>
             <button
@@ -1120,6 +1127,7 @@ export default function App() {
         <main className={`main ${composing ? "composing" : ""}${carding && !composing ? " cards-on" : ""}`} ref={main}>
           {loops && snapshot && language ? <LoopView
           graph={snapshot} language={language} onMake={() => setMakingLoop(true)}
+          onClose={() => setLoops(false)}
         /> : addTab ? <AddView
             // A new composition is a fresh view, not a prop change: remounting is what makes "add
             // this word, then that one" start clean rather than editing the previous draft. The key

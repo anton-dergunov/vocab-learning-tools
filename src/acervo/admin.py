@@ -213,12 +213,26 @@ def open_jobs(settings: Settings, as_json: bool) -> int:
     return 0
 
 
-def list_jobs(settings: Settings) -> int:
+def list_jobs(settings: Settings, limit: int = 30) -> int:
+    """Recent jobs and why the failed ones failed.
+
+    It listed only *open* jobs and printed neither `error` nor `message`, so the one thing an
+    operator comes here for — a render that failed and the sentence saying why — was the one thing
+    it could not show. The message is indented under its job rather than run onto the row, because a
+    provider's own wording is a sentence and not a column.
+    """
     open_database(settings.database_path)
-    for job in jobs.open_jobs():
+    held = jobs.latest(limit)
+    if not held:
+        print("No jobs have run.")
+        return 0
+    for job in held:
         subject = job["subject"] or {}
-        print(f"{job['id']}  {job['state']:<9} {job['kind']:<16} "
+        print(f"{job['id']}  {job['state']:<10} {job['kind']:<16} "
               f"{subject.get('kind', '')}:{subject.get('id', '')}  {job['createdAt']}")
+        if job.get("error") or job.get("message"):
+            said = " ".join(str(job.get("message") or "").split())
+            print(f"    {job.get('error') or ''}{': ' if job.get('error') and said else ''}{said}")
     return 0
 
 

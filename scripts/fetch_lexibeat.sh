@@ -9,8 +9,8 @@
 # **The sample bundle is not fetched here, and that is the point.** It is ~1.9 GB of audio, it
 # belongs in a volume on the server rather than in a build context, and it must never reach the
 # release archive. `pin.json` names it in a block of its own, and it is fetched once on the server
-# with `lexibeat-bundle fetch`. Pulling it here would put two gigabytes into every checkout, every
-# CI job and every release tarball to no end.
+# with `./deploy.sh --install-samples`. Pulling it here would put two gigabytes into every checkout,
+# every CI job and every release tarball to no end.
 #
 # The wheel digest is the *release's*, copied from its SHA256SUMS asset — and it is byte-reproducible
 # from a local `uv build`, so a wheel built here matches one built by the release workflow. An
@@ -139,4 +139,4 @@ done
 fi
 
 echo "Pinned lexibeat $version is in vendor/lexibeat/"
-echo "The sample bundle is not here: fetch it once on the server with lexibeat-bundle fetch."
+echo "The sample bundle is not here: install it once with ./deploy.sh --install-samples."
