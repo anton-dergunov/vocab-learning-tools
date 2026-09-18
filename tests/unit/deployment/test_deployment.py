@@ -1888,6 +1888,50 @@ def test_the_launcher_refuses_an_unexpected_acervo_root(tmp_path: Path) -> None:
     assert "Refusing unexpected Acervo root" in result.stderr
 
 
+def test_the_loop_service_is_given_no_provider_credential_at_all() -> None:
+    """The one companion service that calls no model, and its absence from the tuple above is the
+    design rather than an oversight.
+
+    LexiBeat is *handed* a voice: `serve.py` implements its Backend as a call home to
+    POST /pronunciations/take, carrying a render-scoped token that arrives with the request and
+    lives in the process. So there is one rate limiter, one cooldown, one call log and one place the
+    owner chooses — all of them on the server — and nothing in this container to leak, rotate or keep
+    in step. Asserted rather than merely commented, because the natural thing for somebody adding a
+    variable to the services above is to add it here too (plan §2.2).
+    """
+    import yaml
+
+    compose = yaml.safe_load(
+        (REPO_ROOT / "deploy/acervo/compose.yaml").read_text(encoding="utf-8")
+    )
+    service = compose["services"]["lexibeat"]
+    environment = set(service.get("environment") or {})
+    forbidden = {
+        "ACERVO_TEXT_CHAIN", "GEMINI_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
+        "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "ACERVO_OLLAMA_URL",
+        "ACERVO_VERTEX_PROJECT", "GOOGLE_APPLICATION_CREDENTIALS", "ACERVO_VERTEX_ACCOUNT",
+        "ACERVO_JWT_SECRET",
+    }
+    assert not (forbidden & environment), f"lexibeat must hold no credential: {sorted(forbidden & environment)}"
+    # Vertex's is a *file*, so not mounting the directory is half of the same statement.
+    assert not any("/run/acervo/credentials" in mount for mount in service.get("volumes") or [])
+    # And nothing outside the compose network may reach it: a render is asked for by the server.
+    assert "ports" not in service
+
+
+def test_the_loop_sample_bundle_is_never_deleted_by_a_reset() -> None:
+    """~1.9 GB fetched once, and the dictionaries arrangement for the dictionaries' reason: it is the
+    owner's own data moved between the owner's own machines, not something a reset should cost them.
+
+    `--reset-data` clears the Anki collections and the worker's, and nothing else — so this asserts
+    the bundle directory is not named there rather than that some exclusion list contains it.
+    """
+    installer = (REPO_ROOT / "deploy/acervo/install.sh").read_text(encoding="utf-8")
+    reset = installer.split("if [ \"$reset_data\" = true ]; then", 1)[1].split("fi", 1)[0]
+    assert "lexibeat" not in reset
+    assert "data/lexibeat-bundle" in installer, "the installer must still create the bundle directory"
+
+
 def test_every_service_that_calls_a_model_is_given_the_same_credentials() -> None:
     """Three services walk the owner's chain, and they must be able to walk all of it.
 

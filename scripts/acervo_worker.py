@@ -2,7 +2,7 @@
 """Acervo's own server-side work, in one place.
 
 The Anki sync server is Anki's and the Acervo server answers requests; this is the batch part.
-Today that is the Anki robot and the dictionary compiler. Keeping it one entry point rather than a
+Today that is the Anki robot, the dictionary compiler and a by-hand loop render. Keeping it one entry point rather than a
 service per job is deliberate: these are one-shot commands run through `docker compose run --rm`, so
 a new job is a new subcommand and never a new container.
 
@@ -12,13 +12,14 @@ the write that created the word and run by `acervo/work/` — there is no sweep 
     acervo_worker.py anki push /input/runs/<id>/manifest.json
     acervo_worker.py anki pull-state
     acervo_worker.py dictionary build --id cc-cedict
+    acervo_worker.py loop render --owner-email learner@account.example.com --words 12
 """
 
 from __future__ import annotations
 
 import sys
 
-USAGE = "usage: acervo_worker.py {anki|dictionary} ...\n"
+USAGE = "usage: acervo_worker.py {anki|dictionary|loop} ...\n"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,6 +32,10 @@ def main(argv: list[str] | None = None) -> int:
         from acervo.consumers.anki.cli import main as anki_main
 
         return anki_main(rest)
+    if job == "loop":
+        from acervo.loops.cli import main as loop_main
+
+        return loop_main(rest)
     if job == "dictionary":
         from acervo.dictionaries.cli import main as dictionary_main
 

@@ -373,13 +373,19 @@ def take(settings: Settings, owner: str, body: dict[str, Any]) -> tuple[bytes, s
         answered=f"{result.mime}:{len(result.data)}",
         style="sent" if spoken.direction else ("dropped" if style else "none"))
     return data, mime, _spoken_headers(
-        result.answer.provider_id, result.answer.model, result.voice, direction_text,
+        result.answer.provider_id, result.answer.model, spoken.asked_voice, direction_text,
         sent=bool(spoken.direction),
     )
 
 
 def _spoken_headers(provider: str, model: str, voice: str | None, direction: str, *, sent: bool) -> dict[str, str]:
     """Who said it, and whether the direction reached them.
+
+    `voice` is the one *asked for*, which is empty when the owner chose none and the provider used
+    its own default — and it is the asked-for one on both paths deliberately. A cache hit cannot know
+    what answered, so reporting that on a fresh recording and this on a hit would make one header
+    mean two things. Provenance of what actually spoke belongs on a clip row, which stores it, not on
+    a cache entry, which has no table to store it in.
 
     `dropped` covers both ways a direction can fail to land: the owner chose the clear order for
     loops, or the answering voice cannot take one. The caller does not need to tell those apart —

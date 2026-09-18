@@ -1,6 +1,6 @@
 # LexiBeat · integrating the loop generator
 
-**Status:** Steps 1–5 done; step 6 is next. Step 1 was this document and one word deleted from
+**Status:** Steps 1–6 done; step 7 is next. Step 1 was this document and one word deleted from
 `models/redact.py`. Step 2 was the experiment that gated the prompt change, run 18 September 2026.
 Step 3 was the whole of the work in the other repository, which now ships a wheel, a versioned
 `/api/v1` and an injected speech backend — it landed on **18 September 2026** and everything from §4
@@ -8,7 +8,9 @@ step 4 onward is in this repository. Step 4 landed the same day: the two lexeme 
 collections, and the compose prompt the experiment measured. Schema version 11; the database is
 rebuilt rather than migrated, as every schema change here is. Step 5 followed: the orders renamed for
 their capability, `expressive` replaced by a per-use Delivery choice, and `POST /pronunciations/take`
-over a content-addressed store of FLAC masters.
+over a content-addressed store of FLAC masters. Step 6 put the generator on the deployment and gave
+it a voice, and a rehearsal against a real Acervo rendered a loop over real samples with a Gemini
+voice that took its direction — the quality this was for.
 
 A word's article can already say what a word means, show a picture of it, play a native speaker using
 it, and read every field aloud. What none of that does is get a word *stuck in your head*.
@@ -665,7 +667,7 @@ What it decided along the way:
 - **`pronunciation_settings` changed shape, so the Alembic head moved again.** It is not a replicated
   table, so `SCHEMA_VERSION` stays 11 — but the database still has to be rebuilt.
 
-### Step 6 · The deployment
+### Step 6 · The deployment — **done**
 
 `deploy/acervo/lexibeat/{pin.json,Dockerfile,entrypoint.sh,serve.py}`; `scripts/fetch_lexibeat.sh`
 with `--check` and `--force`; the portless service, the samples volume and `ACERVO_LEXIBEAT_URL` in
@@ -678,6 +680,46 @@ and the assertion that this service holds no provider credential.
 Then fetch the bundle on the NAS, render one loop by hand, and **set the poll and timeout from that
 measurement** rather than from feel — `python -m acervo.admin calls` exists so a bound is read rather
 than invented.
+
+**Measured, in a rehearsal against a real Acervo and the real bundle**, three words over the directed
+order (`google-tts` / `gemini-3.1-flash-tts-preview`, `X-Acervo-Direction: sent`):
+
+| | |
+|---|---|
+| Render | 65.5 s for 79.1 s of audio |
+| Per utterance | **3.6 s** — 18 takes, all recorded |
+| Per word | 21.8 s |
+| Bed | `gentle-game`, a sampled family, 86 BPM |
+| Track | 1.3 MB, 128 kbps, stereo |
+
+So a twelve-word loop is ~72 takes ≈ **4½ minutes**, and step 7's poll should be seconds rather than
+the corpus job's twenty — a render reports progress far more often than a channel scan does. The
+take cache is what makes a second loop sharing words cheaper, and `admin takes show` is how to see it.
+
+Four things this step decided or found:
+
+- **The client landed early, in `src/acervo/loops/client.py`.** The verification needs to post a loop
+  and follow it, and writing that wire shape twice — once for a script, once for step 7 — would have
+  been two places to keep in step. It is step 7's named home, tested here against responses recorded
+  from the real service, and `test_layering.py` has its stands-alone case.
+- **The render command is `acervo_worker.py loop render`, not a script.** A new job is a new worker
+  subcommand and never a new service; and the generator publishes no port, so only something on the
+  compose network can reach it. It signs in with the owner's password and hands its *session* token
+  to the generator, which `POST /pronunciations/take` accepts by design.
+- **`pedalboard` needs `libatomic1`, which slim-bookworm does not ship.** Without it the import
+  fails, LexiBeat falls back to librosa, and the slim runtime deliberately has none — so the render
+  died nine utterances in with `ModuleNotFoundError: No module named 'librosa'`, naming the wrong
+  dependency entirely. The image installs it; the misleading message is a defect to fix in LexiBeat's
+  next release, recorded below.
+- **`speech.delivery` is not sent yet.** `serve.py` reads it and defaults to `directed`, which is
+  correct for this deployment. Step 7 adds the field to LexiBeat's request body — a version bump and
+  a re-pin — which is what buys the plain order its one-call-a-line economy (§2.6).
+
+**One defect for LexiBeat's next release**, found by step 6 and not worth a release on its own:
+`dsp.time_stretch` and `dsp.pitch_shift` try pedalboard and fall back to librosa, but the slim
+runtime has no librosa — so any pedalboard problem surfaces as `ModuleNotFoundError: No module named
+'librosa'`, which names a dependency that was removed on purpose. It should say what happened to
+*both*. Fold it into whatever release step 7's `speech.delivery` needs.
 
 ### Step 7 · The pipeline
 

@@ -79,9 +79,26 @@ def test_the_answer_names_who_said_it_and_whether_the_direction_landed(server):
     answer = ask(server)
     assert answer.headers["x-acervo-provider"] == "google-tts"
     assert answer.headers["x-acervo-model"] == "gemini-3.1-flash-tts-preview"
-    assert answer.headers["x-acervo-voice"]
     assert answer.headers["x-acervo-direction"] == "sent"
     assert server.speech.calls[-1]["style"]
+
+
+def test_the_voice_header_means_one_thing_on_both_paths(server):
+    """The voice *asked for*, empty when the owner chose none — and the same on a hit and a miss.
+
+    A cache hit cannot know what answered, so reporting the answering voice on a fresh recording
+    would make one header mean two things depending on something the caller cannot see.
+    """
+    fresh = ask(server, text="una palabra nueva")
+    cached = ask(server, text="una palabra nueva")
+    assert fresh.headers["x-acervo-voice"] == cached.headers["x-acervo-voice"] == ""
+
+    server.put("/pronunciations/settings", {
+        "voices": {"google-tts": {"gemini-3.1-flash-tts-preview": {"es": "Kore"}}}
+    })
+    chosen = ask(server, text="otra palabra")
+    assert chosen.headers["x-acervo-voice"] == "Kore"
+    assert ask(server, text="otra palabra").headers["x-acervo-voice"] == "Kore"
 
 
 def test_no_direction_at_all_reads_as_none_rather_than_dropped(server):

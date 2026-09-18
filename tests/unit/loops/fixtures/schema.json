@@ -1,0 +1,93 @@
+{
+  "api_version": "1.0.0",
+  "engine_version": "1.4.0",
+  "production_bundle": true,
+  "patterns": [
+    {
+      "id": "alternating",
+      "bars_per_item": 8,
+      "utterances_per_item": 6,
+      "has_recall_gap": false
+    },
+    {
+      "id": "retrieval",
+      "bars_per_item": 8,
+      "utterances_per_item": 6,
+      "has_recall_gap": true
+    }
+  ],
+  "profiles": {
+    "production-v1": {
+      "version": "1.4.0",
+      "families": [
+        "meditative",
+        "organic",
+        "acoustic",
+        "sunlit",
+        "radiant",
+        "acoustic-flow",
+        "playful-minimal",
+        "warm-motion",
+        "bright-organic",
+        "gentle-game",
+        "sunlit-acoustic",
+        "gentle-movement",
+        "playful-plucked",
+        "bright-pastoral"
+      ]
+    },
+    "exploration-v1": {
+      "version": "1.4.0",
+      "families": [
+        "meditative",
+        "organic",
+        "acoustic",
+        "nocturnal",
+        "sunlit",
+        "lofi-wide"
+      ]
+    }
+  },
+  "families": [
+    "auto",
+    "meditative",
+    "organic",
+    "acoustic",
+    "sunlit",
+    "radiant",
+    "acoustic-flow",
+    "playful-minimal",
+    "warm-motion",
+    "bright-organic",
+    "gentle-game",
+    "sunlit-acoustic",
+    "gentle-movement",
+    "playful-plucked",
+    "bright-pastoral"
+  ],
+  "energy": [
+    "calm",
+    "balanced",
+    "bright"
+  ],
+  "rhythm": [
+    "sparse",
+    "steady",
+    "groovy"
+  ],
+  "palette": [
+    "acoustic",
+    "hybrid",
+    "electronic"
+  ],
+  "limits": {
+    "max_items": 200,
+    "max_text_characters": 200,
+    "max_direction_characters": 200,
+    "request_bytes": 1000000
+  },
+  "audio": {
+    "mime": "audio/mpeg",
+    "bitrate_kbps": 128
+  }
+}

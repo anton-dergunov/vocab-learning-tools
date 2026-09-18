@@ -101,6 +101,7 @@ def test_the_rules_below_are_not_vacuous():
     assert modules_under("models"), "no models/ modules: the stands-alone rule would be vacuous"
     assert modules_under("images"), "no images/ modules: the stands-alone rule would be vacuous"
     assert modules_under("clips"), "no clips/ modules: the stands-alone rule would be vacuous"
+    assert modules_under("loops"), "no loops/ modules: the stands-alone rule would be vacuous"
     assert modules_under("pronunciation"), "no pronunciation/ modules: the stands-alone rule would be vacuous"
     assert (PACKAGE / "article.py").exists(), "no article.py: the shared-view rule would be vacuous"
     assert modules_under("speech"), "no speech/ modules: the stands-alone rule would be vacuous"
@@ -195,6 +196,24 @@ def test_the_clip_pipeline_stands_on_the_provider_package_and_nothing_else(path)
     """
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the clip pipeline stands alone"
+
+
+@pytest.mark.parametrize("path", modules_under("loops"), ids=identify)
+def test_the_loop_client_stands_on_httpx_and_nothing_else(path):
+    """Words in, a track out — and no idea whose words they are, or what a job is.
+
+    LexiBeat is a separate repository behind a version pin, exactly as the corpus is, and this is the
+    only place its wire shape is read. `services/loops.py` is the binding layer that reads
+    `Settings` and the graph and turns these refusals into Acervo's wire vocabulary; `work/loop.py`
+    follows the operation. Neither belongs here, and nothing here may reach for either.
+
+    `cli.py` is the one exception it does not need: it imports `acervo.client`, which is the write
+    path every batch caller goes through, so it is excluded below rather than let through.
+    """
+    if path.name == "cli.py":
+        return
+    offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
+    assert not offenders, f"{path} imports {sorted(offenders)}; the loop client stands alone"
 
 
 @pytest.mark.parametrize("path", modules_under("pronunciation"), ids=identify)

@@ -1,0 +1,124 @@
+{
+  "operation_id": "95657688d8fc4f6ea6ce009226392281",
+  "status": "completed",
+  "successful": true,
+  "error": null,
+  "progress": {
+    "fraction": 1.0,
+    "message": "Loop ready"
+  },
+  "created_at": 1789752888.253255,
+  "updated_at": 1789752893.1779,
+  "result": {
+    "audio_mime": "audio/mpeg",
+    "duration_seconds": 89.23528344671202,
+    "pattern": "retrieval",
+    "style_id": "acoustic-flow",
+    "seed": 104740,
+    "engine_version": "1.4.0",
+    "profile_version": "production-v1",
+    "bed_fingerprint": "f35282aaf3c40245",
+    "total_bars": 20,
+    "bpm": 68.0,
+    "timeline": [
+      {
+        "index": 0,
+        "source": "asco",
+        "target": "disgust",
+        "direction": "repulsed, recoiling slightly",
+        "start": 8.823529411764707,
+        "source_reveal": 8.823529411764707,
+        "target_reveal": 17.647058823529413,
+        "end": 44.117647058823536,
+        "utterances": [
+          {
+            "role": "source",
+            "repetition": 0,
+            "start": 8.823529411764707,
+            "end": 9.314187008136589
+          },
+          {
+            "role": "target",
+            "repetition": 0,
+            "start": 17.647058823529413,
+            "end": 18.137716419901295
+          },
+          {
+            "role": "source",
+            "repetition": 1,
+            "start": 22.058823529411768,
+            "end": 22.54948112578365
+          },
+          {
+            "role": "target",
+            "repetition": 1,
+            "start": 26.47058823529412,
+            "end": 26.961245831666
+          },
+          {
+            "role": "source",
+            "repetition": 2,
+            "start": 30.88235294117647,
+            "end": 31.373010537548353
+          },
+          {
+            "role": "target",
+            "repetition": 2,
+            "start": 35.294117647058826,
+            "end": 35.78477524343071
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "source": "la balsa",
+        "target": "raft",
+        "direction": "",
+        "start": 44.117647058823536,
+        "source_reveal": 44.117647058823536,
+        "target_reveal": 52.94117647058824,
+        "end": 88.23529411764707,
+        "utterances": [
+          {
+            "role": "source",
+            "repetition": 0,
+            "start": 44.117647058823536,
+            "end": 44.60830465519542
+          },
+          {
+            "role": "target",
+            "repetition": 0,
+            "start": 52.94117647058824,
+            "end": 53.43183406696012
+          },
+          {
+            "role": "source",
+            "repetition": 1,
+            "start": 57.352941176470594,
+            "end": 57.843598772842476
+          },
+          {
+            "role": "target",
+            "repetition": 1,
+            "start": 61.76470588235294,
+            "end": 62.255363478724824
+          },
+          {
+            "role": "source",
+            "repetition": 2,
+            "start": 66.1764705882353,
+            "end": 66.66712818460718
+          },
+          {
+            "role": "target",
+            "repetition": 2,
+            "start": 70.58823529411765,
+            "end": 71.07889289048953
+          }
+        ]
+      }
+    ],
+    "audio_url": "/api/v1/loops/95657688d8fc4f6ea6ce009226392281/audio",
+    "bitrate_kbps": 128
+  }
+}

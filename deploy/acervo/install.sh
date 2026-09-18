@@ -111,6 +111,8 @@ mkdir -p \
   "$acervo_root/data/speech-cache" \
   "$acervo_root/data/speech-index" \
   "$acervo_root/data/speech-catalogues" \
+  "$acervo_root/data/lexibeat-bundle" \
+  "$acervo_root/data/lexibeat-out" \
   "$acervo_root/downloads" \
   "$acervo_root/input" \
   "$acervo_root/backups" \
@@ -352,6 +354,8 @@ ACERVO_MEDIA=$acervo_root/data/media
 ACERVO_SPEECH_CACHE=$acervo_root/data/speech-cache
 ACERVO_SPEECH_INDEX=$acervo_root/data/speech-index
 ACERVO_SPEECH_CATALOGUES=$acervo_root/data/speech-catalogues
+ACERVO_LEXIBEAT_BUNDLE=$acervo_root/data/lexibeat-bundle
+ACERVO_LEXIBEAT_OUT=$acervo_root/data/lexibeat-out
 ACERVO_DOWNLOADS=$acervo_root/downloads
 ACERVO_INPUT_PATH=$acervo_root/input
 ACERVO_CREDENTIALS=$acervo_root/credentials
@@ -437,7 +441,7 @@ run_quietly "Building and starting containers" compose -p "$compose_project" \
   --env-file "$acervo_root/deployment.env" \
   --env-file "$acervo_root/secrets.env" \
   --env-file "$acervo_root/llm.env" \
-  -f "$compose_file" up -d --build anki-sync-server speech-retrieval server
+  -f "$compose_file" up -d --build anki-sync-server speech-retrieval lexibeat server
 
 echo "Waiting for anki-sync-server to become healthy..."
 attempt=0
@@ -459,6 +463,21 @@ until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
     compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" logs speech-retrieval >&2
+    exit 1
+  fi
+  sleep 2
+done
+
+# Liveness, not readiness, and specifically not "has it got its samples": a fresh deployment has no
+# sample bundle and serves perfectly well without one, offering the sample-free palette. Gating here
+# would fail the install of a working service. The container says which state it is in on its first
+# log line, and /api/v1/schema answers it for the interface.
+echo "Waiting for lexibeat to become healthy..."
+attempt=0
+until [ "$(compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" ps --format json lexibeat 2>/dev/null | grep -c '"Health":"healthy"' || true)" -gt 0 ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    compose -p "$compose_project" --env-file "$acervo_root/deployment.env" --env-file "$acervo_root/secrets.env" --env-file "$acervo_root/llm.env" -f "$compose_file" logs lexibeat >&2
     exit 1
   fi
   sleep 2

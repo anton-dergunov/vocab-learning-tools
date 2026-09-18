@@ -89,6 +89,22 @@ fi
 mkdir -p "$bundle/vendor/speech"
 cp "$speech_wheel" "$bundle/vendor/speech/"
 
+# The pinned lexibeat wheel, on the same terms and for the same reason: compose builds the loop
+# service from the extracted archive, so a release without it deploys a service that cannot build.
+#
+# Only the wheel. The ~1.9 GB sample bundle the same pin names is deliberately *not* here: it is
+# fetched once on the server into a volume, and putting two gigabytes of audio into every release
+# archive to save one command would be the opposite trade to the one the dictionaries make, which
+# are small enough to ride along.
+lexibeat_wheel="$repo_root/vendor/lexibeat/$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]["wheel"]["file"])' "$repo_root/deploy/acervo/lexibeat/pin.json")"
+if [ ! -f "$lexibeat_wheel" ]; then
+  echo "Missing the pinned lexibeat wheel: ${lexibeat_wheel##*/}" >&2
+  echo "Run scripts/fetch_lexibeat.sh first; the loop service cannot be built without it." >&2
+  exit 1
+fi
+mkdir -p "$bundle/vendor/lexibeat"
+cp "$lexibeat_wheel" "$bundle/vendor/lexibeat/"
+
 archive_entries="config deploy dictionaries docs models prompts requirements scripts src templates package.json pyproject.toml README.md version.json vendor"
 [ ! -d "$bundle/downloads" ] || archive_entries="$archive_entries downloads"
 [ ! -d "$bundle/dictionary-artifacts" ] || archive_entries="$archive_entries dictionary-artifacts"

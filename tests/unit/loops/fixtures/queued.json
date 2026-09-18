@@ -1,0 +1,13 @@
+{
+  "operation_id": "95657688d8fc4f6ea6ce009226392281",
+  "status": "queued",
+  "successful": null,
+  "error": null,
+  "progress": {
+    "fraction": 0.0,
+    "message": "Queued"
+  },
+  "created_at": 1789752888.253255,
+  "updated_at": 1789752888.253255,
+  "result": null
+}

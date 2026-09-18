@@ -19,6 +19,10 @@ services:
       # Where the corpus lives, on the compose network. Internal by construction: the service
       # publishes no port, and the browser reaches it through this server's authenticated proxy.
       ACERVO_SPEECH_URL: "${ACERVO_SPEECH_URL:-http://speech-retrieval:8000/api/v1}"
+      # Where the loop generator lives, on the compose network. Internal by construction, exactly
+      # like the corpus: it publishes no port, and nothing outside this network has business
+      # reaching it — a render is asked for by the server, never by a browser.
+      ACERVO_LEXIBEAT_URL: "${ACERVO_LEXIBEAT_URL:-http://lexibeat:8000/api/v1}"
       # Held here and never sent to a client, exactly like a provider key: it authorises channel
       # mutations, and the proxy attaches it server-side.
       ACERVO_SPEECH_OPERATOR_TOKEN: "${ACERVO_SPEECH_OPERATOR_TOKEN:-}"
@@ -134,6 +138,51 @@ services:
       retries: 20
       start_period: 5s
 
+  # The loop generator. Procedural music plus speech it does not synthesise itself: numpy and
+  # scipy over CC0 samples, no GPU, no network and byte-identical from a seed, which is what makes
+  # building a loop on this machine possible at all.
+  lexibeat:
+    build:
+      context: ../..
+      dockerfile: deploy/acervo/lexibeat/Dockerfile
+    restart: unless-stopped
+    user: "${ACERVO_UID:-1000}:${ACERVO_GID:-1000}"
+    environment:
+      # Where to come home for a voice. `serve.py` implements LexiBeat's `Backend` as a call to
+      # POST /pronunciations/take, carrying the render-scoped token that arrived with the request.
+      ACERVO_API_URL: "${ACERVO_LEXIBEAT_API_URL:-http://server:8000/api/acervo/v1}"
+      LEXIBEAT_BUNDLE_ROOT: /var/lib/lexibeat/bundle/lexibeat-production-core-v1
+      LEXIBEAT_SERVICE_OUT: /var/lib/lexibeat/out
+    # **Deliberately no provider credential of any kind**, and this is the one companion service
+    # where that is true — no GEMINI_API_KEY, no Cloudflare pair, no Vertex project, no credentials
+    # mount. It is handed a voice per render instead (§2.3), so there is nothing here to leak, to
+    # rotate, or to keep in step with the server's chain. `test_deployment.py` asserts the absence
+    # so a later reader cannot mistake it for an oversight.
+    #
+    # Deliberately no `ports` either, for `speech-retrieval`'s reason: a render is asked for by the
+    # server, and nothing outside this network talks to it.
+    volumes:
+      # ~1.9 GB of content-addressed audio, fetched once with `lexibeat-bundle fetch` and never
+      # deleted by a reset — the dictionaries arrangement, and for its reason: the owner's own data
+      # moved between the owner's own machines. Without it the engine serves and offers only the
+      # sample-free electronic palette, which is a different category of sound rather than a
+      # slightly plainer one.
+      - "${ACERVO_LEXIBEAT_BUNDLE:-acervo-lexibeat-bundle}:/var/lib/lexibeat/bundle"
+      # Finished tracks, until Acervo has fetched them. Entirely disposable.
+      - "${ACERVO_LEXIBEAT_OUT:-acervo-lexibeat-out}:/var/lib/lexibeat/out"
+    # Deliberately **no `depends_on`**, in either direction. Render requests arrive *from* the
+    # server, so the server is up whenever a call comes home; and the server must start whether or
+    # not this is healthy, because everything else it does works without loops.
+    healthcheck:
+      # Liveness, **not** readiness, and specifically not "is the sample bundle present". A fresh
+      # deployment has no bundle and still serves; gating on it would fail the install of a working
+      # service, which is the lesson the corpus healthcheck beside this one paid for.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
   anki-sync-server:
     build:
       context: ../..
@@ -234,6 +283,8 @@ volumes:
   acervo-speech-cache:
   acervo-speech-index:
   acervo-speech-catalogues:
+  acervo-lexibeat-bundle:
+  acervo-lexibeat-out:
   # The fallback for `ACERVO_CREDENTIALS`, which three services mount. Undeclared, it made *every*
   # compose command fail with "refers to undefined volume" the moment a caller left the variable
   # unset — which the installer never does and the Docker integration test always does.

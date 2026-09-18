@@ -23,6 +23,8 @@ DOCKERFILES = (
     # The corpus service, built from the pinned wheel in `vendor/speech/`. A Dockerfile absent from
     # this tuple is simply not checked, so the COPY-path guarantee stops applying without failing.
     ROOT / "deploy" / "acervo" / "speech" / "Dockerfile",
+    # The loop generator, built the same way from `vendor/lexibeat/`.
+    ROOT / "deploy" / "acervo" / "lexibeat" / "Dockerfile",
 )
 PACKAGER = ROOT / "scripts" / "package_acervo_server.sh"
 
