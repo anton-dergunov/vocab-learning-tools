@@ -554,6 +554,35 @@ def pronunciation(owner: str, pronunciation_id: str) -> dict[str, Any] | None:
     return projected(collection, row) if row is not None else None
 
 
+def loop_items(owner: str, loop_id: str) -> list[dict[str, Any]]:
+    """The words of one loop this owner holds, in the wire shape, in the order they are heard."""
+    collection = COLLECTION_BY_KEY["loopItems"]
+    table = collection.table
+    with reading() as connection:
+        rows = connection.execute(
+            select(table)
+            .where(table.c.owner == owner, table.c.loop == loop_id)
+            .order_by(table.c.item_order, table.c.id)
+        ).mappings()
+        return [projected(collection, row) for row in rows]
+
+
+def next_loop_position(owner: str, language: str) -> int:
+    """Where a new loop goes: after the last one in this language.
+
+    Sparse and renumbered on reorder, with no uniqueness constraint — that is the data rule, and two
+    loops that happened to land on one number are an ordering to tidy rather than a write to refuse.
+    """
+    table = tables.loops
+    with reading() as connection:
+        highest = connection.execute(
+            select(func.max(table.c.loop_order)).where(
+                table.c.owner == owner, table.c.language == language, table.c.deleted.is_(False)
+            )
+        ).scalar()
+    return int(highest or 0) + 1
+
+
 def owned_records(owner: str, key: str, ids: list[str]) -> dict[str, dict[str, Any]]:
     """This owner's records of one collection by id, tombstones included, in the wire shape.
 

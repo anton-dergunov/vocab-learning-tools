@@ -721,18 +721,45 @@ runtime has no librosa — so any pedalboard problem surfaces as `ModuleNotFound
 'librosa'`, which names a dependency that was removed on purpose. It should say what happened to
 *both*. Fold it into whatever release step 7's `speech.delivery` needs.
 
-### Step 7 · The pipeline
+### Step 7 · The pipeline — **done**
 
 `src/acervo/loops/` — the `httpx` client that is the only place the service's wire shape is read, with
-its own refusal vocabulary, as `clips/corpus.py` is for the corpus. `services/loops.py` binds it to
-`Settings`, the graph and `ApiError`. `work/loop.py` registers the kind, joins `work/kinds.py:_load()`
-and follows the operation. `api/routes/loops.py` holds `POST /loops`, the settings pair and an
-allow-listed `schema` passthrough — written out, never concatenated. `api/routes/jobs.py` gains the
-`loop` entry in `ENQUEUEABLE`. `test_layering.py` gains a stands-alone case and a vacuity assertion for
-`loops/`.
+its own refusal vocabulary, as `clips/corpus.py` is for the corpus (it landed in step 6, which needed
+it to verify). `services/loops.py` binds it to `Settings`, the graph and `ApiError`. `work/loop.py`
+registers the kind, joins `work/kinds.py:_load()` and follows the operation. `api/routes/loops.py`
+holds `POST /loops` and an allow-listed `schema` passthrough — written out, never concatenated.
+`api/routes/jobs.py` gains the `loop` entry in `ENQUEUEABLE`, which is Try again.
+`test_layering.py` has the stands-alone case and the vacuity assertion for `loops/`.
 
 If the row is written and queuing the job then fails, the loop shows as never rendered and Try again
 queues it. That is §2.9's derived state doing its job.
+
+Four things this step decided:
+
+- **`src/acervo/tokens.py` is a new leaf, and it exists because of the layering rule.** A render needs
+  a render-scoped token, minting lived in `api/auth.py`, and `work/` may not import `api/`. Rather
+  than route a job back through the request path, the signing rule moved to a module that knows JWT
+  and a secret and nothing else; `api/auth.py` re-exports from it, so every existing caller reads
+  unchanged and the rule is written down once instead of twice.
+- **Nothing is held in memory between the two steps.** `loop.render` writes the operation id down and
+  `loop.store` reads it back and asks the generator again for the finished operation. An in-memory
+  hand-off works until the first retry — a step that fails re-enters the handler from the top with
+  only what was written down — and the earlier draft had a `loops_interrupted` refusal in it whose
+  only purpose was to say so.
+- **The render holds the `audio` lane, not a lane of its own.** That is the allowance it actually
+  spends: the generator holds no credential and speaks every line by calling home to
+  `POST /pronunciations/take`, so a quota refused for a loop is the quota a word's pronunciation
+  would have been refused from.
+- **`loops_busy` and `loops_unreachable` join `retry.TRANSIENT`.** They are the same two conditions
+  two of the three model-call codes already name — busy, and not there this second — and both pass on
+  their own. `loops_failed` deliberately does not: a render the generator ran and could not finish is
+  a fact about that request, and asking again changes nothing.
+
+**Still not sent: `speech.delivery`.** `serve.py` reads it and defaults to `directed`, which is what
+this deployment wants; `services/loops.delivery` reads the owner's choice and the job writes it into
+the step's detail, so it is visible without being transmitted. Sending it is a field on LexiBeat's
+request body that 0.2.0's model forbids as unknown — a version bump and a re-pin, together with the
+misleading `librosa` fallback message found in step 6.
 
 ### Step 8 · The interface
 

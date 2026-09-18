@@ -10,7 +10,14 @@ from __future__ import annotations
 
 from acervo.models.pacing import Pace
 
-TRANSIENT = frozenset({"llm_rate_limited", "llm_unavailable", "llm_unreachable"})
+# The three model-call failures, and the two the loop generator can answer with that mean the same
+# two things: it is busy with another render, or the container is not there this second. Both are
+# conditions that pass on their own. `loops_failed` is not among them — a render the generator ran
+# and could not finish is a fact about that request, and asking again changes nothing.
+TRANSIENT = frozenset({
+    "llm_rate_limited", "llm_unavailable", "llm_unreachable",
+    "loops_busy", "loops_unreachable",
+})
 
 # A step waits 30 seconds, doubling to ten minutes, and gives up after this many rests — about 25
 # minutes in all. Past that, the provider is not having a bad minute, and the word is better left

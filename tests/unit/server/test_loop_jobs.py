@@ -1,0 +1,234 @@
+"""The `loop` job: start a render, follow it, store what comes back.
+
+The generator is faked at the HTTP boundary with the responses recorded from the real one. What is
+pinned here is the half `work/corpus.py` already established — a long-running thing followed by
+requeue rather than held in the runner's lane — plus the two things a loop adds: a track written as
+it arrived, and times written onto rows that already existed.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+
+import httpx
+import pytest
+from graph_records import lexeme, sense, vocabulary
+
+from acervo.repository import jobs
+from acervo.work import kinds
+from acervo.work.loop import POLL_SECONDS
+from acervo.work.runner import Runner
+
+FIXTURES = Path(__file__).resolve().parents[1] / "loops" / "fixtures"
+LEXIBEAT_URL = "http://lexibeat:8000/api/v1"
+TRACK = b"ID3" + b"a-finished-mp3" * 40
+
+
+def recorded(name: str) -> dict:
+    return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = time.time()
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class GeneratorStub:
+    def __init__(self) -> None:
+        self.started: list[dict] = []
+        self.polls = 0
+        # How many looks before it reports finished, so a test can exercise the requeue.
+        self.finish_after = 0
+        self.completed = recorded("completed")
+        self.tracks = 0
+
+    def request(self, method: str, url: str, **kwargs):
+        path = httpx.URL(url).path
+        if path.endswith("/schema"):
+            return httpx.Response(200, json=recorded("schema"))
+        if method == "POST":
+            self.started.append(kwargs.get("json") or {})
+            return httpx.Response(202, json=recorded("queued"))
+        self.polls += 1
+        if self.polls > self.finish_after:
+            return httpx.Response(200, json=self.completed)
+        return httpx.Response(200, json={**recorded("queued"), "status": "running",
+                                         "progress": {"fraction": 0.3, "message": "Synthesizing"}})
+
+    def get(self, url: str, **kwargs):
+        self.tracks += 1
+        return httpx.Response(200, content=TRACK, headers={"content-type": "audio/mpeg"})
+
+
+@pytest.fixture
+def generator(server, monkeypatch) -> GeneratorStub:
+    stub = GeneratorStub()
+    monkeypatch.setattr(server.settings, "lexibeat_url", LEXIBEAT_URL)
+
+    class Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def request(self, method, url, **kwargs):
+            return stub.request(method, url, **kwargs)
+
+        def get(self, url, **kwargs):
+            return stub.get(url, **kwargs)
+
+    monkeypatch.setattr("acervo.loops.client.httpx.Client", Client)
+    return stub
+
+
+@pytest.fixture
+def clock() -> Clock:
+    return Clock()
+
+
+@pytest.fixture
+def runner(server, clock) -> Runner:
+    return Runner(server.settings, clock=clock)
+
+
+def a_loop(server, count: int = 2) -> dict:
+    server.push({"vocabularies": [vocabulary()]})
+    ids = []
+    for index in range(count):
+        entry = lexeme(headword=f"palabra{index}", lemma=f"palabra{index}", status="active",
+                       primaryGloss=f"word {index}", emotion="plainly")
+        server.push({"lexemes": [entry], "senses": [sense(entry["id"])]})
+        ids.append(entry["id"])
+    answer = server.post("/loops", {"deviceId": "device000000001", "language": "es",
+                                    "lexemeIds": ids})
+    assert answer.status_code == 202, answer.text
+    return answer.json()["data"]["loop"]
+
+
+def stored(server, key):
+    return server.pull().json()["data"]["changes"][key]
+
+
+def drive(runner, clock, rounds: int = 6) -> None:
+    """Run until the job is waiting, move time past its rest, run again — for as long as it asks.
+
+    A render is followed by requeue rather than held in the lane, so reaching the end of one takes
+    as many passes as it takes looks. Real time never moves in a test; the clock is the runner's.
+    """
+    for _ in range(rounds):
+        runner.run_until_idle()
+        clock.advance(POLL_SECONDS * 4)
+
+
+# ── the render ──────────────────────────────────────────────────────────────
+
+
+def test_a_render_is_started_with_the_words_and_a_render_scoped_token(server, generator, runner, clock):
+    a_loop(server, 2)
+    drive(runner, clock)
+    assert len(generator.started) == 1
+    body = generator.started[0]
+    assert [item["source"] for item in body["items"]] == ["palabra0", "palabra1"]
+    assert body["source_language"]["code"] == "es"
+    # The whole of what the generator is given to speak with. It is a JWT, not the owner's session.
+    assert body["speech"]["token"] and body["speech"]["token"].count(".") == 2
+
+
+def test_the_track_and_the_times_land_together_when_it_finishes(server, generator, runner, clock):
+    loop = a_loop(server, 2)
+    drive(runner, clock)
+
+    written = [row for row in stored(server, "loops") if row["id"] == loop["id"]][0]
+    assert written["audioRef"].startswith("loops/es/") and written["audioRef"].endswith(".mp3")
+    assert written["audioMime"] == "audio/mpeg"
+    assert written["durationSeconds"] > 0
+    assert written["styleId"] and written["engineVersion"] and written["bedFingerprint"]
+
+    # Stored exactly as it arrived: the generator wrote MP3 and Acervo re-encodes nothing.
+    assert (server.media / written["audioRef"]).read_bytes() == TRACK
+    # A digest of the bytes, so a re-render is a new reference and a cached device simply misses.
+    assert written["audioRef"].rsplit("-", 1)[1][:8] != "00000000"
+
+    items = sorted(stored(server, "loopItems"), key=lambda row: row["position"])
+    assert all(row["endSeconds"] > 0 for row in items)
+    first = items[0]
+    assert first["startSeconds"] <= first["sourceRevealSeconds"] <= first["targetRevealSeconds"] <= first["endSeconds"]
+    # The words are the ones written when the loop was asked for, untouched by the render.
+    assert [row["sourceText"] for row in items] == ["palabra0", "palabra1"]
+
+
+def test_an_unfinished_render_waits_and_yields_the_lane_rather_than_holding_it(server, generator, runner, clock):
+    generator.finish_after = 2
+    a_loop(server, 1)
+
+    runner.run_until_idle()
+    open_jobs = jobs.open_jobs(server.owner)
+    assert len(open_jobs) == 1
+    step = open_jobs[0]["steps"][0]
+    # Waiting rather than running: the lane is free for other work while the generator renders.
+    assert step["state"] == "waiting"
+    assert step["detail"]["operationId"]
+    assert step["detail"]["polls"] == 1
+    # Nothing stored yet: the loop is still what it was when it was asked for.
+    assert stored(server, "loops")[0]["audioRef"] is None
+
+    clock.advance(POLL_SECONDS * 4)
+    runner.run_until_idle()
+    step = jobs.open_jobs(server.owner)[0]["steps"][0]
+    assert step["detail"]["progress"] == pytest.approx(0.3)
+    assert step["detail"]["doing"] == "Synthesizing"
+
+    drive(runner, clock)
+    assert stored(server, "loops")[0]["audioRef"] is not None
+
+
+def test_a_render_the_generator_failed_leaves_the_loop_asked_for_and_unmade(server, generator, runner, clock):
+    generator.completed = {**recorded("completed"), "status": "failed", "successful": False,
+                           "error": "the voice refused", "result": None}
+    loop = a_loop(server, 1)
+    drive(runner, clock)
+
+    written = [row for row in stored(server, "loops") if row["id"] == loop["id"]][0]
+    # Derived state doing its job: no status column to disagree with, and Try again queues another.
+    assert written["audioRef"] is None
+    assert not written["deleted"]
+    assert stored(server, "loopItems")
+    assert generator.tracks == 0
+
+
+def test_an_unreachable_generator_is_rested_rather_than_failed(server, generator, runner, clock, monkeypatch):
+    """A container that is not there this second is a condition that passes, not a fact to record.
+
+    It joins the three model-call codes in `retry.TRANSIENT` for that reason, and the step goes to
+    waiting with the code on it rather than failing on the first refusal. How long the ladder runs
+    before it gives up is `retry`'s and is tested there.
+    """
+    def refuse(*args, **kwargs):
+        raise httpx.ConnectError("no route to host")
+
+    a_loop(server, 1)
+    monkeypatch.setattr(GeneratorStub, "request", refuse)
+    runner.run_until_idle()
+
+    step = jobs.open_jobs(server.owner)[0]["steps"][0]
+    assert step["state"] == "waiting"
+    assert step["error"] == "loops_unreachable"
+    assert step["rests"] == 1
+    # Nothing was written on the way, so a later attempt starts from the same place.
+    assert stored(server, "loops")[0]["audioRef"] is None
+
+
+def test_the_kind_declares_its_phases_up_front(server, generator, runner, clock):
+    """Declared steps are what the progress strip draws, in order, from the first reading."""
+    assert kinds.find("loop").steps == ("loop.render", "loop.store")
+    a_loop(server, 1)
+    drive(runner, clock)
+    done = [job for job in jobs.recent(server.owner, 50) if job["kind"] == "loop"][0]
+    assert [step["name"] for step in done["steps"]] == ["loop.render", "loop.store"]
+    assert [step["state"] for step in done["steps"]] == ["done", "done"]

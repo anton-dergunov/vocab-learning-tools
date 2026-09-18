@@ -31,6 +31,9 @@ ENQUEUEABLE: dict[str, str] = {
     "image.rebrief": "lexeme",
     # Update now. The corpus is the deployment's, so the job is about it rather than a record.
     "corpus.update": "corpus",
+    # Try again on a loop that was never rendered, or was rendered badly. Its row already exists —
+    # an empty `audioRef` is what says it has not been made — so this re-renders rather than creates.
+    "loop": "loop",
 }
 # Kinds about one fixed thing rather than a record the request names.
 FIXED_SUBJECTS: dict[str, str] = {"corpus.update": "corpus"}
@@ -52,6 +55,10 @@ def _subject(owner: str, kind: str, body: dict[str, Any]) -> str:
     if expected == "imagePrompt":
         if graph.image_prompt(owner, identifier) is None:
             raise ApiError(404, "not_found", "That picture is not in your vocabulary.")
+    elif expected == "loop":
+        held = graph.owned_records(owner, "loops", [identifier]).get(identifier)
+        if held is None or held.get("deleted"):
+            raise ApiError(404, "not_found", "That loop is not in your vocabulary.")
     elif graph.lexeme_of(owner, expected, identifier) is None:
         raise ApiError(404, "not_found", "That word is not in your vocabulary.")
     return identifier

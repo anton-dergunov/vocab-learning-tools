@@ -1,193 +1,206 @@
-"""The two collections a loop is, and what the graph refuses about them.
+"""Asking for a loop: the route, the rows it writes, and the job it queues.
 
-A loop is the first replicated record that hangs off no word: it is an owner-level artefact that
-*references* lexemes. So the things worth pinning here are the ones that fall out of that — where it
-sits in the merge order, what a half-rendered one looks like, and which deletions reach it.
+The generator is faked at the HTTP boundary and fed the responses recorded from the real one in
+`tests/unit/loops/fixtures/`, so this is a test of Acervo's half and never of the network.
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import httpx
 import pytest
-from graph_records import lexeme, loop, loop_item, sense, vocabulary
+from graph_records import lexeme, sense, vocabulary
 
-from acervo.db import tables
-from acervo.domain.projection import COLLECTIONS, WORD_COLLECTIONS
+from acervo.loops.client import Loop, Operation
 
-
-def words(server):
-    """One vocabulary and one word, which is the least a loop item can refer to."""
-    word = lexeme()
-    server.push({"vocabularies": [vocabulary()], "lexemes": [word], "senses": [sense(word["id"])]})
-    return word
+FIXTURES = Path(__file__).resolve().parents[1] / "loops" / "fixtures"
+LEXIBEAT_URL = "http://lexibeat:8000/api/v1"
 
 
-def stored(server, key):
-    return server.pull().json()["data"]["changes"][key]
+def recorded(name: str) -> dict:
+    return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
-# ── where they sit ──────────────────────────────────────────────────────────
+class GeneratorStub:
+    """Answers the four calls Acervo makes, and remembers what it was asked."""
+
+    def __init__(self) -> None:
+        self.calls: list[httpx.Request] = []
+        self.bodies: list[dict] = []
+        self.operation = recorded("queued")
+        self.failure: Exception | None = None
+
+    def request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        request = httpx.Request(method, url, json=kwargs.get("json"))
+        self.calls.append(request)
+        if kwargs.get("json"):
+            self.bodies.append(kwargs["json"])
+        if self.failure is not None:
+            raise self.failure
+        path = httpx.URL(url).path
+        if path.endswith("/schema"):
+            return httpx.Response(200, json=recorded("schema"))
+        if path.endswith("/health"):
+            return httpx.Response(200, json=recorded("health"))
+        return httpx.Response(200, json=self.operation)
+
+    def get(self, url: str, **kwargs) -> httpx.Response:
+        return httpx.Response(200, content=b"ID3-a-finished-track",
+                              headers={"content-type": "audio/mpeg"})
 
 
-def test_loops_come_last_so_both_their_relations_resolve_before_them():
-    """The merge order is the collection order, and a loop item names a loop *and* a lexeme."""
-    keys = [collection.key for collection in COLLECTIONS]
-    assert keys[-2:] == ["loops", "loopItems"]
-    assert keys.index("lexemes") < keys.index("loopItems")
-    assert keys.index("loops") < keys.index("loopItems")
-    assert tables.REPLICATED[-2:] == ("loops", "loop_items")
+@pytest.fixture
+def generator(server, monkeypatch) -> GeneratorStub:
+    stub = GeneratorStub()
+    monkeypatch.setattr(server.settings, "lexibeat_url", LEXIBEAT_URL)
+
+    class Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def request(self, method, url, **kwargs):
+            return stub.request(method, url, **kwargs)
+
+        def get(self, url, **kwargs):
+            return stub.get(url, **kwargs)
+
+    monkeypatch.setattr("acervo.loops.client.httpx.Client", Client)
+    return stub
 
 
-def test_the_word_reset_takes_loops_and_leaves_the_languages_alone():
-    """Not coded anywhere: it falls out of loops sitting last, which is why they were put there."""
-    keys = [collection.key for collection in WORD_COLLECTIONS]
-    assert "loops" in keys and "loopItems" in keys
-    assert "vocabularies" not in keys and "topics" not in keys
-    # Children first, so a tombstone never outlives what it hangs off.
-    assert keys.index("loopItems") < keys.index("loops")
+def words(server, count: int = 3, **overrides):
+    """A vocabulary and `count` loop-eligible words."""
+    made = []
+    server.push({"vocabularies": [vocabulary()]})
+    for index in range(count):
+        entry = lexeme(headword=f"palabra{index}", lemma=f"palabra{index}", status="active",
+                       primaryGloss=f"word {index}", emotion="plainly", **overrides)
+        server.push({"lexemes": [entry], "senses": [sense(entry["id"])]})
+        made.append(entry)
+    return made
 
 
-# ── a loop, written and read back ───────────────────────────────────────────
+def ask(server, ids, **overrides):
+    body = {"deviceId": "device000000001", "language": "es", "lexemeIds": ids}
+    return server.post("/loops", {**body, **overrides})
 
 
-def test_a_loop_and_its_items_land_in_one_batch_and_come_back_projected(server):
-    word = words(server)
-    track = loop()
-    item = loop_item(track["id"], word["id"])
+# ── the schema passthrough ──────────────────────────────────────────────────
 
-    answer = server.push({"loops": [track], "loopItems": [item]})
+
+def test_the_generators_catalogues_are_read_rather_than_copied(server, generator):
+    answer = server.get("/loops/schema")
     assert answer.status_code == 200, answer.text
-
-    written = stored(server, "loops")[0]
-    assert written["styleId"] == "sunlit-acoustic"
-    assert written["seed"] == 104740
-    assert written["position"] == 0
-    assert written["durationSeconds"] == pytest.approx(124.5)
-    row = stored(server, "loopItems")[0]
-    assert row["loopId"] == track["id"] and row["lexemeId"] == word["id"]
-    assert row["sourceText"] == "picar" and row["targetText"] == "to sting"
-    assert row["targetRevealSeconds"] == pytest.approx(17.65)
+    body = answer.json()["data"]
+    assert set(body["patterns"]) == {"retrieval", "alternating"}
+    assert "auto" in body["families"]
+    assert body["productionBundle"] is True
+    # One route, written out. Nothing concatenates a path a client sent.
+    assert [httpx.URL(str(call.url)).path for call in generator.calls] == ["/api/v1/schema"]
 
 
-def test_position_is_stored_as_loop_order_and_projected_back_as_position(server):
-    """The wire says `position`, storage says `loop_order` beside `vocab_order` and `sense_order`."""
-    words(server)
-    server.push({"loops": [loop(position=7)]})
-    assert stored(server, "loops")[0]["position"] == 7
+def test_no_generator_configured_is_said_rather_than_crashed(server):
+    assert server.get("/loops/schema").status_code == 503
 
 
-def test_an_unrendered_loop_is_one_with_no_reference_and_nothing_else_says_so(server):
-    """There is no status column: four facts already say all of it, and a fifth would be a thing to
-    keep in step."""
-    words(server)
-    server.push({"loops": [loop(audioRef=None, audioMime=None, durationSeconds=0)]})
-    written = stored(server, "loops")[0]
-    assert written["audioRef"] is None
-    # Hidden with it, rather than projected as an empty string and a zero that read like facts.
-    assert written["audioMime"] is None
-    assert written["durationSeconds"] is None
+# ── asking for one ──────────────────────────────────────────────────────────
 
 
-# ── what is refused ─────────────────────────────────────────────────────────
+def test_a_loop_is_written_with_its_words_and_no_track_yet(server, generator):
+    made = words(server, 3)
+    answer = ask(server, [one["id"] for one in made])
+    assert answer.status_code == 202, answer.text
+    body = answer.json()["data"]
+
+    loop = body["loop"]
+    # Derived state: an absent reference is the whole of what "not rendered" means. There is no
+    # status column to disagree with it.
+    assert loop["audioRef"] is None and loop["audioMime"] is None
+    assert loop["durationSeconds"] is None
+    assert loop["language"] == "es" and loop["pattern"] == "retrieval"
+    assert body["job"]["kind"] == "loop" and body["job"]["subject"]["id"] == loop["id"]
+
+    items = server.pull().json()["data"]["changes"]["loopItems"]
+    assert [row["position"] for row in items] == [0, 1, 2]
+    assert [row["sourceText"] for row in items] == ["palabra0", "palabra1", "palabra2"]
+    assert [row["targetText"] for row in items] == ["word 0", "word 1", "word 2"]
+    # Not timed yet, which the loop's own empty reference is what says.
+    assert all(row["endSeconds"] == 0 for row in items)
 
 
-def test_a_reference_without_a_type_is_refused_and_so_is_a_type_without_one(server):
-    words(server)
-    for overrides in ({"audioMime": None}, {"audioRef": None}):
-        answer = server.push({"loops": [loop(**overrides)]})
-        assert answer.status_code == 400
-        assert "together" in answer.text
+def test_the_words_are_the_ids_that_were_sent_in_the_order_they_were_sent(server, generator):
+    made = words(server, 3)
+    reversed_ids = [one["id"] for one in reversed(made)]
+    ask(server, reversed_ids)
+    items = server.pull().json()["data"]["changes"]["loopItems"]
+    assert [row["lexemeId"] for row in sorted(items, key=lambda r: r["position"])] == reversed_ids
 
 
-def test_a_duration_on_a_loop_that_was_never_rendered_is_refused(server):
-    words(server)
-    answer = server.push({"loops": [loop(audioRef=None, audioMime=None, durationSeconds=90.0)]})
-    assert answer.status_code == 400
-    assert "has not been rendered" in answer.text
+def test_loops_are_numbered_after_the_last_one_in_that_language(server, generator):
+    made = words(server, 2)
+    first = ask(server, [made[0]["id"]]).json()["data"]["loop"]
+    second = ask(server, [made[1]["id"]]).json()["data"]["loop"]
+    assert second["position"] > first["position"]
 
 
-@pytest.mark.parametrize("overrides", [
-    {"sourceRevealSeconds": 4.0, "startSeconds": 9.0},
-    {"targetRevealSeconds": 1.0},
-    {"endSeconds": 2.0},
-])
-def test_times_that_run_backwards_are_refused(server, overrides):
-    """What a retrieval display turns on: the answer must not be on screen before the recall gap."""
-    word = words(server)
-    track = loop()
-    server.push({"loops": [track]})
-    answer = server.push({"loopItems": [loop_item(track["id"], word["id"], **overrides)]})
-    assert answer.status_code == 400
-    assert "backwards" in answer.text
+# ── what it refuses ─────────────────────────────────────────────────────────
 
 
-def test_a_loop_item_naming_another_owners_word_is_refused(server, other):
-    word = words(server)
-    track = loop()
-    server.push({"loops": [track]})
+def test_a_word_with_no_single_term_to_speak_is_refused_by_name(server, generator):
+    """Refused rather than silently dropped: a loop of two words where three were asked for, with
+    nothing saying which went missing, is worse than a refusal. Nothing backfills `primaryGloss`."""
+    made = words(server, 2)
+    server.push({"vocabularies": [vocabulary()]})
+    bare = lexeme(headword="singloss", lemma="singloss", status="active", primaryGloss=None)
+    server.push({"lexemes": [bare], "senses": [sense(bare["id"])]})
 
+    answer = ask(server, [made[0]["id"], bare["id"]])
+    assert answer.status_code == 422
+    assert "singloss" in answer.text
+    # And nothing was written: a refused loop is not a half-made one.
+    assert server.pull().json()["data"]["changes"]["loops"] == []
+
+
+def test_a_word_another_account_holds_is_not_found(server, other, generator):
+    made = words(server, 1)
     other.push({"vocabularies": [vocabulary()]})
-    stranger = lexeme()
+    stranger = lexeme(status="active", primaryGloss="theirs")
     other.push({"lexemes": [stranger]})
-
-    answer = server.push({"loopItems": [loop_item(track["id"], stranger["id"])]})
-    assert answer.status_code in (400, 409)
+    assert ask(server, [made[0]["id"], stranger["id"]]).status_code == 404
 
 
-def test_a_loop_item_naming_no_loop_is_refused(server):
-    word = words(server)
-    answer = server.push({"loopItems": [loop_item("loopmissing001", word["id"])]})
-    assert answer.status_code == 400
-    assert "Loop does not exist" in answer.text
+@pytest.mark.parametrize("ids", [[], ["not-an-id"], ["aaaaaaaaaaaaaaa"] * 2])
+def test_a_list_that_is_not_words_is_refused(server, generator, ids):
+    words(server, 1)
+    assert ask(server, ids).status_code in (400, 404)
 
 
-# ── the fields a loop is made from ──────────────────────────────────────────
+def test_two_languages_in_one_loop_are_refused(server, generator):
+    made = words(server, 1)
+    server.push({"vocabularies": [vocabulary(id="vocaben00000001", language="en",
+                                             definitionLang="en", glossLangs=["ru"], notesLang="ru")]})
+    english = lexeme(language="en", headword="turmoil", lemma="turmoil", status="active",
+                     primaryGloss="turmoil")
+    server.push({"lexemes": [english], "senses": [sense(english["id"], definitionLang="en")]})
+    assert ask(server, [made[0]["id"], english["id"]]).status_code == 400
 
 
-def test_a_lexeme_carries_the_one_term_a_loop_speaks_and_how_it_sounds(server):
-    server.push({"vocabularies": [vocabulary()]})
-    word = lexeme(
-        shortGloss="disgust, revulsion",
-        primaryGloss="disgust",
-        emotion="repulsed, recoiling slightly",
-    )
-    assert server.push({"lexemes": [word]}).status_code == 200
-    written = stored(server, "lexemes")[0]
-    # Both, and separately: `shortGloss` may carry several meanings and a loop must choose one.
-    assert written["shortGloss"] == "disgust, revulsion"
-    assert written["primaryGloss"] == "disgust"
-    assert written["emotion"] == "repulsed, recoiling slightly"
+# ── trying again ────────────────────────────────────────────────────────────
 
 
-def test_a_word_without_a_loop_line_is_an_ordinary_word(server):
-    """Both fields are optional. A word the writer left without one is simply not eligible for a
-    loop, and nothing backfills it."""
-    server.push({"vocabularies": [vocabulary()]})
-    assert server.push({"lexemes": [lexeme()]}).status_code == 200
-    written = stored(server, "lexemes")[0]
-    assert written["primaryGloss"] is None and written["emotion"] is None
+def test_try_again_on_a_loop_queues_another_render_rather_than_a_second_loop(server, generator):
+    made = words(server, 1)
+    loop = ask(server, [made[0]["id"]]).json()["data"]["loop"]
+    answer = server.post("/jobs", {"kind": "loop", "subject": {"kind": "loop", "id": loop["id"]}})
+    assert answer.status_code == 202, answer.text
+    assert answer.json()["data"]["subject"]["id"] == loop["id"]
+    # Still one loop: the row already existed, so this re-renders it.
+    assert len(server.pull().json()["data"]["changes"]["loops"]) == 1
 
 
-# ── the reset reaches them ──────────────────────────────────────────────────
-
-
-def test_the_reset_tombstones_loops_along_with_the_words_they_name(server):
-    """A loop whose every caption names a deleted word is a track nothing describes."""
-    from graph_records import DEVICE
-
-    from acervo.domain import SCHEMA_VERSION
-
-    word = words(server)
-    track = loop()
-    server.push({"loops": [track]})
-    server.push({"loopItems": [loop_item(track["id"], word["id"])]})
-
-    answer = server.post(
-        "/graph/reset",
-        {"schemaVersion": SCHEMA_VERSION, "deviceId": DEVICE, "confirm": "delete-all-words"},
-    )
-    assert answer.status_code == 200
-
-    remaining = server.pull().json()["data"]["changes"]
-    assert [record["deleted"] for record in remaining["vocabularies"]] == [False]
-    for key in ("lexemes", "loops", "loopItems"):
-        assert all(record["deleted"] for record in remaining[key]), key
+def test_trying_again_on_a_loop_that_is_not_yours_is_not_found(server, generator):
+    assert server.post(
+        "/jobs", {"kind": "loop", "subject": {"kind": "loop", "id": "aaaaaaaaaaaaaaa"}}
+    ).status_code == 404
