@@ -56,7 +56,8 @@ export function articleChanges(
     ...existingLexeme, id: lexemeId, language: draft.language, headword: draft.headword,
     lemma: draft.lemma, reading: draft.reading, ipa: draft.ipa, pos: draft.pos, gender: draft.gender,
     register: draft.register, dialect: draft.dialect, emoji: draft.emoji, topicIds,
-    status: draft.status, shortGloss: draft.shortGloss, notes: draft.notes,
+    status: draft.status, shortGloss: draft.shortGloss, primaryGloss: draft.primaryGloss,
+    emotion: draft.emotion, notes: draft.notes,
     clipsSearchedAt: existingLexeme?.clipsSearchedAt ?? null, ...stamp(existingLexeme)
   } as Lexeme);
 

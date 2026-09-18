@@ -229,7 +229,9 @@ describe("the new-entry template", () => {
     const generated: ArticleDraft = {
       id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null, ipa: null,
       pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "🪝",
-      topics: ["Travel"], status: "inbox", shortGloss: "hook", notes: ["Not the same as el gancho."],
+      topics: ["Travel"], status: "inbox", shortGloss: "hook",
+      primaryGloss: "hook", emotion: "sharp and piratical",
+      notes: ["Not the same as el gancho."],
       senses: [{
         id: "sense0000000091", order: 0, definition: "Gancho de metal curvo.", definitionLang: "es",
         glosses: [{ lang: "en", terms: ["hook"] }], domain: null, emoji: null, images: [],
@@ -268,5 +270,47 @@ describe("the new-entry template", () => {
     expect(draft.senses[0].id).toBeNull();
     expect(draft.senses[0].examples[0].id).toBeNull();
     expect(draft.senses[0].examples[0].textLang).toBe("es");
+  });
+});
+
+describe("the loop line a word carries", () => {
+  it("writes both fields, and reads them back unchanged", () => {
+    const document = yamlFor(articleFor(testGraph(), "lexemepicar0001")!);
+    expect(document).toContain("primaryGloss: to sting");
+    expect(document).toContain("emotion: wincing slightly, as if something just bit you");
+    const draft = parseArticle(document);
+    expect(draft.primaryGloss).toBe("to sting");
+    expect(draft.emotion).toBe("wincing slightly, as if something just bit you");
+    // Stable across a round trip: the key order is fixed, so re-serialising changes neither line.
+    const again = yamlForDraft(draft);
+    expect(again).toContain("primaryGloss: to sting");
+    expect(again).toContain("emotion: wincing slightly, as if something just bit you");
+    expect(parseArticle(again)).toEqual(draft);
+  });
+
+  it("keeps them separate from shortGloss, which may carry several meanings", () => {
+    const draft = parseArticle(yamlFor(articleFor(testGraph(), "lexemepicar0001")!));
+    expect(draft.shortGloss).toBe("to itch; to chop");
+    expect(draft.primaryGloss).toBe("to sting");
+  });
+
+  it("treats a word without one as an ordinary word", () => {
+    const draft = parseArticle(yamlFor(articleFor(testGraph(), "lexemeespolv001")!));
+    expect(draft.primaryGloss).toBeNull();
+    expect(draft.emotion).toBeNull();
+  });
+
+  it("offers both in the new-entry template, as nulls", () => {
+    expect(YAML_TEMPLATE).toContain("primaryGloss: null");
+    expect(YAML_TEMPLATE).toContain("emotion: null");
+    // The template's own test asserts which blanks it leaves; neither of these is one of them.
+    expect(problemsOf(YAML_TEMPLATE).join(" ")).not.toContain("primaryGloss");
+    expect(problemsOf(YAML_TEMPLATE).join(" ")).not.toContain("emotion");
+    const draft = parseArticle(YAML_TEMPLATE
+      .replace('headword: ""', "headword: asco")
+      .replace('definition: ""', "definition: Repulsion.")
+      .replace('- text: ""', "- text: Qué asco."));
+    expect(draft.primaryGloss).toBeNull();
+    expect(draft.emotion).toBeNull();
   });
 });

@@ -112,7 +112,8 @@ const LEXEME_FIELDS: Record<string, Coerce> = {
   headword: "text", lemma: "text", reading: "textOrNull", ipa: "textOrNull",
   pos: { choice: PARTS_OF_SPEECH }, gender: { choiceOrNull: GENDERS },
   register: { choiceOrNull: REGISTERS }, dialect: "textOrNull", emoji: "textOrNull",
-  shortGloss: "textOrNull", notes: "strings", topics: "strings",
+  shortGloss: "textOrNull", primaryGloss: "textOrNull", emotion: "textOrNull",
+  notes: "strings", topics: "strings",
   status: { choice: LEXEME_STATUSES }
 };
 const SENSE_FIELDS: Record<string, Coerce> = {

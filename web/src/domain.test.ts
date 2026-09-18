@@ -12,13 +12,13 @@ function graph(): VocabularyGraph {
   const lexeme: Lexeme = {
     id: "lexeme000000001", language: "es", headword: "la balsa", lemma: "balsa", reading: null, ipa: "/ˈbalsa/",
     pos: "noun", gender: "feminine", register: "neutral", dialect: null, emoji: "🛶",
-    topicIds: [topic.id], status: "active", shortGloss: null, notes: [], clipsSearchedAt: null, ...sync
+    topicIds: [topic.id], status: "active", shortGloss: null, notes: [], primaryGloss: null, emotion: null, clipsSearchedAt: null, ...sync
   };
   const sense: Sense = {
     id: "sense0000000001", lexemeId: lexeme.id, definition: "Una embarcación sencilla.", definitionLang: "es",
     glosses: [{ lang: "en", terms: ["raft"] }, { lang: "ru", terms: ["плот"] }], domain: null, emoji: null, order: 0, ...sync
   };
-  return { vocabularies: [], topics: [topic], lexemes: [lexeme], senses: [sense], attestations: [], examples: [], imagePrompts: [], pronunciations: [], studyStates: [] };
+  return { vocabularies: [], topics: [topic], lexemes: [lexeme], senses: [sense], attestations: [], examples: [], imagePrompts: [], pronunciations: [], studyStates: [], loops: [], loopItems: [] };
 }
 
 describe("Acervo domain", () => {

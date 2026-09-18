@@ -20,6 +20,8 @@ Return one JSON object and nothing else. No prose, no code fences.
   "emoji": "🎭",
   "topics": ["Appearance"],
   "shortGloss": "costume; disguise",
+  "primaryGloss": "costume",
+  "emotion": "playful and theatrical, enjoying the dressing-up",
   "notes": [],
   "senses": [
     {
@@ -59,6 +61,21 @@ Field rules:
 - `shortGloss` — the one-line meaning for the list view, written in the FIRST language you are
   asked to gloss into. Short, and separated with `; ` when there are several distinct meanings:
   `to listen to him; to pay attention to him`.
+- `primaryGloss` — ONE term: the single most common translation, the one you would give if you were
+  allowed only one word. Written in the FIRST language you are asked to gloss into — read that
+  instruction rather than assuming English. It is spoken aloud on a beat, so keep it close to the
+  headword in length, and never use `;` or `,` to fit a second meaning in. This is NOT `shortGloss`:
+  that line may carry several distinct meanings, and this one must choose between them. It is
+  normally the first term of the first sense's glosses, and it must be a term a reader of that sense
+  would accept.
+- `emotion` — how a native speaker would SOUND saying THE WORD ITSELF, as a short English direction.
+  The same rules as an example's `emotion` below: in English, about 3 to 12 words, the feeling and
+  how it colours the voice, no accent, no speed, no `[bracketed]` tags, no emoji. It belongs to the
+  word rather than to any one sentence, so write the feeling the word carries wherever it is used —
+  `playful and theatrical, enjoying the dressing-up` for the entry above. The default is the
+  OPPOSITE of an example's: most sentences a person would actually say carry a feeling, and most
+  words do not. Use `null` for a weekday, a preposition, a piece of furniture. A forced feeling is
+  worse than none.
 - `notes` — a few short lines on HOW the word is used, and how it differs from the neighbouring
   word the learner will confuse it with. This is the part no dictionary gives them, so it is worth
   real effort — but only when there is something to say. An empty list is better than filler.

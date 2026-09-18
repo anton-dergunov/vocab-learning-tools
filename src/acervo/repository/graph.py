@@ -1,6 +1,6 @@
 """The owner-scoped graph: the cursor, revision allocation, the merge, and the tombstone sweep.
 
-One strictly increasing sequence per owner, shared by all nine tables and never one per table. A
+One strictly increasing sequence per owner, shared by all eleven tables and never one per table. A
 record left at revision zero is invisible to every `revision > cursor` pull, permanently and
 silently — the failure has no symptom until someone notices a word missing on another device weeks
 later. The hook this replaces allocated in a save hook because the write route was not the only
@@ -317,7 +317,12 @@ def merge_graph(
 
 
 def tombstone_all_words(owner: str, device: str) -> dict[str, Any]:
-    """Tombstone every word and its descendants, retaining language and topic configuration."""
+    """Tombstone every word and its descendants, retaining language and topic configuration.
+
+    Loops go too, although they hang off no word: a loop every one of whose captions names a deleted
+    word is a track nothing describes. That falls out of `WORD_COLLECTIONS` rather than being coded
+    here, because loops sit last in `COLLECTIONS`.
+    """
     at = now_instant()
     with transaction() as connection:
         count = 0
@@ -570,7 +575,7 @@ def owned_records(owner: str, key: str, ids: list[str]) -> dict[str, dict[str, A
 
 
 def held_ids(owner: str) -> set[str]:
-    """Every record id this owner already holds, across all nine tables."""
+    """Every record id this owner already holds, across all eleven tables."""
     found: set[str] = set()
     with reading() as connection:
         for collection in COLLECTIONS:

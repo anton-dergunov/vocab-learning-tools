@@ -107,6 +107,9 @@ export interface ArticleDraft {
   topics: string[];
   status: LexemeStatus;
   shortGloss: string | null;
+  /** The one term a loop speaks, and how the word itself sounds. Both are usually null. */
+  primaryGloss: string | null;
+  emotion: string | null;
   notes: string[];
   senses: SenseDraft[];
   attestations: AttestationDraft[];
@@ -277,6 +280,8 @@ export function draftFor(article: Article): ArticleDraft {
     topics: topics.map((topic) => topic.name),
     status: lexeme.status,
     shortGloss: lexeme.shortGloss,
+    primaryGloss: lexeme.primaryGloss,
+    emotion: lexeme.emotion,
     notes: [...lexeme.notes],
     senses: senses.map(({ sense, examples, images: senseImages }) => ({
       id: sense.id,
@@ -329,6 +334,8 @@ export function yamlForDraft(draft: ArticleDraft, study: StudyState | null = nul
     status: draft.status,
     topics: draft.topics,
     shortGloss: draft.shortGloss,
+    primaryGloss: draft.primaryGloss,
+    emotion: draft.emotion,
     notes: draft.notes,
     senses: draft.senses.map((sense) => compact({
       id: sense.id,
@@ -557,7 +564,8 @@ export const ATTESTATION_KEYS = [
 ];
 export const ARTICLE_KEYS = [
   "id", "language", "headword", "lemma", "reading", "ipa", "pos", "gender", "register", "dialect",
-  "emoji", "status", "topics", "shortGloss", "notes", "senses", "attestations", "imagePrompts"
+  "emoji", "status", "topics", "shortGloss", "primaryGloss", "emotion", "notes", "senses",
+  "attestations", "imagePrompts"
 ];
 
 function readExample(reader: Reader, raw: unknown, path: string, textLang: string): ExampleDraft | null {
@@ -660,6 +668,8 @@ export function parseArticle(text: string): ArticleDraft {
     // A document someone typed or reviewed is an ordinary word; the Inbox holds what arrived unread.
     status: reader.choice(fields.status, "status", LEXEME_STATUSES, "active"),
     shortGloss: reader.optional(fields.shortGloss, "shortGloss"),
+    primaryGloss: reader.optional(fields.primaryGloss, "primaryGloss"),
+    emotion: reader.optional(fields.emotion, "emotion"),
     notes: reader.strings(fields.notes, "notes"),
     senses: reader.list(fields.senses, "senses").flatMap((item, index) => {
       const where = `senses[${index}]`;
@@ -723,6 +733,8 @@ emoji: ""
 status: active
 topics: []             # existing topic names, e.g. [Food, Travel]
 shortGloss: null       # null = derived from the first gloss below
+primaryGloss: null     # the ONE term a loop speaks, e.g. disgust
+emotion: null          # how the word itself sounds, e.g. repulsed, recoiling slightly
 notes: []
 senses:
   - order: 0

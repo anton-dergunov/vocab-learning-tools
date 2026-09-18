@@ -11,7 +11,7 @@ export type Register = typeof REGISTERS[number];
 export type LexemeStatus = typeof LEXEME_STATUSES[number];
 export type SourceKind = typeof SOURCE_KINDS[number];
 export type ExampleOrigin = typeof EXAMPLE_ORIGINS[number];
-export type EntityKind = "vocabularies" | "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "pronunciations" | "studyStates";
+export type EntityKind = "vocabularies" | "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "pronunciations" | "studyStates" | "loops" | "loopItems";
 /** What a pronunciation reads: a lexeme's headword, a sense's definition, an example's or an attestation's text. */
 export const PRONUNCIATION_TARGETS = ["lexeme", "sense", "example", "attestation"] as const;
 export type PronunciationTarget = typeof PRONUNCIATION_TARGETS[number];
@@ -81,6 +81,21 @@ export interface Lexeme extends SyncFields, OwnedFields {
   topicIds: string[];
   status: LexemeStatus;
   shortGloss: string | null;
+  /**
+   * The single most common translation, and how the word itself sounds when said.
+   *
+   * `shortGloss` is right for the list and wrong for a beat: `house, home` cannot be spoken on one.
+   * `primaryGloss` is the one term you would give if allowed only one, in `glossLangs[0]` exactly as
+   * `shortGloss` and a sense `domain` are — reordering a vocabulary's gloss languages *is* the
+   * control, and a setting over a single stored string could only end up naming a language the
+   * stored text is not in.
+   *
+   * `emotion` is the same field an example carries, one level up: a short English direction, for the
+   * word wherever it is used rather than for one sentence. Both are null for most words, and a word
+   * without a `primaryGloss` is simply not eligible for a loop — nothing fills it in later.
+   */
+  primaryGloss: string | null;
+  emotion: string | null;
   notes: string[];
   /**
    * When the spoken-usage corpus was last successfully consulted for this lexeme, or null.
@@ -217,6 +232,58 @@ export interface StudyState extends SyncFields, OwnedFields {
   syncedAt: string | null;
 }
 
+/**
+ * A rendered track: some words, spoken over a bar grid with a silence to recall the answer in.
+ *
+ * **Its state is derived.** An empty `audioRef` is *not rendered yet*, and the job says the rest; a
+ * status column would be a fifth thing to keep in step with four facts that already say all of it.
+ * Nor is the resolved bed stored: `styleId`, `seed` and `engineVersion` replay it byte-identically
+ * and `bedFingerprint` is what proves a replay produced the same one.
+ *
+ * There is no title either. `loopTitle` derives one from the words that fit, as `shortGlossOf`
+ * derives a gloss.
+ */
+export interface Loop extends SyncFields, OwnedFields {
+  id: string;
+  language: string;
+  styleId: string | null;
+  seed: number;
+  engineVersion: string | null;
+  bedFingerprint: string | null;
+  pattern: string | null;
+  /** Null until it has been rendered, which is the whole of what "not ready" means here. */
+  audioRef: string | null;
+  audioMime: string | null;
+  durationSeconds: number | null;
+  /** Sparse, renumbered on reorder. Ordering is respected rather than enforced. */
+  position: number;
+}
+
+/**
+ * One word inside a loop, and when it is heard.
+ *
+ * `sourceText` and `targetText` are denormalised on purpose: they record what was *said*, so editing
+ * the word afterwards cannot make the player caption a recording that no longer matches. Identical
+ * reasoning to `Pronunciation.text`, and the reason deleting the word leaves this row alone — the
+ * caption stays truthful and `lexemeId` simply points at a tombstone.
+ *
+ * Four times, and deliberately not the span of every utterance: the day three repetitions become
+ * four, this shape does not move.
+ */
+export interface LoopItem extends SyncFields, OwnedFields {
+  id: string;
+  loopId: string;
+  lexemeId: string;
+  position: number;
+  sourceText: string;
+  targetText: string;
+  emotion: string | null;
+  startSeconds: number;
+  sourceRevealSeconds: number;
+  targetRevealSeconds: number;
+  endSeconds: number;
+}
+
 export interface VocabularyGraph {
   vocabularies: Vocabulary[];
   topics: Topic[];
@@ -227,6 +294,8 @@ export interface VocabularyGraph {
   imagePrompts: ImagePrompt[];
   pronunciations: Pronunciation[];
   studyStates: StudyState[];
+  loops: Loop[];
+  loopItems: LoopItem[];
 }
 
 export type VocabularyInput = Omit<Vocabulary, "id" | keyof SyncFields | keyof OwnedFields>;
@@ -237,6 +306,8 @@ export type AttestationInput = Omit<Attestation, "id" | keyof SyncFields | keyof
 export type ExampleInput = Omit<Example, "id" | keyof SyncFields | keyof OwnedFields>;
 export type ImagePromptInput = Omit<ImagePrompt, "id" | keyof SyncFields | keyof OwnedFields>;
 export type StudyStateInput = Omit<StudyState, "id" | keyof SyncFields | keyof OwnedFields>;
+export type LoopInput = Omit<Loop, "id" | keyof SyncFields | keyof OwnedFields>;
+export type LoopItemInput = Omit<LoopItem, "id" | keyof SyncFields | keyof OwnedFields>;
 
 const RECORD_ID = /^[a-z0-9]{15}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -341,6 +412,8 @@ export function validateGraph(graph: VocabularyGraph): void {
     });
     oneOf(record.status, LEXEME_STATUSES, "Lexeme status");
     optionalString(record.shortGloss, "Short gloss");
+    optionalString(record.primaryGloss, "Primary gloss");
+    optionalString(record.emotion, "Lexeme emotion");
     stringArray(record.notes, "Notes");
     if (record.clipsSearchedAt !== null) validateInstant(record.clipsSearchedAt, "Clip search time");
     lexemes.set(record.id, record);
@@ -489,6 +562,45 @@ export function validateGraph(graph: VocabularyGraph): void {
     invariant(Number.isFinite(record.retrievability) && record.retrievability >= 0 && record.retrievability <= 1, "Retrievability is invalid.");
     if (record.lastReview) validateInstant(record.lastReview, "Last review");
     if (record.syncedAt) validateInstant(record.syncedAt, "Study sync time");
+  });
+
+  const loops = new Map<string, Loop>();
+  graph.loops.forEach((record) => {
+    remember(record);
+    language(record.language, "Loop language");
+    [record.styleId, record.engineVersion, record.bedFingerprint, record.pattern]
+      .forEach((value) => optionalString(value, "Loop bed field"));
+    invariant(Number.isSafeInteger(record.seed) && record.seed >= 0 && record.seed <= 2147483647, "Loop seed is invalid.");
+    invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Loop position is invalid.");
+    optionalString(record.audioRef, "Loop audio reference");
+    optionalString(record.audioMime, "Loop audio type");
+    // A rendered track is bytes plus the type of those bytes. This is the *whole* of what "rendered"
+    // means: there is no status column, so an absent reference is the state.
+    invariant(Boolean(record.audioRef) === Boolean(record.audioMime), "A loop's audio reference and type must be supplied together.");
+    invariant(record.durationSeconds === null || (Number.isFinite(record.durationSeconds) && record.durationSeconds >= 0), "Loop duration is invalid.");
+    invariant(Boolean(record.audioRef) || record.durationSeconds === null, "A loop that has not been rendered has no duration.");
+    loops.set(record.id, record);
+  });
+
+  graph.loopItems.forEach((record) => {
+    remember(record);
+    const loop = loops.get(record.loopId);
+    invariant(loop, "Loop item references a missing loop.");
+    invariant(record.ownerId === loop.ownerId, "Loop item and loop must have the same owner.");
+    // Looked up among *all* lexemes, tombstones included. A loop is a recording: deleting the word
+    // leaves it playing, captioned with what was actually said, and this reference then points at a
+    // tombstone — which is the honest state rather than a dangling one.
+    const lexeme = lexemes.get(record.lexemeId);
+    invariant(lexeme, "Loop item references a missing lexeme.");
+    invariant(record.ownerId === lexeme.ownerId, "Loop item and lexeme must have the same owner.");
+    invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Loop item position is invalid.");
+    invariant(record.sourceText.length > 0 && record.targetText.length > 0, "A loop item records both words it spoke.");
+    optionalString(record.emotion, "Loop item emotion");
+    const times = [record.startSeconds, record.sourceRevealSeconds, record.targetRevealSeconds, record.endSeconds];
+    times.forEach((value) => invariant(Number.isFinite(value) && value >= 0, "Loop item timing is invalid."));
+    // What a retrieval display turns on: the answer must not be on screen before the recall gap it
+    // exists to leave has passed.
+    invariant(times.every((value, index) => index === 0 || value >= times[index - 1]), "A loop item's times must not run backwards.");
   });
 }
 

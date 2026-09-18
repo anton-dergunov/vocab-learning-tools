@@ -130,7 +130,7 @@ repository function.
 orchestrator down, and the sync API must not know Prefect exists.* A package boundary is how that
 stays true when nobody is watching it.
 
-**4 · One revision counter per owner, shared by all nine tables, allocated in the same transaction
+**4 · One revision counter per owner, shared by all eleven tables, allocated in the same transaction
 as the record it numbers.** Never a per-table sequence. A record left at revision zero is invisible
 to every `revision > cursor` pull, permanently and silently — the failure has no symptom until
 someone notices a word missing on another device weeks later.

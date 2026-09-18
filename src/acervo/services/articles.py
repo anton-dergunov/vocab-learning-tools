@@ -30,7 +30,7 @@ from acervo.repository import graph
 
 LEXEME_FIELDS = (
     "language", "headword", "lemma", "reading", "ipa", "pos", "gender", "register", "dialect",
-    "emoji", "status", "shortGloss",
+    "emoji", "status", "shortGloss", "primaryGloss", "emotion",
 )
 SENSE_FIELDS = ("definition", "definitionLang", "glosses", "domain", "emoji", "order")
 ATTESTATION_FIELDS = ("text", "translation", "sourceUrl", "sourceTitle", "sourceKind")

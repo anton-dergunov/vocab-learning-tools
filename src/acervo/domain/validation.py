@@ -40,7 +40,8 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
     "lexemes": {
         "language": (True, 35), "headword": (True, 240), "lemma": (True, 240),
         "reading": (False, 240), "ipa": (False, 240), "dialect": (False, 35),
-        "emoji": (False, 32), "short_gloss": (False, 500), "clips_searched_at": (False, 24),
+        "emoji": (False, 32), "short_gloss": (False, 500), "primary_gloss": (False, 240),
+        "emotion": (False, 300), "clips_searched_at": (False, 24),
     },
     "senses": {
         "definition": (True, 2000), "definition_lang": (True, 35), "domain": (False, 120),
@@ -71,6 +72,14 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
         "model_id": (True, 240), "voice": (False, 120),
     },
     "study_states": {"system": (True, 80)},
+    "loops": {
+        "language": (True, 35), "style_id": (False, 120), "engine_version": (False, 64),
+        "bed_fingerprint": (False, 64), "pattern": (False, 64), "audio_ref": (False, 500),
+        "audio_mime": (False, 80),
+    },
+    "loop_items": {
+        "source_text": (True, 240), "target_text": (True, 240), "emotion": (False, 300),
+    },
 }
 
 SELECT_RULES: dict[str, dict[str, tuple[tuple[str, ...], bool]]] = {
@@ -95,6 +104,13 @@ NUMBER_RULES: dict[str, dict[str, tuple[float, float | None]]] = {
     "study_states": {
         "note_id": (0, None), "reps": (0, None), "lapses": (0, None),
         "stability": (0, None), "difficulty": (0, None), "retrievability": (0, 1),
+    },
+    "loops": {
+        "seed": (0, 2147483647), "duration_seconds": (0, None), "loop_order": (0, None),
+    },
+    "loop_items": {
+        "item_order": (0, None), "start_seconds": (0, None), "source_reveal_seconds": (0, None),
+        "target_reveal_seconds": (0, None), "end_seconds": (0, None),
     },
 }
 
@@ -326,6 +342,38 @@ def validate(name: str, row: Mapping[str, Any], lookup: Lookup) -> None:
             word = target.get("lexeme")
         if word != lexeme.get("id"):
             refuse("A pronounced record must belong to the pronunciation's lexeme.")
+        return
+
+    if name == "loops":
+        valid_language(row.get("language"), "Loop language")
+        # A rendered track is bytes plus the type of those bytes. A mime with no reference describes
+        # nothing, and a reference with no mime is a file nothing can decide how to play — and the
+        # projection hides both when there is no reference, so this is the same invariant asserted
+        # on the way in that `_project_loop` asserts on the way out.
+        audio_ref = _text(row, "audio_ref")
+        if bool(audio_ref) != bool(_text(row, "audio_mime")):
+            refuse("A loop's audio reference and type must be provided together.")
+        if not audio_ref and (row.get("duration_seconds") or 0) > 0:
+            refuse("A loop that has not been rendered has no duration.")
+        return
+
+    if name == "loop_items":
+        loop = _related(lookup, "loops", _text(row, "loop"), "Loop")
+        _same_owner(row, loop, "Loop item")
+        # The word is required and same-owner, but it is deliberately *not* required to be alive:
+        # deleting a word leaves the loops it appears in playing, captioned with what was actually
+        # said. The reference then points at a tombstone, which is the honest state.
+        _same_owner(row, _related(lookup, "lexemes", _text(row, "lexeme"), "Lexeme"), "Loop item")
+        times = [
+            ("start_seconds", "source_reveal_seconds"),
+            ("source_reveal_seconds", "target_reveal_seconds"),
+            ("target_reveal_seconds", "end_seconds"),
+        ]
+        for earlier, later in times:
+            if (row.get(later) or 0.0) < (row.get(earlier) or 0.0):
+                # What a retrieval display turns on: the answer must not be on screen before the
+                # recall gap it exists to leave has passed.
+                refuse("A loop item's times must not run backwards.")
         return
 
     if name == "study_states":

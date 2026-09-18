@@ -123,7 +123,7 @@ What `set` may change, and nothing else:
 
 | Target | Fields |
 | --- | --- |
-| `lexeme` | `headword` `lemma` `reading` `ipa` `pos` `gender` `register` `dialect` `emoji` `shortGloss` `notes` `topics` `status` |
+| `lexeme` | `headword` `lemma` `reading` `ipa` `pos` `gender` `register` `dialect` `emoji` `shortGloss` `primaryGloss` `emotion` `notes` `topics` `status` |
 | `sense:…` | `definition` `definitionLang` `domain` `emoji` `glosses` |
 | `example:…` | `text` `translation` `note` `matchedForm` `matchedTranslationForm` |
 | `attestation:…` | `text` `translation` `sourceTitle` `sourceUrl` `sourceKind` |

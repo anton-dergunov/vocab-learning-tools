@@ -441,3 +441,32 @@ describe("a second turn, built on the first", () => {
     expect(diff.records.get(added.id!)!.mark).toBe("added");
   });
 });
+
+describe("the loop line, which chat may change like any other lexeme field", () => {
+  it("applies a change to either field and marks the lexeme as changed", () => {
+    const before = draft();
+    const { draft: after } = applyOps(before, [
+      { op: "set", target: "lexeme", field: "primaryGloss", value: "to itch" },
+      { op: "set", target: "lexeme", field: "emotion", value: "prickly and restless" }
+    ], context);
+    expect(after.primaryGloss).toBe("to itch");
+    expect(after.emotion).toBe("prickly and restless");
+    // One table drives both `applyOps` and the change marks, so a field chat can set is a field the
+    // reader sees marked — there is no way to add one and get only half.
+    const diff = diffDrafts(before, after);
+    expect(diff.records.get(PICAR)!.mark).toBe("changed");
+    expect(diff.count).toBeGreaterThan(0);
+  });
+
+  it("lets either be cleared to null, which is what most words carry", () => {
+    const { draft: after } = applyOps(draft(), [
+      { op: "set", target: "lexeme", field: "primaryGloss", value: null }
+    ], context);
+    expect(after.primaryGloss).toBeNull();
+  });
+
+  it("names both in the table the prompt is told about", () => {
+    expect(Object.keys(SETTABLE.lexeme)).toContain("primaryGloss");
+    expect(Object.keys(SETTABLE.lexeme)).toContain("emotion");
+  });
+});

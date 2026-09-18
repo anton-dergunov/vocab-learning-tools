@@ -209,6 +209,11 @@ def draft_from(
         # Inbox is for what arrived without anyone reading it, which the headless save decides.
         "status": "active",
         "shortGloss": trimmed(answer.get("shortGloss")) or None,
+        # The one term a loop speaks, and how the word itself sounds. Both are optional by design:
+        # a word the writer left without a `primaryGloss` is simply not eligible for a loop, and
+        # nothing backfills it (plan §2.17).
+        "primaryGloss": trimmed(answer.get("primaryGloss")) or None,
+        "emotion": trimmed(answer.get("emotion")) or None,
         "notes": text_list(answer.get("notes")),
         "senses": senses,
         "attestations": attestations,

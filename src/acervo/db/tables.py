@@ -1,4 +1,4 @@
-"""The ten owner-scoped tables, plus `users`.
+"""The twelve owner-scoped tables, plus `users`.
 
 Ported column for column and index for index from the PocketBase bootstrap migration this replaces.
 Two of those indexes carry reasoning that must survive the move, and both comments are below.
@@ -28,10 +28,15 @@ from sqlalchemy import (
 
 metadata = MetaData()
 
-# The nine replicated tables, in graph order: topics before lexemes, lexemes before senses and
+# The eleven replicated tables, in graph order: topics before lexemes, lexemes before senses and
 # attestations, those before examples, sense-linked image prompts and pronunciations. Applying a batch in this order
 # means a relation always resolves, so it is also the merge order the write route uses — and,
 # reversed and with the first two dropped, the tombstone order.
+#
+# Loops come last, and both halves of that matter. A loop is not a word's descendant — it is an
+# owner-level artefact that *references* words — so it hangs off nothing and could sit anywhere after
+# `lexemes`. Last is where it goes anyway, because that is what puts it inside the word reset: a loop
+# every one of whose captions names a deleted word is a track nothing describes.
 REPLICATED = (
     "vocabularies",
     "topics",
@@ -42,6 +47,8 @@ REPLICATED = (
     "image_prompts",
     "pronunciations",
     "study_states",
+    "loops",
+    "loop_items",
 )
 
 
@@ -300,6 +307,12 @@ lexemes = Table(
     Column("topics", JSON, nullable=False, default=list),
     Column("status", String(32), nullable=False),
     Column("short_gloss", String(500), nullable=False, default=""),
+    # The one term a loop speaks, and how the word itself sounds when said. `short_gloss` is right
+    # for the list and wrong for a beat: `house, home` cannot be spoken on one. Named for what they
+    # are rather than for what consumes them, so a flashcard or a quiz can read both without either
+    # name lying. `emotion` is the same field an example carries, one level up.
+    Column("primary_gloss", String(240), nullable=False, default=""),
+    Column("emotion", String(300), nullable=False, default=""),
     Column("notes", JSON, nullable=False, default=list),
     # The instant the spoken-usage corpus was last successfully consulted for this lexeme, or "".
     # Empty means never, which is what the sweep looks for; set with no `subtitle` examples means
@@ -459,6 +472,59 @@ study_states = Table(
     *_sync_fields(),
     Index("idx_study_states_owner_revision", "owner", "revision"),
     Index("idx_study_states_owner_lexeme_system", "owner", "lexeme", "system"),
+)
+
+loops = Table(
+    "loops",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    Column("language", String(35), nullable=False),
+    # Style, seed and engine version replay the bed byte-identically, and `bed_fingerprint` is what
+    # proves a replay produced the same one. That is why the resolved BedSpec is not stored: nothing
+    # else in this model holds opaque JSON, and these four make it unnecessary.
+    Column("style_id", String(120), nullable=False, default=""),
+    Column("seed", Integer, nullable=False, default=0),
+    Column("engine_version", String(64), nullable=False, default=""),
+    Column("bed_fingerprint", String(64), nullable=False, default=""),
+    Column("pattern", String(64), nullable=False, default=""),
+    # There is no status column. An empty `audio_ref` is *not rendered yet*, and the job says the
+    # rest; a fifth fact would be a thing to keep in step with four that already say all of it.
+    Column("audio_ref", String(500), nullable=False, default=""),
+    Column("audio_mime", String(80), nullable=False, default=""),
+    Column("duration_seconds", Float, nullable=False, default=0.0),
+    # Sparse and renumbered on reorder, with no uniqueness constraint: ordering is respected rather
+    # than enforced, which is the data rule for every replicated collection.
+    Column("loop_order", Integer, nullable=False, default=0),
+    *_sync_fields(),
+    Index("idx_loops_owner_revision", "owner", "revision"),
+    Index("idx_loops_owner_language_order", "owner", "language", "loop_order"),
+)
+
+loop_items = Table(
+    "loop_items",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    Column("loop", String(15), ForeignKey("loops.id", ondelete="CASCADE"), nullable=False),
+    Column("lexeme", String(15), ForeignKey("lexemes.id", ondelete="CASCADE"), nullable=False),
+    Column("item_order", Integer, nullable=False, default=0),
+    # What was *said*, denormalised on purpose: editing the word afterwards must not make the player
+    # caption a recording that no longer matches it. Identical reasoning to `pronunciations.text`,
+    # and the reason both are safe — and the reason deleting the word leaves these rows alone.
+    Column("source_text", String(240), nullable=False),
+    Column("target_text", String(240), nullable=False),
+    Column("emotion", String(300), nullable=False, default=""),
+    # Four times per item, and deliberately not the span of every utterance: the day three
+    # repetitions become four, this schema does not move.
+    Column("start_seconds", Float, nullable=False, default=0.0),
+    Column("source_reveal_seconds", Float, nullable=False, default=0.0),
+    Column("target_reveal_seconds", Float, nullable=False, default=0.0),
+    Column("end_seconds", Float, nullable=False, default=0.0),
+    *_sync_fields(),
+    Index("idx_loop_items_owner_revision", "owner", "revision"),
+    Index("idx_loop_items_owner_loop_order", "owner", "loop", "item_order"),
+    Index("idx_loop_items_owner_lexeme", "owner", "lexeme"),
 )
 
 TABLES = {table.name: table for table in metadata.tables.values()}

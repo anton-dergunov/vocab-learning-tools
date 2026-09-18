@@ -1,5 +1,8 @@
 /* A small representative graph for interface tests: two languages, an inbox word, a clip, an
-   attestation with lineage, an image prompt and a study state. */
+   attestation with lineage, an image prompt, a study state and one rendered loop.
+
+   `lexemeespolv001` deliberately has no `primaryGloss`, so the loop selectors have a word that is
+   not eligible to exclude. */
 
 import type { VocabularyGraph } from "./domain";
 
@@ -33,25 +36,28 @@ export function testGraph(): VocabularyGraph {
         id: "lexemepicar0001", language: "es", headword: "picar", lemma: "picar", reading: null,
         ipa: "/piˈkaɾ/", pos: "verb", gender: null, register: "neutral", dialect: null, emoji: "🌶️",
         topicIds: ["topicfood000001"], status: "active", shortGloss: "to itch; to chop",
+        primaryGloss: "to sting", emotion: "wincing slightly, as if something just bit you",
         notes: ["The sense is carried by the object, not the verb."],
         clipsSearchedAt: stamp("08-24"), ...sync("02-11", "08-24")
       },
       {
         id: "lexemebalsa0001", language: "es", headword: "la balsa", lemma: "balsa", reading: null,
         ipa: null, pos: "noun", gender: "feminine", register: "neutral", dialect: null, emoji: "🛶",
-        topicIds: ["topictravel0001"], status: "active", shortGloss: null, notes: [],
+        topicIds: ["topictravel0001"], status: "active", shortGloss: null,
+        primaryGloss: "raft", emotion: null, notes: [],
         clipsSearchedAt: null, ...sync("01-22")
       },
       {
         id: "lexemeespolv001", language: "es", headword: "espolvorear", lemma: "espolvorear",
         reading: null, ipa: null, pos: "verb", gender: null, register: "neutral", dialect: null,
         emoji: "🧀", topicIds: ["topicfood000001"], status: "inbox", shortGloss: "to sprinkle",
-        notes: [], clipsSearchedAt: null, ...sync("08-27")
+        primaryGloss: null, emotion: null, notes: [], clipsSearchedAt: null, ...sync("08-27")
       },
       {
         id: "lexemeturmoil01", language: "en", headword: "turmoil", lemma: "turmoil", reading: null,
         ipa: "/ˈtɜːmɔɪl/", pos: "noun", gender: null, register: "formal", dialect: null, emoji: "🌪️",
-        topicIds: [], status: "active", shortGloss: null, notes: [], clipsSearchedAt: null,
+        topicIds: [], status: "active", shortGloss: null, primaryGloss: "turmoil",
+        emotion: "unsettled and churning", notes: [], clipsSearchedAt: null,
         ...sync("02-25")
       }
     ],
@@ -149,6 +155,35 @@ export function testGraph(): VocabularyGraph {
         id: "studybalsa00010", lexemeId: "lexemebalsa0001", system: "anki", noteId: null, cardIds: [],
         reps: 11, lapses: 0, stability: 74.2, difficulty: 3.9, retrievability: 0.95,
         lastReview: stamp("08-08"), syncedAt: null, ...sync("01-22")
+      }
+    ],
+    loops: [
+      {
+        id: "loopmorning0001", language: "es", styleId: "sunlit-acoustic", seed: 104740,
+        engineVersion: "1.4.0", bedFingerprint: "90c6ad267d159b0e", pattern: "retrieval",
+        audioRef: "loops/es/90c6ad267d159b0e.mp3", audioMime: "audio/mpeg",
+        durationSeconds: 124.5, position: 0, ...sync("09-01")
+      },
+      {
+        // Queued but not rendered: an absent reference is the whole of what says so.
+        id: "loopqueued00001", language: "es", styleId: null, seed: 0, engineVersion: null,
+        bedFingerprint: null, pattern: "retrieval", audioRef: null, audioMime: null,
+        durationSeconds: null, position: 1, ...sync("09-02")
+      }
+    ],
+    loopItems: [
+      {
+        id: "loopitempicar01", loopId: "loopmorning0001", lexemeId: "lexemepicar0001", position: 0,
+        sourceText: "picar", targetText: "to sting",
+        emotion: "wincing slightly, as if something just bit you",
+        startSeconds: 8.82, sourceRevealSeconds: 8.82, targetRevealSeconds: 17.65,
+        endSeconds: 44.12, ...sync("09-01")
+      },
+      {
+        id: "loopitembalsa01", loopId: "loopmorning0001", lexemeId: "lexemebalsa0001", position: 1,
+        sourceText: "la balsa", targetText: "raft", emotion: null,
+        startSeconds: 44.12, sourceRevealSeconds: 44.12, targetRevealSeconds: 52.94,
+        endSeconds: 79.41, ...sync("09-01")
       }
     ]
   };

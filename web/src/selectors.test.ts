@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { validateGraph } from "./domain";
 import {
-  articleFor, articleFromDraft, inboxCount, languageOptions, shortGlossOf,
+  articleFor, articleFromDraft, inboxCount, languageOptions, loopCandidates, loopIsReady,
+  loopItemsOf, loopTitle, loopsIn, sampleLexemeIds, shortGlossOf,
   strengthOf, topicOptions, visibleRows
 } from "./selectors";
 import { testGraph } from "./testGraph";
@@ -174,5 +175,62 @@ describe("how many pictures a sense shows", () => {
 
     const [sense] = articleFor(graph, "lexemepicar0001")!.senses;
     expect(sense.images.map((image) => image.id)).toEqual(["imagepicar00099"]);
+  });
+});
+
+describe("loops", () => {
+  const graph = testGraph();
+
+  it("is a valid graph with loops in it", () => {
+    expect(() => validateGraph(graph)).not.toThrow();
+  });
+
+  it("orders loops by position and their items by the order they are heard", () => {
+    const loops = loopsIn(graph, "es");
+    expect(loops.map((loop) => loop.id)).toEqual(["loopmorning0001", "loopqueued00001"]);
+    expect(loopItemsOf(graph, "loopmorning0001").map((item) => item.sourceText))
+      .toEqual(["picar", "la balsa"]);
+    // Another language's loops are not this language's.
+    expect(loopsIn(graph, "en")).toEqual([]);
+  });
+
+  it("reads readiness off the reference and nothing else", () => {
+    const [rendered, queued] = loopsIn(graph, "es");
+    expect(loopIsReady(rendered)).toBe(true);
+    expect(loopIsReady(queued)).toBe(false);
+  });
+
+  it("derives a title from the words rather than storing one", () => {
+    expect(loopTitle(graph, loopsIn(graph, "es")[0])).toBe("picar, la balsa");
+    expect(loopTitle(graph, loopsIn(graph, "es")[1])).toBe("Empty loop");
+    // Past the limit it counts the rest, so two loops over the same words still read differently.
+    expect(loopTitle(graph, loopsIn(graph, "es")[0], 1)).toBe("picar +1");
+  });
+
+  it("captions what was said, so editing the word afterwards changes nothing", () => {
+    const edited = testGraph();
+    const picar = edited.lexemes.find((one) => one.id === "lexemepicar0001")!;
+    picar.headword = "picotear";
+    picar.primaryGloss = "to peck";
+    expect(loopItemsOf(edited, "loopmorning0001")[0].sourceText).toBe("picar");
+    expect(loopTitle(edited, loopsIn(edited, "es")[0])).toBe("picar, la balsa");
+  });
+
+  it("offers only words a loop could actually speak", () => {
+    // `lexemeespolv001` has no primaryGloss: `shortGloss` may carry several meanings and a loop
+    // must choose between them, so a word without one is simply not eligible.
+    const candidates = loopCandidates(graph, query).map((lexeme) => lexeme.id);
+    expect(candidates).toContain("lexemepicar0001");
+    expect(candidates).toContain("lexemebalsa0001");
+    expect(candidates).not.toContain("lexemeespolv001");
+  });
+
+  it("samples the same words for the same scope and seed, and never more than there are", () => {
+    const once = sampleLexemeIds(graph, query, 2, 7);
+    expect(once).toHaveLength(2);
+    expect(sampleLexemeIds(graph, query, 2, 7)).toEqual(once);
+    expect(new Set(once).size).toBe(2);
+    expect(sampleLexemeIds(graph, query, 99, 7)).toHaveLength(loopCandidates(graph, query).length);
+    expect(sampleLexemeIds(graph, query, 0, 7)).toEqual([]);
   });
 });

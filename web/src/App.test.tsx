@@ -151,7 +151,8 @@ function mockGarfioCapture() {
     draft: {
       id: null, language: "es", headword: "el garfio", lemma: "garfio", reading: null,
       ipa: null, pos: "noun", gender: "masculine", register: "neutral", dialect: null, emoji: "🪝",
-      topics: ["Travel"], status: "active", shortGloss: "hook", notes: [],
+      topics: ["Travel"], status: "active", shortGloss: "hook",
+      primaryGloss: "hook", emotion: "sharp and piratical", notes: [],
       senses: [{
         id: "sense0000000091", order: 0, definition: "Gancho de metal curvo y puntiagudo.",
         definitionLang: "es", glosses: [{ lang: "en", terms: ["hook", "grappling hook"] }],

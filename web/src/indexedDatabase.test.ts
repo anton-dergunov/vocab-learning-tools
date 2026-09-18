@@ -7,7 +7,7 @@ import { fakeRemote } from "./testRemote";
 const lexemeInput = {
   language: "es", headword: "la balsa", lemma: "balsa", reading: null, ipa: null, pos: "noun" as const,
   gender: "feminine" as const, register: "neutral" as const, dialect: null, emoji: "🛶",
-  topicIds: [], status: "active" as const, shortGloss: null, notes: [], clipsSearchedAt: null
+  topicIds: [], status: "active" as const, shortGloss: null, notes: [], primaryGloss: null, emotion: null, clipsSearchedAt: null
 };
 
 describe("IndexedDB Acervo repository", () => {

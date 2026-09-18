@@ -1,8 +1,12 @@
 # LexiBeat · integrating the loop generator
 
-**Status:** Designed, nothing built. Step 1 of §4 is this document and one word deleted from
-`models/redact.py`; step 2 is an experiment that gates the prompt change; step 3 happens in the other
-repository, because Acervo consumes a tag.
+**Status:** Steps 1–4 done; step 5 is next. Step 1 was this document and one word deleted from
+`models/redact.py`. Step 2 was the experiment that gated the prompt change, run 18 September 2026.
+Step 3 was the whole of the work in the other repository, which now ships a wheel, a versioned
+`/api/v1` and an injected speech backend — it landed on **18 September 2026** and everything from §4
+step 4 onward is in this repository. Step 4 landed the same day: the two lexeme fields, the two
+collections, and the compose prompt the experiment measured. Schema version 11; the database is
+rebuilt rather than migrated, as every schema change here is.
 
 A word's article can already say what a word means, show a picture of it, play a native speaker using
 it, and read every field aloud. What none of that does is get a word *stuck in your head*.
@@ -66,17 +70,19 @@ Read its `README.md`, `docs/design.md` and `docs/music-generation.md` before sta
   `create_api(lesson_generate=…)` lets a host replace the whole speech phase. Those three are the
   whole of what this integration needs.
 
-And the facts that rule things out:
+And the facts that ruled things out — all three of which **step 3 has now changed**, and they are
+kept because they are why the seams are where they are:
 
 - **Its HTTP surface and its Gradio explorer were built to demonstrate the engine**, not to be
-  integrated against: the lesson flow is reachable in-process or through Gradio and nowhere else, and
-  its input is a two-column table capped at six rows with no emotion column. It is **open to
-  redesign**, and this integration redesigns it.
-- **Its default voice is Chatterbox Multilingual**, local through MLX or CUDA, at 5.5–6.1 seconds an
-  utterance. The NAS has neither MLX nor a GPU, and the public Space that ran it is stopped. Local
-  voices are a later experiment; nothing here waits on them.
-- **It is not installable.** No `[build-system]`, no console scripts, no tags, no releases, and CI
-  that runs the tests only on the way to deploying the Space.
+  integrated against: the lesson flow was reachable in-process or through Gradio and nowhere else,
+  and its input was a two-column table capped at six rows with no emotion column. It was **open to
+  redesign**, and step 3 redesigned it into `/api/v1`.
+- **Its default voice is Chatterbox Multilingual**, local through MLX, at 5.5–6.1 seconds an
+  utterance. The NAS has no MLX and no GPU. Local voices are a later experiment; nothing here waits
+  on them, and the CUDA backend and the stopped public Space were removed in step 3.
+- **It was not installable.** It now has `[build-system]`, four console scripts, a wheel, a lock
+  file, a release workflow that writes `SHA256SUMS` on a tag, and a CI job that runs the tests on a
+  pull request rather than on the way to a deployment.
 
 ---
 
@@ -136,6 +142,39 @@ the route in §2.4. One rate limiter, one cooldown, one call log, one place the 
 sees only a Protocol, so if the balance ever changes, moving to in-process LiteLLM edits `serve.py`
 and nothing else.
 
+**The protocol step 3 landed**, and what `serve.py` must satisfy:
+
+```python
+class Backend(Protocol):
+    name: str
+    sample_rate: int
+    capabilities: BackendCapabilities   # emotion, rate, voice, languages
+    load_seconds: float
+    model_id: str
+
+    def synth(self, request: SpeechRequest) -> SynthesisResult: ...
+```
+
+`SpeechRequest` carries `text`, a `Language(code, name)`, a `Delivery(take, direction, prosody)`,
+`target_seconds` and `seed`. Three things about it are load-bearing here.
+
+**Dispatch reads `capabilities`, never a name.** That is what step 3 was mostly about: `Speaker` used
+to look its post-processing flags up by the backend's name string, so an injected backend raised
+`KeyError` before it spoke a word. Acervo's backend declares
+`BackendCapabilities("instruction", "instruction", "preset", languages=())`, and the empty tuple
+means "any language" — the owner's chain decides what it can speak, not a table in the other
+repository.
+
+**`take` is on the request**, which is what makes §2.5's cache key implementable at all: the index
+would otherwise have to be re-derived from the prosody, and two takes can carry identical prosody at
+low strength.
+
+**`backend_factory` is the seam**, not a module-level object: `create_service(backend_factory=…)`
+takes a callable given a `RenderContext(operation_id, request, credentials)` and returns a `Backend`.
+`credentials` is the render-scoped token of §2.3, handed to that callable and to nothing else — it
+appears in no operation body, no result and no log line, and `lexibeat.voice.register_secret` adds it
+to that package's own provider-text redactor.
+
 **No credential sits in that container.** `POST /loops` carries a short-lived token signed with
 `ACERVO_JWT_SECRET`, scoped to one render and audienced to the take route; `serve.py` builds the
 backend for that request around it, which works because `render_lesson_speech` takes its backend per
@@ -159,6 +198,13 @@ server is up whenever a call comes home.
   with no instruction-following voice still gets loops — with three distinguishable takes and no
   emotion — and that requirement is met by the contract rather than by a branch on either side.
 - **Not uncached.** §2.5.
+
+**The field is called `direction` on the wire**, not `emotion`. `emotion` is the *record's* field
+name — what §2.8 writes onto a lexeme, and what an example already carries — and it stays that.
+LexiBeat has no notion of an emotion: it receives a short English phrase saying how a line should be
+said, appends the take's prosody words to it, and puts the result in the director note. Naming it
+for what it is on the far side keeps the two vocabularies from being confused for one, and the
+mapping is one line in `src/acervo/loops/`.
 
 ### 5 · The take cache, and why `take` is in the key
 
@@ -203,12 +249,19 @@ Acervo's loops land in the first row, and three things follow.
 twelve-word loop. A plain take is one call per line, varied locally: roughly 24. That is what the
 setting in §2.7 actually buys, and the document says so rather than leaving it to be discovered.
 
-**Two:** the quantisation has dead zones, and `emphatic` falls in one. Widening that vocabulary is
-worth doing in the other repository; until it is, §2.5's key is what keeps the takes distinct.
+**Two:** the quantisation had dead zones, and `emphatic` fell in one — at full strength, takes 0 and
+2 of an emphatic word resolved to speed 1.030/+0.30 st and 1.051/+0.70 st and *both* said "slightly
+briskly, with a slightly brighter, higher pitch". **Step 3 widened each axis from three bands to
+five**, and a test asserts the three takes of a line are pairwise distinct. Note that the emotion
+table that pushed both takes past one threshold is itself gone: a direction is free text now, so the
+multiplier that caused the collision no longer exists either. §2.5's key remains the belt, because at
+a *low* prosody strength the takes converge by design — that is what "vary less" means.
 
-**Three:** `gain_db` has never done anything, in any backend. It is applied and then erased by the
-peak-normalise eleven lines later. The −0.8/+0.6 dB column of `Prosody.TABLE` is decoration. That is a
-bug in that repository, not a constraint here, and it is listed in §4.
+**Three:** `gain_db` had never done anything, in any backend: it was applied and then divided
+straight back out by the peak-normalise eleven lines later, so the −0.8/+0.6 dB column of
+`Prosody.TABLE` was decoration. **Step 3 reordered it** — normalise to the reference peak, then apply
+the gain, then hold the result under the ceiling — and a test asserts two takes differing only in
+`gain_db` have measurably different peaks.
 
 ### 7 · Two orders named for what they are; three uses pick one
 
@@ -323,6 +376,32 @@ true rather than merely restated. The runner holds a lane and a poll timer.
 A rate limit surfaces as one of the three transient codes and rests as usual; the take cache is why
 the restart is cheap.
 
+**The routes step 3 landed**, all written out because §2.12's allow-list rule applies to them as it
+does to the corpus:
+
+| Route | Answers |
+|---|---|
+| `GET /api/v1/health` | `{status, api_version, engine_version, production_bundle}` — liveness only |
+| `GET /api/v1/schema` | patterns, profiles, families, energy, rhythm, palette, limits, audio |
+| `POST /api/v1/loops` | `202` with an operation |
+| `GET /api/v1/operations/{id}` | the operation, with `result` once it completes |
+| `DELETE /api/v1/operations/{id}` | cancels between utterances |
+| `GET /api/v1/loops/{id}/audio` | the finished track, `audio/mpeg` |
+
+The operation is `{operation_id, status, successful, error, progress: {fraction, message},
+created_at, updated_at, result}`, with `status` one of `queued | running | completed | failed |
+cancelled`. That is **deliberately the corpus's vocabulary** — the one
+`src/acervo/clips/corpus.py`'s `Operation` already models and `src/acervo/work/corpus.py` already
+follows, down to `finished` being "not queued and not running". So step 7's client is a second
+instance of a pattern rather than a second pattern, and `work/loop.py` is `work/corpus.py` with a
+different noun.
+
+The completed `result` carries `audio_url`, `audio_mime`, `bitrate_kbps`, `duration_seconds`,
+`pattern`, `style_id`, `seed`, `engine_version`, `profile_version`, `bed_fingerprint`, `total_bars`,
+`bpm` and `timeline` — which is exactly §2.9's two collections and nothing else. **The resolved
+BedSpec is deliberately not in it**, on that service's side as well as this one, so there is nothing
+for a host to be tempted into storing.
+
 ### 11 · MP3, written there and stored untouched
 
 LexiBeat writes the finished track as **MP3 at 128 kbps** and Acervo stores those bytes exactly as
@@ -339,6 +418,12 @@ from the master, and because the phone decodes it in hardware, seeks in it trivi
 it as a plain file later. Verified rather than assumed: that project's `soundfile` 0.14.0 over
 libsndfile 1.2.2 writes MP3 and Ogg Opus with no new dependency and no ffmpeg.
 
+**And the bitrate is measured rather than declared.** libsndfile exposes quality as a 0–1
+`compression_level`, not a bitrate, so "128 kbps" is a claim that has to be checked: in
+`bitrate_mode="CONSTANT"` the level maps onto LAME's own bitrate ladder, and `0.65` is the rung that
+is 128. Measured on a 124.5-second loop, 1,993,664 bytes — **128.1 kbps, constant**. A test in that
+repository re-measures it on every run, so the pair cannot drift apart.
+
 ### 12 · Words come from what you are looking at
 
 The interface samples N lexeme ids from the scope on screen — this language, this topic, or everything
@@ -352,6 +437,10 @@ newest-first and "words with no loop yet" are later options on the same dialog, 
 **The style and pattern catalogues are LexiBeat's**, read from its `schema` route and never copied here
 — the rule `spoken-clips.md` §2.10 settled for channels. The dialog offers *Surprise me* or a family
 the service advertises, so a new family or a second pattern appears here with no change at all.
+`GET /api/v1/schema` is that route: it reports `patterns` (each with its bars and utterances per item
+and whether it has a recall gap), `families`, `energy`, `rhythm`, `palette`, the request `limits` and
+the `audio` format, plus `production_bundle`. A pattern's shape is described there rather than
+assumed here, which is what keeps three repetitions becoming four from being a change on this side.
 
 ### 13 · A bottom bar, and only over the list
 
@@ -437,11 +526,16 @@ second kind of lesson exists, and a loop is a thing that repeats, which is both 
   by the per-use order choice (§2.7).
 - Nothing else here. There is no earlier loop implementation to withdraw.
 
-In the other repository it retires the six-row lesson cap, the assumption that a lesson synthesises its
-own speech with a voice it chose, and the Spanish-and-English-shaped pattern table. Two things are
-adjacent rather than required, and the owner's call: the stopped public Space, and with it the CUDA
-backend, the vendored runtime and the build script that between them are why that checkout is 9 GB and
-its CI takes an hour.
+In the other repository step 3 retired the six-row lesson cap, the assumption that a lesson
+synthesises its own speech with a voice it chose, the Spanish-and-English-shaped pattern table, the
+two-phase `lesson.py` whose split existed only to fit a GPU reservation, and `emotion.py` — the
+twelve-name table, the emoji map and the Spanish-punctuation heuristic — replaced outright by the
+caller's free text.
+
+Two things were adjacent rather than required, and the owner took them: the stopped public Space, and
+with it the CUDA backend, the vendored runtime and the build script. Its CI is now a test job on pull
+requests, reused by the release workflow rather than copied into it. librosa went with them from the runtime — the music path used it for resampling alone, and
+through it numba and llvmlite — so a service install is 131 MB rather than most of 534.
 
 ---
 
@@ -462,9 +556,15 @@ returns null where a direction would serve a loop better), and **article quality
 experiment against ground truth** rather than against another article — a pairwise comparison cannot
 see a defect both arms share. Both are recorded in [`article-quality.md`](article-quality.md).
 
-### Step 3 · `lexibeat` becomes a dependency
+### Step 3 · `lexibeat` becomes a dependency — **done**
 
-In that repository, and its own checks pass locally before the tag is pushed.
+Landed 18 September 2026 in that repository as **v0.2.0**, 142 tests green with the sample
+bundle materialized, wheel built. The
+contract it produced is recorded in §2.3, §2.4, §2.10, §2.11 and §2.12 above, and written out
+in full in that repository's `docs/service.md` with `docs/openapi-v1.json` as the machine copy.
+Three things were the owner's call and were taken: the Space and the CUDA half **removed**,
+`emotion.py` **deleted outright**, and a release workflow written as well as the packaging.
+What follows is what step 3 was, kept because §2's decisions refer to it.
 
 **Dispatch becomes capability-based, which is what makes an injected voice work at all:**
 
@@ -506,13 +606,35 @@ artifact with digests, plus `bundle fetch --into DIR` and `bundle verify`.
 **Privacy:** remove the hardcoded personal vocabulary path in `cli.py` and the external-volume default
 in `library.py`. That repository may be public too, and a home path is a home path.
 
-### Step 4 · The data model and the prompt
+**What is still open, and it is the tag.** The work is committed there and its checks pass locally,
+but a version pin needs a *release*: the tag, the workflow run that builds the wheel and writes
+`SHA256SUMS`, and one `lexibeat-bundle publish` plus `gh release upload` from the laptop for the
+1.8 GB sample bundle, which is Git-LFS tracked and which a runner would have to pull in full to
+repack. §2.1's digests come from that release's `SHA256SUMS`, so **step 6's
+`deploy/acervo/lexibeat/pin.json` waits on it** — which is why nothing under `deploy/` moved here.
+Steps 4, 5, 7, 8 and 9 do not: none of them touches the pin.
+
+### Step 4 · The data model and the prompt — **done**
 
 `primaryGloss` and `emotion` on the lexeme; `loops` and `loopItems` as collections ten and eleven.
-Server: `db/tables.py`'s `REPLICATED`, `domain/projection.py`, the bootstrap migration,
+Server: `db/tables.py`'s `REPLICATED`, `domain/projection.py`, `domain/validation.py`,
+`services/articles.py`'s `LEXEME_FIELDS`, `services/capture/draft.py`, `seed_data.py` and
 `SCHEMA_VERSION` in `domain/__init__.py`. Client: `domain.ts`, `localDatabase.ts`, `repository.ts`
-(`saveLoop`, the cascade, `baseOf`), `api.ts`, `yaml.ts`, `selectors.ts` (view models, derived title,
-the sampler), and `transfer.ts` — loops are not exported. Then `./deploy.sh --reset-database`.
+(`saveLoop` and the cascade), `api.ts`, `yaml.ts`, `articleEdit.ts`, `selectors.ts` (view models,
+derived title, the sampler), and `transfer.ts` — loops are not exported. The prompt is
+`experiments/compose-lesson-line/arms/after.md` verbatim, and `prompts/acervo_chat.md`'s
+addressable-field table gains both names. Then `./deploy.sh --reset-database`.
+
+Three things this step found, all recorded rather than silently done:
+
+- **The bootstrap migration needed no edit.** Its revision id is a digest of the schema shape, so
+  adding two tables and two columns moved the head from `bootstrap_72fd55014c6e` to
+  `bootstrap_1c4fd20cc877` by itself — which is exactly the guard working. The list above named it
+  as work; it is not.
+- **`baseOf` was not touched either.** It is "every record of one entry" for `POST /articles`, and a
+  loop is not part of a word's article.
+- **`position` is `loop_order` at the storage boundary**, beside `vocab_order`, `topic_order` and
+  `sense_order`.
 
 ### Step 5 · The orders, the seam route and the take cache
 
@@ -585,7 +707,8 @@ document is **not** committed here, for the reason `spoken-clips.md` §5 gives: 
 on every bump and read by nobody.
 
 **The prohibited word returns nothing**, in either repository, case-insensitively, across code,
-comments and documents.
+comments and documents. On the other side this is now a CI step rather than a habit — and it builds
+the pattern from two halves at runtime, so the check is not itself the one occurrence.
 
 **On the NAS, end to end** — reset, create the account, compose two words, fetch the sample bundle, make
 a twelve-word loop from the list, watch the steps in the progress strip, then make a second loop sharing

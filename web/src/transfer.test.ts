@@ -36,6 +36,21 @@ describe("exporting a bundle", () => {
     expect(paths).toContain("markdown/Spanish vocab - Food.md");
   });
 
+  it("carries no loop, in any file", () => {
+    // A loop is a rendering of words the bundle already carries, from a seed the record names — so
+    // it is reproducible, and megabytes of it is not what a text archive is for. The fixture has
+    // two loops and two items; none of them may appear anywhere.
+    const files = bundle();
+    expect(testGraph().loops.length).toBeGreaterThan(0);
+    files.forEach((file) => {
+      expect(file.path).not.toContain("loop");
+      if (typeof file.text === "string") {
+        expect(file.text).not.toContain("loopmorning0001");
+        expect(file.text).not.toContain("bedFingerprint");
+      }
+    });
+  });
+
   it("carries a manifest that says what it is, and nothing about the account", () => {
     const manifest = parse(at(bundle(), MANIFEST_FILE).text) as Record<string, unknown>;
     expect(manifest).toEqual({

@@ -1,7 +1,8 @@
 import {
   validateGraph,
   type Attestation, type AttestationInput, type EntityKind, type Example, type ExampleInput,
-  type ImagePrompt, type ImagePromptInput, type Lexeme, type LexemeInput, type Pronunciation, type Sense, type SenseInput,
+  type ImagePrompt, type ImagePromptInput, type Lexeme, type LexemeInput, type Loop, type LoopInput,
+  type LoopItem, type LoopItemInput, type Pronunciation, type Sense, type SenseInput,
   type OwnedFields, type StudyState, type StudyStateInput, type SyncFields, type Topic, type TopicInput,
   type Vocabulary, type VocabularyInput, type VocabularyGraph
 } from "./domain";
@@ -9,15 +10,15 @@ import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase,
 import { newDeviceId, newId, nowInstant } from "./ids";
 import type { ArticleDraft } from "./yaml";
 
-export const LOCAL_SCHEMA_VERSION = 10;
+export const LOCAL_SCHEMA_VERSION = 11;
 
 export const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],
-  pronunciations: [], studyStates: []
+  pronunciations: [], studyStates: [], loops: [], loopItems: []
 });
 
-export type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | Pronunciation | StudyState;
-type EntityInput = VocabularyInput | TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput;
+export type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | Pronunciation | StudyState | Loop | LoopItem;
+type EntityInput = VocabularyInput | TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput | LoopInput | LoopItemInput;
 
 /** What the server returns for a batch of applied records. */
 export interface RemoteWrite {
@@ -78,6 +79,7 @@ export interface AcervoRepository {
   saveExample(input: ExampleInput, id?: string): Promise<Example>;
   saveImagePrompt(input: ImagePromptInput, id?: string): Promise<ImagePrompt>;
   saveStudyState(input: StudyStateInput, id?: string): Promise<StudyState>;
+  saveLoop(input: LoopInput, id?: string): Promise<Loop>;
   delete(kind: EntityKind, id: string): Promise<void>;
 }
 
@@ -126,7 +128,9 @@ export class LocalAcervoRepository implements AcervoRepository {
         examples: contents.examples,
         imagePrompts: contents.imagePrompts,
         pronunciations: contents.pronunciations,
-        studyStates: contents.studyStates
+        studyStates: contents.studyStates,
+        loops: contents.loops,
+        loopItems: contents.loopItems
       };
       validateGraph(graph);
       const allRecords: Entity[][] = [
@@ -293,6 +297,12 @@ export class LocalAcervoRepository implements AcervoRepository {
   saveExample(input: ExampleInput, id?: string) { return this.save("examples", input, id) as Promise<Example>; }
   saveImagePrompt(input: ImagePromptInput, id?: string) { return this.save("imagePrompts", input, id) as Promise<ImagePrompt>; }
   saveStudyState(input: StudyStateInput, id?: string) { return this.save("studyStates", input, id) as Promise<StudyState>; }
+  /**
+   * A loop is *rendered* by the server, so this writes the row rather than the track: the position
+   * a reorder gave it, and — from the job — the reference and the bed that produced it. Online-only
+   * and loud when it fails, like every other write.
+   */
+  saveLoop(input: LoopInput, id?: string) { return this.save("loops", input, id) as Promise<Loop>; }
 
   /**
    * Saves a whole article, edited as YAML, in one write — on the server.
@@ -370,6 +380,11 @@ export class LocalAcervoRepository implements AcervoRepository {
       this.graph.imagePrompts.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("imagePrompts", record));
       this.graph.pronunciations.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("pronunciations", record));
       this.graph.studyStates.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("studyStates", record));
+      // `loopItems` is deliberately absent. A loop is a recording: it keeps playing, captioned with
+      // what was actually said, and its item simply points at a tombstone from here on.
+    } else if (kind === "loops") {
+      // A loop's items go with it, and nothing else does: the words it named are untouched.
+      this.graph.loopItems.filter((record) => record.loopId === id && !record.deleted).forEach((record) => tombstone("loopItems", record));
     } else if (kind === "senses") {
       this.graph.examples.filter((record) => record.senseId === id && !record.deleted).forEach((record) => tombstone("examples", record));
       this.graph.imagePrompts.filter((record) => record.senseId === id && !record.deleted).forEach((record) => tombstone("imagePrompts", record));

@@ -124,6 +124,8 @@ def _project_lexeme(row: Mapping[str, Any]) -> dict[str, Any]:
         "topicIds": to_list(row["topics"]),
         "status": row["status"],
         "shortGloss": text_or_none(row["short_gloss"]),
+        "primaryGloss": text_or_none(row["primary_gloss"]),
+        "emotion": text_or_none(row["emotion"]),
         "notes": to_list(row["notes"]),
         "clipsSearchedAt": text_or_none(row["clips_searched_at"]),
     }
@@ -144,6 +146,8 @@ def _assign_lexeme(value: Mapping[str, Any]) -> dict[str, Any]:
         "topics": to_list(value.get("topicIds")),
         "status": trimmed(value.get("status")),
         "short_gloss": trimmed(value.get("shortGloss")),
+        "primary_gloss": trimmed(value.get("primaryGloss")),
+        "emotion": trimmed(value.get("emotion")),
         "notes": to_list(value.get("notes")),
         "clips_searched_at": trimmed(value.get("clipsSearchedAt")),
     }
@@ -355,6 +359,70 @@ def _assign_study_state(value: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _project_loop(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "language": row["language"],
+        "styleId": text_or_none(row["style_id"]),
+        "seed": to_int(row["seed"]),
+        "engineVersion": text_or_none(row["engine_version"]),
+        "bedFingerprint": text_or_none(row["bed_fingerprint"]),
+        "pattern": text_or_none(row["pattern"]),
+        # An absent reference is what "not rendered yet" looks like, so the mime and the duration are
+        # hidden with it rather than projected as an empty string and a zero that read like facts.
+        "audioRef": text_or_none(row["audio_ref"]),
+        "audioMime": text_or_none(row["audio_mime"]) if trimmed(row["audio_ref"]) else None,
+        "durationSeconds": to_float(row["duration_seconds"]) if trimmed(row["audio_ref"]) else None,
+        "position": to_int(row["loop_order"]),
+    }
+
+
+def _assign_loop(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "language": trimmed(value.get("language")),
+        "style_id": trimmed(value.get("styleId")),
+        "seed": to_int(value.get("seed")),
+        "engine_version": trimmed(value.get("engineVersion")),
+        "bed_fingerprint": trimmed(value.get("bedFingerprint")),
+        "pattern": trimmed(value.get("pattern")),
+        "audio_ref": trimmed(value.get("audioRef")),
+        "audio_mime": trimmed(value.get("audioMime")),
+        "duration_seconds": to_float(value.get("durationSeconds")),
+        "loop_order": to_int(value.get("position")),
+    }
+
+
+def _project_loop_item(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "loopId": row["loop"],
+        "lexemeId": row["lexeme"],
+        "position": to_int(row["item_order"]),
+        "sourceText": row["source_text"],
+        "targetText": row["target_text"],
+        "emotion": text_or_none(row["emotion"]),
+        "startSeconds": to_float(row["start_seconds"]),
+        "sourceRevealSeconds": to_float(row["source_reveal_seconds"]),
+        "targetRevealSeconds": to_float(row["target_reveal_seconds"]),
+        "endSeconds": to_float(row["end_seconds"]),
+    }
+
+
+def _assign_loop_item(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "loop": trimmed(value.get("loopId")),
+        "lexeme": trimmed(value.get("lexemeId")),
+        "item_order": to_int(value.get("position")),
+        # Verbatim, not trimmed, for `pronunciations.text`'s reason: this is what was said, and a
+        # caption that has been tidied no longer matches the recording it describes.
+        "source_text": "" if value.get("sourceText") is None else str(value.get("sourceText")),
+        "target_text": "" if value.get("targetText") is None else str(value.get("targetText")),
+        "emotion": trimmed(value.get("emotion")),
+        "start_seconds": to_float(value.get("startSeconds")),
+        "source_reveal_seconds": to_float(value.get("sourceRevealSeconds")),
+        "target_reveal_seconds": to_float(value.get("targetRevealSeconds")),
+        "end_seconds": to_float(value.get("endSeconds")),
+    }
+
+
 COLLECTIONS: tuple[Collection, ...] = (
     Collection("vocabularies", tables.vocabularies, _project_vocabulary, _assign_vocabulary),
     Collection("topics", tables.topics, _project_topic, _assign_topic),
@@ -365,6 +433,8 @@ COLLECTIONS: tuple[Collection, ...] = (
     Collection("imagePrompts", tables.image_prompts, _project_image_prompt, _assign_image_prompt),
     Collection("pronunciations", tables.pronunciations, _project_pronunciation, _assign_pronunciation),
     Collection("studyStates", tables.study_states, _project_study_state, _assign_study_state),
+    Collection("loops", tables.loops, _project_loop, _assign_loop),
+    Collection("loopItems", tables.loop_items, _project_loop_item, _assign_loop_item),
 )
 
 COLLECTION_BY_KEY = {collection.key: collection for collection in COLLECTIONS}
@@ -372,6 +442,8 @@ COLLECTION_BY_NAME = {collection.name: collection for collection in COLLECTIONS}
 
 # Every word and its descendants, newest relation first. Vocabularies and topics are excluded: a
 # reset discards the words, not the languages the owner studies or the topics they file them under.
+# Loops are included, despite hanging off no word: a loop whose every caption names a deleted word is
+# a track nothing describes, and it is what putting them last in `COLLECTIONS` buys.
 WORD_COLLECTIONS: tuple[Collection, ...] = tuple(reversed(COLLECTIONS[2:]))
 
 

@@ -8,8 +8,8 @@
 import {
   effectiveShortGloss,
   type Attestation, type Example, type ImagePrompt, type Lexeme, type LexemeStatus,
-  type OwnedFields, type Sense, type StudyState, type SyncFields, type Topic, type Vocabulary,
-  type VocabularyGraph
+  type Loop, type LoopItem, type OwnedFields, type Sense, type StudyState, type SyncFields,
+  type Topic, type Vocabulary, type VocabularyGraph
 } from "./domain";
 import { glossLanguagesFor, languageOf, notesLanguageFor, presentationOf, type LanguagePresentation } from "./languages";
 // Type-only, so it is erased at build time and the cycle with `yaml.ts` — which imports `Article`
@@ -334,6 +334,8 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
     topicIds: topics.map((topic) => topic.id),
     status: draft.status,
     shortGloss: draft.shortGloss,
+    primaryGloss: draft.primaryGloss,
+    emotion: draft.emotion,
     notes: draft.notes,
     // An unsaved proposal has never been through a clip search: capture never consults the corpus.
     clipsSearchedAt: null
@@ -422,4 +424,76 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
     glossLangs: glossLanguagesFor(draft.language, graph.vocabularies),
     notesLang: notesLanguageFor(draft.language, graph.vocabularies)
   };
+}
+
+
+/* ── loops ──────────────────────────────────────────────────────────────
+   A loop is a rendered track over some of the owner's words. Everything the interface needs to show
+   one is derived here: there is no title column, no status column, and no stored list of which words
+   were eligible. */
+
+/** The loops of one language, in the order the owner put them. */
+export function loopsIn(graph: VocabularyGraph, language: string): Loop[] {
+  return live(graph.loops)
+    .filter((loop) => loop.language === language)
+    .sort((left, right) => left.position - right.position || left.id.localeCompare(right.id));
+}
+
+/** One loop's words, in the order they are heard. */
+export function loopItemsOf(graph: VocabularyGraph, loopId: string): LoopItem[] {
+  return live(graph.loopItems)
+    .filter((item) => item.loopId === loopId)
+    .sort((left, right) => left.position - right.position || left.id.localeCompare(right.id));
+}
+
+/** Whether a loop has been rendered. The absence of a reference is the whole of what says so. */
+export function loopIsReady(loop: Loop): boolean {
+  return Boolean(loop.audioRef);
+}
+
+/**
+ * A name for a loop, derived from the words it teaches.
+ *
+ * There is no title column, for `shortGlossOf`'s reason: a stored second string is one more thing to
+ * keep in step with the records that already say it. As many source words as fit, then a count of
+ * what is left — so two loops over the same twelve words in a different order still read differently.
+ */
+export function loopTitle(graph: VocabularyGraph, loop: Loop, limit = 3): string {
+  const items = loopItemsOf(graph, loop.id);
+  if (!items.length) return "Empty loop";
+  const named = items.slice(0, limit).map((item) => item.sourceText);
+  const rest = items.length - named.length;
+  return rest > 0 ? `${named.join(", ")} +${rest}` : named.join(", ");
+}
+
+/**
+ * Words a loop could be made from, sampled out of what is on screen.
+ *
+ * Eligibility is `primaryGloss`: `shortGloss` may carry several distinct meanings and a loop must
+ * choose between them, so a word whose writer left it without one is simply not eligible — nothing
+ * backfills it. The sample is deterministic given a seed so the same scope offers the same words
+ * until something changes, which is what makes "Surprise me" repeatable rather than merely random.
+ */
+export function loopCandidates(graph: VocabularyGraph, query: ListQuery): Lexeme[] {
+  const rows = new Set(visibleRows(graph, query).map((row) => row.id));
+  return live(graph.lexemes).filter((lexeme) => rows.has(lexeme.id) && Boolean(lexeme.primaryGloss?.trim()));
+}
+
+export function sampleLexemeIds(graph: VocabularyGraph, query: ListQuery, count: number, seed = 0): string[] {
+  const candidates = loopCandidates(graph, query);
+  // A small deterministic shuffle: xorshift over the seed, so the same scope and seed pick the same
+  // words. Nothing here needs cryptographic quality, and `Math.random` would make it untestable.
+  let state = (seed || 1) >>> 0;
+  const next = () => {
+    state ^= state << 13; state >>>= 0;
+    state ^= state >>> 17;
+    state ^= state << 5; state >>>= 0;
+    return state / 0x100000000;
+  };
+  const pool = candidates.slice();
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(next() * (index + 1));
+    [pool[index], pool[swap]] = [pool[swap], pool[index]];
+  }
+  return pool.slice(0, Math.max(count, 0)).map((lexeme) => lexeme.id);
 }

@@ -53,6 +53,7 @@ STARTER_VOCABULARIES = (
 DEMO_LEXEMES: tuple[dict, ...] = (
     {
         "key": "picar", "language": "es", "headword": "picar", "lemma": "picar",
+        "primary_gloss": "to sting", "emotion": "wincing slightly, as if something just bit you",
         "ipa": "/piˈkaɾ/", "pos": "verb", "register": "neutral", "emoji": "🌶️",
         "topics": ["food", "health", "actions"], "status": "active",
         "short_gloss": "to itch; to sting; to chop; to nibble",
@@ -126,6 +127,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "desmayarse", "language": "es", "headword": "desmayarse", "lemma": "desmayarse",
+        "primary_gloss": "to faint", "emotion": "alarmed, the word itself going light-headed",
         "ipa": "/desmaˈjaɾse/", "pos": "verb", "register": "neutral", "emoji": "😵‍💫",
         "topics": ["health", "actions"], "status": "active",
         "created_at": at("01-14"), "edited_at": at("06-02"),
@@ -163,6 +165,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "sobremesa", "language": "es", "headword": "la sobremesa", "lemma": "sobremesa",
+        "primary_gloss": "after-dinner talk", "emotion": "unhurried and content, in no rush to leave",
         "ipa": "/soβɾeˈmesa/", "pos": "noun", "gender": "feminine", "register": "neutral", "emoji": "☕",
         "topics": ["culture", "food", "social"], "status": "active",
         "short_gloss": "the talk that keeps everyone at the table after a meal",
@@ -188,6 +191,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "mejoren", "language": "es", "headword": "que se mejoren", "lemma": "que se mejoren",
+        "primary_gloss": "get well soon", "emotion": "warm and sincere, wishing someone well",
         "ipa": "/ke se meˈxoɾen/", "pos": "expression", "register": "neutral", "emoji": "💖",
         "topics": ["health", "social"], "status": "learned", "short_gloss": "get better; feel better soon",
         "created_at": at("01-30"), "edited_at": at("05-19"),
@@ -213,6 +217,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "atasco", "language": "es", "headword": "el atasco", "lemma": "atasco",
+        "primary_gloss": "traffic jam", "emotion": "exasperated, resigned to sitting there",
         "ipa": "/aˈtasko/", "pos": "noun", "gender": "masculine", "register": "neutral",
         "dialect": "es-ES", "emoji": "🚗", "topics": ["travel", "places"], "status": "active",
         "short_gloss": "traffic jam", "created_at": at("02-02"), "edited_at": at("02-02"),
@@ -231,6 +236,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "currar", "language": "es", "headword": "currar", "lemma": "currar",
+        "primary_gloss": "to graft", "emotion": "matter-of-fact, a little weary",
         "ipa": "/kuˈraɾ/", "pos": "verb", "register": "colloquial", "dialect": "es-ES", "emoji": "👷",
         "topics": ["slang", "actions"], "status": "active", "short_gloss": "to work; to graft",
         "created_at": at("04-21"), "edited_at": at("04-21"),
@@ -250,6 +256,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "espolvorear", "language": "es", "headword": "espolvorear", "lemma": "espolvorear",
+        "primary_gloss": "to sprinkle", "emotion": "light and delicate, a small careful gesture",
         "ipa": "/espolβoɾeˈaɾ/", "pos": "verb", "register": "neutral", "emoji": "🧀",
         "topics": ["food", "actions"], "status": "inbox", "short_gloss": "to sprinkle; to dust",
         "created_at": at("08-27"), "edited_at": at("08-27"),
@@ -271,6 +278,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "panza", "language": "es", "headword": "tirarse panza arriba", "lemma": "tirarse panza arriba",
+        "primary_gloss": "to sprawl", "emotion": "lazy and contented, sinking into it",
         "pos": "phrase", "register": "colloquial", "emoji": "🏖️", "topics": ["travel", "actions"],
         "status": "active", "short_gloss": "to sprawl out on your back",
         "created_at": at("05-05"), "edited_at": at("05-05"),
@@ -289,6 +297,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "balsa", "language": "es", "headword": "la balsa", "lemma": "balsa",
+        "primary_gloss": "raft", "emotion": "plain and even, simply naming the thing",
         "ipa": "/ˈbalsa/", "pos": "noun", "gender": "feminine", "register": "neutral", "emoji": "🛶",
         "topics": ["travel", "nature"], "status": "active",
         "created_at": at("01-22"), "edited_at": at("01-22"),
@@ -314,6 +323,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "malo", "language": "es", "headword": "ponerse malo", "lemma": "ponerse malo",
+        "primary_gloss": "to get sick", "emotion": "sympathetic, slightly under the weather",
         "pos": "phrase", "register": "colloquial", "dialect": "es-ES", "emoji": "🤒",
         "topics": ["health"], "status": "active", "short_gloss": "to get sick",
         "created_at": at("02-18"), "edited_at": at("02-18"),
@@ -332,6 +342,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "tobillo", "language": "es", "headword": "el tobillo", "lemma": "tobillo",
+        "primary_gloss": "ankle", "emotion": "plain and even, simply naming the thing",
         "ipa": "/toˈβiʎo/", "pos": "noun", "gender": "masculine", "register": "neutral", "emoji": "🦵",
         "topics": ["health", "appearance"], "status": "learned", "short_gloss": "ankle",
         "created_at": at("01-19"), "edited_at": at("01-19"),
@@ -350,6 +361,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "azafata", "language": "es", "headword": "la azafata", "lemma": "azafata",
+        "primary_gloss": "flight attendant", "emotion": "bright and professional, welcoming",
         "ipa": "/aθaˈfata/", "pos": "noun", "gender": "feminine", "register": "neutral", "emoji": "👩‍✈️",
         "topics": ["travel", "social"], "status": "active", "short_gloss": "flight attendant",
         "created_at": at("03-30"), "edited_at": at("03-30"),
@@ -369,6 +381,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "turmoil", "language": "en", "headword": "turmoil", "lemma": "turmoil",
+        "primary_gloss": "turmoil", "emotion": "unsettled and churning, the word carrying weight",
         "ipa": "/ˈtɜːmɔɪl/", "pos": "noun", "register": "formal", "emoji": "🌪️",
         "topics": ["emotions", "misc"], "status": "active", "short_gloss": "суматоха; смятение",
         "created_at": at("02-25"), "edited_at": at("07-14"),
@@ -397,6 +410,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "hoax", "language": "en", "headword": "hoax", "lemma": "hoax",
+        "primary_gloss": "hoax", "emotion": "wry and sceptical, not taken in",
         "ipa": "/həʊks/", "pos": "noun", "register": "neutral", "emoji": "🎭",
         "topics": ["culture", "misc"], "status": "active", "short_gloss": "мистификация; розыгрыш",
         "created_at": at("04-02"), "edited_at": at("04-02"),
@@ -415,6 +429,7 @@ DEMO_LEXEMES: tuple[dict, ...] = (
     },
     {
         "key": "library", "language": "zh-Hans", "headword": "图书馆", "lemma": "图书馆",
+        "primary_gloss": "library", "emotion": "calm and quiet, as if keeping your voice down",
         "reading": "tu2 shu1 guan3", "pos": "noun", "register": "neutral", "emoji": "📚",
         "topics": ["places", "culture"], "status": "active", "short_gloss": "библиотека; library",
         "created_at": at("06-11"), "edited_at": at("06-11"),
@@ -478,7 +493,9 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
             "gender": entry.get("gender", ""), "register": entry.get("register", ""),
             "dialect": entry.get("dialect", ""), "emoji": entry["emoji"],
             "topics": [topics[topic] for topic in entry["topics"]], "status": entry["status"],
-            "short_gloss": entry.get("short_gloss", ""), "notes": entry.get("notes", []),
+            "short_gloss": entry.get("short_gloss", ""),
+            "primary_gloss": entry.get("primary_gloss", ""), "emotion": entry.get("emotion", ""),
+            "notes": entry.get("notes", []),
             "clips_searched_at": entry.get("clips_searched_at", ""),
         }))
 

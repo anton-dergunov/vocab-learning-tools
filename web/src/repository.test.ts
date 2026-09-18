@@ -8,7 +8,7 @@ import { parseArticle, YAML_TEMPLATE, yamlFor } from "./yaml";
 const lexemeInput = {
   language: "es", headword: "desmayarse", lemma: "desmayarse", reading: null, ipa: null, pos: "verb" as const,
   gender: null, register: "neutral" as const, dialect: null, emoji: "😵‍💫", topicIds: [],
-  status: "active" as const, shortGloss: null, notes: [], clipsSearchedAt: null
+  status: "active" as const, shortGloss: null, notes: [], primaryGloss: null, emotion: null, clipsSearchedAt: null
 };
 
 describe("the Acervo repository", () => {
@@ -293,5 +293,79 @@ describe("saving an article edited as YAML", () => {
     const { repository, draft } = await seeded();
     repository.attachRemote(null);
     await expect(repository.saveArticle(draft())).rejects.toThrow("not connected to the server");
+  });
+});
+
+describe("loops", () => {
+  const seeded = async () => {
+    const repository = new LocalAcervoRepository(new MemoryDatabase());
+    await repository.load("owner0000000001");
+    repository.attachRemote(fakeRemote());
+    await repository.saveVocabulary({
+      language: "es", definitionLang: "es", glossLangs: ["en"], notesLang: "en",
+      displayName: null, flag: null, order: 0
+    }, "vocabes00000001");
+    await repository.saveLexeme({ ...lexemeInput, primaryGloss: "to faint" }, "lexeme000000001");
+    return repository;
+  };
+
+  const loopInput = {
+    language: "es", styleId: "sunlit-acoustic", seed: 104740, engineVersion: "1.4.0",
+    bedFingerprint: "90c6ad267d159b0e", pattern: "retrieval",
+    audioRef: "loops/es/90c6ad267d159b0e.mp3", audioMime: "audio/mpeg",
+    durationSeconds: 124.5, position: 0
+  };
+
+  const itemInput = {
+    loopId: "loop00000000001", lexemeId: "lexeme000000001", position: 0,
+    sourceText: "desmayarse", targetText: "to faint", emotion: "alarmed",
+    startSeconds: 8.82, sourceRevealSeconds: 8.82, targetRevealSeconds: 17.65, endSeconds: 44.12
+  };
+
+  it("round-trips a loop and its item through the server and into the replica", async () => {
+    const repository = await seeded();
+    const loop = await repository.saveLoop(loopInput, "loop00000000001");
+    await repository.writeGraph({
+      loopItems: [{ id: "loopitem0000001", ...itemInput, ownerId: "owner0000000001", deleted: false,
+        createdAt: loop.createdAt, editedAt: loop.editedAt, editedBy: loop.editedBy, revision: 0 }]
+    });
+    const snapshot = repository.snapshot();
+    expect(snapshot.loops.map((one) => one.audioRef)).toEqual(["loops/es/90c6ad267d159b0e.mp3"]);
+    expect(snapshot.loopItems.map((one) => one.sourceText)).toEqual(["desmayarse"]);
+    // Only the server mints a revision, and both records took one.
+    expect(snapshot.loops[0].revision).toBeGreaterThan(0);
+    expect(snapshot.loopItems[0].revision).toBeGreaterThan(0);
+  });
+
+  it("tombstones a loop's items with it, and nothing else", async () => {
+    const repository = await seeded();
+    const loop = await repository.saveLoop(loopInput, "loop00000000001");
+    await repository.writeGraph({
+      loopItems: [{ id: "loopitem0000001", ...itemInput, ownerId: "owner0000000001", deleted: false,
+        createdAt: loop.createdAt, editedAt: loop.editedAt, editedBy: loop.editedBy, revision: 0 }]
+    });
+    await repository.delete("loops", "loop00000000001");
+    const snapshot = repository.snapshot();
+    expect(snapshot.loops[0].deleted).toBe(true);
+    expect(snapshot.loopItems[0].deleted).toBe(true);
+    // The word it named is untouched: deleting a loop deletes a recording, not vocabulary.
+    expect(snapshot.lexemes[0].deleted).toBe(false);
+  });
+
+  it("leaves a loop item alive when its word is deleted, so the caption stays truthful", async () => {
+    const repository = await seeded();
+    const loop = await repository.saveLoop(loopInput, "loop00000000001");
+    await repository.writeGraph({
+      loopItems: [{ id: "loopitem0000001", ...itemInput, ownerId: "owner0000000001", deleted: false,
+        createdAt: loop.createdAt, editedAt: loop.editedAt, editedBy: loop.editedBy, revision: 0 }]
+    });
+    await repository.delete("lexemes", "lexeme000000001");
+    const snapshot = repository.snapshot();
+    expect(snapshot.lexemes[0].deleted).toBe(true);
+    // A loop is a recording. It keeps playing, captioned with what was actually said, and the item
+    // simply points at a tombstone from here on.
+    expect(snapshot.loopItems[0].deleted).toBe(false);
+    expect(snapshot.loopItems[0].sourceText).toBe("desmayarse");
+    expect(snapshot.loops[0].deleted).toBe(false);
   });
 });

@@ -38,7 +38,8 @@ def lexeme(**overrides: Any) -> dict[str, Any]:
         "id": new_record_id(), "language": "es", "headword": "picar", "lemma": "picar",
         "reading": None, "ipa": None, "pos": "verb", "gender": None, "register": "neutral",
         "dialect": None, "emoji": None, "topicIds": [], "status": "inbox",
-        "shortGloss": "to chop", "notes": [], "clipsSearchedAt": None, **stamp(), **overrides,
+        "shortGloss": "to chop", "primaryGloss": None, "emotion": None, "notes": [],
+        "clipsSearchedAt": None, **stamp(), **overrides,
     }
 
 
@@ -83,4 +84,23 @@ def study_state(lexeme_id: str, **overrides: Any) -> dict[str, Any]:
         "id": new_record_id(), "lexemeId": lexeme_id, "system": "anki", "noteId": None,
         "cardIds": [], "reps": 0, "lapses": 0, "stability": 0, "difficulty": 0,
         "retrievability": 0, "lastReview": None, "syncedAt": None, **stamp(), **overrides,
+    }
+
+
+def loop(**overrides: Any) -> dict[str, Any]:
+    """A rendered loop. Pass `audioRef=None, audioMime=None` for one the job has not finished."""
+    return {
+        "id": new_record_id(), "language": "es", "styleId": "sunlit-acoustic", "seed": 104740,
+        "engineVersion": "1.4.0", "bedFingerprint": "90c6ad267d159b0e", "pattern": "retrieval",
+        "audioRef": "loops/es/90c6ad267d159b0e.mp3", "audioMime": "audio/mpeg",
+        "durationSeconds": 124.5, "position": 0, **stamp(), **overrides,
+    }
+
+
+def loop_item(loop_id: str, lexeme_id: str, **overrides: Any) -> dict[str, Any]:
+    return {
+        "id": new_record_id(), "loopId": loop_id, "lexemeId": lexeme_id, "position": 0,
+        "sourceText": "picar", "targetText": "to sting", "emotion": "wincing slightly",
+        "startSeconds": 8.82, "sourceRevealSeconds": 8.82, "targetRevealSeconds": 17.65,
+        "endSeconds": 44.12, **stamp(), **overrides,
     }
