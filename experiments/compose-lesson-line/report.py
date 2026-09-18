@@ -13,7 +13,7 @@ import argparse
 import json
 import math
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +110,55 @@ def new_fields(rows: list[dict[str, Any]]) -> None:
               f"| {pct(sum(r['emotionEqualsExample'] for r in group) / n)} |")
 
 
+def judge_table(run_dir: Path) -> None:
+    """Layer 2. A pair the two orderings disagree about counts as no difference, and the flip rate
+    is reported beside the verdict: it is this instrument's own noise."""
+    folder = run_dir / "judged"
+    if not folder.exists():
+        return
+    votes: dict[tuple, dict[str, str | None]] = defaultdict(dict)
+    decided: Counter = Counter()
+    for path in sorted(folder.rglob("*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if not record.get("ok"):
+            continue
+        key = (record["provider"], record["model"], record["wordId"], record["repeat"])
+        votes[key][record["order"]] = record.get("winnerArm")
+        if record.get("decidedBy"):
+            decided[record["decidedBy"]] += 1
+
+    print("\n### The judge\n")
+    print("| pair | comparisons | before wins | after wins | no difference | flipped |")
+    print("| --- | ---: | ---: | ---: | ---: | ---: |")
+    grouped: dict[str, list[tuple]] = defaultdict(list)
+    for key in votes:
+        grouped[f"{key[0]}/{key[1].split('/')[-1]}"].append(key)
+    overall = Counter()
+    flips = 0
+    for pair, keys in sorted(grouped.items()):
+        tally, flipped = Counter(), 0
+        for key in keys:
+            values = [v for v in votes[key].values() if v]
+            if len(values) == 2 and values[0] != values[1]:
+                tally["same"] += 1
+                flipped += 1
+            else:
+                tally[values[0] if values else "same"] += 1
+        overall += tally
+        flips += flipped
+        n = len(keys)
+        low, high = wilson(tally["before"], n)
+        print(f"| {pair} | {n} | {pct(tally['before'] / n)} ({pct(low)}–{pct(high)}) "
+              f"| {pct(tally['after'] / n)} | {pct(tally['same'] / n)} | {pct(flipped / n)} |")
+    total = sum(overall.values())
+    low, high = wilson(overall["before"], total)
+    print(f"| **all pairs** | {total} | **{pct(overall['before'] / total)}** ({pct(low)}–{pct(high)}) "
+          f"| {pct(overall['after'] / total)} | {pct(overall['same'] / total)} "
+          f"| {pct(flips / total)} |")
+    print(f"\nWhat decided a call, when one was made: "
+          + " · ".join(f"{name} {count}" for name, count in decided.most_common()))
+
+
 def cost(rows: list[dict[str, Any]]) -> None:
     print("\n### Latency and cost\n")
     print("| arm | pair | median s | p90 s | req chars | reply chars | cost |")
@@ -184,6 +233,7 @@ def main() -> int:
         headline(rows)
         signal_against_noise(summary)
         new_fields(rows)
+        judge_table(run_dir)
         cost(rows)
     return 0
 

@@ -168,7 +168,11 @@ def score_run(run_dir: Path) -> dict[str, Any]:
     by_id = {word["id"]: word for word in dataset.words()}
     rows = []
     for path in sorted(run_dir.rglob("*.json")):
-        if path.name in ("manifest.json", "summary.json", "judged.json", "ratings.json"):
+        # A judged record carries `wordId` too, so filtering on that alone let the judge's own
+        # output in and it was read as an arm record. Exclude the subtree by path, not by name.
+        if path.name.endswith(".json") and "judged" in path.parts:
+            continue
+        if path.name in ("manifest.json", "summary.json", "review-key.json", "ratings.json"):
             continue
         record = json.loads(path.read_text(encoding="utf-8"))
         if "wordId" not in record:

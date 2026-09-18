@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import difflib
 import random
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -36,7 +37,8 @@ WANTED = {"confident": 8, "flipped": 5, "disagrees": 5, "random": 3, "control": 
 def records_of(run_dir: Path) -> dict[tuple, dict[str, Any]]:
     out: dict[tuple, dict[str, Any]] = {}
     for path in sorted(run_dir.rglob("*.json")):
-        if path.name in ("manifest.json", "summary.json") or path.parent.parent.name == "judged":
+        if path.name in ("manifest.json", "summary.json", "review-key.json", "ratings.json") \
+                or "judged" in path.parts:
             continue
         record = json.loads(path.read_text(encoding="utf-8"))
         if "wordId" in record and "arm" in record:
@@ -63,6 +65,32 @@ def consensus(votes: dict[str, str | None]) -> tuple[str, bool]:
     if values[0] != values[1]:
         return ("same", True)
     return (values[0], False)
+
+
+def diff_rows(left: str, right: str) -> tuple[list, list]:
+    """Two aligned line lists, VS Code style: same, changed, only-left, only-right.
+
+    Both sides are shown whole and unedited — the highlighting says which rows differ, it does not
+    replace reading them. Filler rows keep the two columns aligned, which is the only reason a
+    side-by-side diff is easier than two files.
+    """
+    a, b = left.splitlines(), right.splitlines()
+    out_a: list[list] = []
+    out_b: list[list] = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+        if tag == "equal":
+            out_a += [["eq", line] for line in a[i1:i2]]
+            out_b += [["eq", line] for line in b[j1:j2]]
+            continue
+        chunk_a = [["chg" if tag == "replace" else "del", line] for line in a[i1:i2]]
+        chunk_b = [["chg" if tag == "replace" else "ins", line] for line in b[j1:j2]]
+        while len(chunk_a) < len(chunk_b):
+            chunk_a.append(["pad", ""])
+        while len(chunk_b) < len(chunk_a):
+            chunk_b.append(["pad", ""])
+        out_a += chunk_a
+        out_b += chunk_b
+    return out_a, out_b
 
 
 def draft_for(record: dict[str, Any], word: dict[str, Any]) -> dict[str, Any] | None:
@@ -147,10 +175,11 @@ def build(run_dir: Path) -> int:
         if not all(drafts):
             continue
         screen["id"] = f"s{index:02d}"
+        rows_a, rows_b = diff_rows(render.as_yaml(drafts[0], left.get("reply"), blind=True),
+                                   render.as_yaml(drafts[1], right.get("reply"), blind=True))
         pages.append({
             "id": screen["id"], "headword": word["headword"], "language": word["language"],
-            "left": render.as_yaml(drafts[0], left.get("reply"), blind=True),
-            "right": render.as_yaml(drafts[1], right.get("reply"), blind=True),
+            "left": rows_a, "right": rows_b,
         })
 
     out = run_dir / "review"
@@ -182,8 +211,18 @@ def page_html(pages: list[dict[str, Any]]) -> str:
  .col { padding: 12px 16px; min-width: 0; }
  .col + .col { border-left: 1px solid #8884; }
  .tag { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; opacity: .55; }
- pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.55 ui-monospace, monospace;
-       margin: 6px 0 0; }
+ .rows { font: 12.5px/1.6 ui-monospace, monospace; margin: 6px 0 0; }
+ .rows div { white-space: pre-wrap; word-break: break-word; padding: 0 6px;
+             border-left: 3px solid transparent; }
+ .del { background: rgba(240,90,90,.15); border-left-color: rgba(240,90,90,.7) !important; }
+ .ins { background: rgba(70,190,120,.15); border-left-color: rgba(70,190,120,.7) !important; }
+ .chg { background: rgba(110,160,255,.15); border-left-color: rgba(110,160,255,.7) !important; }
+ .pad { background: rgba(128,128,128,.07); min-height: 1.6em; }
+ .legend { font-size: 12px; opacity: .6; display: flex; gap: 12px; }
+ .legend span::before { content: "\2588\2009"; }
+ .legend .c1::before { color: rgba(110,160,255,.8); }
+ .legend .c2::before { color: rgba(70,190,120,.8); }
+ .legend .c3::before { color: rgba(240,90,90,.8); }
  footer { position: sticky; bottom: 0; background: Canvas; border-top: 1px solid #8884;
           padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
  button { font: inherit; padding: 5px 12px; border: 1px solid #8886; border-radius: 6px;
@@ -199,12 +238,13 @@ def page_html(pages: list[dict[str, Any]]) -> str:
  <span class="word" id="word"></span>
  <span class="tag" id="lang"></span>
  <span class="spacer"></span>
+ <span class="legend"><span class="c1">changed</span><span class="c2">only B</span><span class="c3">only A</span></span>
  <span class="tag" id="progress"></span>
 </header>
 <div id="body">
  <div class="grid">
-  <div class="col"><span class="tag">A</span><pre id="left"></pre></div>
-  <div class="col"><span class="tag">B</span><pre id="right"></pre></div>
+  <div class="col"><span class="tag">A</span><div class="rows" id="left"></div></div>
+  <div class="col"><span class="tag">B</span><div class="rows" id="right"></div></div>
  </div>
 </div>
 <footer>
@@ -224,6 +264,14 @@ const PAGES = __DATA__;
 const ratings = JSON.parse(localStorage.getItem("clr-ratings") || "{}");
 let at = 0, magnitude = 2;
 const $ = (id) => document.getElementById(id);
+function paint(host, rows) {
+  host.replaceChildren(...rows.map(([cls, text]) => {
+    const line = document.createElement("div");
+    line.className = cls;
+    line.textContent = text || "\u00a0";
+    return line;
+  }));
+}
 function draw() {
   if (at >= PAGES.length) {
     $("body").innerHTML = '<div class="done">All ' + PAGES.length +
@@ -235,8 +283,8 @@ function draw() {
   const page = PAGES[at];
   $("word").textContent = page.headword;
   $("lang").textContent = page.language;
-  $("left").textContent = page.left;
-  $("right").textContent = page.right;
+  paint($("left"), page.left);
+  paint($("right"), page.right);
   $("progress").textContent = (at + 1) + " / " + PAGES.length;
   for (const b of document.querySelectorAll("[data-mag]"))
     b.classList.toggle("on", Number(b.dataset.mag) === magnitude);
@@ -302,6 +350,15 @@ def score(run_dir: Path) -> int:
         choice = ratings[screen["id"]]["choice"]
         mine.append("same" if choice == "same" else screen[f"{choice}Arm"])
         theirs.append(screen["judge"])
+    # Side bias. Left and right were randomised against the arm per screen, so a lean here is a
+    # fact about the reader rather than about the prompts — and a large one is evidence that the
+    # screens were being read by position because there was no content signal to read.
+    sides = Counter(ratings[s["id"]]["choice"] for s in screens.values() if s["id"] in ratings)
+    strength = Counter(ratings[s["id"]]["magnitude"] for s in screens.values() if s["id"] in ratings)
+    print("\n### How the calls were made\n")
+    print(f"By side: left {sides['left']} · right {sides['right']} · no difference {sides['same']}")
+    print(f"By strength: slight {strength[1]} · clear {strength[2]} · large {strength[3]}")
+
     print("\n### Against the judge\n")
     if mine:
         agree = sum(a == b for a, b in zip(mine, theirs)) / len(mine)

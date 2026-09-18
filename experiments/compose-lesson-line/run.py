@@ -44,7 +44,7 @@ TIMEOUT_SECONDS = 90.0
 
 # Well under what each provider publishes. Gemini's free tier documents 15/min and meters the
 # credential rather than the model, so the gate is per ROW and set at eight.
-RATE_PER_MINUTE = {"gemini-free": 8, "vertex": 20, "cloudflare": 20}
+RATE_PER_MINUTE = {"gemini-free": 8, "vertex": 6, "cloudflare": 4}
 DEFAULT_RATE = 10
 
 # A refused pair rests, doubling, and then parks: dribbling a biased subsample of one pair's answers
@@ -52,6 +52,7 @@ DEFAULT_RATE = 10
 FIRST_REST = 30.0
 LONGEST_REST = 600.0
 MAX_RESTS = 5
+RETRYABLE = ("rate_limited", "unavailable", "unreachable")
 
 # The account this experiment is allowed to spend. Checked before anything is called, because
 # `ACERVO_VERTEX_ACCOUNT` cannot do it: a user's application-default credentials do not say whose
@@ -255,7 +256,11 @@ def main() -> int:
                 skipped_existing += 1
                 continue
             record = ask(job, pair, system[job["arm"]], gates[pair["provider"]])
-            write(path, record)
+            # A retryable failure is deliberately NOT written: leaving no file is what lets a later
+            # pass fill the cell, where a stored refusal would be mistaken for work already done and
+            # the comparison would quietly lose that word on that pair.
+            if record["ok"] or record.get("reason") not in RETRYABLE:
+                write(path, record)
             done += 1
             spent += record.get("costUsd") or 0.0
             if record["ok"]:

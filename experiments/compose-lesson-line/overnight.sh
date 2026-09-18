@@ -23,6 +23,25 @@ say() { printf '\n=== %s · %s\n' "$(date +%H:%M:%S)" "$1"; }
 say "the metric, before anything else"
 "$python" "$here/score.py" --selftest
 
+say "dropping any stored retryable failure, so the fill pass can reach those cells"
+"$python" - "$run_dir" <<'PRUNE'
+import json, sys
+from pathlib import Path
+
+RETRYABLE = ("rate_limited", "unavailable", "unreachable")
+# A refusal for quota is not an answer, and a file is how this runner remembers it already asked.
+# Left in place it would be mistaken for work done and that cell would never be filled.
+dropped = 0
+for path in Path(sys.argv[1]).rglob("*.json"):
+    if path.name == "manifest.json" or path.parent.parent.name == "judged":
+        continue
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if "wordId" in record and not record.get("ok") and record.get("reason") in RETRYABLE:
+        path.unlink()
+        dropped += 1
+print(f"{dropped} retryable failure(s) dropped")
+PRUNE
+
 say "the arms (skips what is already on disk)"
 "$python" "$here/run.py" --repeats 3 --max-cost-usd 2.00 --run "$run_id" \
   --pair gemini-free:gemini/gemini-3.5-flash-lite \

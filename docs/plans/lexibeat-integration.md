@@ -261,6 +261,26 @@ prompt produces. If it degrades, the answer is **not** to carve two fields into 
 is too small a piece to justify a second prompt. It is to split `acervo_compose.md` into comparable
 parts, considered whole, as its own task. The write-up records which way it went.
 
+**Measured on 18 September 2026, and it does not degrade:**
+[`../../experiments/compose-lesson-line/README.md`](../../experiments/compose-lesson-line/README.md).
+315 calls over 20 words, four languages, three (provider, model) pairs and three repeats.
+**All ten substance metrics move less than their own run-to-run variance** — senses +0.04 against a
+noise floor of 0.13, note characters −15.7 against 58.4 — gloss completeness is 100% in both arms,
+and the only unparseable reply in the run came from the *shorter* prompt. `primaryGloss` was a single
+term in all 158 usable replies and never once copied a multi-meaning `shortGloss`.
+
+The subjective half found nothing either, and said so precisely: shown two articles from the **same**
+prompt, the reader named a winner **half the time**, and agreement with a Pro-model judge over all 155
+pairs was κ = −0.097, at chance. That 50% false-positive floor is the strongest available statement
+that there is nothing to see — and it also means pairwise "which is better" is the wrong instrument
+for differences this small, which the next prompt experiment should not repeat.
+
+So **the fields ship as worded and `acervo_compose.md` is not split.** Two bars were missed and
+neither bears on it: note characters at 89.4% on a metric whose difference is a quarter of its noise,
+and the gloss-language rule, failed only by `llama-3.3-70b` and only on a rule that predates these
+fields. Article quality itself is untouched by this run and is its own experiment — both arms wrote
+`/ˈaska/` for `el asco`, which is simply wrong.
+
 ### 9 · A loop is two collections, and its state is derived
 
 `loops` — `language`, `styleId`, `seed`, `engineVersion`, `bedFingerprint`, `pattern`, `audioRef`,
@@ -430,13 +450,16 @@ its CI takes an hour.
 
 `models/redact.py`, and this file. Nothing else starts first.
 
-### Step 2 · The prompt experiment, which gates step 4
+### Step 2 · The prompt experiment, which gates step 4 — **done**
 
-`experiments/compose-lesson-line/` — apparatus and write-up in the directory, the decision and a link
-here. Amend `prompts/acervo_compose.md` with `primaryGloss` and `emotion` and a paragraph
-distinguishing the single spoken term from `shortGloss` and from a sense's gloss `terms`; run it across
-the models and a fixed word list; compare sense count, example count, note length and gloss quality
-against the current prompt. Record the verdict.
+`experiments/compose-lesson-line/`, run 18 September 2026 for $4.04. The verdict is in §2.8 and the
+numbers are in that directory's README: no measurable cost to the rest of the article, so step 4
+proceeds as written and the candidate prompt in `arms/after.md` is what lands in `prompts/`.
+
+Two follow-ups it opened, neither blocking: the `emotion: null` boundary wants a tuning pass (`picar`
+returns null where a direction would serve a loop better), and **article quality deserves its own
+experiment against ground truth** rather than against another article — a pairwise comparison cannot
+see a defect both arms share.
 
 ### Step 3 · `lexibeat` becomes a dependency
 

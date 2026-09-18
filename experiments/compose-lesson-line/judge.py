@@ -86,7 +86,9 @@ def comparisons(run_dir: Path) -> list[dict[str, Any]]:
     by_id = {word["id"]: word for word in dataset.words()}
     found: dict[tuple, dict[str, Any]] = {}
     for path in sorted(run_dir.rglob("*.json")):
-        if path.name in ("manifest.json", "summary.json") or path.parent.name == "judged":
+        # `judged/<pair>/<file>.json`, so the parent is the pair directory and not "judged" — a
+        # check on the parent's name passed on the first pass only because nothing was judged yet.
+        if path.name in ("manifest.json", "summary.json") or "judged" in path.parts:
             continue
         record = json.loads(path.read_text(encoding="utf-8"))
         if "wordId" not in record:
