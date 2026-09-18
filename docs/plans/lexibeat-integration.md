@@ -278,8 +278,9 @@ for differences this small, which the next prompt experiment should not repeat.
 So **the fields ship as worded and `acervo_compose.md` is not split.** Two bars were missed and
 neither bears on it: note characters at 89.4% on a metric whose difference is a quarter of its noise,
 and the gloss-language rule, failed only by `llama-3.3-70b` and only on a rule that predates these
-fields. Article quality itself is untouched by this run and is its own experiment — both arms wrote
-`/ˈaska/` for `el asco`, which is simply wrong.
+fields. Article quality itself is untouched by this run and has its own register,
+[`article-quality.md`](article-quality.md) — both arms wrote `/ˈaska/` for `el asco`, which is simply
+wrong, and a comparison of two arms is blind to a defect they share.
 
 ### 9 · A loop is two collections, and its state is derived
 
@@ -459,7 +460,7 @@ proceeds as written and the candidate prompt in `arms/after.md` is what lands in
 Two follow-ups it opened, neither blocking: the `emotion: null` boundary wants a tuning pass (`picar`
 returns null where a direction would serve a loop better), and **article quality deserves its own
 experiment against ground truth** rather than against another article — a pairwise comparison cannot
-see a defect both arms share.
+see a defect both arms share. Both are recorded in [`article-quality.md`](article-quality.md).
 
 ### Step 3 · `lexibeat` becomes a dependency
 

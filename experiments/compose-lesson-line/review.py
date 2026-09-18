@@ -219,6 +219,11 @@ def page_html(pages: list[dict[str, Any]]) -> str:
  .chg { background: rgba(110,160,255,.15); border-left-color: rgba(110,160,255,.7) !important; }
  .pad { background: rgba(128,128,128,.07); min-height: 1.6em; }
  .legend { font-size: 12px; opacity: .6; display: flex; gap: 12px; }
+ .notes { padding: 10px 16px; border-top: 1px solid #8884; }
+ .notes label { display: block; font-size: 12px; opacity: .6; margin-bottom: 5px; }
+ .notes textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px;
+                   border: 1px solid #8886; border-radius: 6px; background: transparent;
+                   resize: vertical; }
  .legend span::before { content: "\2588\2009"; }
  .legend .c1::before { color: rgba(110,160,255,.8); }
  .legend .c2::before { color: rgba(70,190,120,.8); }
@@ -246,11 +251,17 @@ def page_html(pages: list[dict[str, Any]]) -> str:
   <div class="col"><span class="tag">A</span><div class="rows" id="left"></div></div>
   <div class="col"><span class="tag">B</span><div class="rows" id="right"></div></div>
  </div>
+ <div class="notes">
+  <label for="note">Anything worth saying about this pair — what differs, and whether it matters.
+   Optional, and saved with the rating.</label>
+  <textarea id="note" rows="2" placeholder="e.g. B adds a sense that is really the same meaning"></textarea>
+ </div>
 </div>
 <footer>
  <button data-choice="left">&larr; A better</button>
- <button data-choice="same">= no difference</button>
  <button data-choice="right">B better &rarr;</button>
+ <button data-choice="mixed"><kbd>m</kbd> both differ, neither better</button>
+ <button data-choice="same"><kbd>=</kbd> no difference I can see</button>
  <span class="tag">how much</span>
  <button data-mag="1">1 slight</button>
  <button data-mag="2">2 clear</button>
@@ -288,10 +299,16 @@ function draw() {
   $("progress").textContent = (at + 1) + " / " + PAGES.length;
   for (const b of document.querySelectorAll("[data-mag]"))
     b.classList.toggle("on", Number(b.dataset.mag) === magnitude);
+  $("note").value = (ratings[page.id] && ratings[page.id].note) || "";
 }
 function choose(choice) {
   if (at >= PAGES.length) return;
-  ratings[PAGES[at].id] = { choice, magnitude: choice === "same" ? 0 : magnitude };
+  const decided = choice === "left" || choice === "right";
+  ratings[PAGES[at].id] = {
+    choice,
+    magnitude: decided ? magnitude : 0,
+    note: $("note").value.trim(),
+  };
   localStorage.setItem("clr-ratings", JSON.stringify(ratings));
   at += 1; draw();
 }
@@ -306,9 +323,12 @@ $("save").onclick = () => {
   a.href = URL.createObjectURL(blob); a.download = "ratings.json"; a.click();
 };
 addEventListener("keydown", (e) => {
+  // The note field takes the keyboard while it has focus, or typing "m" would rate the screen.
+  if (e.target && e.target.tagName === "TEXTAREA") return;
   if (e.key === "ArrowLeft") choose("left");
   else if (e.key === "ArrowRight") choose("right");
   else if (e.key === "=" || e.key === " ") { e.preventDefault(); choose("same"); }
+  else if (e.key === "m") choose("mixed");
   else if (["1", "2", "3"].includes(e.key)) { magnitude = Number(e.key); draw(); }
   else if (e.key === "Backspace") { e.preventDefault(); at = Math.max(0, at - 1); draw(); }
 });
@@ -335,8 +355,12 @@ def score(run_dir: Path) -> int:
     ratings = json.loads(path.read_text(encoding="utf-8"))
     screens = {s["id"]: s for s in key["screens"] if "id" in s}
 
+    # A winner on a control is the false positive. `mixed` and `same` are both honest answers
+    # there — two generations of one arm DO differ in wording, which is exactly why the option set
+    # needed a fourth answer.
+    decided = ("left", "right")
     controls = [s for s in screens.values() if s["kind"] == "control" and s["id"] in ratings]
-    called = [s for s in controls if ratings[s["id"]]["choice"] != "same"]
+    called = [s for s in controls if ratings[s["id"]]["choice"] in decided]
     print("\n### The controls — two articles from the same arm\n")
     print(f"{len(called)} of {len(controls)} control screens were given a winner. "
           f"That is the reader's false-positive rate: **{len(called) / len(controls) * 100:.0f}%**"
@@ -348,16 +372,28 @@ def score(run_dir: Path) -> int:
         if screen["kind"] != "real" or screen["id"] not in ratings:
             continue
         choice = ratings[screen["id"]]["choice"]
-        mine.append("same" if choice == "same" else screen[f"{choice}Arm"])
+        # `mixed` is not a preference, so it joins `same` for the win rate — but it was counted
+        # separately above, because "I see changes that trade off" is a different observation from
+        # "these look identical", and only the first says the reader perceived the change at all.
+        mine.append("same" if choice in ("same", "mixed") else screen[f"{choice}Arm"])
         theirs.append(screen["judge"])
     # Side bias. Left and right were randomised against the arm per screen, so a lean here is a
     # fact about the reader rather than about the prompts — and a large one is evidence that the
     # screens were being read by position because there was no content signal to read.
-    sides = Counter(ratings[s["id"]]["choice"] for s in screens.values() if s["id"] in ratings)
-    strength = Counter(ratings[s["id"]]["magnitude"] for s in screens.values() if s["id"] in ratings)
+    rated = [ratings[s["id"]] for s in screens.values() if s["id"] in ratings]
+    sides = Counter(r["choice"] for r in rated)
+    strength = Counter(r["magnitude"] for r in rated)
     print("\n### How the calls were made\n")
-    print(f"By side: left {sides['left']} · right {sides['right']} · no difference {sides['same']}")
+    print(f"By side: left {sides['left']} · right {sides['right']} · "
+          f"both differ, neither better {sides['mixed']} · no difference {sides['same']}")
     print(f"By strength: slight {strength[1]} · clear {strength[2]} · large {strength[3]}")
+    notes = [(s["id"], ratings[s["id"]].get("note", "")) for s in sorted(screens.values(), key=lambda s: s["id"])
+             if s["id"] in ratings and ratings[s["id"]].get("note")]
+    if notes:
+        print("\n### What the reader wrote\n")
+        for screen_id, note in notes:
+            kind = screens[screen_id]["stratum"]
+            print(f"- **{screen_id}** ({kind}) — {note}")
 
     print("\n### Against the judge\n")
     if mine:

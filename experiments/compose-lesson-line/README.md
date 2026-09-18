@@ -274,18 +274,29 @@ Rated 18 September 2026, blind, side randomised per screen.
 | calls by side | left 4 · **right 14** · no difference 7 |
 | calls by arm | before 10 · after 6 · same 5 |
 
-**The controls are the headline.** Shown two articles produced by the *same* prompt, the reader named
-a winner half the time. That is the noise floor of the whole pairwise instrument, and it is enormous
-next to any effect this experiment could have found.
+**The controls looked like the headline, and the reader's own feedback corrected that.** Shown two
+articles produced by the *same* prompt, a winner was named half the time — but the screen offered
+only *A better*, *B better* and **no difference**, and on a control the third option is literally
+false: two generations of one prompt do differ in wording. The reader reported the same problem on
+the real screens — *"in some cases I actually saw the differences but they were made in such a way
+that it was hard to say if A is better or B is better, because A was better in some things and B in
+some others"* — which no option expressed.
 
-Everything else agrees with that reading. κ is at chance — slightly below it — so the human and the
+So the 50% figure conflates *"I can see these are not the same"* with *"one of them is better"*, and
+it is **not** clean evidence about the reader. The option set has since been fixed: a fourth answer,
+**both differ, neither better**, now separates perceiving a change from preferring one, and any
+future run should quote both. What the controls do still establish is that this instrument could not
+reliably return "no preference" even when there was none to have — which is the design lesson either
+way.
+
+The rest of the evidence is unaffected and points the same way. κ is at chance — slightly below it — so the human and the
 judge were not seeing the same thing. 15 of the 18 calls were "slight" and none were "large". And the
 side lean is the tell: left and right were randomised against the arm on every screen, so a 14-to-4
 preference for the right-hand column is a fact about reading position, not about prompts. The reader's
 own summary was *"I haven't seen any big difference between these cases."*
 
-**κ ≈ 0 here does not mean the judge is bad, and it does not license reusing it either.** With a 50%
-false-positive floor on identical inputs, two raters can only agree by luck; there was no signal for
+**κ ≈ 0 here does not mean the judge is bad, and it does not license reusing it either.** Two raters
+can only agree when there is something to agree about; on inputs this close there was no signal for
 either to find. What the calibration bought is the knowledge that **pairwise judging — human or model
 — cannot resolve differences of this size**, which is worth more than a κ that flattered it. A future
 experiment on a real quality difference would have to re-establish the judge on that task.
@@ -300,8 +311,13 @@ not evidence of anything.
 Nothing detected a difference. Ten substance metrics each move less than their own run-to-run
 variance. Gloss completeness is 100% in both arms. `primaryGloss` was a single term in all 158 usable
 replies and never once copied a multi-meaning `shortGloss`. The only unparseable reply in 315 calls
-came from the **shorter** prompt. And the subjective instrument turned out to have a 50% false-positive
-rate, which is the strongest available statement that there is nothing there to see.
+came from the **shorter** prompt.
+
+The subjective half adds nothing against that and nothing for it: 15 of 18 calls were "slight", none
+were "large", the reader's summary was *"I haven't seen any big difference"*, and agreement with the
+judge was at chance. **The metrics are what carry this verdict**, not the screens — an earlier draft
+of this file leaned on the 50% control rate as the strongest evidence, which it is not, for the
+reason given above.
 
 So the plan's condition is met: `primaryGloss` and `emotion` go into `prompts/acervo_compose.md` and
 the data model, and `acervo_compose.md` is **not** split. That decision is recorded in
@@ -313,19 +329,19 @@ a metric whose paired difference is a quarter of its own noise; and the gloss-la
 
 ### What this experiment says to do next, and does not do
 
-- **Article quality is the real open question, and it is a different experiment.** Both arms produced
-  `/ˈaska/` as the IPA for `el asco`, where Spanish has no vowel reduction and the answer is
-  `/ˈasko/`. Neither the counts nor the blind screens were looking for that, because it is the same in
-  both arms — which is exactly why it needs its own run, against ground truth rather than against
-  another article.
-- **The `emotion` null boundary wants tuning.** `picar` returned `null` where something like
-  *irritated, scratching at it* would serve a loop better. A tuning pass, not a redesign.
+- **Article quality is the real open question, and it now has its own register:**
+  [`docs/plans/article-quality.md`](../../docs/plans/article-quality.md). Three defects went in from
+  this run — a reproducibly wrong IPA vowel from `gemini-3.5-flash-lite` (6 of 6 calls, while the
+  other two pairs were correct every time), the `emotion: null` boundary, and one pinyin tone error —
+  along with what the run showed is already reliable, so it is not re-litigated. Every one of them is
+  invisible to this experiment by construction: a defect both arms share cancels exactly.
 - **Pairwise "which is better" is the wrong instrument for near-identical articles.** Anything that
   compares two versions of one prompt again should either measure against ground truth, or ask "what
   changed and does it matter" rather than "which is better".
 - **The review page is worth keeping.** It reads the same on a tablet, it is one self-contained file,
   and it now shows a line-level diff beside the two articles — changed, only-A and only-B rows
-  highlighted and aligned with filler, VS Code style, with both sides still shown whole.
+  highlighted and aligned with filler, VS Code style, with both sides still shown whole. It also
+  gained a free-text note per screen, and the fourth answer described above.
 
 ## Reproducing
 
