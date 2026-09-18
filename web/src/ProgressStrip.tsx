@@ -38,14 +38,20 @@ function phase(step: JobStep): string | null {
       return `Reading Anki's review state${waiting}`;
     case "brief":
       return `Writing picture briefs${waiting}`;
-    /* A render is minutes of work in the companion container, and it reports a fraction as it goes —
-       so this says how far along rather than only that it is going. `waiting` is deliberately not
-       appended: this step waits because it is *following* a render, which is not a busy provider. */
+    /* A render is minutes of work in the companion container, and it reports both a fraction and a
+       phrase as it goes — "Synthesizing speech", "Rendering the music bed", "Mixing" — so this says
+       what is happening rather than only that something is. Its own words, not ours: it is the only
+       thing that knows, and a sentence invented here would drift from it on the next release.
+
+       `waiting` is deliberately not appended: this step waits because it is *following* a render,
+       which is not the busy provider that suffix means. */
     case "loop.render": {
       const fraction = typeof step.detail?.progress === "number" ? step.detail.progress : null;
       const doing = typeof step.detail?.doing === "string" ? step.detail.doing : "";
-      if (doing) return fraction === null ? doing : `${doing} · ${Math.round(fraction * 100)}%`;
-      return fraction === null ? "Making the loop" : `Making the loop · ${Math.round(fraction * 100)}%`;
+      const words = typeof step.detail?.words === "number" ? step.detail.words : 0;
+      const percent = fraction === null ? "" : ` · ${Math.round(fraction * 100)}%`;
+      if (doing) return `${doing}${percent}`;
+      return `Making the loop${words ? ` from ${words} words` : ""}${percent}`;
     }
     case "loop.store":
       return "Storing the track";

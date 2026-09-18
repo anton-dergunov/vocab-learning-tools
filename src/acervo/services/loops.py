@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,17 @@ from acervo.tokens import mint_render, resolve_secret
 # and it is about what makes a track worth putting on rather than what the engine can survive.
 MIN_WORDS = 1
 MAX_WORDS = 40
+
+# **Acervo mints the seed, rather than letting the generator mint its own.** Left to itself it uses
+# `secrets.randbits(64)`, and a 64-bit integer does not survive the journey: JSON numbers are
+# doubles in most readers, so anything above 2^53 loses precision on the way into the browser, and
+# SQLite's INTEGER is signed. The first real render came back with one and the whole track was
+# thrown away by the graph's range check — after four minutes of work, over a number.
+#
+# Minting it here fixes more than the range. The seed becomes a fact about the loop from the moment
+# it is asked for, so Try again reproduces the same bed rather than a different one, and the value
+# stored is provably the value that produced the track: the generator echoes back what it is given.
+SEED_LIMIT = 2 ** 31
 
 TRACK_LIMIT = 64 * 1024 * 1024
 
@@ -160,7 +172,8 @@ def create(settings: Settings, owner: str, device: str, body: dict[str, Any]) ->
             "id": loop_id, "language": language,
             # Everything the render decides is empty until it has. An absent `audioRef` is the whole
             # of what "not made yet" means.
-            "styleId": None, "seed": 0, "engineVersion": None, "bedFingerprint": None,
+            "styleId": None, "seed": secrets.randbelow(SEED_LIMIT), "engineVersion": None,
+            "bedFingerprint": None,
             "pattern": str(body.get("pattern") or "retrieval"),
             "audioRef": None, "audioMime": None, "durationSeconds": None,
             "position": graph.next_loop_position(owner, language),
@@ -216,6 +229,9 @@ def render_request(settings: Settings, owner: str, loop_id: str) -> dict[str, An
         # One render, one token, audienced to the take route and good for an hour. It is the whole of
         # what the generator is given to speak with: no provider credential reaches that container.
         "token": mint_render(resolve_secret(settings), account, loop_id),
+        # The loop's own seed, so the bed is reproducible and the number that comes back is one this
+        # side can store. See `SEED_LIMIT`.
+        "seed": int(loop.get("seed") or 0),
     }
 
 
@@ -228,6 +244,7 @@ def start(settings: Settings, request: dict[str, Any], **overrides: Any) -> Oper
             target_language=request["target_language"],
             token=request["token"],
             pattern=loop.get("pattern") or "retrieval",
+            seed=request.get("seed"),
             **overrides,
         )
     except LoopError as error:

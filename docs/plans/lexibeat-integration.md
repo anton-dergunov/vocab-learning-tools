@@ -724,6 +724,12 @@ Four things this step decided or found:
   correct for this deployment. Step 7 adds the field to LexiBeat's request body — a version bump and
   a re-pin — which is what buys the plain order its one-call-a-line economy (§2.6).
 
+**Two more for LexiBeat's next release**, found by step 9. Its default seed is
+`secrets.randbits(64)` (`generator.py`), which cannot round-trip through JSON into any reader whose
+numbers are doubles — a browser, most JSON libraries — so a host that does not send its own seed
+gets a value it cannot store. 2^53 would do everything 2^64 does here, the seed being a replay token
+rather than a key. And `dsp.time_stretch` / `dsp.pitch_shift` still name the wrong dependency, below.
+
 **One defect for LexiBeat's next release**, found by step 6 and not worth a release on its own:
 `dsp.time_stretch` and `dsp.pitch_shift` try pedalboard and fall back to librosa, but the slim
 runtime has no librosa — so any pedalboard problem surfaces as `ModuleNotFoundError: No module named
@@ -805,6 +811,22 @@ the reversal of a decision that had been made on a false premise.
 - **The dialog's Music selector was a no-op**: `family` was read by nobody and `POST /loops` enqueued
   with an empty `input`. It is validated against the generator's own catalogue, carried on the job,
   and passed to the render — so Try again asks for the same music too.
+- **Acervo mints the seed.** The first render that got as far as storing was thrown away by the
+  graph's range check: given no seed, the generator uses `secrets.randbits(64)`, and a 64-bit
+  integer does not survive the journey — a JSON number is a double in the browser, so anything above
+  2^53 arrives as a *different* number, and SQLite's INTEGER is signed. Four minutes of work lost
+  over an integer. Acervo now mints the seed when the loop is created and sends it; the generator
+  echoes back what it is given, so the stored value is provably the one that made the bed, and Try
+  again reproduces it rather than rolling a new one. The stored range is now the JavaScript
+  safe-integer bound, which is the real constraint; 2^31 was arbitrary.
+- **The entrypoint lectured the command installing the samples.** `lexibeat-bundle fetch` runs in a
+  container of its own, so the entrypoint's bundle verdict printed *before* the fetch it was about
+  to perform — telling the owner to install the samples in the middle of doing exactly that. It now
+  stays quiet when the command it wraps is the bundle tool.
+- **A render says what it is doing.** It reports both a fraction and a phrase — "Synthesizing
+  speech", "Rendering the music bed", "Mixing" — and the loops list was showing a fixed "Being
+  made…" over the top of them. Its own words, because it is the only thing that knows and a sentence
+  invented on this side would drift from it at the next release.
 
 ### Step 8 · The interface — **done**
 

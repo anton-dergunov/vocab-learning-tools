@@ -106,7 +106,12 @@ NUMBER_RULES: dict[str, dict[str, tuple[float, float | None]]] = {
         "stability": (0, None), "difficulty": (0, None), "retrievability": (0, 1),
     },
     "loops": {
-        "seed": (0, 2147483647), "duration_seconds": (0, None), "loop_order": (0, None),
+        # The JavaScript safe-integer bound, not 2^31: the replica is a browser and a JSON number
+        # is a double there, so this is the largest value that can round-trip at all. A generator
+        # that mints its own seed rather than taking the one Acervo sends still fits, as long as it
+        # fits in a double — which `secrets.randbits(64)` does not, and that is what refused the
+        # first real render. `image_prompts` keeps 2^31 because Acervo mints those itself.
+        "seed": (0, 9007199254740991), "duration_seconds": (0, None), "loop_order": (0, None),
     },
     "loop_items": {
         "item_order": (0, None), "start_seconds": (0, None), "source_reveal_seconds": (0, None),

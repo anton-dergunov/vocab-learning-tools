@@ -14,6 +14,13 @@
 # here is how this deployment lost a bundle once; `--install-samples` is the one that cannot.
 set -eu
 
+# Not when the command being wrapped is the bundle tool itself. `lexibeat-bundle fetch` runs in a
+# container of its own, so this speaks *before* the fetch it is about to perform — telling the owner
+# to install the samples in the middle of them installing the samples. Whoever ran it knows.
+case "${1:-}" in
+  lexibeat-bundle) exec "$@" ;;
+esac
+
 if [ -n "${LEXIBEAT_BUNDLE_ROOT:-}" ] && [ -f "$LEXIBEAT_BUNDLE_ROOT/catalog.sqlite3" ]; then
   echo "lexibeat: sample bundle at $LEXIBEAT_BUNDLE_ROOT" >&2
 else

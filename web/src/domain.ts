@@ -578,7 +578,10 @@ export function validateGraph(graph: VocabularyGraph): void {
     language(record.language, "Loop language");
     [record.styleId, record.engineVersion, record.bedFingerprint, record.pattern]
       .forEach((value) => optionalString(value, "Loop bed field"));
-    invariant(Number.isSafeInteger(record.seed) && record.seed >= 0 && record.seed <= 2147483647, "Loop seed is invalid.");
+    /* `isSafeInteger` is the whole bound, not 2^31: a JSON number is a double here, so the largest
+       seed that can reach this replica intact is 2^53 − 1. The generator mints 64-bit seeds when it
+       is not given one, which is why Acervo sends it one. */
+    invariant(Number.isSafeInteger(record.seed) && record.seed >= 0, "Loop seed is invalid.");
     invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Loop position is invalid.");
     optionalString(record.audioRef, "Loop audio reference");
     optionalString(record.audioMime, "Loop audio type");

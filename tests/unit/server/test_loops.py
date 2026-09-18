@@ -260,3 +260,38 @@ def test_the_generators_own_words_survive_into_acervos_refusal():
     assert "salamander" in raised.message
     # And a refusal that said nothing still reads as a sentence rather than trailing off.
     assert refusal(LoopError("busy", "")).message.endswith(".")
+
+
+# ── the seed ────────────────────────────────────────────────────────────────
+
+
+def test_acervo_mints_the_seed_and_the_render_is_told_which_one(server, generator):
+    """Left to itself the generator uses `secrets.randbits(64)`, and a 64-bit integer does not
+    survive the journey: a JSON number is a double in the browser, and the graph refused the first
+    real render's seed after four minutes of work. Acervo sends one it can store."""
+    made = words(server, 1)
+    answer = server.post("/loops", {"deviceId": "device000000001", "language": "es",
+                                    "lexemeIds": [made[0]["id"]]})
+    loop = answer.json()["data"]["loop"]
+    assert 0 <= loop["seed"] < 2 ** 31
+    # It is a fact about the loop from the moment it is asked for, so Try again reproduces the same
+    # bed rather than a different one.
+    from acervo.services.loops import render_request
+    request = render_request(server.settings, server.owner, loop["id"])
+    assert request["seed"] == loop["seed"]
+
+
+def test_a_seed_a_browser_could_not_hold_is_refused_rather_than_stored(server, generator):
+    """The bound is JavaScript's safe integer, because the replica is a browser. Anything larger
+    would arrive there as a different number, and a seed that is not the one that made the bed is
+    worse than no seed at all."""
+    made = words(server, 1)
+    answer = server.post("/loops", {"deviceId": "device000000001", "language": "es",
+                                    "lexemeIds": [made[0]["id"]]})
+    loop = answer.json()["data"]["loop"]
+    # 2^53 is the first integer a double cannot distinguish from its neighbour.
+    refused = server.push({"loops": [{**loop, "seed": 2 ** 53}]})
+    assert refused.status_code == 400
+    assert "seed" in refused.json()["error"]["message"].lower()
+    # …and one just inside it is kept, which 2^31 would have refused.
+    assert server.push({"loops": [{**loop, "seed": 2 ** 53 - 1}]}).status_code == 200

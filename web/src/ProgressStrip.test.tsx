@@ -94,3 +94,31 @@ describe("the strip", () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe("a loop being made", () => {
+  const rendering = (detail: Record<string, unknown>) => stripOf(job("running", [
+    { name: "loop.render", state: "running", detail },
+    { name: "loop.store", state: "pending" }
+  ], { kind: "loop" }));
+
+  it("says what the generator says it is doing, in its own words", () => {
+    // "Synthesizing speech", "Rendering the music bed", "Mixing" — the phrases come from the render
+    // itself, because it is the only thing that knows and a sentence invented here would drift.
+    expect(rendering({ doing: "Rendering the music bed", progress: 0.78 })?.phases[0].text)
+      .toBe("Rendering the music bed · 78%");
+  });
+
+  it("still says something useful before the first progress arrives", () => {
+    expect(rendering({ words: 12 })?.phases[0].text).toBe("Making the loop from 12 words");
+  });
+
+  it("keeps the reason a render failed rather than replacing it with a constant", () => {
+    // The generator records it, it survives into the step, and this is the last place it could be
+    // thrown away — which is exactly where it was being thrown away.
+    const line = stripOf(job("failed", [
+      { name: "loop.render", state: "failed", error: "loops_failed",
+        message: "No samples cached for 'salamander'." }
+    ], { kind: "loop" }));
+    expect(line?.failure).toContain("No samples cached for 'salamander'.");
+  });
+});

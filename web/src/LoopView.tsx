@@ -105,7 +105,9 @@ export default function LoopView({ graph, language, onMake, onClose }: {
               {ready
                 ? `${items.length} words · ${clock(loop.durationSeconds)}`
                 : making
-                  ? <span className="doing">Being made…</span>
+                  /* What it is *doing*, in the generator's own words — this is a four-minute
+                     operation and "being made" says nothing you could not already see. */
+                  ? <span className="doing">{stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "Being made…"}</span>
                   /* Why, not only that. The reason is on the job the whole time; saying "never
                      made" and nothing else is what left a failure with no next step. */
                   : <span className="warn">{failure ? `Never made · ${failure}` : "Never made"}</span>}
