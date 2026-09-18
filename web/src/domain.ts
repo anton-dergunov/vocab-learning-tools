@@ -267,8 +267,14 @@ export interface Loop extends SyncFields, OwnedFields {
  * reasoning to `Pronunciation.text`, and the reason deleting the word leaves this row alone — the
  * caption stays truthful and `lexemeId` simply points at a tombstone.
  *
- * Four times, and deliberately not the span of every utterance: the day three repetitions become
- * four, this shape does not move.
+ * Four times, and deliberately not the span of every utterance — plus two numbers that say the rest
+ * of it. A word is spoken, then its translation, and then that pair again `repeats` times in all,
+ * evenly `repeatSeconds` apart from the first translation. That is what lets the player mark *which*
+ * of the pair is sounding, and it is two facts about the item rather than a serialised list of six
+ * spans: the day three repetitions become four, these values change and this shape does not.
+ *
+ * Zero means a render that did not report them, and the player then marks only the first pass —
+ * which is the one the exercise turns on — rather than marking the wrong thing.
  */
 export interface LoopItem extends SyncFields, OwnedFields {
   id: string;
@@ -282,6 +288,8 @@ export interface LoopItem extends SyncFields, OwnedFields {
   sourceRevealSeconds: number;
   targetRevealSeconds: number;
   endSeconds: number;
+  repeats: number;
+  repeatSeconds: number;
 }
 
 export interface VocabularyGraph {
@@ -601,6 +609,8 @@ export function validateGraph(graph: VocabularyGraph): void {
     // What a retrieval display turns on: the answer must not be on screen before the recall gap it
     // exists to leave has passed.
     invariant(times.every((value, index) => index === 0 || value >= times[index - 1]), "A loop item's times must not run backwards.");
+    invariant(Number.isSafeInteger(record.repeats) && record.repeats >= 0, "Loop item repeat count is invalid.");
+    invariant(Number.isFinite(record.repeatSeconds) && record.repeatSeconds >= 0, "Loop item repeat interval is invalid.");
   });
 }
 

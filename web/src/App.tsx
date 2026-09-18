@@ -3,6 +3,9 @@ import AddView, { type AddTab, type CaptureSeed } from "./AddView";
 import type { ImagePrompt } from "./domain";
 import AskDock, { type Detent } from "./AskDock";
 import ReviewBar from "./ReviewBar";
+import LoopBar from "./LoopBar";
+import LoopDialog from "./LoopDialog";
+import LoopView from "./LoopView";
 import {
   applyOps, diffDrafts, EditRefused, type DraftDiff, type EditOp
 } from "./articleEdit";
@@ -203,6 +206,7 @@ export default function App() {
   const [composition, setComposition] = useState(0);
   const openCapture = useCallback((seed: CaptureSeed | null) => {
     setProblems([]);
+    setLoops(false);
     setAddSeed(seed);
     setAddTab("capture");
     setComposition((count) => count + 1);
@@ -232,6 +236,20 @@ export default function App() {
   const [externalBusy, setExternalBusy] = useState(false);
   /* Which settings section is open, or null for closed. The native menu names a section, so
      "open settings" is not a boolean here. */
+  /* Loops. Its own surface, reached from the bar at the foot of a phone or the chip in the top bar
+     of a desktop — never a sheet over the list, because a player is a place you go to and the words
+     it shows need the column. What is *playing* is the player module's, not this: a loop goes on
+     playing while you read a word. */
+  const [loops, setLoops] = useState(false);
+  const [makingLoop, setMakingLoop] = useState(false);
+  /* One door in, so everything that opens it also closes whatever it replaces — the same shape
+     `openCapture` has. */
+  const openLoops = useCallback(() => {
+    setLoops(true);
+    setOpenId(null);
+    setExternal(null);
+    setAddTab(null);
+  }, []);
   const [settings, setSettings] = useState<SettingsPage | null>(null);
   const [armed, setArmed] = useState<"delete" | null>(null);
   const [toast, setToast] = useState("");
@@ -664,6 +682,7 @@ export default function App() {
 
   const chooseTopic = useCallback((next: TopicSelection) => {
     setTopic(next);
+    setLoops(false);
     setOpenId(null);
     setProposal(null);
     setExternal(null);
@@ -985,7 +1004,7 @@ export default function App() {
   /** Both surfaces you compose in. The main region stops scrolling and hands that to the view. */
   /* `asking` joins this for the same reason the other two are here: a surface that owns the height
      and scrolls itself must not sit inside a region that also scrolls. */
-  const composing = Boolean(addTab) || Boolean(article && mode === "edit") || asking;
+  const composing = Boolean(addTab) || Boolean(article && mode === "edit") || asking || loops;
   const inbox = snapshot && language ? inboxCount(snapshot, language) : 0;
   const currentTopic = topics.find((option) => option.id === topic);
   const topicLabel = topic === "all" ? "All words" : topic === "inbox" ? "Inbox" : currentTopic?.name ?? "Topic";
@@ -994,7 +1013,9 @@ export default function App() {
   return <>
     <div className="viewport" onClick={() => { setLangMenu(false); setScopeMenu(false); setArticleMenu(false); }}>
       {/* Reading a word on a phone or a tablet does not need the topic rail beside it. */}
-      <div className={`app${(article || external) && !addTab ? " article-open" : ""}`}>
+      {/* A topic files a *word*, so the rail has nothing to say while a loop plays — and it is the
+          same class an open article uses, which is why it also takes the rail away on a phone. */}
+      <div className={`app${((article || external) && !addTab) || loops ? " article-open" : ""}${loops ? " loops-open" : ""}`}>
         <div className="brand"><span className="mark">A.</span></div>
 
         <header className="topbar">
@@ -1037,6 +1058,13 @@ export default function App() {
           >
             <PlusIcon /><span className="wide-only">Add</span>
           </button>
+
+          {/* Wide windows only: on a phone this is the bar at the foot instead, which is where a
+              player belongs on a device held in one hand. `styles.css` picks which. */}
+          {snapshot && language && <LoopBar
+            graph={snapshot} language={language} chip
+            onOpen={openLoops} onMake={() => { openLoops(); setMakingLoop(true); }}
+          />}
 
           {/* Shown on the native host too. The Mac window owns where the server is and how the
               app updates; sync status, signing out and deleting the vocabulary are operations on
@@ -1090,7 +1118,9 @@ export default function App() {
             work, the list behind it is not, and a bounded column is the only shape that keeps a
             title and a save button on screen at every window size. */}
         <main className={`main ${composing ? "composing" : ""}${carding && !composing ? " cards-on" : ""}`} ref={main}>
-          {addTab ? <AddView
+          {loops && snapshot && language ? <LoopView
+          graph={snapshot} language={language} onMake={() => setMakingLoop(true)}
+        /> : addTab ? <AddView
             // A new composition is a fresh view, not a prop change: remounting is what makes "add
             // this word, then that one" start clean rather than editing the previous draft. The key
             // is the composition's own count rather than its headword, because keying on the word
@@ -1240,8 +1270,24 @@ export default function App() {
               />}
           </div>}
         </main>
+
+        {/* A row of `.app`, and drawn over the list and nowhere else: the article column already
+            carries the view segments, the delete control, the progress strip and the ask dock, and
+            §2.13 forbids a second one there. Narrow windows only — a wide one has the chip in the
+            top bar instead, and `styles.css` is what picks. */}
+        {snapshot && language && !article && !external && !addTab && !loops && <LoopBar
+          graph={snapshot} language={language} chip={false}
+          onOpen={openLoops} onMake={() => { openLoops(); setMakingLoop(true); }}
+        />}
       </div>
     </div>
+
+    {makingLoop && snapshot && language && <LoopDialog
+      graph={snapshot} query={{ language, topic, query, sort }} deviceId={snapshot.deviceId}
+      onClose={() => setMakingLoop(false)}
+      onMade={() => notify("Making your loop — it takes a few minutes")}
+      onNotify={notify}
+    />}
 
     {settings && <Settings
       // Directing the dialog at a section is a fresh open, not a prop change: the section and the

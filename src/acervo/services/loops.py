@@ -257,6 +257,10 @@ def store(settings: Settings, owner: str, device: str, loop_id: str, rendered: L
                 "sourceRevealSeconds": float(timeline.get(index, {}).get("source_reveal") or 0.0),
                 "targetRevealSeconds": float(timeline.get(index, {}).get("target_reveal") or 0.0),
                 "endSeconds": float(timeline.get(index, {}).get("end") or 0.0),
+                # Two numbers that say how the word repeats, so the player can mark which of the
+                # pair is being said rather than only which word is being taught.
+                "repeats": int(timeline.get(index, {}).get("repeats") or 0),
+                "repeatSeconds": float(timeline.get(index, {}).get("repeat_seconds") or 0.0),
                 "editedAt": at, "editedBy": device,
             }
             for index, row in enumerate(rows)

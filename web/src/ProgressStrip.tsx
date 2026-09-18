@@ -38,6 +38,17 @@ function phase(step: JobStep): string | null {
       return `Reading Anki's review state${waiting}`;
     case "brief":
       return `Writing picture briefs${waiting}`;
+    /* A render is minutes of work in the companion container, and it reports a fraction as it goes —
+       so this says how far along rather than only that it is going. `waiting` is deliberately not
+       appended: this step waits because it is *following* a render, which is not a busy provider. */
+    case "loop.render": {
+      const fraction = typeof step.detail?.progress === "number" ? step.detail.progress : null;
+      const doing = typeof step.detail?.doing === "string" ? step.detail.doing : "";
+      if (doing) return fraction === null ? doing : `${doing} · ${Math.round(fraction * 100)}%`;
+      return fraction === null ? "Making the loop" : `Making the loop · ${Math.round(fraction * 100)}%`;
+    }
+    case "loop.store":
+      return "Storing the track";
     case "capture": {
       const words = Array.isArray(step.detail?.words) ? step.detail.words.length : 0;
       return `Reading the text${words ? ` · ${words} so far` : ""}${waiting}`;
@@ -58,6 +69,10 @@ function failureOf(step: JobStep): string {
     }
     case "pronunciations":
       return "Some audio could not be recorded";
+    case "loop.render":
+      return "The loop could not be made";
+    case "loop.store":
+      return "The loop was made but its track could not be stored";
     case "corpus.update":
       return "The recorded-speech corpus could not be updated";
     default:

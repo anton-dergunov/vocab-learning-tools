@@ -177,13 +177,13 @@ export function testGraph(): VocabularyGraph {
         sourceText: "picar", targetText: "to sting",
         emotion: "wincing slightly, as if something just bit you",
         startSeconds: 8.82, sourceRevealSeconds: 8.82, targetRevealSeconds: 17.65,
-        endSeconds: 44.12, ...sync("09-01")
+        endSeconds: 44.12, repeats: 3, repeatSeconds: 4.41, ...sync("09-01")
       },
       {
         id: "loopitembalsa01", loopId: "loopmorning0001", lexemeId: "lexemebalsa0001", position: 1,
         sourceText: "la balsa", targetText: "raft", emotion: null,
         startSeconds: 44.12, sourceRevealSeconds: 44.12, targetRevealSeconds: 52.94,
-        endSeconds: 79.41, ...sync("09-01")
+        endSeconds: 79.41, repeats: 3, repeatSeconds: 4.41, ...sync("09-01")
       }
     ]
   };

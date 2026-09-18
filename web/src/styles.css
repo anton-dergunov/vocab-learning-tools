@@ -83,8 +83,11 @@ input, textarea { font: inherit; color: inherit; }
 .app {
   display: grid;
   grid-template-columns: var(--rail) minmax(0, 1fr);
-  grid-template-rows: var(--topbar) minmax(0, 1fr);
-  grid-template-areas: "brand top" "rail main";
+  /* A third row for the loops bar, `auto` so it is nothing at all when the bar is not drawn —
+     which is whenever an article, an external entry or a composer is open (§2.13), and on every
+     window wide enough for the chip in the top bar. */
+  grid-template-rows: var(--topbar) minmax(0, 1fr) auto;
+  grid-template-areas: "brand top" "rail main" "loopbar loopbar";
   height: 100%;
   background: var(--paper);
 }
@@ -769,6 +772,216 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .cards.edges-beside .cards-edge:disabled { opacity: .15; }
 @media (hover: none) { .cards-edges, .cards-edge { display: none; } }
 
+/* ══════════════════════════ loops ══════════════════════════
+   A loop is a rendered track over a handful of your words, and this is where one is played.
+
+   THE SHAPE IS AN ORDINARY MUSIC PLAYER, on purpose: a seekable line, elapsed and total, the three
+   transport buttons everybody already knows, and two switches — play it again, and go on to the
+   next one. What sits where the artwork or the lyrics would be is the words themselves.
+
+   THE ONE THING THAT IS NOT A MUSIC PLAYER'S: a translation is never drawn before it has been
+   spoken. A word not yet reached shows its source and, where its translation will be, a short bar
+   of the same width for every word — fixed, so it leaks nothing about the length of the answer;
+   present, so the line does not jump when the answer arrives; visible, so you know one is coming.
+
+   THE TYPE IS BIG BECAUSE OF HOW THIS IS USED: you put a loop on, do something else, and glance
+   over. The word being taught has to be readable from further away than anything else in Acervo,
+   and its translation only a little less so.
+
+   NO MARK HERE MOVES ANY TEXT. The line being spoken changes colour and nothing else — no weight,
+   no size, no offset — so a screen left running never reflows under your eye. It is the rule the
+   article's change marks live by, and it matters more here, because this is the one surface meant
+   to be looked at sideways for four minutes at a time. */
+
+/* ── the surface takes the window ──
+   The topic rail files *words*; nothing on this surface is filed, so it goes — at every width, not
+   only on a phone. The brand goes with it because it sits in the rail's column. */
+.app.loops-open { grid-template-columns: 0 minmax(0, 1fr); }
+.app.loops-open .rail, .app.loops-open .brand { display: none; }
+/* …and the bar goes too: the controls are already on screen, and a second set of them at
+   the foot is the mini-player every music player hides while its own screen is open. */
+.app.loops-open .loopbar { display: none; }
+
+/* ── the bar at the foot ──
+   Its own row of `.app`, over the list and nowhere else: §2.13 forbids a second dock in the article
+   column, which already carries the view segments, the delete control, the progress strip and the
+   ask dock. A wide window uses the chip in the top bar instead and never draws this. */
+.loopbar {
+  grid-area: loopbar; position: relative;
+  display: flex; align-items: center; gap: 12px;
+  height: 56px; padding: 0 18px;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--surface); border-top: 1px solid var(--rule);
+}
+.loopbar-line { position: absolute; left: 0; top: -1px; height: 2px; background: var(--core); transition: width .25s linear; }
+.loopbar-note { flex: none; width: 34px; height: 34px; display: grid; place-items: center;
+                border-radius: 8px; background: var(--core-soft); color: var(--core); }
+.loopbar-note svg { width: 18px; height: 18px; }
+.loopbar-play { flex: none; width: 34px; height: 34px; display: grid; place-items: center;
+                border-radius: 999px; background: var(--core); color: var(--on-core); border: 0; cursor: pointer; }
+.loopbar-play svg { width: 17px; height: 17px; }
+.loopbar-main { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0; cursor: pointer; }
+.loopbar-title { display: block; font: 500 14px/1.3 var(--sans); color: var(--ink);
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loopbar-sub { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+               text-transform: uppercase; color: var(--ink-3); margin-top: 2px; }
+.loopbar-make { flex: none; }
+
+/* ── the chip in the top bar ──
+   A bar across the foot of a wide window is a lot of furniture for one line of text, and the top bar
+   is already where everything reachable from anywhere lives. Idle it is one icon; playing it widens
+   to say what you are hearing. */
+.loop-chip { padding: 0 10px; gap: 7px; }
+.loop-chip.playing { padding: 0 10px 0 4px; background: var(--core-soft); border-color: transparent; }
+.loop-chip-play { display: grid; place-items: center; width: 30px; height: 30px; flex: none;
+                  border: 0; border-radius: 999px; background: var(--core); color: var(--on-core); cursor: pointer; }
+.loop-chip-play svg { width: 15px; height: 15px; }
+.loop-chip-what { display: flex; align-items: baseline; gap: 8px; min-width: 0;
+                  background: none; border: 0; padding: 0; cursor: pointer; color: var(--core); }
+.loop-chip-word { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                  font: 500 13.5px/1 var(--sans); }
+.loop-chip-at { font-family: var(--mono); font-size: 11px; opacity: .75; }
+/* One of the two, never both: the bar is for a device you hold, the chip for one you sit at. */
+@container vp (max-width: 720px) { .loop-chip { display: none; } }
+@container vp (min-width: 720.01px) { .loopbar { display: none; } }
+
+/* ── the surface ──
+   It owns its height and scrolls inside itself, which is the whole of why the controls cannot drift:
+   the words scroll, the player is a footer, and nothing about the page moves under a thumb reaching
+   for pause. */
+.loops {
+  height: 100%; display: flex; flex-direction: column;
+  width: 100%; max-width: 780px; margin: 0 auto; padding: 24px 26px 0;
+}
+.loops-head { display: flex; align-items: baseline; gap: 12px; flex: none; margin-bottom: 16px; }
+.loops-head h2 { margin: 0; font: 700 25px/1.2 var(--serif); letter-spacing: -.01em; }
+.loops-head .spacer { flex: 1; }
+.loops-back { display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 8px; }
+.loops-list { overflow-y: auto; overscroll-behavior: contain; padding-bottom: 24px; }
+.loops .empty { color: var(--ink-3); font-size: 14px; line-height: 1.5; max-width: 46ch; }
+.loop-play { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* ── the words ──
+   The line being taught *is* the big word: there is no second, larger copy of it above, so there is
+   one thing to look at and one column to read down. */
+.lyric {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: grid; gap: 4px; align-content: start;
+  width: min(600px, 100%); margin: 0 auto; padding: 8px 0 24px;
+  /* Fading at both edges rather than ending in a cut line, which also says there is more of it. */
+  mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+}
+.lyric-row {
+  display: grid; gap: 4px; padding: 11px 14px 13px; border-radius: 10px;
+  text-align: left; width: 100%; background: none; border: 0; cursor: pointer; font: inherit;
+  opacity: .34; transition: opacity .3s ease, background-color .2s ease;
+}
+.lyric-row:hover { background: var(--surface-2); opacity: .7; }
+.lyric-row.past { opacity: .46; }
+.lyric-row.now { opacity: 1; background: var(--core-soft); }
+.lyric-row.now:hover { background: var(--core-soft); }
+.lyric-source { font: 400 22px/1.3 var(--serif); color: var(--ink); transition: color .3s ease; }
+.lyric-row.now .lyric-source { font-size: 40px; font-weight: 600; letter-spacing: -.015em; line-height: 1.15; }
+.lyric-target { font: 400 17px/1.35 var(--sans); color: var(--ink-3); min-height: 23px; transition: color .3s ease; }
+.lyric-row.now .lyric-target { font-size: 26px; min-height: 35px; color: var(--ink-2); }
+/* Which of the two is sounding. Colour and nothing else — the one treatment that is legible from
+   across a room, needs no motion to be noticed, and cannot move a single pixel of text. */
+.lyric-row.now .lyric-source.saying { color: var(--core); }
+.lyric-row.now .lyric-target.saying { color: var(--core); }
+/* Withheld: the same bar for every word, so its width says "an answer goes here" and nothing else. */
+.lyric-held { display: inline-block; width: 84px; height: 9px; border-radius: 999px;
+              background: var(--rule-soft); vertical-align: middle; margin-top: 6px; }
+/* On the line being taught the bar sits on the tinted block, where `--rule-soft` all but disappears
+   — and this is the one bar that has to be seen, because it is the answer being kept back. */
+.lyric-row.now .lyric-held { height: 12px; width: 108px; margin-top: 9px; background: var(--core); opacity: .25; }
+.lyric-said { animation: lyric-in .24s ease both; }
+@keyframes lyric-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .lyric-said { animation: none; } }
+
+/* ── the controls ──
+   `flex: none` in a column that owns its height, which is what "pinned" means here. Not `sticky`:
+   a sticky footer inside a scroller still moves at the ends of the scroll, and this one must not. */
+.player {
+  flex: none; display: grid; gap: 12px;
+  width: min(600px, 100%); margin: 0 auto;
+  padding: 14px 4px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--rule-soft);
+}
+.seek { position: relative; height: 22px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+.seek-track { position: absolute; left: 0; right: 0; height: 4px; border-radius: 999px; background: var(--rule-soft); }
+.seek-fill { position: absolute; left: 0; height: 4px; border-radius: 999px; background: var(--core); }
+/* Where each word begins. A loop is twelve words, not an opaque four minutes, so the line says
+   where they are and dragging lands on one rather than into the middle of a syllable. */
+.seek-tick { position: absolute; width: 1px; height: 8px; background: var(--rule); transform: translateX(-.5px); }
+.seek-knob { position: absolute; width: 13px; height: 13px; border-radius: 999px; background: var(--core);
+             border: 2px solid var(--surface); margin-left: -6.5px; box-shadow: 0 1px 3px rgba(19,34,32,.28); }
+.seek-times { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px;
+              color: var(--ink-3); margin-top: -6px; }
+.transport { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.transport button { display: grid; place-items: center; width: 44px; height: 44px; border: 0;
+                    background: none; color: var(--ink-2); border-radius: 999px; cursor: pointer; }
+.transport button:hover { color: var(--ink); }
+.transport button[disabled] { opacity: .3; cursor: default; }
+.transport svg { width: 22px; height: 22px; }
+.transport .big { width: 56px; height: 56px; background: var(--core); color: var(--on-core); }
+.transport .big:hover { color: var(--on-core); filter: brightness(1.07); }
+.transport .big svg { width: 26px; height: 26px; }
+/* The two switches sit outside the transport they qualify, quieter than it, and say they are on by
+   holding the colour rather than by changing shape. */
+.transport .switch { width: 38px; height: 38px; color: var(--ink-3); }
+.transport .switch svg { width: 19px; height: 19px; }
+.transport .switch.on { background: var(--core-soft); color: var(--core); }
+.player-bed { text-align: center; color: var(--ink-3); }
+.player-bed .warn { color: var(--warn); }
+
+/* ── a loop in a list ── */
+.loop-row {
+  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+  padding: 13px 14px; border: 0; background: none; border-radius: 10px; cursor: pointer; font: inherit;
+}
+.loop-row + .loop-row { border-top: 1px solid var(--rule-soft); border-radius: 0; }
+.loop-row:hover { background: var(--surface-2); }
+.loop-row.on { background: var(--core-soft); }
+.loop-row[disabled] { cursor: default; }
+.loop-go { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 999px;
+           background: var(--core-soft); color: var(--core); }
+.loop-row.on .loop-go { background: var(--core); color: var(--on-core); }
+.loop-go svg { width: 16px; height: 16px; }
+.loop-go.pending { background: none; border: 1px dashed var(--rule); color: var(--ink-3); }
+.loop-main { flex: 1; min-width: 0; }
+/* Two lines rather than one: the words a loop teaches can be long, and a title that runs into its
+   own word count is a row that reads differently on a phone than it does on a laptop. */
+.loop-title { display: block; font: 500 15px/1.35 var(--sans); color: var(--ink); }
+.loop-sub { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+            text-transform: uppercase; color: var(--ink-3); margin-top: 3px; }
+.loop-sub .warn { color: var(--warn); }
+.loop-sub .doing { color: var(--core); }
+
+/* ── make a loop ── */
+.loop-dialog { width: min(560px, 100%); }
+.loop-scope { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 8px;
+              background: var(--surface-2); color: var(--ink-2); font-size: 13.5px; }
+.loop-scope svg { flex: none; width: 17px; height: 17px; color: var(--ink-3); }
+.loop-count { display: flex; align-items: center; gap: 14px; }
+.loop-count input[type=range] { flex: 1; accent-color: var(--core); }
+.loop-count output { font-family: var(--mono); font-size: 13px; color: var(--ink); min-width: 64px; text-align: right; }
+.loop-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.loop-engine { padding-top: 12px; border-top: 1px solid var(--rule-soft);
+               font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+               text-transform: uppercase; color: var(--ink-3); }
+.loop-engine .warn { color: var(--warn); }
+
+/* ── narrow ──
+   The words lose their side padding before the type does: this is a surface you hold in one hand
+   while doing something else, and the word is the thing it is for. */
+@container vp (max-width: 720px) {
+  .loops { padding: 16px 16px 0; }
+  .lyric-row { padding-left: 10px; padding-right: 10px; }
+  .lyric-row.now .lyric-source { font-size: 34px; }
+  .lyric-row.now .lyric-target { font-size: 23px; min-height: 31px; }
+  .transport { gap: 8px; }
+}
+
 /* ══════════════════════════ external dictionaries ══════════════════════════
    Everything here is a word that is NOT yours. It shares the article's type and rhythm on purpose —
    reading a word should feel the same wherever it came from — and differs only where the difference
@@ -1447,8 +1660,8 @@ details.fold .fold-body { padding: 4px 0 18px; }
 @container vp (max-width: 720px) {
   .app {
     grid-template-columns: minmax(0,1fr);
-    grid-template-rows: var(--topbar) auto minmax(0,1fr);
-    grid-template-areas: "top" "rail" "main";
+    grid-template-rows: var(--topbar) auto minmax(0,1fr) auto;
+    grid-template-areas: "top" "rail" "main" "loopbar";
   }
   .brand { display: none; }
   .topbar { padding: 0 12px; gap: 8px; }
@@ -2071,8 +2284,13 @@ details.fold .fold-body { padding: 4px 0 18px; }
   .app.article-open { grid-template-columns: minmax(0,1fr); }
   /* On a phone the word is the whole screen: search, Add and settings are one Back away, and a row
      of them above a word you are reading is a row of words you are not. A tablet keeps them. */
-  .app.article-open { grid-template-rows: 0 0 minmax(0,1fr); }
+  .app.article-open { grid-template-rows: 0 0 minmax(0,1fr) auto; }
   .app.article-open .topbar { display: none; }
+  /* …but the loops surface keeps it. An article is a thing you read to the end and leave; a loop is
+     a thing you put on and then go looking for the next word, so search and the language menu are
+     still what you want in reach. The rail goes either way: a topic files a word. */
+  .app.loops-open { grid-template-rows: var(--topbar) 0 minmax(0,1fr) auto; }
+  .app.loops-open .topbar { display: flex; }
   .app.article-open .main .pane { padding-top: max(12px, env(safe-area-inset-top)); }
   /* One line per section heading: "01 · 🎭 theater", "✳ Where you met it". */
   .sec > .rail-l { margin-bottom: 8px; }

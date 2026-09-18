@@ -119,3 +119,45 @@ export function usePronunciationCache(): boolean {
   }, []);
   return enabled;
 }
+
+
+/* ── the loop player ──
+   Three device facts, for `usePronunciationCache`'s reason: which device is worth spending a
+   hundred megabytes on is not a question the account can answer, and how you like a player to
+   behave is not one either.
+
+   Keeping loops is **off** by default where keeping clips is on, and that is the whole of what the
+   difference in size buys: a vocabulary's clips cost about what its text does, and one loop costs
+   more than both. A loop still plays with it off — the track is held for the session — it is simply
+   not kept for the next time. */
+
+const LOOP_CACHE_KEY = "acervo-loop-cache";
+const LOOP_REPEAT_KEY = "acervo-loop-repeat";
+const LOOP_AUTOPLAY_KEY = "acervo-loop-autoplay";
+
+export function loopCacheEnabled(): boolean { return readPreference(LOOP_CACHE_KEY, false); }
+export function loopRepeatEnabled(): boolean { return readPreference(LOOP_REPEAT_KEY, false); }
+export function loopAutoplayEnabled(): boolean { return readPreference(LOOP_AUTOPLAY_KEY, false); }
+
+function writePreference(key: string, value: boolean): void {
+  try { localStorage.setItem(key, value ? "on" : "off"); } catch { /* a preference, not data */ }
+  window.dispatchEvent(new CustomEvent(PREFERENCES_EVENT));
+}
+
+export function setLoopCacheEnabled(value: boolean): void { writePreference(LOOP_CACHE_KEY, value); }
+export function setLoopRepeat(value: boolean): void { writePreference(LOOP_REPEAT_KEY, value); }
+export function setLoopAutoplay(value: boolean): void { writePreference(LOOP_AUTOPLAY_KEY, value); }
+
+function usePreference(read: () => boolean): boolean {
+  const [value, setValue] = useState(read);
+  useEffect(() => {
+    const refresh = () => setValue(read());
+    window.addEventListener(PREFERENCES_EVENT, refresh);
+    return () => window.removeEventListener(PREFERENCES_EVENT, refresh);
+  }, [read]);
+  return value;
+}
+
+export function useLoopCache(): boolean { return usePreference(loopCacheEnabled); }
+export function useLoopRepeat(): boolean { return usePreference(loopRepeatEnabled); }
+export function useLoopAutoplay(): boolean { return usePreference(loopAutoplayEnabled); }

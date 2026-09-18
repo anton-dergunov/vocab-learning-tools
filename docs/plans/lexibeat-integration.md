@@ -761,16 +761,42 @@ the step's detail, so it is visible without being transmitted. Sending it is a f
 request body that 0.2.0's model forbids as unknown — a version bump and a re-pin, together with the
 misleading `librosa` fallback message found in step 6.
 
-### Step 8 · The interface
+### Step 8 · The interface — **done**
 
-`App.tsx` for the bar and the view switch; `styles.css` with `design/ui-prototype/` changed in the same
-commit; `LoopView.tsx`, `LoopPlayer.tsx`, `LoopDialog.tsx` and `loops.ts`; `mediaStore.ts`'s third
-kind; `ActivitySettings.tsx`'s labels and retry set; `ProgressStrip.tsx`'s phases; and a Settings ▸
-Loops page with keep-on-device, the kept byte count and a service status block modelled on
-`ClipPanel`'s corpus block.
+Drawn in `design/ui-prototype/` first, in three shapes, and built from the one that was chosen. That
+order was worth it: the layout question could not be settled by argument, and two of the three were
+rejected in a minute of looking at them.
+
+`App.tsx` for the way in and the view switch; `styles.css` with `design/ui-prototype/` changed in the
+same commit and the loops section byte-identical between them; `LoopView.tsx`, `LoopPlayer.tsx`,
+`LoopBar.tsx`, `LoopDialog.tsx` and `loops.ts`; `mediaStore.ts`'s third kind; `ActivitySettings.tsx`'s
+label and retry set; `ProgressStrip.tsx`'s two phases; and Settings ▸ Loops with keep-on-device, the
+kept byte count and the generator's own state.
 
 No component imports its own stylesheet: `scripts/verify_pwa.py` holds the build to one, and the
 dynamic-CSS failure it exists to catch killed the macOS application once already.
+
+Five things this step decided:
+
+- **The player takes the screen, with its controls at the foot.** Of the three drawn — controls above
+  the words, controls inside each loop's card, controls under the words — the third is the one every
+  music player already uses, and the only one where the thing you reach for never moves. They are the
+  footer of a column that owns its height, not a sticky element inside a scroller, which is a
+  different thing: sticky still drifts at the ends of a scroll.
+- **The way in is the chip on a desktop and the bar on a phone.** One component in two skins, so what
+  they say cannot disagree. A bar across the foot of a wide window is a lot of furniture for one line
+  of text; the top bar is already where everything reachable from anywhere lives.
+- **`loopItems` gained `repeats` and `repeatSeconds`**, which took `SCHEMA_VERSION` to 12 and needs a
+  `--reset-database`. Without them the player could mark only the first pass of each word, because
+  four times cannot say where the other four utterances fall. Two numbers rather than six spans keeps
+  §2.9's promise that a pattern change does not move the schema, and `loops/client.py` is where the
+  spans become the numbers.
+- **The mark is colour and nothing else.** No weight, no size, no offset, no motion. This is the one
+  surface meant to be left running and glanced at, and the same rule the article's change marks live
+  by matters more here: a screen that reflows under the eye is not one you can glance at.
+- **The topic rail is hidden on this surface at every width.** A topic files a *word*, and nothing
+  here is filed. The top bar stays, unlike on an open article: a loop is a thing you put on and then
+  go looking for the next word, so search and the language menu are still what you want in reach.
 
 ### Step 9 · Optional, and separately
 

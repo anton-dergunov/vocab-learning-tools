@@ -27,7 +27,15 @@ const state = {
      translations too. */
   view: null,
   card: 0,
-  sayTranslations: false
+  sayTranslations: false,
+  /* Loops. `loops` is whether the surface is open — it replaces the list, the way an article does —
+     and `loopLayout` is the shape it takes, which is the thing being chosen between. Which loop is
+     loaded and where it has got to belong to `player`, not here: they survive leaving the surface,
+     because a loop keeps playing while you read a word. */
+  loops: false,
+  /* Which loop the surface is showing. What is *playing* is `player`'s, not this: a loop goes on
+     playing while you read a word, which is most of the point of having one. */
+  loopOpen: null
 };
 
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -63,7 +71,19 @@ const ICON = {
   /* U+2767 from EB Garamond (Georg Duffner, Octavio Pardo), SIL Open Font License 1.1. */
   more:   '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>',
   hedera: '<svg viewBox="0 0 910 508" aria-hidden="true"><path fill="currentColor" d="M135 508Q107 508 86 489Q66 470 51 447Q35 447 18 443Q0 439 0 414Q0 382 16 350Q33 319 58 296Q83 272 107 266Q100 258 98 248Q96 239 96 229Q96 215 110 202Q124 189 146 179Q167 169 190 163Q214 157 232 157Q244 157 256 158Q269 158 281 160Q281 138 272 117Q262 96 248 82Q233 68 218 68Q206 68 200 74Q193 79 187 86Q180 94 171 101Q162 108 144 108Q113 108 92 86Q70 63 70 32Q70 18 80 9Q89 0 102 0Q110 0 114 6Q117 12 120 18Q123 24 126 28Q129 33 134 33Q139 33 142 28Q146 24 150 18Q154 12 158 7Q163 2 170 2Q212 2 246 22Q279 43 298 77Q318 111 318 150Q318 154 318 158Q317 162 317 166Q348 173 371 188Q394 202 410 216Q414 220 419 218Q424 216 420 214Q410 206 398 189Q387 172 387 153Q387 127 400 106Q412 86 433 74Q454 62 480 62Q519 62 547 78Q575 93 598 118Q620 142 640 168Q668 203 696 232Q725 260 766 260Q790 260 813 252Q836 245 851 230Q866 214 866 190Q866 157 844 134Q839 135 834 136Q830 136 826 136Q804 137 794 126Q785 114 785 96Q785 75 802 64Q819 54 840 54Q865 54 880 72Q895 91 902 118Q910 146 910 172Q910 224 886 268Q861 311 819 345Q777 379 726 403Q675 427 622 440Q568 452 520 452Q480 452 438 436Q397 421 370 391Q342 361 342 318Q342 292 358 276Q373 259 396 248Q404 244 404 242Q404 240 396 236Q377 225 356 218Q336 210 312 206Q305 238 290 266Q275 294 254 312Q234 329 208 329Q195 329 184 326Q174 323 165 319Q157 317 149 314Q141 312 133 312Q108 312 93 333Q78 354 78 380Q78 408 92 433Q107 458 130 458Q138 458 144 455Q149 452 153 448Q158 443 164 440Q170 436 178 436Q187 436 192 444Q196 453 196 462Q196 484 178 496Q159 508 135 508ZM190 286Q215 286 238 260Q260 234 272 202H254Q234 202 210 206Q186 211 169 220Q152 230 152 244Q152 260 163 273Q174 286 190 286Z"/></svg>',
-  send:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h14"/><path d="M13 6l6 6-6 6"/></svg>'
+  send:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h14"/><path d="M13 6l6 6-6 6"/></svg>',
+  /* The transport. Filled rather than stroked, because at 22 px a stroked triangle reads as an
+     outline of a play button and every music player on the device draws a solid one. */
+  pause:  '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5.5" width="3.6" height="13" rx="1.1"/><rect x="13.4" y="5.5" width="3.6" height="13" rx="1.1"/></svg>',
+  prev:   '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5.5" y="6.5" width="2.4" height="11" rx="1"/><path d="M16.5 6.5v11L8 12z"/></svg>',
+  next:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.5 6.5v11L16 12z"/><rect x="16.1" y="6.5" width="2.4" height="11" rx="1"/></svg>',
+  /* A loop's own mark: a beamed pair, which says music without saying "audio file". */
+  note:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 4.2L9.2 6.4v9.05a2.9 2.9 0 1 0 1.5 2.55V9.1l6.8-1.5v5.6a2.9 2.9 0 1 0 1.5 2.55z"/></svg>',
+  /* Play it again, and go on to the next one: the two glyphs every player uses, so neither needs a
+     label to be understood. */
+  repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h11a3 3 0 0 1 3 3v1"/><path d="M18 17H7a3 3 0 0 1-3-3v-1"/><path d="M8.5 4.5L6 7l2.5 2.5"/><path d="M15.5 19.5L18 17l-2.5-2.5"/></svg>',
+  continue:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11M4 12h8M4 17h8"/><path d="M16 11.5v7l5.5-3.5z" fill="currentColor" stroke-width="1"/></svg>',
+  hourglass:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10M7 20h10"/><path d="M8 4c0 4 4 5 4 8s-4 4-4 8"/><path d="M16 4c0 4-4 5-4 8s4 4 4 8"/></svg>'
 };
 
 /* ── external dictionaries ───────────────────────────────────────────────
@@ -1095,7 +1115,7 @@ function renderSheet() {
   wireSheet();
 }
 
-function openSheet(tab) { addTab = tab || "capture"; addDraft = null; state.add = true; render(); }
+function openSheet(tab) { addTab = tab || "capture"; addDraft = null; state.loops = false; state.add = true; render(); }
 function closeSheet()   { state.add = false; $("#composer").innerHTML = ""; render(); }
 
 /* ── toast ───────────────────────────────────────────────────────────── */
@@ -1108,11 +1128,458 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
+/* ── loops ────────────────────────────────────────────────────────────────
+   A loop is a rendered track over a handful of your words. The surface is an ordinary music
+   player — a seekable line with a tick per word, elapsed and total, the three transport buttons,
+   and two switches: play it again, and go on to the next one. The words stand where the artwork or
+   the lyrics would.
+
+   THE ONE RULE THAT IS NOT A MUSIC PLAYER'S: a translation is never drawn before it has been
+   spoken. A word not yet reached shows its source and a short bar where its translation will be.
+   The reveal is a pure function of the clock, so dragging backwards withholds it again — there is
+   no latch to fall out of step with where the track actually is.
+
+   The controls are a footer of a column that owns its height, never a sticky element inside a
+   scroller: the words scroll and the player cannot move, so pause is always where you left it.
+
+   There is no audio here and there will not be: the prototype has no bundler and no files. A fake
+   clock stands in for the element, advanced by `requestAnimationFrame`, and everything is driven
+   from it exactly as it is driven from `timeupdate` in the application. Which is the point of
+   drawing this at all — how the reveal *feels* is not a question a still picture can answer.
+
+   The application's counterparts are `LoopView.tsx`, `LoopPlayer.tsx`, `LoopBar.tsx` and
+   `LoopDialog.tsx`, and `loopMomentAt` in `selectors.ts` is the derivation this repeats. */
+
+const player = { loopId: null, at: 0, playing: false, speed: 1, frame: null, last: 0, scrubbing: false,
+                 repeat: false, autoplay: false };
+
+function loopsIn(lang) { return LOOPS.filter((l) => l.language === lang).sort((a, b) => a.position - b.position); }
+function loopItemsOf(id) { return LOOP_ITEMS.filter((r) => r.loopId === id).sort((a, b) => a.position - b.position); }
+const loopIsReady = (loop) => Boolean(loop.audioRef);
+const loopOf = (id) => LOOPS.find((l) => l.id === id) || null;
+
+/* A name derived from the words it teaches, because there is no title column: as many as fit, then
+   a count of what is left, so two loops over the same words in a different order still read apart. */
+function loopTitle(loop, limit = 3) {
+  const rows = loopItemsOf(loop.id);
+  if (!rows.length) return "Empty loop";
+  const named = rows.slice(0, limit).map((r) => r.sourceText);
+  const rest = rows.length - named.length;
+  return rest > 0 ? `${named.join(", ")} +${rest}` : named.join(", ");
+}
+
+const clock = (s) => {
+  const whole = Math.max(0, Math.floor(s || 0));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+};
+
+/* When each of a word's utterances begins. A word is spoken, then its translation, then that pair
+   again — `repeats` times in all, evenly `repeatSeconds` apart from the first translation. The gap
+   from a word to its own translation is the recall gap and is deliberately longer, which is why it
+   is stored rather than derived. `utteranceStarts` in `selectors.ts` is the same arithmetic. */
+function utteranceStarts(item) {
+  const known = item.repeats > 0 && item.repeatSeconds > 0 ? item.repeats * 2 : 2;
+  const starts = [item.startSeconds, item.targetRevealSeconds];
+  for (let index = 2; index < known; index += 1) {
+    starts.push(item.targetRevealSeconds + (index - 1) * item.repeatSeconds);
+  }
+  return starts;
+}
+
+/* Everything the player draws at one instant. The gap after a word belongs to the word just heard,
+   so a line does not go dark while its bed plays on; and `sounding` is the line most recently
+   spoken rather than the one making sound this millisecond, because an utterance is about half a
+   second long every four and a mark that blinked for half a second would be unreadable. */
+function loopMomentAt(items, at) {
+  let index = -1;
+  items.forEach((item, position) => { if (at >= item.startSeconds) index = position; });
+  const item = index >= 0 ? items[index] : null;
+  if (!item) return { index, item: null, sounding: null, revealed: false };
+  let spoken = -1;
+  utteranceStarts(item).forEach((start, position) => { if (at >= start) spoken = position; });
+  return {
+    index, item,
+    sounding: spoken < 0 ? null : spoken % 2 === 0 ? "source" : "target",
+    revealed: at >= item.targetRevealSeconds
+  };
+}
+
+/* ── the fake transport ── */
+function loopLoad(id, { play = false, at = 0 } = {}) {
+  player.loopId = id;
+  player.at = at;
+  if (play) loopPlay(); else loopPause();
+}
+
+function loopPlay() {
+  const loop = loopOf(player.loopId);
+  if (!loop || !loopIsReady(loop)) return;
+  player.playing = true;
+  player.last = performance.now();
+  if (!player.frame) player.frame = requestAnimationFrame(loopFrame);
+  paintLoops();
+}
+
+function loopPause() {
+  player.playing = false;
+  if (player.frame) { cancelAnimationFrame(player.frame); player.frame = null; }
+  paintLoops();
+}
+
+function loopFrame(now) {
+  const loop = loopOf(player.loopId);
+  const total = loop ? loop.durationSeconds : 0;
+  if (!player.scrubbing) player.at = Math.min(total, player.at + ((now - player.last) / 1000) * player.speed);
+  player.last = now;
+  paintLoops();
+  if (player.at >= total) { loopEnded(); return; }
+  player.frame = requestAnimationFrame(loopFrame);
+}
+
+/* What happens at the end, in this order: play it again, else play the next one, else stop. Both
+   switches are off by default — a loop that ends is a loop that ends. */
+function loopEnded() {
+  if (player.repeat) { player.at = 0; player.last = performance.now(); player.frame = requestAnimationFrame(loopFrame); return; }
+  if (player.autoplay) {
+    const next = loopNeighbour(1);
+    if (next) { loopLoad(next.id, { play: true }); render(); return; }
+  }
+  loopPause();
+}
+
+function loopNeighbour(by) {
+  const queue = loopsIn(state.lang).filter(loopIsReady);
+  const at = queue.findIndex((loop) => loop.id === player.loopId);
+  return at < 0 ? null : queue[at + by] || null;
+}
+
+function loopSeek(seconds) {
+  const loop = loopOf(player.loopId);
+  if (!loop) return;
+  player.at = Math.max(0, Math.min(loop.durationSeconds, seconds));
+  paintLoops();
+}
+
+/* Previous behaves the way every player's does: back to the top of this word unless you press it
+   just after one started, which means you meant the one before. */
+function loopStep(by) {
+  const loop = loopOf(player.loopId);
+  if (!loop) return;
+  const rows = loopItemsOf(loop.id);
+  const index = loopMomentAt(rows, player.at).index;
+  if (by < 0 && index >= 0 && player.at - rows[index].startSeconds > 3) { loopSeek(rows[index].startSeconds); return; }
+  const want = index + by;
+  if (want < 0) { loopSeek(0); return; }
+  if (want >= rows.length) { loopSeek(loop.durationSeconds); return; }
+  loopSeek(rows[want].startSeconds);
+}
+
+/* ── drawing ── */
+
+function seekBar(loop, rows) {
+  const ticks = rows.map((row) => `<span class="seek-tick" style="left:${(row.startSeconds / loop.durationSeconds) * 100}%"></span>`).join("");
+  return `
+    <div class="seek" id="seek" role="slider" aria-label="Where you are in the loop"
+         aria-valuemin="0" aria-valuemax="${Math.round(loop.durationSeconds)}" tabindex="0">
+      <span class="seek-track"></span>${ticks}
+      <span class="seek-fill"></span><span class="seek-knob"></span>
+    </div>
+    <div class="seek-times"><span class="at">0:00</span><span>${clock(loop.durationSeconds)}</span></div>`;
+}
+
+function playerBlock(loop) {
+  const rows = loopItemsOf(loop.id);
+  return `<div class="player">
+    ${seekBar(loop, rows)}
+    <div class="transport">
+      <button class="switch${player.repeat ? " on" : ""}" data-switch="repeat"
+              aria-pressed="${player.repeat}" aria-label="Play this loop again when it ends">${ICON.repeat}</button>
+      <button data-step="-1" aria-label="Previous word">${ICON.prev}</button>
+      <button class="big" id="playPause" aria-label="Play">${ICON.play}</button>
+      <button data-step="1" aria-label="Next word">${ICON.next}</button>
+      <button class="switch${player.autoplay ? " on" : ""}" data-switch="autoplay"
+              aria-pressed="${player.autoplay}" aria-label="Go on to the next loop when this one ends">${ICON.continue}</button>
+    </div>
+    <div class="player-bed label">${esc((loop.styleId || "no bed").replace(/-/g, " "))} · ${rows.length} words</div>
+  </div>`;
+}
+
+/* One row per word. The row being taught *is* the big word — there is no second, larger copy of it
+   above, so there is one thing to look at and one column to read down. */
+function lyricBlock(loop) {
+  return `<div class="lyric" id="lyric">${loopItemsOf(loop.id).map((row) => `
+    <button class="lyric-row" data-seek="${row.startSeconds}"
+            data-target="${esc(row.targetText)}">
+      <span class="lyric-source">${esc(row.sourceText)}</span>
+      <span class="lyric-target"><span class="lyric-held"></span></span>
+    </button>`).join("")}</div>`;
+}
+
+function loopSub(loop) {
+  if (!loopIsReady(loop)) return '<span class="doing">Being made…</span>';
+  return `${loopItemsOf(loop.id).length} words · ${clock(loop.durationSeconds)}`;
+}
+
+function loopRow(loop) {
+  const ready = loopIsReady(loop);
+  const on = loop.id === player.loopId;
+  return `<button class="loop-row${on ? " on" : ""}" data-loop="${loop.id}"${ready ? "" : " disabled"}>
+    <span class="loop-go${ready ? "" : " pending"}">${ready ? (on && player.playing ? ICON.pause : ICON.play) : ICON.hourglass}</span>
+    <span class="loop-main">
+      <span class="loop-title">${esc(loopTitle(loop))}</span>
+      <span class="loop-sub">${loopSub(loop)}</span>
+    </span>
+  </button>`;
+}
+
+function renderLoops() {
+  const loops = loopsIn(state.lang);
+  const open = state.loopOpen ? loopOf(state.loopOpen) : null;
+  if (open) {
+    return `<section class="loops">
+      <div class="loops-back">
+        <button class="icon-btn" id="loopBack" aria-label="Back to the loops">${ICON.back}</button>
+        <span class="label">${esc(loopTitle(open, 2))}</span>
+      </div>
+      <div class="loop-play">${lyricBlock(open)}${playerBlock(open)}</div>
+    </section>`;
+  }
+  return `<section class="loops">
+    <div class="loops-head"><h2>Loops</h2><span class="spacer"></span>
+      <button class="tb-btn primary" id="makeLoop">${ICON.plus}<span>Make a loop</span></button></div>
+    <div class="loops-list">${loops.map(loopRow).join("")}</div>
+  </section>`;
+}
+
+/* The bar at the foot for a phone or a tablet, and the chip in the top bar for a desktop. Two skins
+   of one thing, so what they say can never disagree; `acervo.css` picks which is drawn. */
+function renderLoopBar() {
+  const loops = loopsIn(state.lang);
+  const loop = player.loopId ? loopOf(player.loopId) : null;
+  if (!loop) {
+    return `<span class="loopbar-note">${ICON.note}</span>
+      <button class="loopbar-main" id="openLoops">
+        <span class="loopbar-title">Loops</span>
+        <span class="loopbar-sub">${loops.length} · ${esc(state.lang.toUpperCase())}</span>
+      </button>
+      <button class="tb-btn loopbar-make" id="makeLoopBar">${ICON.plus}<span class="wide-only">Make a loop</span></button>`;
+  }
+  return `<span class="loopbar-line" style="width:0"></span>
+    <button class="loopbar-play" id="barPlay" aria-label="Play">${ICON.play}</button>
+    <button class="loopbar-main" id="openLoops">
+      <span class="loopbar-title"></span>
+      <span class="loopbar-sub"></span>
+    </button>`;
+}
+
+function renderLoopChip() {
+  const loops = loopsIn(state.lang);
+  const loop = player.loopId ? loopOf(player.loopId) : null;
+  if (!loop) return `<button class="tb-btn loop-chip" id="chipOpen" aria-label="Loops" title="Loops">
+    ${ICON.note}${loops.length ? `<span class="wide-only">${loops.length}</span>` : ""}</button>`;
+  return `<span class="tb-btn loop-chip playing">
+    <button class="loop-chip-play" id="chipPlay" aria-label="Play">${ICON.play}</button>
+    <button class="loop-chip-what" id="chipOpen">
+      <span class="loop-chip-word"></span><span class="loop-chip-at"></span>
+    </button></span>`;
+}
+
+/* Everything that moves with the clock, and nothing else: re-rendering the surface sixty times a
+   second would lose the scroll position, the focus and the animation all at once. Each write is
+   guarded by a comparison, so a frame in which nothing changed touches no DOM. */
+function paintLoops() {
+  const loop = player.loopId ? loopOf(player.loopId) : null;
+  const glyph = player.playing ? ICON.pause : ICON.play;
+  ["#playPause", "#barPlay", "#chipPlay"].forEach((id) => {
+    const button = $(id);
+    if (button && button.dataset.glyph !== String(player.playing)) {
+      button.dataset.glyph = String(player.playing);
+      button.innerHTML = glyph;
+      button.setAttribute("aria-label", player.playing ? "Pause" : "Play");
+    }
+  });
+  if (!loop) return;
+
+  const fraction = loop.durationSeconds ? player.at / loop.durationSeconds : 0;
+  const percent = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+  const fill = $(".seek-fill"); if (fill) fill.style.width = percent;
+  const knob = $(".seek-knob"); if (knob) knob.style.left = percent;
+  const at = $(".seek-times .at"); if (at && at.textContent !== clock(player.at)) at.textContent = clock(player.at);
+  const line = $(".loopbar-line"); if (line) line.style.width = percent;
+
+  const rows = loopItemsOf(loop.id);
+  const moment = loopMomentAt(rows, player.at);
+  document.querySelectorAll(".lyric-row").forEach((element, i) => {
+    const want = i === moment.index ? "now" : i < moment.index ? "past" : "next";
+    if (element.dataset.state !== want) {
+      element.dataset.state = want;
+      element.classList.toggle("now", want === "now");
+      element.classList.toggle("past", want === "past");
+      if (want === "now") element.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    /* Said or not said, asked of the clock every frame — which is what makes a backwards drag put
+       the answer away again rather than leaving it up because it was once shown. */
+    const said = i < moment.index || (i === moment.index && moment.revealed);
+    if (element.dataset.said !== String(said)) {
+      element.dataset.said = String(said);
+      element.querySelector(".lyric-target").innerHTML = said
+        ? `<span class="lyric-said">${esc(element.dataset.target)}</span>`
+        : '<span class="lyric-held"></span>';
+    }
+    /* Which of the pair is sounding: colour, and nothing else. No weight, no size, no offset — so a
+       screen left running for four minutes never reflows under the eye that glances at it. */
+    const saying = i === moment.index ? moment.sounding : null;
+    element.querySelector(".lyric-source").classList.toggle("saying", saying === "source");
+    element.querySelector(".lyric-target").classList.toggle("saying", saying === "target");
+  });
+
+  const word = moment.item ? moment.item.sourceText : loopTitle(loop, 2);
+  [".loopbar-title", ".loop-chip-word"].forEach((sel) => {
+    const node = $(sel); if (node && node.textContent !== word) node.textContent = word;
+  });
+  const sub = $(".loopbar-sub");
+  if (sub) {
+    const text = `${clock(player.at)} / ${clock(loop.durationSeconds)}`;
+    if (sub.textContent !== text) sub.textContent = text;
+  }
+  const chipAt = $(".loop-chip-at");
+  if (chipAt && chipAt.textContent !== clock(player.at)) chipAt.textContent = clock(player.at);
+}
+
+/* ── make a loop ── */
+function loopEligible() {
+  return LEXEMES.filter((x) => x.language === state.lang && x.status !== "inbox" && x.primaryGloss
+    && (state.topic === "all" || x.topics.includes(state.topic))).length;
+}
+
+function renderLoopDialog() {
+  const eligible = loopEligible();
+  const where = state.topic === "all" ? langOf(state.lang).name : `${langOf(state.lang).name} · ${topicOf(state.topic).name}`;
+  const count = Math.min(12, Math.max(1, eligible));
+  return `<div class="modal-backdrop" id="loopBackdrop">
+    <section class="settings loop-dialog" role="dialog" aria-modal="true" aria-labelledby="loop-dialog-title">
+      <header><h2 id="loop-dialog-title">Make a loop</h2>
+        <button class="close" id="loopClose" aria-label="Close">×</button></header>
+      <div class="settings-body">
+        <p class="config-help">Words are drawn from what you are looking at, and set to music with
+          their translations.</p>
+        <div class="loop-scope">${ICON.book}<span><b>${esc(where)}</b> · ${eligible} words can be in a loop</span></div>
+        <label class="config-field"><span>How many words</span>
+          <span class="loop-count">
+            <input type="range" id="loopCount" min="4" max="${Math.max(4, Math.min(24, eligible))}" value="${count}">
+            <output for="loopCount" id="loopCountOut">${count} words</output>
+          </span></label>
+        <label class="config-field"><span>Music</span>
+          <select id="loopFamily">
+            <option value="auto">Surprise me</option>
+            ${LOOP_SCHEMA.families.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join("")}
+          </select></label>
+        <p class="config-help">A word with no single term to say is not eligible: a loop has to
+          choose one meaning, and <i>espolvorear</i> has none written down yet.</p>
+        <div class="loop-engine">engine ${esc(LOOP_SCHEMA.engineVersion)} · ${
+          LOOP_SCHEMA.productionBundle ? "sample pack installed" : "no sample pack — beds will be synthesised"}</div>
+        <div class="loop-actions">
+          <button class="tb-btn" id="loopCancel">Cancel</button>
+          <button class="tb-btn primary" id="loopGo">Make the loop</button>
+        </div>
+      </div>
+    </section>
+  </div>`;
+}
+
+function openLoopDialog() {
+  const node = el(renderLoopDialog());
+  document.body.appendChild(node);
+  const shut = () => node.remove();
+  $("#loopClose", node).onclick = shut;
+  $("#loopCancel", node).onclick = shut;
+  node.onmousedown = (ev) => { if (ev.target === node) shut(); };
+  const onKey = (ev) => { if (ev.key === "Escape") { shut(); document.removeEventListener("keydown", onKey); } };
+  document.addEventListener("keydown", onKey);
+  const range = $("#loopCount", node);
+  range.oninput = () => { $("#loopCountOut", node).textContent = `${range.value} words`; };
+  $("#loopGo", node).onclick = () => { shut(); toast("Asked for a loop — prototype only, nothing was made"); };
+}
+
+/* ── wiring ──
+   Delegated from the pane, the bar and the top bar, so a re-render never leaves a dead handler. */
+function wireLoops() {
+  const seek = $("#seek");
+  if (seek) {
+    const to = (ev) => {
+      const loop = loopOf(player.loopId);
+      const box = seek.getBoundingClientRect();
+      const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - box.left;
+      loopSeek((Math.max(0, Math.min(1, x / box.width))) * loop.durationSeconds);
+    };
+    const move = (ev) => { ev.preventDefault(); to(ev); };
+    const up = () => {
+      player.scrubbing = false;
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up);
+    };
+    seek.onpointerdown = (ev) => {
+      player.scrubbing = true; to(ev);
+      addEventListener("pointermove", move); addEventListener("pointerup", up);
+    };
+    seek.onkeydown = (ev) => {
+      if (ev.key === "ArrowRight") loopSeek(player.at + 5);
+      else if (ev.key === "ArrowLeft") loopSeek(player.at - 5);
+    };
+  }
+  paintLoops();
+}
+
+function openLoops() {
+  state.loops = true; state.openId = null; state.openExt = null; state.add = false;
+  render();
+}
+
+$("#main").addEventListener("click", (ev) => {
+  const row = ev.target.closest(".lyric-row");
+  if (row) { loopSeek(Number(row.dataset.seek)); if (!player.playing) loopPlay(); return; }
+  const step = ev.target.closest("[data-step]");
+  if (step) { loopStep(Number(step.dataset.step)); return; }
+  const flip = ev.target.closest("[data-switch]");
+  if (flip) {
+    player[flip.dataset.switch] = !player[flip.dataset.switch];
+    flip.classList.toggle("on", player[flip.dataset.switch]);
+    flip.setAttribute("aria-pressed", String(player[flip.dataset.switch]));
+    return;
+  }
+  if (ev.target.closest("#playPause")) { player.playing ? loopPause() : loopPlay(); return; }
+  const open = ev.target.closest("[data-loop]");
+  if (open) {
+    state.loopOpen = open.dataset.loop;
+    if (open.dataset.loop !== player.loopId) loopLoad(open.dataset.loop, { play: true });
+    else if (!player.playing) loopPlay();
+    render();
+    return;
+  }
+  if (ev.target.closest("#makeLoop")) { openLoopDialog(); return; }
+  if (ev.target.closest("#loopBack")) { state.loopOpen = null; render(); }
+});
+
+function wireLoopControls(root) {
+  root.addEventListener("click", (ev) => {
+    if (ev.target.closest("#barPlay") || ev.target.closest("#chipPlay")) {
+      player.playing ? loopPause() : loopPlay();
+      return;
+    }
+    if (ev.target.closest("#makeLoopBar")) { openLoopDialog(); return; }
+    if (ev.target.closest("#openLoops") || ev.target.closest("#chipOpen")) {
+      state.loopOpen = player.loopId;
+      openLoops();
+    }
+  });
+}
+wireLoopControls($("#loopbar"));
+wireLoopControls($("#loopChip"));
+
 /* ── render ──────────────────────────────────────────────────────────── */
 
 function render() {
-  /* Reading a word on a phone or tablet does not need the topic strip, and it cost a whole row. */
-  $(".app").classList.toggle("article-open", Boolean((state.openId || state.openExt) && !state.add));
+  /* Reading a word on a phone or tablet does not need the topic strip, and it cost a whole row. A
+     loop does not need it either: a topic files a *word*, and nothing on that surface is filed. */
   $("#main").classList.remove("cards-on");
   renderRail();
   renderLangButton();
@@ -1120,10 +1587,29 @@ function render() {
   const x = state.openId ? LEXEMES.find((y) => y.id === state.openId) : null;
 
   // A composer owns the height and scrolls itself, so the region around it must not also scroll.
-  const composing = state.add || Boolean(x && state.mode === "edit");
+  // The loops surface is one of those: its controls are a footer that must not drift.
+  const composing = state.add || state.loops || Boolean(x && state.mode === "edit");
   $("#main").classList.toggle("composing", composing);
+  /* The loops bar is a row of `.app`, so `.app` is what carries whether it is wanted: over the list
+     and nowhere else. `.main` keeps its own `composing` because it is the thing that stops scrolling. */
+  $(".app").classList.toggle("composing", composing);
+  // Not `&& !composing`: the loops surface *is* a composing surface — it owns its height so its
+  // controls cannot drift — and excluding it here left the rail on screen behind the player.
+  $(".app").classList.toggle("loops-open", state.loops);
+  $(".app").classList.toggle("article-open", Boolean((state.openId || state.openExt) && !state.add) || state.loops);
+  $("#loopbar").innerHTML = renderLoopBar();
+  $("#loopChip").innerHTML = renderLoopChip();
+  paintLoops();
   $("#paneWrap").style.display = composing ? "none" : "";
   $("#composer").style.display = composing ? "" : "none";
+  if (state.loops) {
+    // Its own surface rather than a sheet over the list: a player is a place you go to, and the
+    // words it shows need the whole column.
+    $("#composer").innerHTML = renderLoops();
+    wireLoops();
+    document.title = "Loops — Acervo";
+    return;
+  }
   if (state.add) { renderSheet(); document.title = "Add a word — Acervo"; return; }
   if (x && state.mode === "edit") {
     $("#composer").innerHTML = renderEdit(x);
@@ -1143,6 +1629,7 @@ function render() {
     document.title = `${ext.word} — Acervo`;
     return;
   }
+
   if (!x) {
     $("#artBar").style.display = "none";
     main.innerHTML = renderList();
@@ -1385,6 +1872,9 @@ function paintSwitches() {
   $("#viewBtn").textContent = `View: ${state.view || "auto"}`;
   $("#viewBtn").classList.toggle("on", Boolean(state.view));
   $("#trBtn").classList.toggle("on", state.sayTranslations);
+  $("#layoutBtn").classList.toggle("on", state.loops);
+  $("#speedBtn").textContent = `${player.speed}×`;
+  $("#speedBtn").classList.toggle("on", player.speed !== 1);
 }
 
 $("#harness").addEventListener("click", (ev) => {
@@ -1397,6 +1887,10 @@ $("#harness").addEventListener("click", (ev) => {
   /* Stand-ins for Settings ▸ default article view, and for listening to translations. */
   if (b.id === "viewBtn") { state.view = state.view === null ? "page" : state.view === "page" ? "cards" : null; }
   else if (b.id === "trBtn") { state.sayTranslations = !state.sayTranslations; }
+  else if (b.id === "layoutBtn") { if (state.loops) { state.loops = false; state.loopOpen = null; } else openLoops(); }
+  /* A word takes twenty-two seconds in a real loop. Watching the reveal at that rate is the right
+     test of the *rhythm* and a poor test of everything else, so the clock can be wound on. */
+  else if (b.id === "speedBtn") { player.speed = player.speed === 1 ? 4 : player.speed === 4 ? 12 : 1; }
   else if (b.dataset.frame) {
     document.body.className = b.dataset.frame === "desktop" ? "" : `framed ${b.dataset.frame}`;
     $("#harness").querySelectorAll("button[data-frame]").forEach((x) => x.classList.toggle("on", x === b));
@@ -1443,6 +1937,23 @@ if (params.get("open")) {
   if (params.get("focus")) state.askFocus = params.get("focus");
   if (params.get("review") === "1") state.review = true;
 }
+/* `loops=1` opens the surface, `layout=` picks the shape, `loop=` which one, and `t=` how far in —
+   so "mid-word, one translation up and the next still withheld" is a link rather than a description.
+   `speed=` is the harness's clock, for a recording that does not want to run four minutes. */
+if (params.get("loops") === "1" || params.get("loop") || params.get("t")) {
+  state.loops = true;
+  const wanted = params.get("loop");
+  const picked = wanted ? LOOPS.find((l) => l.id === wanted)
+    : (params.get("t") || params.get("play")) ? loopsIn(state.lang).find(loopIsReady) : null;
+  if (picked) {
+    state.lang = picked.language;
+    state.loopOpen = picked.id;
+    loopLoad(picked.id, { at: Number(params.get("t")) || 0 });
+  }
+  if (params.get("speed")) player.speed = Number(params.get("speed")) || 1;
+  if (params.get("play") === "1") loopPlay();
+}
+if (params.get("make") === "1") { state.loops = true; setTimeout(openLoopDialog, 0); }
 if (params.get("topic")) state.topic = params.get("topic");
 if (params.get("view") === "page" || params.get("view") === "cards") state.view = params.get("view");
 if (params.get("card")) state.card = Number(params.get("card")) || 0;

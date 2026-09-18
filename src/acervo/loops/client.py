@@ -238,8 +238,58 @@ def _loop(payload: Any) -> Loop | None:
         engine_version=_text(payload.get("engine_version")),
         bed_fingerprint=_text(payload.get("bed_fingerprint")),
         bpm=_float(payload.get("bpm")),
-        timeline=tuple(row for row in timeline or [] if isinstance(row, dict)),
+        timeline=_timeline(timeline),
     )
+
+
+def _timeline(payload: Any) -> tuple[dict[str, Any], ...]:
+    """One row per word, built key by key rather than passed through.
+
+    The service's rows carry a span for every utterance; Acervo stores two numbers instead, and this
+    is where the many become the two — the one place its wire shape is read, which is the rule the
+    module header states. Nothing of the service's own shape leaves here.
+    """
+    rows = payload if isinstance(payload, list) else []
+    built: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        repeats, step = _cadence(row.get("utterances"))
+        built.append({
+            "index": _int(row.get("index")) if row.get("index") is not None else index,
+            # What the render says it said, which the caller checks against what it asked for.
+            "source": _text(row.get("source")),
+            "target": _text(row.get("target")),
+            "direction": _text(row.get("direction")),
+            "start": _float(row.get("start")),
+            "source_reveal": _float(row.get("source_reveal")),
+            "target_reveal": _float(row.get("target_reveal")),
+            "end": _float(row.get("end")),
+            "repeats": repeats,
+            "repeat_seconds": step,
+        })
+    return tuple(built)
+
+
+def _cadence(utterances: Any) -> tuple[int, float]:
+    """How many times a word's pair is said, and how far apart.
+
+    A word is spoken, then its translation, then that pair again — so `repeats` is the number of
+    source utterances, and `repeat_seconds` is the step between consecutive utterances *after* the
+    first translation, which is where the even part of the pattern begins. The gap from a word to
+    its own translation is the recall gap and is deliberately longer, so it is not the step and is
+    already stored as `target_reveal` anyway.
+
+    Zero for a render that reported no spans: the player then marks the first pass and nothing else,
+    rather than marking the wrong thing.
+    """
+    rows = [row for row in utterances or [] if isinstance(row, dict)]
+    if not rows:
+        return 0, 0.0
+    starts = sorted(_float(row.get("start")) for row in rows)
+    repeats = sum(1 for row in rows if _text(row.get("role")) == "source")
+    step = round(starts[2] - starts[1], 3) if len(starts) > 2 else 0.0
+    return repeats, max(0.0, step)
 
 
 def _message(answer: httpx.Response) -> str:

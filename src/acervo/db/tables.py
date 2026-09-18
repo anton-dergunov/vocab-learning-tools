@@ -524,6 +524,15 @@ loop_items = Table(
     Column("source_reveal_seconds", Float, nullable=False, default=0.0),
     Column("target_reveal_seconds", Float, nullable=False, default=0.0),
     Column("end_seconds", Float, nullable=False, default=0.0),
+    # …and two numbers that say the rest of it, so the player can mark *which* of the pair is being
+    # said rather than only which word is being taught. A word is spoken, then its translation, and
+    # then that pair again `repeats` times in all, evenly `repeat_seconds` apart from the first
+    # translation. Two facts about the item rather than a serialised list of six spans — which is
+    # what keeps the comment above true: three repetitions becoming four changes these values and
+    # not this schema. Zero means a render that did not report them, and the player then marks only
+    # the first pass, which is the one the exercise turns on.
+    Column("repeats", Integer, nullable=False, default=0),
+    Column("repeat_seconds", Float, nullable=False, default=0.0),
     *_sync_fields(),
     Index("idx_loop_items_owner_revision", "owner", "revision"),
     Index("idx_loop_items_owner_loop_order", "owner", "loop", "item_order"),

@@ -169,3 +169,36 @@ def test_an_answer_that_describes_no_operation_is_refused_rather_than_half_read(
     for payload in ({}, {"status": "completed"}, ["not", "a", "mapping"]):
         with pytest.raises(LoopError):
             service(answering(payload)).operation("x")
+
+
+def test_the_six_utterance_spans_become_the_two_numbers_acervo_stores():
+    """A word is said, then its translation, then that pair twice more.
+
+    Acervo keeps two numbers rather than six spans — how many times the pair is said and how far
+    apart — which is what lets the player mark *which* of the pair is sounding without the schema
+    moving the day three repetitions become four. This is the arithmetic that turns one into the
+    other, pinned against a render the real service produced.
+    """
+    loop = service(answering(recorded("completed"))).operation("whatever").result
+    assert loop is not None
+    row = loop.timeline[0]
+    # The recorded render says `asco` at 8.82, `disgust` at 17.65, then the pair again at 22.06 /
+    # 26.47 and at 30.88 / 35.29 — evenly 4.41 apart, three times in all.
+    assert row["repeats"] == 3
+    assert row["repeat_seconds"] == pytest.approx(4.41, abs=0.01)
+    # And the two numbers put every utterance back where the render had it.
+    spoken = [row["start"]] + [row["target_reveal"] + step * row["repeat_seconds"]
+                               for step in range(2 * row["repeats"] - 1)]
+    assert spoken == pytest.approx([8.82, 17.65, 22.06, 26.47, 30.88, 35.29], abs=0.02)
+    # Nothing of the service's own shape escapes: the spans it sent are not in what came back.
+    assert "utterances" not in row
+
+
+def test_a_render_that_reported_no_spans_says_so_rather_than_guessing():
+    """Zero is "unknown", and the player then marks only the first pass rather than the wrong one."""
+    payload = recorded("completed")
+    for row in payload["result"]["timeline"]:
+        row.pop("utterances", None)
+    result = service(answering(payload)).operation("whatever").result
+    assert result is not None
+    assert result.timeline[0]["repeats"] == 0 and result.timeline[0]["repeat_seconds"] == 0.0

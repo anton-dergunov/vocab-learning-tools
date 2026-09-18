@@ -21,13 +21,14 @@
  * and the newest bytes won. They did not: the device went on serving what it had already
  * downloaded, and the invalidation bolted on beside it lost a race it could not win.
  *
- * **Two object stores, one per kind of media**, so pronunciations can be switched off and forgotten
- * on a device without touching a single picture, and the other way round.
+ * **One object store per kind of media**, so pronunciations can be switched off and forgotten on a
+ * device without touching a single picture, and the other way round — and so that loops, which are
+ * megabytes each where a clip is kilobytes, can be switched off on their own.
  */
 
 const DATABASE_NAME = "acervo-media";
-const DATABASE_VERSION = 2;
-export const MEDIA_KINDS = ["pictures", "pronunciations"] as const;
+const DATABASE_VERSION = 3;
+export const MEDIA_KINDS = ["pictures", "pronunciations", "loops"] as const;
 export type MediaKind = typeof MEDIA_KINDS[number];
 
 export interface StoredMedia {

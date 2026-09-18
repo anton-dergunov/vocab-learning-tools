@@ -42,6 +42,7 @@ const LEXEMES = [
     pos: "verb", gender: null, register: "neutral", dialect: null,
     emoji: "\u{1F336}️", topics: ["food", "health", "actions"],
     status: "active", shortGloss: "to itch; to sting; to chop; to nibble",
+    primaryGloss: "to itch", emotion: "slightly irritated",
     ipa: "/piˈkaɾ/",
     notes: [
       "One of the most overloaded verbs in everyday Spanish — the sense is almost always carried by the object, not the verb.",
@@ -134,6 +135,7 @@ const LEXEMES = [
     pos: "noun", gender: "feminine", register: "neutral", dialect: null,
     emoji: "\u{1F3AD}", topics: [],
     status: "inbox", shortGloss: "work; play; construction site",
+    primaryGloss: "the play", emotion: "plainly",
     ipa: "/la ˈoβɾa/",
     notes: [
       "This word has a very broad meaning depending on the context. It can refer to a 'work of art' (una obra de arte), a 'theatrical play' (una obra de teatro), or physical construction work.",
@@ -189,6 +191,7 @@ const LEXEMES = [
     pos: "verb", gender: null, register: "neutral", dialect: null,
     emoji: "\u{1F9D7}", topics: [],
     status: "inbox", shortGloss: "to dare; to be up for",
+    primaryGloss: "to be up for it", emotion: "encouraging",
     ipa: "/a.niˈmaɾ.se/",
     notes: [
       "Used to express having the courage or the willingness to take on an activity, especially when it involves some risk, difficulty, or hesitation.",
@@ -227,6 +230,7 @@ const LEXEMES = [
     pos: "verb", gender: null, register: "neutral", dialect: null,
     emoji: "\u{1F635}‍\u{1F4AB}", topics: ["health", "actions"],
     status: "active", shortGloss: null,
+    primaryGloss: "to faint", emotion: "alarmed",
     ipa: "/desmaˈjaɾse/",
     notes: ["Always pronominal in this meaning. <i>Desmayar</i> without the pronoun is literary and means “to lose heart”."],
     createdAt: "2026-01-14", editedAt: "2026-06-02", revision: 3,
@@ -270,6 +274,7 @@ const LEXEMES = [
     pos: "noun", gender: "feminine", register: "neutral", dialect: null,
     emoji: "☕", topics: ["culture", "food", "social"],
     status: "active", shortGloss: "the talk that keeps everyone at the table after a meal",
+    primaryGloss: "the after-dinner talk", emotion: "warm and unhurried",
     ipa: "/soβɾeˈmesa/",
     notes: [
       "No English word covers it — this is the case where the Spanish definition does the work and the gloss cannot.",
@@ -305,6 +310,7 @@ const LEXEMES = [
     pos: "expression", gender: null, register: "neutral", dialect: null,
     emoji: "\u{1F496}", topics: ["health", "social"],
     status: "learned", shortGloss: "get better; feel better soon",
+    primaryGloss: "get well soon", emotion: "kindly",
     ipa: "/ke se meˈxoɾen/",
     notes: ["Plural form; use <i>que te mejores</i> to one person you address informally."],
     createdAt: "2026-01-30", editedAt: "2026-05-19", revision: 2,
@@ -337,6 +343,7 @@ const LEXEMES = [
     pos: "noun", gender: "masculine", register: "neutral", dialect: "es-ES",
     emoji: "\u{1F697}", topics: ["travel", "places"],
     status: "active", shortGloss: "traffic jam",
+    primaryGloss: "the traffic jam", emotion: "exasperated",
     ipa: "/aˈtasko/",
     notes: ["Peninsular. In Mexico you will hear <i>el embotellamiento</i> or <i>el tráfico</i>."],
     createdAt: "2026-02-02", editedAt: "2026-02-02", revision: 1,
@@ -359,6 +366,7 @@ const LEXEMES = [
     pos: "verb", gender: null, register: "colloquial", dialect: "es-ES",
     emoji: "\u{1F477}", topics: ["slang", "actions"],
     status: "active", shortGloss: "to work; to graft",
+    primaryGloss: "to work", emotion: "matter-of-fact",
     ipa: "/kuˈraɾ/",
     notes: ["Noun form <i>el curro</i> = the job. Both are everyday Peninsular colloquial, not rude."],
     createdAt: "2026-04-21", editedAt: "2026-04-21", revision: 1,
@@ -404,6 +412,7 @@ const LEXEMES = [
     pos: "phrase", gender: null, register: "colloquial", dialect: null,
     emoji: "\u{1F3D6}️", topics: ["travel", "actions"],
     status: "active", shortGloss: "to sprawl out on your back",
+    primaryGloss: "to sprawl out on your back", emotion: "lazy and content",
     ipa: null,
     notes: [],
     createdAt: "2026-05-05", editedAt: "2026-05-05", revision: 1,
@@ -426,6 +435,7 @@ const LEXEMES = [
     pos: "noun", gender: "feminine", register: "neutral", dialect: null,
     emoji: "\u{1F6F6}", topics: ["travel", "nature"],
     status: "active", shortGloss: "raft",
+    primaryGloss: "the raft", emotion: "plainly",
     ipa: "/ˈbalsa/",
     notes: [],
     createdAt: "2026-01-22", editedAt: "2026-01-22", revision: 1,
@@ -449,6 +459,7 @@ const LEXEMES = [
     pos: "phrase", gender: null, register: "colloquial", dialect: "es-ES",
     emoji: "\u{1F912}", topics: ["health"],
     status: "active", shortGloss: "to get sick",
+    primaryGloss: "to get sick", emotion: "a little sorry for yourself",
     ipa: null, notes: [],
     createdAt: "2026-02-18", editedAt: "2026-02-18", revision: 1,
     senses: [{
@@ -466,6 +477,7 @@ const LEXEMES = [
     pos: "noun", gender: "masculine", register: "neutral", dialect: null,
     emoji: "\u{1F9B5}", topics: ["health", "appearance"],
     status: "learned", shortGloss: "ankle",
+    primaryGloss: "the ankle", emotion: "plainly",
     ipa: "/toˈβiʊo/", notes: [],
     createdAt: "2026-01-19", editedAt: "2026-01-19", revision: 1,
     senses: [{
@@ -483,6 +495,7 @@ const LEXEMES = [
     pos: "noun", gender: "feminine", register: "neutral", dialect: null,
     emoji: "\u{1F469}‍✈️", topics: ["travel", "social"],
     status: "active", shortGloss: "flight attendant",
+    primaryGloss: "the flight attendant", emotion: "brisk and polite",
     ipa: "/aθaˈfata/", notes: ["Masculine counterpart: <i>el auxiliar de vuelo</i>."],
     createdAt: "2026-03-30", editedAt: "2026-03-30", revision: 1,
     senses: [{
@@ -609,3 +622,121 @@ const EXTERNAL = [
     ]
   }
 ];
+
+/* Loops — a rendered track over some of your words, and the words it says (design
+   `docs/plans/lexibeat-integration.md` §2.9). Two flat arrays, exactly the two collections
+   `web/src/domain.ts` declares: there is no title column, no status column and no stored bed, so
+   the prototype derives all three the way `selectors.ts` does.
+
+   An empty `audioRef` is the whole of what "not rendered yet" means. One loop here is in that state
+   on purpose, so the row that is still being made can be looked at beside the ones that are done. */
+
+const LOOP_BEDS = {
+  "gentle-game":      { family: "gentle game", sampled: true },
+  "late-piano":       { family: "late piano",  sampled: true },
+  "electronic-pulse": { family: "electronic",  sampled: false }
+};
+
+/* The times per word, in the proportions a real render produces: the word is spoken as its turn
+   opens, the translation a quarter of the way through — that gap is the recall gap, and it is
+   deliberately the longest — and then the pair twice more, evenly an eighth of the turn apart, with
+   the bed playing out the last quarter. Measured in the step-6 rehearsal (79.1 s of audio for three
+   words), stretched slightly for a longer phrase because a longer phrase takes longer to say.
+
+   Eight seconds of bed before the first word, which is what the engine writes: a loop starts as
+   music and the first word arrives once you have settled into it. */
+function loopTimeline(prefix, loopId, words, from = 8.8) {
+  const round = (n) => Math.round(n * 100) / 100;
+  let at = from;
+  return words.map((word, position) => {
+    const span = 20 + Math.min(word.source.length, 26) * 0.22;
+    const row = {
+      id: `${prefix}${String(position).padStart(15 - prefix.length, "0")}`,
+      loopId, lexemeId: word.lexemeId, position,
+      sourceText: word.source, targetText: word.target, emotion: word.emotion,
+      startSeconds: round(at), sourceRevealSeconds: round(at),
+      targetRevealSeconds: round(at + span * 0.25), endSeconds: round(at + span),
+      // A word is said, then its translation, then that pair twice more — evenly apart from the
+      // first translation. Two numbers rather than six spans; `selectors.ts` puts them back.
+      repeats: 3, repeatSeconds: round(span * 0.125)
+    };
+    at += span;
+    return row;
+  });
+}
+
+const W = {
+  picar:      { lexemeId: "k3m91xq7d0a2vbe", source: "picar",                target: "to itch",                    emotion: "slightly irritated" },
+  obra:       { lexemeId: "3vu6u4sqccfs6fl", source: "la obra",              target: "the play",                   emotion: "plainly" },
+  animarse:   { lexemeId: "9tmbiepw0yjey3j", source: "animarse",             target: "to be up for it",            emotion: "encouraging" },
+  desmayarse: { lexemeId: "b7t42naz9c6uk1p", source: "desmayarse",           target: "to faint",                   emotion: "alarmed" },
+  sobremesa:  { lexemeId: "q8v53mrb2e7wl4d", source: "la sobremesa",         target: "the after-dinner talk",      emotion: "warm and unhurried" },
+  mejoren:    { lexemeId: "z1c64pdw8f3hj7s", source: "que se mejoren",       target: "get well soon",              emotion: "kindly" },
+  atasco:     { lexemeId: "m5r18kts4b9gy2n", source: "el atasco",            target: "the traffic jam",            emotion: "exasperated" },
+  currar:     { lexemeId: "w9h27fjc5d1qx8v", source: "currar",               target: "to work",                    emotion: "matter-of-fact" },
+  panza:      { lexemeId: "d4y96wlq1m8sz5b", source: "tirarse panza arriba", target: "to sprawl out on your back", emotion: "lazy and content" },
+  balsa:      { lexemeId: "f6k39xzb8n2ph7m", source: "la balsa",             target: "the raft",                   emotion: "plainly" },
+  malo:       { lexemeId: "n7s24bqk6v9dm3t", source: "ponerse malo",         target: "to get sick",                emotion: "a little sorry for yourself" },
+  tobillo:    { lexemeId: "v8j51ctr3x7bn6q", source: "el tobillo",           target: "the ankle",                  emotion: "plainly" },
+  azafata:    { lexemeId: "g3q76mwd9j5fk1z", source: "la azafata",           target: "the flight attendant",       emotion: "brisk and polite" }
+};
+
+const LOOP_WORDS = {
+  lp7k2md90xqv4b1: [W.picar, W.balsa, W.sobremesa, W.atasco, W.currar, W.tobillo,
+                    W.animarse, W.azafata, W.malo, W.mejoren, W.desmayarse, W.panza],
+  lp3f81nzc6yh5t2: [W.obra, W.sobremesa, W.currar, W.atasco, W.azafata,
+                    W.tobillo, W.malo, W.desmayarse, W.animarse, W.picar],
+  lp9w45bqj2mk7d3: [W.balsa, W.tobillo, W.azafata, W.picar, W.currar, W.obra, W.atasco, W.animarse],
+  lp2h63vxr8ns1g4: [W.sobremesa, W.mejoren, W.panza, W.balsa, W.malo, W.atasco]
+};
+
+const LOOP_ITEMS = [
+  ...loopTimeline("li1", "lp7k2md90xqv4b1", LOOP_WORDS.lp7k2md90xqv4b1),
+  ...loopTimeline("li2", "lp3f81nzc6yh5t2", LOOP_WORDS.lp3f81nzc6yh5t2),
+  ...loopTimeline("li3", "lp9w45bqj2mk7d3", LOOP_WORDS.lp9w45bqj2mk7d3),
+  ...loopTimeline("li4", "lp2h63vxr8ns1g4", LOOP_WORDS.lp2h63vxr8ns1g4)
+];
+
+const endOf = (loopId) => {
+  const rows = LOOP_ITEMS.filter((row) => row.loopId === loopId);
+  return Math.round((rows[rows.length - 1].endSeconds + 6) * 10) / 10;   // the bed plays out
+};
+
+const LOOPS = [
+  {
+    id: "lp7k2md90xqv4b1", language: "es", position: 1,
+    styleId: "gentle-game", seed: 104740, engineVersion: "1.4.0", bedFingerprint: "f35282aaf3c40245",
+    pattern: "retrieval", audioRef: "loops/es/lp7k2md90xqv4b1-6ad2f019.mp3", audioMime: "audio/mpeg",
+    durationSeconds: endOf("lp7k2md90xqv4b1"), createdAt: "2026-09-16", editedAt: "2026-09-16"
+  },
+  {
+    id: "lp3f81nzc6yh5t2", language: "es", position: 2,
+    styleId: "late-piano", seed: 88213, engineVersion: "1.4.0", bedFingerprint: "b1d9042ce7f3aa88",
+    pattern: "retrieval", audioRef: "loops/es/lp3f81nzc6yh5t2-91c47b3e.mp3", audioMime: "audio/mpeg",
+    durationSeconds: endOf("lp3f81nzc6yh5t2"), createdAt: "2026-09-12", editedAt: "2026-09-12"
+  },
+  /* Asked for and not made: no reference, so no duration and no bed either — all three arrive
+     together when the render lands. The job is what says how far along it is. */
+  {
+    id: "lp9w45bqj2mk7d3", language: "es", position: 3,
+    styleId: null, seed: 41207, engineVersion: null, bedFingerprint: null,
+    pattern: "retrieval", audioRef: null, audioMime: null,
+    durationSeconds: null, createdAt: "2026-09-18", editedAt: "2026-09-18"
+  },
+  /* Made on a server with no sample pack, so the bed is oscillators rather than instruments. Worth
+     showing: it is a different category of sound, not a plainer one, and the row says so. */
+  {
+    id: "lp2h63vxr8ns1g4", language: "es", position: 4,
+    styleId: "electronic-pulse", seed: 22910, engineVersion: "1.4.0", bedFingerprint: "44aa1c0b9e21f7d6",
+    pattern: "retrieval", audioRef: "loops/es/lp2h63vxr8ns1g4-2f70d4aa.mp3", audioMime: "audio/mpeg",
+    durationSeconds: endOf("lp2h63vxr8ns1g4"), createdAt: "2026-08-30", editedAt: "2026-08-30"
+  }
+];
+
+/* What `GET /loops/schema` reports: the generator's own catalogues, never copied into Acervo.
+   `productionBundle: false` would mean every bed is the synthesised palette. */
+const LOOP_SCHEMA = {
+  apiVersion: "1", engineVersion: "1.4.0", productionBundle: true,
+  patterns: ["retrieval"], families: ["gentle game", "late piano", "bright pop", "slow dub", "electronic"],
+  maxItems: 40
+};

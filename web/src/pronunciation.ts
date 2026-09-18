@@ -110,6 +110,16 @@ function prime(): void {
 }
 
 /** Stop whatever is being heard. */
+/* What else on this page makes sound. Two audio elements racing for one output is a bug with no
+   good failure mode, so a loop registers its own pause here and this module calls it before it
+   plays — and `loops.ts` calls `stop()` before it does. The registration runs this way round so the
+   dependency does too: `loops.ts` imports this module and nothing imports `loops.ts` back. */
+let silenceOthers: (() => void) | null = null;
+
+export function silenceOthersWith(pause: (() => void) | null): void {
+  silenceOthers = pause;
+}
+
 export function stop(): void {
   const player = element;
   if (player) {
@@ -122,6 +132,7 @@ export function stop(): void {
 
 async function sound(blob: Blob, key: string): Promise<void> {
   stop();
+  silenceOthers?.();
   const player = audio();
   const url = URL.createObjectURL(blob);
   update({ playing: key });

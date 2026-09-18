@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { validateGraph } from "./domain";
+import { validateGraph, type LoopItem } from "./domain";
 import {
   articleFor, articleFromDraft, inboxCount, languageOptions, loopCandidates, loopIsReady,
-  loopItemsOf, loopTitle, loopsIn, sampleLexemeIds, shortGlossOf,
+  loopItemsOf, loopMomentAt, loopTitle, loopsIn, sampleLexemeIds, shortGlossOf, utteranceStarts,
   strengthOf, topicOptions, visibleRows
 } from "./selectors";
 import { testGraph } from "./testGraph";
@@ -232,5 +232,60 @@ describe("loops", () => {
     expect(new Set(once).size).toBe(2);
     expect(sampleLexemeIds(graph, query, 99, 7)).toHaveLength(loopCandidates(graph, query).length);
     expect(sampleLexemeIds(graph, query, 0, 7)).toEqual([]);
+  });
+});
+
+describe("playing a loop", () => {
+  /* The cadence a real render produced: `asco` at 8.82, `disgust` at 17.65, then the pair again at
+     22.06 / 26.47 and at 30.88 / 35.29, the word running to 44.12. */
+  const word = (over: Partial<LoopItem> = {}): LoopItem => ({
+    id: "loopitem0000001", loopId: "loop00000000001", lexemeId: "lexeme000000001", position: 0,
+    sourceText: "asco", targetText: "disgust", emotion: "repulsed",
+    startSeconds: 8.82, sourceRevealSeconds: 8.82, targetRevealSeconds: 17.65, endSeconds: 44.12,
+    repeats: 3, repeatSeconds: 4.41,
+    ownerId: "owner0000000001", deleted: false, createdAt: "2026-09-16T00:00:00.000Z",
+    editedAt: "2026-09-16T00:00:00.000Z", editedBy: "device000000001", revision: 1, ...over
+  });
+
+  it("puts every utterance back where the render had it", () => {
+    expect(utteranceStarts(word())).toEqual([8.82, 17.65, 22.06, 26.47, 30.88, 35.29]);
+  });
+
+  it("gives only the two it was told when the render reported no cadence", () => {
+    expect(utteranceStarts(word({ repeats: 0, repeatSeconds: 0 }))).toEqual([8.82, 17.65]);
+  });
+
+  it("follows which line was spoken most recently", () => {
+    const items = [word()];
+    const sounding = (at: number) => loopMomentAt(items, at).sounding;
+    expect(sounding(5)).toBeNull();               // the bed, before the first word
+    expect(sounding(9)).toBe("source");
+    expect(sounding(17)).toBe("source");          // still the word: the answer has not been said
+    expect(sounding(18)).toBe("target");
+    expect(sounding(23)).toBe("source");
+    expect(sounding(27)).toBe("target");
+    expect(sounding(31)).toBe("source");
+    expect(sounding(36)).toBe("target");
+    expect(sounding(43)).toBe("target");          // held through the tail, being the last heard
+  });
+
+  it("withholds the answer until it has been spoken, and withholds it again if you wind back", () => {
+    const items = [word()];
+    expect(loopMomentAt(items, 12).revealed).toBe(false);
+    expect(loopMomentAt(items, 18).revealed).toBe(true);
+    // The reveal is a function of the clock and not a latch, so this is the same question again.
+    expect(loopMomentAt(items, 12).revealed).toBe(false);
+  });
+
+  it("gives the gap after a word to the word just heard rather than to the next one", () => {
+    const items = [word(), word({ id: "loopitem0000002", position: 1, sourceText: "la balsa",
+                                  startSeconds: 60, sourceRevealSeconds: 60, targetRevealSeconds: 68.8,
+                                  endSeconds: 95 })];
+    // 44.12 is where the first word ends and 60 is where the second begins: the bed in between
+    // belongs to the first, so the line does not go dark while its music plays on.
+    expect(loopMomentAt(items, 50).index).toBe(0);
+    expect(loopMomentAt(items, 60).index).toBe(1);
+    expect(loopMomentAt(items, 0).index).toBe(-1);
+    expect(loopMomentAt(items, 0).item).toBeNull();
   });
 });

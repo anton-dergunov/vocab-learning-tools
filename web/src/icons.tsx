@@ -52,3 +52,17 @@ export const HederaIcon = () => <svg viewBox="0 0 910 508" aria-hidden="true">
 </svg>;
 /** More actions: three dots in a row. */
 export const MoreIcon = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="18.5" cy="12" r="1.7" /></svg>;
+
+/* ── the loop player ──
+   Transport glyphs drawn solid rather than stroked: at 22 px a stroked triangle reads as the
+   outline of a play button, and every player on the device draws a filled one. */
+export const PauseIcon = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5.5" width="3.6" height="13" rx="1.1" /><rect x="13.4" y="5.5" width="3.6" height="13" rx="1.1" /></svg>;
+export const PreviousIcon = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5.5" y="6.5" width="2.4" height="11" rx="1" /><path d="M16.5 6.5v11L8 12z" /></svg>;
+export const NextIcon = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.5 6.5v11L16 12z" /><rect x="16.1" y="6.5" width="2.4" height="11" rx="1" /></svg>;
+/* Play it again: the two arrows every player uses, so it needs no label to be understood. */
+export const RepeatIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.9} strokeLinejoin="round" aria-hidden="true"><path d="M6 7h11a3 3 0 0 1 3 3v1" /><path d="M18 17H7a3 3 0 0 1-3-3v-1" /><path d="M8.5 4.5L6 7l2.5 2.5" /><path d="M15.5 19.5L18 17l-2.5-2.5" /></svg>;
+/* And on to the next one: a queue with a play mark, which is how a player says continuous play. */
+export const ContinueIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.9} strokeLinejoin="round" aria-hidden="true"><path d="M4 7h11M4 12h8M4 17h8" /><path d="M16 11.5v7l5.5-3.5z" fill="currentColor" strokeWidth={1} /></svg>;
+/* A loop's own mark: a beamed pair, which says music without saying "audio file". */
+export const NoteIcon = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 4.2L9.2 6.4v9.05a2.9 2.9 0 1 0 1.5 2.55V9.1l6.8-1.5v5.6a2.9 2.9 0 1 0 1.5 2.55z" /></svg>;
+export const HourglassIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.7} strokeLinejoin="round" aria-hidden="true"><path d="M7 4h10M7 20h10" /><path d="M8 4c0 4 4 5 4 8s-4 4-4 8" /><path d="M16 4c0 4-4 5-4 8s4 4 4 8" /></svg>;

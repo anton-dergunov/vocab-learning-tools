@@ -37,6 +37,10 @@
       </div>
     </div>
 
+    <!-- Wide windows only: a phone has the bar at the foot instead, which is where a player belongs
+         on a device held in one hand. `acervo.css` picks which. -->
+    <span id="loopChip"></span>
+
     <button class="tb-btn primary" id="addBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       <span class="wide-only">Add</span>
@@ -64,6 +68,11 @@
          can pin its own header and buttons. -->
     <div id="composer" style="display:none"></div>
   </main>
+
+  <!-- The bar is a row of `.app`, not a child of the pane: the ask dock already owns the bottom of
+       the article column, and §2.13 forbids a second dock there. So this is drawn only where the
+       list is, and simply is not rendered over an article, an external entry or the composer. -->
+  <div class="loopbar" id="loopbar"></div>
 </div>
 </div>
 
@@ -78,6 +87,9 @@
   <button id="trBtn" title="Listen buttons after translations too">▷ Translations</button>
   <span style="width:1px;background:var(--rule-soft);margin:2px 3px"></span>
   <button id="themeBtn" title="Cycle light / dark / follow the system">Theme</button>
+  <span style="width:1px;background:var(--rule-soft);margin:2px 3px"></span>
+  <button id="layoutBtn" title="Open the loops surface">Loops</button>
+  <button id="speedBtn" title="Wind the loop's clock on — a word really takes twenty-two seconds">1×</button>
 </div>
 
 <script src="data.js"></script>

@@ -1,4 +1,4 @@
-import type { PartOfSpeech, Pronunciation, VocabularyGraph } from "./domain";
+import type { Loop, PartOfSpeech, Pronunciation, VocabularyGraph } from "./domain";
 import { normalizeServerURL, sessionStore, type StoredSession } from "./session";
 import type { ArticleDraft } from "./yaml";
 
@@ -6,7 +6,7 @@ type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type LoginResponse = { token: string; user: { id: string; email: string } };
 
 /** Shared with the server hook. A mismatch stops synchronisation until the app is updated. */
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 interface SyncEnvelope {
   schemaVersion: number;
@@ -516,6 +516,29 @@ export interface ScheduleSettings {
   lastRun: Job | null;
 }
 
+/* ── loops ──
+   What the generator can be asked for, as `GET /loops/schema` reports it. Its catalogues are its
+   own and are never copied here: a family or a second pattern added in a later version of it
+   appears in the dialog with nothing changing on this side. */
+export interface LoopSchema {
+  apiVersion: string;
+  engineVersion: string;
+  /** False means the sample bundle is not installed, so every bed is the synthesised palette. */
+  productionBundle: boolean;
+  patterns: string[];
+  families: string[];
+  maxItems: number;
+}
+
+export interface LoopRequest {
+  deviceId: string;
+  language: string;
+  /** Word ids, sampled from the scope on screen. The server never re-derives that scope. */
+  lexemeIds: string[];
+  pattern?: string;
+  family?: string;
+}
+
 export interface JobRequest {
   kind: string;
   subject: { kind: string; id: string };
@@ -693,6 +716,12 @@ export const backendSession = {
     return client.call<Job>(`/jobs/${encodeURIComponent(id)}`);
   },
   /** Try again, and an import's request for enrichment. A save never needs this. */
+  loopSchema(): Promise<LoopSchema> { return client.call<LoopSchema>("/loops/schema"); },
+  /* Answers 202 with the row and the job that will render it. The row exists either way: a loop
+     that was asked for and not made is one with no `audioRef`, which is all "not ready" means. */
+  makeLoop(request: LoopRequest): Promise<{ loop: Loop; job: Job }> {
+    return client.call<{ loop: Loop; job: Job }>("/loops", { method: "POST", body: JSON.stringify(request) });
+  },
   enqueueJob(request: JobRequest): Promise<Job> {
     return client.call<Job>("/jobs", { method: "POST", body: JSON.stringify(request) });
   },

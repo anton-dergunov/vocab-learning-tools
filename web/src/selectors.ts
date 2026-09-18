@@ -497,3 +497,61 @@ export function sampleLexemeIds(graph: VocabularyGraph, query: ListQuery, count:
   }
   return pool.slice(0, Math.max(count, 0)).map((lexeme) => lexeme.id);
 }
+
+/* ── playing a loop ──────────────────────────────────────────────────────
+   What the player draws at one instant, derived and never stored. Pure, so the whole of the
+   reveal rule can be tested without an audio element — and so that dragging the line backwards
+   withholds an answer again rather than leaving it up because it was once shown. */
+
+/** When each of a word's utterances begins, in the order they are heard.
+ *
+ * A word is spoken, then its translation, then that pair again — `repeats` times in all, evenly
+ * `repeatSeconds` apart from the first translation. The gap from a word to its own translation is
+ * the recall gap and is deliberately longer, which is why it is stored rather than derived.
+ *
+ * A render that reported no cadence gives the two that are stored outright, and nothing is invented
+ * past them: marking the first pass and stopping beats marking the wrong line.
+ */
+export function utteranceStarts(item: LoopItem): number[] {
+  const known = item.repeats > 0 && item.repeatSeconds > 0 ? item.repeats * 2 : 2;
+  const starts = [item.startSeconds, item.targetRevealSeconds];
+  for (let index = 2; index < known; index += 1) {
+    starts.push(item.targetRevealSeconds + (index - 1) * item.repeatSeconds);
+  }
+  return starts;
+}
+
+export interface LoopMoment {
+  /** Which word is being taught, or -1 before the first one begins. */
+  index: number;
+  item: LoopItem | null;
+  /** Which line was spoken most recently — what the mark follows. */
+  sounding: "source" | "target" | null;
+  /** Whether the translation has been spoken. Until it has, it is not drawn at all. */
+  revealed: boolean;
+}
+
+/**
+ * Everything the player needs at one instant.
+ *
+ * The gap between one word ending and the next beginning belongs to the word just heard, so a line
+ * does not go dark while its bed plays on. `sounding` is the line most recently spoken rather than
+ * the one making sound this millisecond: an utterance is about half a second long every four, and a
+ * mark that blinked for half a second would be unreadable at a glance — which is the whole way this
+ * screen is used.
+ */
+export function loopMomentAt(items: readonly LoopItem[], at: number): LoopMoment {
+  let index = -1;
+  items.forEach((item, position) => { if (at >= item.startSeconds) index = position; });
+  const item = index >= 0 ? items[index] : null;
+  if (!item) return { index, item: null, sounding: null, revealed: false };
+  const starts = utteranceStarts(item);
+  let spoken = -1;
+  starts.forEach((start, position) => { if (at >= start) spoken = position; });
+  return {
+    index,
+    item,
+    sounding: spoken < 0 ? null : spoken % 2 === 0 ? "source" : "target",
+    revealed: at >= item.targetRevealSeconds
+  };
+}

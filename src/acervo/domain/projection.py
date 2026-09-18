@@ -403,6 +403,8 @@ def _project_loop_item(row: Mapping[str, Any]) -> dict[str, Any]:
         "sourceRevealSeconds": to_float(row["source_reveal_seconds"]),
         "targetRevealSeconds": to_float(row["target_reveal_seconds"]),
         "endSeconds": to_float(row["end_seconds"]),
+        "repeats": to_int(row["repeats"]),
+        "repeatSeconds": to_float(row["repeat_seconds"]),
     }
 
 
@@ -420,6 +422,8 @@ def _assign_loop_item(value: Mapping[str, Any]) -> dict[str, Any]:
         "source_reveal_seconds": to_float(value.get("sourceRevealSeconds")),
         "target_reveal_seconds": to_float(value.get("targetRevealSeconds")),
         "end_seconds": to_float(value.get("endSeconds")),
+        "repeats": to_int(value.get("repeats")),
+        "repeat_seconds": to_float(value.get("repeatSeconds")),
     }
 
 

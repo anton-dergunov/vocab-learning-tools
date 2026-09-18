@@ -319,7 +319,8 @@ describe("loops", () => {
   const itemInput = {
     loopId: "loop00000000001", lexemeId: "lexeme000000001", position: 0,
     sourceText: "desmayarse", targetText: "to faint", emotion: "alarmed",
-    startSeconds: 8.82, sourceRevealSeconds: 8.82, targetRevealSeconds: 17.65, endSeconds: 44.12
+    startSeconds: 8.82, sourceRevealSeconds: 8.82, targetRevealSeconds: 17.65, endSeconds: 44.12,
+    repeats: 3, repeatSeconds: 4.41
   };
 
   it("round-trips a loop and its item through the server and into the replica", async () => {
