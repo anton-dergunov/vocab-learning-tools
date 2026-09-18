@@ -21,7 +21,8 @@ const WAVENET = {
 function settings(overrides: Partial<PronunciationSettings> = {}): PronunciationSettings {
   return {
     pregenerate: { headword: false, definitions: false, examples: false },
-    expressive: true, voices: {}, chosen: false, languages: ["es"],
+    delivery: { words: "plain", examples: "expressive", loops: "expressive" },
+    voices: {}, chosen: false, languages: ["es"],
     orders: { plain: [WAVENET], expressive: [{ ...WAVENET, model: "gemini-3.1-flash-tts-preview", style: "instruction", voices: { es: ["Kore"] } }] },
     ...overrides
   };
@@ -32,7 +33,12 @@ async function panel(stored = settings()) {
   setPronunciationCacheEnabled(true);
   vi.spyOn(backendSession, "pronunciationSettings").mockResolvedValue(stored);
   const saved = vi.spyOn(backendSession, "savePronunciationSettings")
-    .mockImplementation(async (changes) => ({ ...stored, ...changes, pregenerate: { ...stored.pregenerate, ...changes.pregenerate }, chosen: true }));
+    .mockImplementation(async (changes) => ({
+      ...stored, ...changes,
+      pregenerate: { ...stored.pregenerate, ...changes.pregenerate },
+      delivery: { ...stored.delivery, ...changes.delivery },
+      chosen: true,
+    }));
   render(<PronunciationPanel onNotify={() => undefined} />);
   await screen.findByRole("heading", { name: "Pronunciation" });
   return saved;
@@ -47,22 +53,37 @@ describe("Settings ▸ Pronunciation", () => {
     await waitFor(() => expect(saved).toHaveBeenCalledWith({ pregenerate: { headword: true } }));
   });
 
-  it("stores whether examples carry their emotion", async () => {
+  it("gives each of the three uses its own choice of order", async () => {
     const saved = await panel();
-    fireEvent.click(screen.getByRole("checkbox", { name: /Speak examples with their emotion/ }));
-    await waitFor(() => expect(saved).toHaveBeenCalledWith({ expressive: false }));
+    const chooser = (name: RegExp) => screen.getByRole("combobox", { name });
+    expect((chooser(/Words and definitions/) as HTMLSelectElement).value).toBe("plain");
+    expect((chooser(/Example sentences/) as HTMLSelectElement).value).toBe("expressive");
+    expect((chooser(/Loops/) as HTMLSelectElement).value).toBe("expressive");
+
+    // Choosing the clear order for examples *is* switching emotion off — one mechanism, not two —
+    // and it moves the whole order, so the cheap voice reads them rather than the expensive one
+    // reading them without a direction.
+    fireEvent.change(chooser(/Example sentences/), { target: { value: "plain" } });
+    await waitFor(() => expect(saved).toHaveBeenCalledWith({ delivery: { examples: "plain" } }));
+  });
+
+  it("names the orders for what they can do rather than for what reads them", async () => {
+    await panel();
+    const options = [...screen.getByRole("combobox", { name: /Loops/ }).querySelectorAll("option")];
+    expect(options.map((option) => option.textContent))
+      .toEqual(["A clear, even voice", "A voice that takes a direction"]);
   });
 
   it("offers each model's voices for each vocabulary language, the default first", async () => {
     await panel();
-    const select = screen.getAllByRole("combobox")[0];
+    const select = screen.getAllByRole("combobox", { name: /Spanish/ })[0];
     expect([...select.querySelectorAll("option")].map((option) => option.textContent))
       .toEqual(["Default · es-ES-Wavenet-F", "es-ES-Wavenet-F", "es-ES-Wavenet-E"]);
   });
 
   it("stores a chosen voice under its model and language", async () => {
     const saved = await panel();
-    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "es-ES-Wavenet-E" } });
+    fireEvent.change(screen.getAllByRole("combobox", { name: /Spanish/ })[0], { target: { value: "es-ES-Wavenet-E" } });
     await waitFor(() => expect(saved).toHaveBeenCalledWith({
       voices: { "google-tts": { wavenet: { es: "es-ES-Wavenet-E" } } }
     }));

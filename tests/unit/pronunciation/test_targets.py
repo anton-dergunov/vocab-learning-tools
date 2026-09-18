@@ -22,11 +22,11 @@ def records():
 
 def test_each_kind_reads_its_own_text_in_its_own_language_by_its_own_order():
     changes = records()
-    assert target_in(changes, "lexeme", "lex").reading == "plain"
+    assert target_in(changes, "lexeme", "lex").use == "words"
     definition = target_in(changes, "sense", "s2")
-    assert (definition.text, definition.language, definition.reading) == ("To chop into pieces.", "en", "plain")
+    assert (definition.text, definition.language, definition.use) == ("To chop into pieces.", "en", "words")
     sentence = target_in(changes, "example", "e1")
-    assert (sentence.language, sentence.emotion, sentence.reading, sentence.lexeme_id) == ("es", "exasperated", "expressive", "lex")
+    assert (sentence.language, sentence.emotion, sentence.use, sentence.lexeme_id) == ("es", "exasperated", "examples", "lex")
     assert target_in(changes, "attestation", "a1").language == "es"
     assert target_in(changes, "example", "gone") is None
     assert target_in(changes, "vibe", "lex") is None

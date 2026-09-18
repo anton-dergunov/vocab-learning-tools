@@ -23,6 +23,7 @@ import io
 # Everything the providers Acervo speaks to can answer with, and whether it is already compressed.
 UNCOMPRESSED = ("audio/wav", "audio/x-wav", "audio/wave")
 STORED_MIME = "audio/ogg"
+MASTER_MIME = "audio/flac"
 
 # libsndfile's compression level runs from 0.0 (largest) to 1.0 (smallest), and for Opus it lands on
 # a bitrate. Measured on a 5.2 s Spanish sentence at 24 kHz mono: 0.0 → 225 kbps, 0.3 → 159,
@@ -55,6 +56,40 @@ def compact(data: bytes, mime: str) -> tuple[bytes, str]:
     if mime not in UNCOMPRESSED:
         return data, mime
     return to_opus(data), STORED_MIME
+
+
+def master(data: bytes, mime: str) -> tuple[bytes, str]:
+    """The bytes to keep as a **take**, losslessly, and the type to call them.
+
+    The opposite trade to `compact`, for the opposite reason. A clip is downloaded before it can be
+    heard, so it is worth compressing; a take is about to be time-stretched, pitch-shifted and mixed
+    into a track that is itself encoded, so compressing it here would put a lossy generation in front
+    of every one of those. FLAC keeps the master exactly and costs about half of WAV.
+
+    A compressed answer still passes through untouched, for `compact`'s reason: wrapping a lossy
+    stream in a lossless container preserves the artefacts and adds the bytes back.
+    """
+    if mime not in UNCOMPRESSED:
+        return data, mime
+    return to_flac(data), MASTER_MIME
+
+
+def to_flac(wav: bytes) -> bytes:
+    """One WAV in, one FLAC out, sample for sample."""
+    try:
+        import soundfile
+    except ImportError as missing:  # pragma: no cover — declared in requirements/server.txt
+        raise CannotEncode(f"soundfile is not installed, so audio cannot be stored: {missing}") from None
+    try:
+        samples, rate = soundfile.read(io.BytesIO(wav), dtype="int16", always_2d=True)
+        out = io.BytesIO()
+        with soundfile.SoundFile(
+            out, "w", samplerate=rate, channels=samples.shape[1], format="FLAC", subtype="PCM_16"
+        ) as writing:
+            writing.write(samples)
+    except Exception as unreadable:  # noqa: BLE001 — every decoder failure means the same thing here
+        raise CannotEncode(f"that audio could not be re-encoded: {unreadable}") from None
+    return out.getvalue()
 
 
 def to_opus(wav: bytes, compression: float = COMPRESSION) -> bytes:

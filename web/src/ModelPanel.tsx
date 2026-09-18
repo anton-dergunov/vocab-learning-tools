@@ -45,20 +45,25 @@ const KINDS: { id: string; offers: string; label: string; help: string }[] = [
     help: "For the sense pictures. Nothing reads this order yet — the job that draws them is still "
       + "to come — but what you choose here is kept."
   },
+  /* Named for what these voices *can do*, not for what they are used for. They were labelled by use
+     — "words and definitions", "example sentences" — which stopped working the moment there were
+     three uses and still two orders. Settings ▸ Pronunciation ▸ Delivery is where each use picks
+     one, and the ids are unchanged. */
   {
     id: "audioPlain",
     offers: "audio",
-    label: "Pronunciation — words and definitions",
-    help: "Reads a headword, a definition and anything you select, in a clear, even voice. A voice "
-      + "that does not speak the word's language is passed over. Settings ▸ Pronunciation chooses "
-      + "each model's voice."
+    label: "Pronunciation — a clear, even voice",
+    help: "For anything that should sound the same every time. Cheaper and faster, and it reads "
+      + "whatever Settings ▸ Pronunciation points at it. A voice that does not speak the word's "
+      + "language is passed over."
   },
   {
     id: "audioExpressive",
     offers: "audio",
-    label: "Pronunciation — example sentences",
-    help: "Reads example sentences. A model that takes a direction speaks each one with its emotion; "
-      + "one that cannot reads it plainly, so the order is also how you choose between the two."
+    label: "Pronunciation — a voice that takes a direction",
+    help: "For anything that should sound like somebody saying it. A model here that declares it "
+      + "takes directions is given the emotion; one that does not reads plainly, so an order of "
+      + "both is a preference rather than a requirement."
   }
 ];
 

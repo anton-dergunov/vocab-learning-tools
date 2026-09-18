@@ -1,12 +1,14 @@
 # LexiBeat · integrating the loop generator
 
-**Status:** Steps 1–4 done; step 5 is next. Step 1 was this document and one word deleted from
+**Status:** Steps 1–5 done; step 6 is next. Step 1 was this document and one word deleted from
 `models/redact.py`. Step 2 was the experiment that gated the prompt change, run 18 September 2026.
 Step 3 was the whole of the work in the other repository, which now ships a wheel, a versioned
 `/api/v1` and an injected speech backend — it landed on **18 September 2026** and everything from §4
 step 4 onward is in this repository. Step 4 landed the same day: the two lexeme fields, the two
 collections, and the compose prompt the experiment measured. Schema version 11; the database is
-rebuilt rather than migrated, as every schema change here is.
+rebuilt rather than migrated, as every schema change here is. Step 5 followed: the orders renamed for
+their capability, `expressive` replaced by a per-use Delivery choice, and `POST /pronunciations/take`
+over a content-addressed store of FLAC masters.
 
 A word's article can already say what a word means, show a picture of it, play a native speaker using
 it, and read every field aloud. What none of that does is get a word *stuck in your head*.
@@ -636,12 +638,32 @@ Three things this step found, all recorded rather than silently done:
 - **`position` is `loop_order` at the storage boundary**, beside `vocab_order`, `topic_order` and
   `sense_order`.
 
-### Step 5 · The orders, the seam route and the take cache
+### Step 5 · The orders, the seam route and the take cache — **done**
 
 Rename the two orders in `ModelPanel.tsx`; add the per-use Delivery choice to `pronunciation_settings`,
 `services/pronunciations.py` and `PronunciationPanel.tsx`; delete `expressive`. Add
 `POST /pronunciations/take` reusing `_speak`, the render-scoped token it accepts, and the
 content-addressed FLAC take store.
+
+What it decided along the way:
+
+- **The take store lives beside the database**, not on the media volume: a take is a cache, nothing
+  references it and the media route must not serve it. That is also why it needs no new mount and no
+  new environment variable, and why the prune is `python -m acervo.admin takes prune` in the server
+  container rather than a worker subcommand — the worker has no reason to hold that volume.
+  Unbounded on purpose, emptied by hand, as dictionaries and media already are.
+- **Delivery defaults**: words read by the clear order, examples and loops by the directed one. That
+  preserves how examples sound today and makes the cheap voice the default for the field read most.
+- **`pronunciation/targets.py` decides the *use*, never the order.** That package stands alone beside
+  the provider package and the article view, so it may not read settings; the service maps use to
+  order. `Target.reading` became `Target.use`.
+- **One rule computes the cache key, and it has three callers.** `speak.asked_of` says what a pair
+  would actually be *sent* — the voice after its own limits, the direction only if the row declares
+  `style: instruction` — and is used by the call itself and by both halves of the cache. Keying on
+  what was *asked for* rather than what came back is what lets the key exist before the call as well
+  as after it; keying on `result.voice` made every second request miss.
+- **`pronunciation_settings` changed shape, so the Alembic head moved again.** It is not a replicated
+  table, so `SCHEMA_VERSION` stays 11 — but the database still has to be rebuilt.
 
 ### Step 6 · The deployment
 

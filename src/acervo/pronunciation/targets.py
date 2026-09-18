@@ -4,10 +4,12 @@ Four kinds of thing can be spoken, and each carries its own language rather than
 a definition is in `definitionLang`, which is often the learner's own language rather than the one
 being learned, and an example says what it is written in.
 
-**Two orders, decided here.** A headword, a definition and anything selected are read *plainly*, by
-the chain that wants a clear voice held stable. An example or an attestation is read *expressively*,
-by the chain whose voices can take a direction — and only an example has an emotion to give it, since
-an attestation is a sentence the learner met rather than one written to be remembered.
+**The *use* is decided here; which order reads it is not.** A headword and a definition are `words`;
+an example and an attestation are `examples` — and only an example has an emotion to give, since an
+attestation is a sentence the learner met rather than one written to be remembered. Which of the two
+orders reads each use is the owner's answer, held in `pronunciation_settings`, and this package may
+not read that: it stands alone beside the provider package and the article view. So the service maps
+use to order, and this module never learns that an order exists.
 """
 
 from __future__ import annotations
@@ -21,7 +23,8 @@ KINDS = ("lexeme", "sense", "example", "attestation")
 COLLECTION = {
     "lexeme": "lexemes", "sense": "senses", "example": "examples", "attestation": "attestations"
 }
-PLAIN, EXPRESSIVE = "plain", "expressive"
+# What is being read, never which chain reads it. See `repository/pronunciation_settings`.
+WORDS, EXAMPLES = "words", "examples"
 
 
 @dataclass(frozen=True)
@@ -33,8 +36,8 @@ class Target:
     language: str
     # The example's own emotion, whether or not it will be sent: that is the service's decision.
     emotion: str | None
-    # Which chain reads it: `plain` or `expressive`.
-    reading: str
+    # What is being read: `words` or `examples`. The owner's delivery setting turns this into an order.
+    use: str
 
 
 def target_in(changes: Mapping[str, list[dict]], kind: str, identifier: str) -> Target | None:
@@ -75,7 +78,7 @@ def target_in(changes: Mapping[str, list[dict]], kind: str, identifier: str) -> 
         text=str(text),
         language=str(language),
         emotion=(emotion or "").strip() or None,
-        reading=EXPRESSIVE if kind in ("example", "attestation") else PLAIN,
+        use=EXAMPLES if kind in ("example", "attestation") else WORDS,
     )
 
 

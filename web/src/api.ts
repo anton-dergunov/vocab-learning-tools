@@ -135,10 +135,21 @@ export interface PronunciationModel {
   voices: Record<string, string[]>;
 }
 
+/** What a voice is asked to read. A selection reads with the `words` order. */
+export type PronunciationUse = "words" | "examples" | "loops";
+/** The two orders, named for their capability: a clear even voice, and one that takes a direction. */
+export type PronunciationOrder = "plain" | "expressive";
+
 export interface PronunciationSettings {
   pregenerate: PronunciationPregenerate;
-  /** Whether an example is spoken with its emotion by a voice that can take one. */
-  expressive: boolean;
+  /**
+   * Which order reads each use.
+   *
+   * It replaces a boolean that only decided whether a *direction was sent*, so switching emotion off
+   * still spent the expensive voice on every sentence. Choosing the directed order is what asking
+   * for emotion now means — one mechanism where there were two.
+   */
+  delivery: Record<PronunciationUse, PronunciationOrder>;
   /** {provider: {model: {language: voice}}}. Absent means the model's first voice. */
   voices: Record<string, Record<string, Record<string, string>>>;
   chosen: boolean;
@@ -846,7 +857,11 @@ export const backendSession = {
     return client.call<PronunciationSettings>("/pronunciations/settings");
   },
   savePronunciationSettings(
-    changes: Partial<{ pregenerate: Partial<PronunciationPregenerate>; expressive: boolean; voices: PronunciationSettings["voices"] }>
+    changes: Partial<{
+      pregenerate: Partial<PronunciationPregenerate>;
+      delivery: Partial<Record<PronunciationUse, PronunciationOrder>>;
+      voices: PronunciationSettings["voices"];
+    }>
   ): Promise<PronunciationSettings> {
     return client.call<PronunciationSettings>("/pronunciations/settings", {
       method: "PUT", body: JSON.stringify(changes)

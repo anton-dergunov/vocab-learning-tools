@@ -1,6 +1,6 @@
 /**
- * Settings ▸ Pronunciation: what is recorded in advance, whether examples carry their emotion, which
- * voice each model uses, and whether clips are kept on this device.
+ * Settings ▸ Pronunciation: what is recorded in advance, which order reads each thing, which voice
+ * each model uses, and whether clips are kept on this device.
  *
  * Two kinds of setting on one page, and they are kept apart on it. The first three are owner-scoped
  * **server** state, because the recording happens on the server: a phone that has never opened this
@@ -13,12 +13,29 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { AcervoApiError, backendSession, type PronunciationModel, type PronunciationPregenerate, type PronunciationSettings } from "./api";
+import { AcervoApiError, backendSession, type PronunciationModel, type PronunciationOrder, type PronunciationPregenerate, type PronunciationSettings, type PronunciationUse } from "./api";
 import { setPronunciationCacheEnabled, usePronunciationCache } from "./editorPreferences";
 import { languageOf } from "./languages";
 import { forgetPronunciations, keptPronunciationBytes } from "./pronunciation";
 
-type Changes = Partial<{ pregenerate: Partial<PronunciationPregenerate>; expressive: boolean; voices: PronunciationSettings["voices"] }>;
+type Changes = Partial<{
+  pregenerate: Partial<PronunciationPregenerate>;
+  delivery: Partial<Record<PronunciationUse, PronunciationOrder>>;
+  voices: PronunciationSettings["voices"];
+}>;
+
+/* Three uses, two orders. The pair of orders is chosen in Settings ▸ Providers and named there for
+   what each can do; this is where each use picks one. */
+const DELIVERY: { id: PronunciationUse; title: string; help: string }[] = [
+  { id: "words", title: "Words and definitions", help: "And anything you select on the page. These should sound the same every time." },
+  { id: "examples", title: "Example sentences", help: "A sentence heard the way somebody would say it is easier to remember." },
+  { id: "loops", title: "Loops", help: "Each word is said three times, so a loop costs three calls a line rather than one." }
+];
+
+const ORDERS: { id: PronunciationOrder; title: string; help: string }[] = [
+  { id: "plain", title: "A clear, even voice", help: "Cheaper and faster. No emotion is sent." },
+  { id: "expressive", title: "A voice that takes a direction", help: "Reads with the emotion where the model can take one." }
+];
 
 const ADVANCE: { id: keyof PronunciationPregenerate; title: string; help: string }[] = [
   { id: "headword", title: "The word itself", help: "A few kilobytes a word." },
@@ -145,20 +162,28 @@ export default function PronunciationPanel({ onNotify }: { onNotify(message: str
     </label>)}
 
     <h4 className="provider-heading">Delivery</h4>
-    <label className="config-switch">
-      <input
-        type="checkbox" checked={settings.expressive}
-        onChange={(event) => void apply({ expressive: event.target.checked }, { ...intended.current!, expressive: event.target.checked, chosen: true })}
-      />
+    <p className="config-help">
+      Which of the two pronunciation orders reads each thing. Choosing the directed voice <em>is</em>
+      {" "}asking for emotion — there is no separate switch — so the clear voice is how you read
+      something plainly and cheaply. A clip already recorded keeps the delivery it has until you
+      record it again.
+    </p>
+    {DELIVERY.map((use) => <label key={use.id} className="config-field">
       <span>
-        <strong>Speak examples with their emotion</strong>
-        <span>
-          A sentence heard the way somebody would say it is easier to remember. Only a voice that
-          takes directions can do this; the others read every sentence plainly. A clip already
-          recorded keeps the delivery it has until you record it again.
-        </span>
+        <strong>{use.title}</strong>
+        <span className="config-help">{use.help}</span>
       </span>
-    </label>
+      <select
+        value={settings.delivery[use.id]}
+        onChange={(event) => {
+          const order = event.target.value as PronunciationOrder;
+          const delivery = { ...intended.current!.delivery, [use.id]: order };
+          void apply({ delivery: { [use.id]: order } }, { ...intended.current!, delivery, chosen: true });
+        }}
+      >
+        {ORDERS.map((order) => <option key={order.id} value={order.id}>{order.title}</option>)}
+      </select>
+    </label>)}
 
     <h4 className="provider-heading">Voices</h4>
     <p className="config-help">

@@ -22,17 +22,32 @@ from acervo.repository.session import reading, transaction
 
 PREGENERATED = ("headword", "definitions", "examples")
 
+# The three things a voice is asked to read, and the two orders it can be read by.
+#
+# There were two orders and they were labelled by *use* — "words and definitions", "example
+# sentences" — with a separate boolean deciding whether a direction was sent. That boolean only ever
+# gated the direction, so switching emotion off still spent the expensive voice on every sentence.
+# Now the orders are named for their capability and each use picks one, which makes choosing the
+# directed order *be* asking for emotion: one mechanism where there were two, and the cheap voice
+# finally reachable for examples as well.
+#
+# A selection reads with the `words` order. Three uses, two orders, and deliberately no third chain:
+# any voice is a legitimate answer to either question.
+USES = ("words", "examples", "loops")
+ORDERS = ("plain", "expressive")
+DELIVERY_DEFAULT = {"words": "plain", "examples": "expressive", "loops": "expressive"}
+
 
 class PronunciationSettings(Mapping):
     """The owner's answer, or the default when they have not given one. A `Mapping`, like `ImageSettings`."""
 
-    __slots__ = ("pregenerate", "expressive", "voices", "chosen")
+    __slots__ = ("pregenerate", "delivery", "voices", "chosen")
 
     def __init__(
         self,
         *,
         pregenerate: Mapping[str, Any] | None = None,
-        expressive: bool = True,
+        delivery: Mapping[str, Any] | None = None,
         voices: Mapping[str, Any] | None = None,
         chosen: bool = False,
     ) -> None:
@@ -40,23 +55,27 @@ class PronunciationSettings(Mapping):
         # Every key present and boolean, so a hand-edited row with a stray key or a string cannot
         # switch recording on by accident.
         self.pregenerate = {name: given.get(name) is True for name in PREGENERATED}
-        self.expressive = bool(expressive)
+        self.delivery = _delivery(delivery)
         self.voices = _voices(voices)
         self.chosen = bool(chosen)
 
     def __getitem__(self, key: str) -> Any:
         return {
             "pregenerate": dict(self.pregenerate),
-            "expressive": self.expressive,
+            "delivery": dict(self.delivery),
             "voices": self.voices,
             "chosen": self.chosen,
         }[key]
 
     def __iter__(self):
-        return iter(("pregenerate", "expressive", "voices", "chosen"))
+        return iter(("pregenerate", "delivery", "voices", "chosen"))
 
     def __len__(self) -> int:
         return 4
+
+    def order_for(self, use: str) -> str:
+        """Which order reads this use. An unknown use reads plainly, which is the cheap answer."""
+        return self.delivery.get(use, DELIVERY_DEFAULT.get(use, "plain"))
 
     def voice(self, provider: str, model: str, language: str) -> str | None:
         """The voice chosen for this pair in this language, widening `es-MX` to `es`, or None."""
@@ -66,6 +85,15 @@ class PronunciationSettings(Mapping):
             if found := chosen.get("-".join(parts[:count])):
                 return found
         return None
+
+
+def _delivery(value: Any) -> dict[str, str]:
+    """Every use present and naming a real order, so a hand-edited row cannot leave one unanswered."""
+    given = value if isinstance(value, Mapping) else {}
+    return {
+        use: str(given.get(use)) if given.get(use) in ORDERS else DELIVERY_DEFAULT[use]
+        for use in USES
+    }
 
 
 def _voices(value: Any) -> dict[str, dict[str, dict[str, str]]]:
@@ -93,7 +121,7 @@ def _read(row: Any) -> PronunciationSettings:
     if row is None:
         return PronunciationSettings()
     return PronunciationSettings(
-        pregenerate=row["pregenerate"], expressive=row["expressive"], voices=row["voices"], chosen=True
+        pregenerate=row["pregenerate"], delivery=row["delivery"], voices=row["voices"], chosen=True
     )
 
 
@@ -109,7 +137,7 @@ def save(
     owner: str,
     *,
     pregenerate: Mapping[str, bool] | None = None,
-    expressive: bool | None = None,
+    delivery: Mapping[str, str] | None = None,
     voices: Mapping[str, Any] | None = None,
 ) -> PronunciationSettings:
     """Change only what is named, inside one `BEGIN IMMEDIATE`. Returns the whole stored document."""
@@ -119,13 +147,13 @@ def save(
         current = _read(row)
         wanted = PronunciationSettings(
             pregenerate={**current.pregenerate, **(pregenerate or {})},
-            expressive=current.expressive if expressive is None else expressive,
+            delivery={**current.delivery, **(delivery or {})},
             voices=current.voices if voices is None else voices,
             chosen=True,
         )
         values = {
             "pregenerate": dict(wanted.pregenerate),
-            "expressive": wanted.expressive,
+            "delivery": dict(wanted.delivery),
             "voices": wanted.voices,
             "edited_at": now_instant(),
         }

@@ -32,8 +32,9 @@ from acervo.models.catalogue import available
 from acervo.pronunciation import encode, speak as speaking
 from acervo.pronunciation.ids import pronunciation_id
 from acervo.pronunciation.targets import COLLECTION, Target, current, target_in
+from acervo.pronunciation import takes as take_store
 from acervo.repository import graph, pronunciation_settings
-from acervo.repository.pronunciation_settings import PREGENERATED
+from acervo.repository.pronunciation_settings import ORDERS, PREGENERATED, USES
 from acervo.services.models import chain_for, refusal
 from acervo.services.prompts import prompt_text
 from acervo.settings import Settings
@@ -43,12 +44,21 @@ STYLE_PROMPT = "acervo_pronounce_style"
 # Route segment → target kind. The route is addressed by the record being read.
 ROUTE_KINDS = {plural: kind for kind, plural in COLLECTION.items()}
 
+# The two orders, named here for the chains they are. The orders themselves are named for their
+# *capability* — a clear even voice, and one that takes a direction — and which of them reads each of
+# the three uses is the owner's answer in `pronunciation_settings.delivery`.
 CHAINS = {"plain": "audioPlain", "expressive": "audioExpressive"}
 
 # How long a pair may stay silent before the next is asked beside it. Measured on 2026-09-15 against
 # Cloud TTS: WaveNet and Standard answered a word in 0.3–1.2 s, a Gemini voice a sentence in 2–3 s.
-# Somebody pressed a button and is waiting, so both are set just above the healthy tail.
+# Somebody pressed a button and is waiting, so both are set just above the healthy tail. Keyed by
+# *order* rather than by use, because it is a fact about how fast that chain answers.
 HEDGE = {"plain": 3.0, "expressive": 8.0}
+
+# A take is one line of a loop. Nobody is watching it arrive — the job polls an operation — so the
+# bound is on how long one line may take, not on how long a person will wait.
+TAKE_LIMIT = 500
+TAKES = 8
 
 # A selection is read aloud from the page, not stored; this bounds what one press can cost.
 UTTERANCE_LIMIT = 2000
@@ -119,10 +129,16 @@ def apply_settings(settings: Settings, owner: str, body: dict[str, Any]) -> dict
                 f"Recording in advance takes true or false for {', '.join(PREGENERATED)}.",
             )
         changes["pregenerate"] = submitted
-    if "expressive" in body:
-        if not isinstance(body["expressive"], bool):
-            raise ApiError(400, "invalid_input", "expressive must be true or false.")
-        changes["expressive"] = body["expressive"]
+    if "delivery" in body:
+        submitted = body["delivery"]
+        if not isinstance(submitted, dict) or any(
+            use not in USES or order not in ORDERS for use, order in submitted.items()
+        ):
+            raise ApiError(
+                400, "invalid_input",
+                f"Delivery takes {' or '.join(ORDERS)} for {', '.join(USES)}.",
+            )
+        changes["delivery"] = submitted
     if "voices" in body:
         changes["voices"] = _voices(body["voices"])
     pronunciation_settings.save(owner, **changes)
@@ -169,7 +185,7 @@ def pronounce(settings: Settings, owner: str, device: str, route_kind: str, targ
     target, records = _target(owner, route_kind, target_id)
     clip_id = pronunciation_id(target.kind, target.id)
     existing = next((row for row in records.get("pronunciations", []) if row["id"] == clip_id), None)
-    caller = speaking.CALLERS[target.reading]
+    caller = speaking.CALLERS[target.use]
     log = _logger(caller, target)
 
     if not again and current(existing, target):
@@ -178,14 +194,19 @@ def pronounce(settings: Settings, owner: str, device: str, route_kind: str, targ
     source = "again" if again else ("stale" if existing and not existing.get("deleted") else "generated")
 
     preferences = pronunciation_settings.settings(owner)
+    # Which order reads this is the owner's answer, per use. Choosing the directed order *is* asking
+    # for emotion — there is no second switch, which is why turning emotion off no longer leaves the
+    # expensive voice reading every sentence.
+    order = preferences.order_for(target.use)
     style = None
-    if target.kind == "example" and target.emotion and preferences.expressive:
+    if target.kind == "example" and target.emotion and order == "expressive":
         style = speaking.direction(
             prompt_text(Path(settings.prompts_path), STYLE_PROMPT), target.emotion, target.language
         )
     spoken = _speak(
-        settings, owner, target.text, target.language, target.reading, style, caller,
+        settings, owner, target.text, target.language, order, style, caller,
         lambda error: log(started, source=source, result=error, failed=True),
+        preferences=preferences,
     )
     result = spoken.result
     # The provider answered with a master; what is kept is Opus. An answer that was already
@@ -247,7 +268,8 @@ def utterance(settings: Settings, owner: str, text: str, language: str) -> tuple
         journal.outcome("pronounce-selection", True, lang=language, chars=len(words), text=words,
                         result=error, seconds=time.monotonic() - started)
 
-    spoken = _speak(settings, owner, words, language, "plain", None, "pronounce-selection", failed)
+    order = pronunciation_settings.settings(owner).order_for("words")
+    spoken = _speak(settings, owner, words, language, order, None, "pronounce-selection", failed)
     # Compressed like a stored clip, though nothing is stored: this one is downloaded before it can
     # be heard, and a master is four times the wait on a phone for audio that lives one playback.
     result = spoken.result
@@ -260,6 +282,114 @@ def utterance(settings: Settings, owner: str, text: str, language: str) -> tuple
     )
     return audio, mime, {
         "provider": result.answer.provider_id, "model": result.answer.model, "voice": result.voice or "",
+    }
+
+
+def take(settings: Settings, owner: str, body: dict[str, Any]) -> tuple[bytes, str, dict[str, str]]:
+    """One line of a loop, as the **master**, cached by what it is a recording of.
+
+    Not `utterance`, and the difference is the whole point. A selection is downloaded before it can
+    be heard, so it is compressed; a take is about to be time-stretched, pitch-shifted and mixed into
+    a track that is itself encoded, so it wants the master and the only lossy generation in a loop is
+    the final MP3.
+
+    Not a plain-or-directed choice made by the caller, either. This reads the owner's **loop**
+    delivery setting and reports whether the direction was honoured — and **a dropped direction is a
+    useful answer, not a failure**. LexiBeat falls back to its own pitch and speed variation, so a
+    deployment with no instruction-following voice still gets loops, with three distinguishable takes
+    and no emotion. That requirement is met by this contract rather than by a branch on either side.
+
+    A stored pronunciation is deliberately not read through. A plain headword take has the same text,
+    language, model and voice as the clip the article already holds — but that clip is Opus at about
+    51 kbps, compressed for a phone, and stretching it would put a second lossy generation in front
+    of the master. It would save one call per word in the plain case and none in the directed case.
+    """
+    started = time.monotonic()
+    words = str(body.get("text") or "").strip()
+    language = str(body.get("language") or "")
+    direction_text = (str(body.get("direction")) if body.get("direction") is not None else "").strip()
+    if not words or len(words) > TAKE_LIMIT:
+        raise ApiError(400, "invalid_input", f"A take is between 1 and {TAKE_LIMIT} characters.")
+    if not is_language(language):
+        raise ApiError(400, "invalid_input", "language must be a BCP-47 language tag.")
+    try:
+        index = int(body.get("take") or 0)
+    except (TypeError, ValueError):
+        index = -1
+    if not 0 <= index < TAKES:
+        raise ApiError(400, "invalid_input", f"take must be between 0 and {TAKES - 1}.")
+
+    preferences = pronunciation_settings.settings(owner)
+    order = preferences.order_for("loops")
+    style = None
+    if direction_text and order == "expressive":
+        style = speaking.direction(
+            prompt_text(Path(settings.prompts_path), STYLE_PROMPT), direction_text, language
+        )
+
+    def log(**extra: Any) -> None:
+        journal.outcome(
+            speaking.CALLERS["loops"], extra.pop("failed", False), lang=language, chars=len(words),
+            text=words, emotion=direction_text or None, take=index, order=order,
+            seconds=time.monotonic() - started, **extra,
+        )
+
+    cache = Path(settings.takes_path)
+    # Which pair answers is not known until it has, so every pair the order offers is tried. A
+    # fall-through yesterday still answers today, which is most of what makes the cache worth having.
+    catalogue = load_catalogue()
+    for row, model in _pairs(settings, owner, CHAINS[order], catalogue):
+        if not row.speaks(model, language):
+            continue
+        # Keyed on what this pair would be *sent*, by the same function the call itself uses — so a
+        # pair that cannot take a direction looks the same up as it stores down, and a take recorded
+        # under the provider's own default voice is found again.
+        asked_voice, would_send = speaking.asked_of(row, model, language, style, preferences.voice)
+        found = take_store.find(cache, take_store.key(
+            text=words, language=language, direction=would_send, take=index,
+            provider=row.id, model=model, voice=asked_voice,
+        ))
+        if found is None:
+            continue
+        data, mime = found
+        log(result="cached", pair=f"{row.id}:{model}", bytes=len(data), mime=mime)
+        return data, mime, _spoken_headers(row.id, model, asked_voice, direction_text,
+                                           sent=bool(would_send))
+
+    spoken = _speak(
+        settings, owner, words, language, order, style, speaking.CALLERS["loops"],
+        lambda error: log(result=error, failed=True), preferences=preferences,
+    )
+    result = spoken.result
+    # The master, not Opus: this is the one place in Acervo that keeps audio uncompressed on purpose.
+    data, mime = encode.master(result.data, result.mime)
+    digest = take_store.key(
+        text=words, language=language, direction=spoken.direction, take=index,
+        provider=result.answer.provider_id, model=result.answer.model, voice=spoken.asked_voice,
+    )
+    take_store.store(cache, digest, data, mime)
+    log(result="recorded", pair=f"{result.answer.provider_id}:{result.answer.model}",
+        voice=result.voice, bytes=len(data), mime=mime,
+        answered=f"{result.mime}:{len(result.data)}",
+        style="sent" if spoken.direction else ("dropped" if style else "none"))
+    return data, mime, _spoken_headers(
+        result.answer.provider_id, result.answer.model, result.voice, direction_text,
+        sent=bool(spoken.direction),
+    )
+
+
+def _spoken_headers(provider: str, model: str, voice: str | None, direction: str, *, sent: bool) -> dict[str, str]:
+    """Who said it, and whether the direction reached them.
+
+    `dropped` covers both ways a direction can fail to land: the owner chose the clear order for
+    loops, or the answering voice cannot take one. The caller does not need to tell those apart —
+    either way it varies the takes itself — and `none` says there was no direction to begin with.
+    """
+    return {
+        "provider": provider,
+        "model": model,
+        "voice": voice or "",
+        "direction": ("sent" if sent else "dropped") if direction else "none",
     }
 
 
@@ -277,15 +407,16 @@ def _target(owner: str, route_kind: str, target_id: str) -> tuple[Target, dict[s
     return target, records
 
 
-def _speak(settings: Settings, owner: str, text: str, language: str, reading: str,
-           style: str | None, caller: str, on_failure) -> speaking.Spoken:
-    preferences = pronunciation_settings.settings(owner)
-    chain_name = CHAINS[reading]
+def _speak(settings: Settings, owner: str, text: str, language: str, order: str,
+           style: str | None, caller: str, on_failure,
+           preferences=None) -> speaking.Spoken:
+    preferences = preferences or pronunciation_settings.settings(owner)
+    chain_name = CHAINS[order]
     try:
         return speaking.speak(
             text, language,
             chosen=chain_for(settings, owner, chain_name), catalogue=load_catalogue(),
-            style=style, voice=preferences.voice, caller=caller, hedge_after=HEDGE[reading],
+            style=style, voice=preferences.voice, caller=caller, hedge_after=HEDGE[order],
         )
     except speaking.NoVoice:
         on_failure("no_model_for_language")

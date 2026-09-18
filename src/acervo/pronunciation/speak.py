@@ -31,7 +31,12 @@ LANGUAGE_NAMES = {
     "fr": "French", "de": "German", "it": "Italian", "ja": "Japanese", "ko": "Korean",
 }
 
-CALLERS = {"plain": "pronounce-word", "expressive": "pronounce-sentence", "selection": "pronounce-selection"}
+# Keyed by *use*, not by order: which chain reads a word is the owner's answer and may change, but
+# the call log should still say what was being read.
+CALLERS = {
+    "words": "pronounce-word", "examples": "pronounce-sentence",
+    "selection": "pronounce-selection", "loops": "pronounce-take",
+}
 
 
 class NoVoice(Exception):
@@ -47,6 +52,10 @@ class Spoken:
     result: AudioResult
     # The direction actually sent, or None when there was none or the voice could not take it.
     direction: str | None
+    # The voice *asked for*, which is None when the owner chose none and the provider used its own
+    # default. What came back is `result.voice`; this is what a take cache keys on, because it is the
+    # half that can be known before the call as well as after it.
+    asked_voice: str | None = None
 
 
 def language_name(language: str) -> str:
@@ -56,6 +65,26 @@ def language_name(language: str) -> str:
 def direction(template: str, emotion: str, language: str) -> str:
     """The template with its two blanks filled. `replace` rather than `format`: an emotion is free text."""
     return template.strip().replace("{language}", language_name(language)).replace("{emotion}", emotion)
+
+
+def asked_of(row, model: str, language: str, style: str | None,
+             voice: Callable[[str, str, str], str | None]) -> tuple[str | None, str | None]:
+    """What this pair would actually be *sent*: the voice and the direction, after its own limits.
+
+    A voice the model does not declare for that language is dropped rather than sent — one picked for
+    WaveNet must not reach Gemini, which would refuse it — and a direction reaches only a model whose
+    row declares `style: instruction`.
+
+    One function because it has three callers that must agree exactly: the call itself, and the two
+    halves of the take cache. Keying a take on what was *asked for* rather than on what came back is
+    what lets the key be computed before the call as well as after it.
+    """
+    offered = row.voices_for(model, language)
+    preferred = voice(row.id, model, language)
+    return (
+        preferred if preferred and (not offered or preferred in offered) else None,
+        style if style and row.style_for(model) == "instruction" else None,
+    )
 
 
 def speakers(chosen: Sequence[chain.Choice] | None, catalogue: Catalogue, language: str) -> tuple[chain.Candidate, ...]:
@@ -92,12 +121,9 @@ def speak(
 
     def ask(candidate: chain.Candidate) -> AudioResult:
         row, model = candidate.row, candidate.model
-        offered = row.voices_for(model, language)
-        preferred = voice(row.id, model, language)
+        wanted_voice, wanted_style = asked_of(row, model, language, style, voice)
         result = provider.speech(
-            text, row=row, model=model, language=language,
-            voice=preferred if preferred and (not offered or preferred in offered) else None,
-            style=style if style and row.style_for(model) == "instruction" else None,
+            text, row=row, model=model, language=language, voice=wanted_voice, style=wanted_style,
         )
         if not result.data:
             raise ProviderUnavailable("empty", "the model returned no audio", provider_id=row.id, model=model)
@@ -108,8 +134,8 @@ def speak(
         caller=caller, hedge_after=hedge_after,
     )
     answered = catalogue.find(result.answer.provider_id)
-    sent = style if style and answered.style_for(result.answer.model) == "instruction" else None
-    return Spoken(result=result, direction=sent)
+    asked_voice, sent = asked_of(answered, result.answer.model, language, style, voice)
+    return Spoken(result=result, direction=sent, asked_voice=asked_voice)
 
 
 EXTENSIONS = {"audio/mpeg": "mp3", "audio/wav": "wav", "audio/ogg": "ogg", "audio/flac": "flac"}

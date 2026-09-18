@@ -8,6 +8,9 @@ corpus — recorded human speech, a different thing from a voice reading a recor
   which is "Record again" after hearing a bad one.
 - `POST /pronunciations/utterance` reads a selection aloud and answers with the audio itself. Nothing
   is stored, because a selection names no record.
+- `POST /pronunciations/take` says one line of a loop and answers with the **master**. It is the one
+  route a render-scoped token may call, which is how the loop generator gets a voice while holding no
+  provider credential of its own.
 - `PUT /pronunciations/{collection}/{id}/audio` puts back a clip an export carried.
 
 Not `schemaVersion`-gated, for `images.py`'s reason: the rows these write go through `merge_graph`
@@ -20,7 +23,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from acervo.api.auth import owner_id
+from acervo.api.auth import owner_id, take_owner
 from acervo.api.errors import data
 from acervo.api.payload import binary_body, json_body
 from acervo.repository import graph
@@ -30,6 +33,7 @@ from acervo.services.pronunciations import (
     pronounce,
     restore,
     settings_view,
+    take,
     utterance,
 )
 
@@ -61,6 +65,24 @@ async def say(request: Request) -> Response:
         content=audio, media_type=mime,
         headers={"X-Acervo-Provider": spoken["provider"], "X-Acervo-Model": spoken["model"],
                  "X-Acervo-Voice": spoken["voice"], "Cache-Control": "no-store"},
+    )
+
+
+@router.post("/pronunciations/take")
+async def say_take(request: Request) -> Response:
+    """The audio itself, uncompressed. Accepts a render-scoped token as well as a session.
+
+    Declared **before** `/{collection}/{target_id}`, or `take` is read as a collection name and this
+    route is never reached.
+    """
+    owner = take_owner(request)["id"]
+    body = await json_body(request)
+    audio, mime, spoken = await run_in_threadpool(take, request.app.state.settings, owner, body)
+    return Response(
+        content=audio, media_type=mime,
+        headers={"X-Acervo-Provider": spoken["provider"], "X-Acervo-Model": spoken["model"],
+                 "X-Acervo-Voice": spoken["voice"], "X-Acervo-Direction": spoken["direction"],
+                 "Cache-Control": "no-store"},
     )
 
 

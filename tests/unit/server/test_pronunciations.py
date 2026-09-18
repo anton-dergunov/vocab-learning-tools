@@ -165,12 +165,23 @@ def test_a_headword_and_a_definition_get_no_direction_at_all(server):
     assert server.speech.calls[-1]["language"] == "es"
 
 
-def test_switching_emotion_off_reads_the_example_plainly(server):
+def test_choosing_the_clear_order_for_examples_reads_them_plainly_and_cheaply(server):
+    """The switch this replaces only stopped the *direction* being sent, so turning emotion off
+    still spent the expensive voice on every sentence. Choosing the order is now the whole of it."""
     entry, itch, sentence, _ = word(server)
-    assert server.put("/pronunciations/settings", {"expressive": False}).status_code == 200
+    assert server.put("/pronunciations/settings", {"delivery": {"examples": "plain"}}).status_code == 200
     clip = say(server, "examples", sentence["id"]).json()["data"]
     assert server.speech.calls[-1]["style"] is None
     assert clip["emotion"] is None
+    # And the cheap voice actually read it: the order changed, not just what was sent to it.
+    assert clip["modelId"] == "wavenet"
+
+
+def test_delivery_takes_only_the_two_orders_and_the_three_uses(server):
+    word(server)
+    for body in ({"delivery": {"examples": "shouty"}}, {"delivery": {"nothing": "plain"}},
+                 {"delivery": "expressive"}):
+        assert server.put("/pronunciations/settings", body).status_code == 400
 
 
 def test_an_emotion_is_not_recorded_when_the_voice_that_answered_could_not_take_it(server):
@@ -260,7 +271,8 @@ def test_settings_follow_the_default_until_chosen_and_are_per_owner(server, othe
     view = server.get("/pronunciations/settings").json()["data"]
     assert view["chosen"] is False
     assert view["pregenerate"] == {"headword": False, "definitions": False, "examples": False}
-    assert view["expressive"] is True
+    # Words read by the clear, even voice; examples and loops by the one that takes a direction.
+    assert view["delivery"] == {"words": "plain", "examples": "expressive", "loops": "expressive"}
     assert view["languages"] == ["es"]
     plain = {(entry["provider"], entry["model"]): entry for entry in view["orders"]["plain"]}
     assert plain[("google-tts", "wavenet")]["voices"]["es"][0] == "es-ES-Wavenet-F"

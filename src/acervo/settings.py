@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     call_log_bytes: int = Field(default=5_000_000, alias="ACERVO_CALL_LOG_BYTES")
     call_log_keep: int = Field(default=3, alias="ACERVO_CALL_LOG_KEEP")
 
+    @property
+    def takes_path(self) -> Path:
+        """The take cache, beside the database and the call log rather than on the media volume.
+
+        A take is a cache, not a record's media: nothing references it, nothing replicates it, and
+        the media route must not serve it. Server-local state belongs beside the database, which is
+        also why this needs no new mount and no new environment variable.
+        """
+        return self.database_path.parent / "takes"
+
     # Where the spoken-usage corpus answers, on the internal network. Empty means this deployment
     # runs without one: reads still work and the interface says the corpus is unavailable rather
     # than failing, exactly as it does for an unreachable external dictionary.

@@ -92,6 +92,36 @@ def seed(settings: Settings, email: str) -> int:
     return 0
 
 
+def show_takes(settings: Settings) -> int:
+    from acervo.pronunciation import takes
+
+    kept, size = takes.usage(settings.takes_path)
+    print(f"{kept} takes, {size / 1_000_000:.1f} MB, in {settings.takes_path}")
+    return 0
+
+
+def prune_takes(settings: Settings, older_than_days: float, dry_run: bool) -> int:
+    """Empty the take cache by hand, which is the only thing that ever empties it.
+
+    The store is unbounded on purpose. A twelve-word loop is about seventy takes of a few hundred
+    kilobytes, so a year of daily loops is single-digit gigabytes — small beside the dictionaries and
+    the media volume, and both of those are managed the same way: deliberately, when you care.
+    Sweeping it on a timer would quietly time-limit the thing the cache exists for, which is that a
+    render abandoned half way resumes against the takes it already paid for.
+    """
+    from acervo.pronunciation import takes
+
+    kept, size = takes.usage(settings.takes_path)
+    if dry_run:
+        stale, freed = takes.prune(settings.takes_path, older_than_days, dry_run=True)
+        print(f"{stale} of {kept} takes are older than {older_than_days:g} days "
+              f"({freed / 1_000_000:.1f} of {size / 1_000_000:.1f} MB). Nothing was deleted.")
+        return 0
+    gone, freed = takes.prune(settings.takes_path, older_than_days)
+    print(f"Deleted {gone} of {kept} takes, freeing {freed / 1_000_000:.1f} MB.")
+    return 0
+
+
 def serve(settings: Settings, host: str, port: int) -> int:
     import uvicorn
 
@@ -285,6 +315,14 @@ def main(argv: list[str] | None = None) -> int:
     enqueue_parser.add_argument("--limit", type=int, default=0, help="at most this many words")
     enqueue_parser.add_argument("--dry-run", action="store_true", help="print them and queue nothing")
 
+    takes_parser = commands.add_parser("takes", help="the loop take cache")
+    take_commands = takes_parser.add_subparsers(dest="take_command", required=True)
+    take_commands.add_parser("show", help="how many takes are kept, and what they weigh")
+    prune_parser = take_commands.add_parser("prune", help="delete takes untouched for a while")
+    prune_parser.add_argument("--older-than", type=float, default=90,
+                              help="in days; a take a render used recently survives")
+    prune_parser.add_argument("--dry-run", action="store_true", help="say what would go, delete nothing")
+
     serve_parser = commands.add_parser("serve", help="run the HTTP service")
     serve_parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 - the container's own port
     serve_parser.add_argument("--port", type=int, default=8000)
@@ -299,6 +337,10 @@ def main(argv: list[str] | None = None) -> int:
         return seed(settings, arguments.owner_email)
     if arguments.command == "providers":
         return providers()
+    if arguments.command == "takes":
+        if arguments.take_command == "show":
+            return show_takes(settings)
+        return prune_takes(settings, arguments.older_than, arguments.dry_run)
     if arguments.command == "jobs":
         if arguments.job_command == "open":
             return open_jobs(settings, arguments.json)

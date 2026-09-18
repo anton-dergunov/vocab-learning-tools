@@ -159,8 +159,11 @@ pronunciation_settings = Table(
     # {"headword": bool, "definitions": bool, "examples": bool}. Only target-language text is
     # recorded in advance; everything else waits until somebody presses play.
     Column("pregenerate", JSON, nullable=False, default=dict),
-    # Whether an example is spoken with its emotion by a voice that can take one.
-    Column("expressive", Boolean, nullable=False, default=True),
+    # Which order reads each of the three uses: {"words": "plain"|"expressive", "examples": …,
+    # "loops": …}. It replaces a boolean that only decided whether a *direction was sent*, which
+    # meant switching emotion off still spent the expensive voice on every sentence. Choosing the
+    # directed order is what asking for emotion now means — one mechanism where there were two.
+    Column("delivery", JSON, nullable=False, default=dict),
     # The owner's voice per model per language: {provider: {model: {language: voice}}}. Absent means
     # the first voice the catalogue declares, so a voice list that grows never changes a choice.
     Column("voices", JSON, nullable=False, default=dict),
