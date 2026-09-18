@@ -1,7 +1,18 @@
 # Grounding spike — does conditioning on external sources make a better entry?
 
-**Status:** planned, not built. Nothing in Acervo consults an external source today; capture (§05)
-generates from model knowledge alone, and that is deliberate until this question is answered.
+**Status:** the spike is unrun, but **grounding shipped without it** — so the question this document
+asks has moved from *should we?* to *what does the one we built actually do?*
+
+`services/capture/coerce.py:reference_of` carries an external dictionary's entry into the compose
+request, and `prompts/acervo_compose.md` governs it under two treatments, **STAY CLOSE TO THE
+REFERENCE** and **FILL IN THE GAPS**. It is reached from "Add to my words" on an external article.
+What was never built is the comparison: no arm, no review, no measurement. The owner has used it and
+dislikes the articles it produces, which is an impression rather than a finding, and the reason to
+evaluate it rather than to close this.
+
+The re-scoped experiment — three arms, and *sense inflation* as the failure mode rather than recall —
+is [`plans/article-quality.md`](plans/article-quality.md) §6. The design below still applies; only
+its premise that nothing consults an external source is out of date.
 
 ## The question
 
