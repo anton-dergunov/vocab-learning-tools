@@ -11,7 +11,7 @@ from acervo.article import build_articles
 from acervo.images.article import anchor_for, drawn_senses
 from acervo.images.brief import build_request, parse_reply
 from acervo.images.compose import FRAME, compose, prompt_version
-from acervo.images.ids import ID_LENGTH, image_prompt_id, seed_for
+from acervo.images.ids import ID_LENGTH, image_prompt_id, image_reference, seed_for
 from acervo.images.styles import load_styles
 from acervo.jobs.images.run import Store, plan
 
@@ -406,12 +406,28 @@ def test_a_brief_failure_that_is_not_quota_is_raised_at_once():
     assert writer.calls == 1
 
 
-def _stored(store: Store, sense_id: str, **overrides) -> str:
+def _stored(store: Store, sense_id: str, data: bytes = b"webp", **overrides) -> str:
+    """A record, and the reference it would carry for `data` — which is what `verify` checks."""
     identifier = image_prompt_id(sense_id)
-    record = {"id": identifier, "senseId": sense_id, "imageRef": f"images/x/{identifier}.webp"}
+    record = {
+        "id": identifier, "senseId": sense_id, "lexemeId": "x",
+        "imageRef": image_reference("x", identifier, data),
+    }
     record.update(overrides)
     store.write(store.record_path(identifier), record)
     return identifier
+
+
+def test_a_file_that_is_not_what_its_reference_names_is_a_fault(tmp_path: Path):
+    """The reference carries a digest of the bytes, so a picture swapped in the run directory after
+    it was drawn is caught here rather than published under a name promising something else."""
+    from acervo.jobs.images.verify import verify
+    store = Store(tmp_path)
+    identifier = _stored(store, "s00000000000001")
+    store.image_path(identifier).write_bytes(b"different bytes entirely")
+    report = verify(store)
+    assert not report.ok
+    assert "reference does not name the bytes on disk" in report.problems
 
 
 def test_a_consistent_run_directory_verifies(tmp_path: Path):
@@ -481,14 +497,13 @@ def _drawing(answers):
             self.size = (1024, 1024)
             self.asked = []
 
-        def draw(self, prompt, seed, output, candidate):
+        def draw(self, prompt, seed, candidate):
             self.asked.append(candidate.named)
             outcome = answers[candidate.named]
             if isinstance(outcome, BaseException):
                 raise outcome
-            output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_bytes(b"webp")
-            return Rendered(output, 4, outcome)
+            # The bytes, not a file: the run writes them, and the server path is a digest of them.
+            return Rendered(b"webp", outcome)
 
     return Scripted()
 
@@ -623,7 +638,8 @@ def test_the_configured_size_reaches_the_call(tmp_path):
     _catalogue, candidates = _candidates(("cloudflare", "klein"))
     import unittest.mock
     with unittest.mock.patch.object(call, "image", fake_image):
-        Renderer(size=(512, 512)).draw("a scene", 17, tmp_path / "one.webp", candidates[0])
+        drawn = Renderer(size=(512, 512)).draw("a scene", 17, candidates[0])
+    assert drawn.data[:4] == b"RIFF", "the master comes back as encoded WebP bytes"
     assert asked["size"] == (512, 512)
     assert asked["seed"] == 17
 

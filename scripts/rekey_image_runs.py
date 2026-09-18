@@ -46,7 +46,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from acervo.client import AcervoClient, AcervoError  # noqa: E402
-from acervo.images.ids import image_prompt_id  # noqa: E402
+from acervo.images.ids import image_prompt_id, image_reference  # noqa: E402
 
 
 @dataclass
@@ -161,7 +161,11 @@ def rekey(source: Path, destination: Path, changes: dict[str, list[dict]], *,
             continue
 
         prompt_id = image_prompt_id(sense["id"])
-        reference = f"images/{found['lexemeId']}/{prompt_id}.webp" if record.get("imageRef") else None
+        # Recomputed from the bytes being copied rather than rewritten from the old string: a source
+        # run drawn before references carried a digest has none to carry over, and this mints the
+        # correct one from the file it is about to copy.
+        data = picture.read_bytes() if record.get("imageRef") else None
+        reference = image_reference(found["lexemeId"], prompt_id, data) if data is not None else None
         rewritten = {
             **record,
             "id": prompt_id,

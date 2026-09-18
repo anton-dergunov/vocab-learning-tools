@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import WebKit
 
@@ -23,6 +24,55 @@ enum WebInterface {
             return nested.deletingLastPathComponent()
         }
         return Bundle.main.url(forResource: "index", withExtension: "html")?.deletingLastPathComponent()
+    }
+}
+
+/// The identifiers WebKit gives the navigation items in its own context menu.
+///
+/// Matched by raw value rather than through WebKit's constants, which import into Swift awkwardly;
+/// these strings are the values those constants hold.
+private let navigationMenuItems: Set<String> = [
+    "WKMenuItemIdentifierReload",
+    "WKMenuItemIdentifierGoBack",
+    "WKMenuItemIdentifierGoForward",
+]
+
+/// Take WebKit's navigation items out of a context menu.
+///
+/// Acervo has no routing: the open word, the chosen vocabulary and the search are state in one
+/// React tree, so reloading or going back does not return you to where you were — it drops you on
+/// the default list, having thrown away what you were reading. These three are the only items in
+/// that menu that navigate; Copy, Look Up, Services and Inspect Element are untouched.
+///
+/// Separators left leading or doubled by the removal go too, or the menu opens with a rule above
+/// everything.
+func pruneNavigationItems(from menu: NSMenu) {
+    for item in menu.items where navigationMenuItems.contains(item.identifier?.rawValue ?? "") {
+        menu.removeItem(item)
+    }
+    while let first = menu.items.first, first.isSeparatorItem {
+        menu.removeItem(first)
+    }
+    while let last = menu.items.last, last.isSeparatorItem {
+        menu.removeItem(last)
+    }
+    var index = menu.items.count - 1
+    while index > 0 {
+        if menu.items[index].isSeparatorItem, menu.items[index - 1].isSeparatorItem {
+            menu.removeItem(at: index)
+        }
+        index -= 1
+    }
+}
+
+/// The web view Acervo runs in, which is an ordinary `WKWebView` apart from its context menu.
+///
+/// A subclass only because `willOpenMenu(_:with:)` is an `NSView` method: there is no delegate
+/// callback for the macOS context menu the way there is on iOS.
+final class AcervoWebView: WKWebView {
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        pruneNavigationItems(from: menu)
     }
 }
 

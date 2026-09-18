@@ -73,13 +73,11 @@ describe("holding a picture", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("forgets a picture so a regeneration is not served the one it replaced", async () => {
-    // The reference does not change across a regeneration — it is derived from the record — so
-    // without this the cache would keep answering with the picture that was just thrown away.
-    const url = await media.acquire("images/a/b.webp");
-    await media.forget("images/a/b.webp");
-    expect(revoked).toEqual([url]);
-    await media.acquire("images/a/b.webp");
+  it("serves a redrawn picture without being told anything, the name having changed with it", async () => {
+    // The whole of why there is no invalidation here: a reference carries a digest of its bytes, so
+    // the redrawn picture is asked for under a name the cache has never held.
+    await media.acquire("images/a/b-1111.webp");
+    await media.acquire("images/a/b-2222.webp");
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 

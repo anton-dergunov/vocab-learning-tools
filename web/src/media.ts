@@ -10,6 +10,13 @@
  * request at all, so an article read on a train looks the same as one read at a desk — the rule the
  * replica already lives by, applied to the one part of a word that is not in it.
  *
+ * **There is no invalidation here, and there must not be one.** A reference carries a digest of its
+ * bytes, so it names the same picture for all time and a redraw is a new reference the cache has
+ * never held. What stood here before was a `forget` ordered against the job that did the redrawing,
+ * and the order was not the server's to promise: the revision frame is published inside the write
+ * and the job's own frame only after it, so the stale bytes were fetched back before anything
+ * forgot them and the article kept the picture it had.
+ *
  * Object URLs are reference-counted rather than revoked on unmount. The same picture is legitimately
  * on screen twice — an article and a list row — and revoking when the first unmounts would blank the
  * second; counting is what makes "this component no longer needs it" different from "nobody does".
@@ -93,22 +100,6 @@ export function release(reference: string): void {
   if (entry.holders > 0) return;
   URL.revokeObjectURL(entry.url);
   held.delete(reference);
-}
-
-/**
- * Forget a picture, on the device and in memory.
- *
- * Called when the owner deletes one: the reference stays the same across a regeneration, so without
- * this the cache would keep serving the picture that was just thrown away.
- */
-export async function forget(reference: string): Promise<void> {
-  const entry = held.get(reference);
-  if (entry) {
-    URL.revokeObjectURL(entry.url);
-    held.delete(reference);
-  }
-  loading.delete(reference);
-  await store.remove(reference).catch(() => undefined);
 }
 
 /** Every picture this device has cached. Separate from the replica, so neither wipe touches it. */

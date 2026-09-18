@@ -1018,9 +1018,10 @@ describe("Acervo application", () => {
     // Leaving the dialog loses nothing: the picture says it is being redrawn for as long as the job is open.
     expect(await screen.findByText(/Redrawing…|Drawing…/)).toBeInTheDocument();
 
-    const pulls = vi.mocked(backendSession.pullGraph).mock.calls.length;
+    // The finished job clears the mark. Bringing the new picture down is the *revision* frame's
+    // job, which every write publishes and `jobs.test.ts` pins — this page does nothing special for
+    // a redraw, which is the point: the new picture has a new reference and is fetched like any one.
     act(() => jobStream.apply({ ...redraw, state: "done", finishedAt: "2026-09-17T10:01:00.000Z" }));
-    await waitFor(() => expect(vi.mocked(backendSession.pullGraph).mock.calls.length).toBeGreaterThan(pulls));
     await waitFor(() => expect(screen.queryByText(/Redrawing…|Drawing…/)).toBeNull());
     act(() => jobStream.stop());
   });

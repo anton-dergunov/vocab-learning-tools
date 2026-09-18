@@ -31,41 +31,60 @@ export function imageStateOf(prompt: ImagePrompt): ImageState {
 /**
  * The blob URL for a stored picture, held for as long as this component shows it.
  *
+ * A reference carries a digest of its bytes, so a redrawn picture is a *different* reference and a
+ * changed picture is a changed effect. The record's revision is deliberately not in here: it is not
+ * a cache key, and keying on it re-fetched a picture that had not changed every time the row was
+ * edited. Do not add it back.
+ *
+ * The previous picture stays on screen until the new one is in hand, rather than the frame blanking
+ * and filling again — which is what the "Redrawing…" mark over it already promises. That makes this
+ * a hand-over: the hold on the old picture is given back only once the new one has been acquired,
+ * so `holding` is a ref rather than state — a release inside a state updater would run twice under
+ * StrictMode.
+ *
  * The hold has to be released exactly once, and only if it was ever taken. Under StrictMode the
- * effect mounts, cleans up and mounts again, and the fetch may still be in flight at cleanup — so
- * releasing unconditionally would give back a hold that was never taken (and let a still-pending
- * one leak forever). `taken` is what pairs them: cleanup releases now if the hold arrived, and the
- * arrival releases immediately if cleanup got there first.
+ * effect mounts, cleans up and mounts again, and the fetch may still be in flight at cleanup: an
+ * arrival that finds itself stale releases immediately, and one that has been promoted to `holding`
+ * is released by the next promotion or by the unmount below — never by both.
  */
-function usePicture(reference: string | null, version: number): { url: string | null; error: string | null } {
+function usePicture(reference: string | null): { url: string | null; error: string | null } {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The reference `url` was made from, and the one hold this hook owns. */
+  const holding = useRef<string | null>(null);
+
+  useEffect(() => () => {
+    if (holding.current) release(holding.current);
+    holding.current = null;
+  }, []);
 
   useEffect(() => {
-    setUrl(null);
     setError(null);
-    if (!reference) return;
+    if (!reference) {
+      // Nothing to show any more — a picture deleted or ruled out blanks at once, on purpose.
+      if (holding.current) release(holding.current);
+      holding.current = null;
+      setUrl(null);
+      return;
+    }
 
     let live = true;
-    let taken = false;
     acquire(reference)
       .then((held) => {
-        taken = true;
-        if (live) setUrl(held);
-        else release(reference);
+        if (!live) {
+          release(reference);   // stale: give back the hold this run took
+          return;
+        }
+        // Synchronous from here down, so nothing can interleave between the swap and the release.
+        const previous = holding.current;
+        holding.current = reference;
+        setUrl(held);
+        if (previous && previous !== reference) release(previous);
       })
       .catch((problem: Error) => { if (live) setError(problem.message); });
 
-    return () => {
-      live = false;
-      if (taken) release(reference);
-    };
-    // `version` is the record's revision, and it is in this list for a reason that is easy to miss:
-    // a redrawn picture keeps the *same* `imageRef`, because the path is derived from the record.
-    // Keyed on the reference alone the effect would never re-run, and the article would go on
-    // showing the picture that was just replaced until the component happened to remount — which is
-    // what "close the word and open it again" was working around.
-  }, [reference, version]);
+    return () => { live = false; };
+  }, [reference]);
 
   return { url, error };
 }
@@ -78,7 +97,7 @@ export function SenseImage({ prompt, headword, busy, onOpen }: {
   onOpen(): void;
 }) {
   const state = imageStateOf(prompt);
-  const { url, error } = usePicture(prompt.imageRef, prompt.revision);
+  const { url, error } = usePicture(prompt.imageRef);
 
   return <figure className="sense-image">
     <button
@@ -115,7 +134,7 @@ export function SenseImage({ prompt, headword, busy, onOpen }: {
  * same thing about it.
  */
 export function CardPicture({ prompt, headword, busy }: { prompt: ImagePrompt; headword: string; busy: boolean }) {
-  const { url, error } = usePicture(prompt.imageRef, prompt.revision);
+  const { url, error } = usePicture(prompt.imageRef);
   return <div
     className="card-pic" role="img"
     aria-label={prompt.prompt ? `Picture for ${headword}: ${prompt.prompt}` : `Picture for ${headword}`}

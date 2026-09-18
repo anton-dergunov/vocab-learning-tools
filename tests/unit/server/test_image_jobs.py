@@ -54,7 +54,7 @@ def test_a_redraw_asked_for_and_left_is_there_on_return(server, drawn, runner):
     finished = jobs.get(server.owner, answer.json()["data"]["id"])
     assert finished["state"] == "done"
     row = prompt(server, itch["id"])
-    assert row["imageRef"] == f"images/{entry['id']}/{row['id']}.webp"
+    assert row["imageRef"].startswith(f"images/{entry['id']}/{row['id']}-")
     assert (server.media / row["imageRef"]).exists()
 
 

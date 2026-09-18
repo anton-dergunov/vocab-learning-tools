@@ -86,6 +86,44 @@ final class AcervoTests: XCTestCase {
     }
 
     @MainActor
+    func testTheContextMenuKeepsEverythingButTheWaysToNavigateAway() {
+        // Acervo has no routing, so each of these throws away the open word and lands on the default
+        // list. What is left is what a context menu is actually for here.
+        let menu = NSMenu()
+        for (title, identifier) in [
+            ("Back", "WKMenuItemIdentifierGoBack"),
+            ("Forward", "WKMenuItemIdentifierGoForward"),
+            ("Reload", "WKMenuItemIdentifierReload"),
+        ] {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.identifier = NSUserInterfaceItemIdentifier(identifier)
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let copy = NSMenuItem(title: "Copy", action: nil, keyEquivalent: "")
+        copy.identifier = NSUserInterfaceItemIdentifier("WKMenuItemIdentifierCopy")
+        menu.addItem(copy)
+        menu.addItem(NSMenuItem(title: "Inspect Element", action: nil, keyEquivalent: ""))
+
+        pruneNavigationItems(from: menu)
+
+        XCTAssertEqual(menu.items.map(\.title), ["Copy", "Inspect Element"])
+    }
+
+    @MainActor
+    func testAMenuOfNothingButNavigationIsLeftEmptyRatherThanARule() {
+        let menu = NSMenu()
+        let reload = NSMenuItem(title: "Reload", action: nil, keyEquivalent: "")
+        reload.identifier = NSUserInterfaceItemIdentifier("WKMenuItemIdentifierReload")
+        menu.addItem(reload)
+        menu.addItem(.separator())
+
+        pruneNavigationItems(from: menu)
+
+        XCTAssertTrue(menu.items.isEmpty)
+    }
+
+    @MainActor
     func testEditMenuProvidesStandardTextFieldShortcuts() throws {
         let menu = makeEditMenu()
         let expected = ["Cut": "x", "Copy": "c", "Paste": "v", "Select All": "a"]

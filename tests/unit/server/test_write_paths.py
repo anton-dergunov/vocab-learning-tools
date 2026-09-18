@@ -13,7 +13,7 @@ import pytest
 from graph_records import DEVICE, lexeme, sense, vocabulary
 
 from acervo.consumers.anki.state import held_by_lexeme, study_states
-from acervo.images.ids import image_prompt_id, seed_for
+from acervo.images.ids import image_prompt_id, image_reference, seed_for
 from acervo.jobs.images.publish import plan_publish, publish
 from acervo.jobs.images.run import Store
 
@@ -33,12 +33,18 @@ def word(server):
     return entry, [first, second]
 
 
+# The bytes every synthetic run here draws. A reference is a digest of these, so the fixture and the
+# record have to agree on them.
+IMAGE = b"webp image bytes"
+
+
 def run_directory(root, entry, senses, *, drawn=True):
     """A synthetic run: the record shape `run.py` writes, and a file where it says one is."""
     store = Store(root)
     for order, meaning in enumerate(senses):
         identifier = image_prompt_id(meaning["id"])
-        reference = f"images/{entry['id']}/{identifier}.webp"
+        # The reference names the bytes, exactly as `run.py` writes it, so `verify` passes.
+        reference = image_reference(entry["id"], identifier, IMAGE)
         store.write(
             store.record_path(identifier),
             {
@@ -58,7 +64,7 @@ def run_directory(root, entry, senses, *, drawn=True):
             },
         )
         if drawn:
-            store.image_path(identifier).write_bytes(b"webp image bytes")
+            store.image_path(identifier).write_bytes(IMAGE)
     return store
 
 
@@ -122,11 +128,11 @@ def test_a_run_naming_senses_the_account_does_not_hold_publishes_nothing(server,
             "id": stranded_id, "lexemeId": "lexemegone00001", "senseId": stranded["id"],
             "prompt": "a picture of nothing", "styleId": "flat-vector", "seed": 7,
             "modelId": "gemini-3.8-flash", "promptVersion": "img-a-b-c",
-            "imageRef": f"images/lexemegone00001/{stranded_id}.webp",
+            "imageRef": image_reference("lexemegone00001", stranded_id, IMAGE),
             "imageModelId": "gemini-3.1-flash-lite-image",
         },
     )
-    store.image_path(stranded_id).write_bytes(b"webp image bytes")
+    store.image_path(stranded_id).write_bytes(IMAGE)
 
     lines: list[str] = []
     with server.api() as client:

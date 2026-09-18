@@ -3,6 +3,10 @@
 Phase B writes these records into the graph and copies these files onto the server, so a mismatch
 between the two becomes a broken `imageRef` in the database. Everything checked here is an invariant
 the run is supposed to maintain, so a failure means a bug in this package rather than a bad run.
+
+Every drawn file is read, to check that its reference names the bytes it actually holds. That is the
+cost of an explicit gate run once before a publish, and it is where the cost belongs: nothing else
+would notice a file swapped in the run directory after it was drawn.
 """
 
 from __future__ import annotations
@@ -11,7 +15,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from acervo.images.ids import ID_LENGTH, image_prompt_id
+from acervo.images.ids import ID_LENGTH, image_prompt_id, image_reference
 from .run import Store
 
 RECORD_ID = re.compile(rf"^[a-z0-9]{{{ID_LENGTH}}}$")
@@ -64,6 +68,15 @@ def verify(store: Store) -> Report:
             report.drawn += 1
             if identifier not in images:
                 report.fault("record claims an image that is not on disk", identifier)
+            elif record["imageRef"] != image_reference(
+                str(record.get("lexemeId") or ""), identifier,
+                store.image_path(identifier).read_bytes(),
+            ):
+                # The strongest form of the mismatch this module exists to catch: the reference
+                # carries a digest of the bytes, so a file replaced after it was drawn — or a record
+                # copied from another run — is caught here rather than becoming a picture the owner
+                # is served under a name that promises different bytes.
+                report.fault("reference does not name the bytes on disk", identifier)
         elif identifier in images:
             report.fault("image on disk whose record claims none", identifier)
 

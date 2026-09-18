@@ -33,8 +33,8 @@ from acervo.domain.ids import now_instant
 from acervo.errors import ApiError
 from acervo.images.brief import BriefWriter, SenseBrief
 from acervo.images.compose import compose, prompt_version
-from acervo.images.ids import image_prompt_id, seed_for
-from acervo.images.render import Renderer, save_master
+from acervo.images.ids import image_prompt_id, image_reference, seed_for
+from acervo.images.render import Renderer, encode_master
 from acervo.images.styles import StyleTable, load_styles
 from acervo.models import ChainExhausted, ProviderError, ProviderRefused, chain, load_catalogue
 from acervo.repository import graph, image_settings
@@ -264,12 +264,40 @@ def _brief_row(brief: SenseBrief, view: ArticleView, held: dict[str, dict],
     }
 
 
+def _place(media: Path, reference: str, data: bytes) -> None:
+    """Put the bytes where the reference says, whole or not at all.
+
+    Written beside the target and moved into place, so a reader never sees a half-written file. Two
+    writers can only collide here by having drawn byte-identical pictures, the name carrying a digest
+    of what it holds — and then they are writing the same thing.
+    """
+    destination = media / reference
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial = destination.with_name(destination.name + ".part")
+    partial.write_bytes(data)
+    os.replace(partial, destination)
+
+
+def _discard(media: Path, reference: str | None, *, keep: str | None) -> None:
+    """Remove a file no row names any more.
+
+    `keep` is not defensive: a redraw that comes out byte-for-byte identical lands on the same
+    reference, and that file is the current one. Without the guard it would be deleted immediately
+    after being written and the article would break.
+    """
+    if reference and reference != keep:
+        media.joinpath(reference).unlink(missing_ok=True)
+
+
 def render_prompt(settings: Settings, owner: str, device: str, prompt_id: str,
                   body: dict[str, Any] | None = None) -> dict[str, Any]:
     """One image call for one sense. The picture lands on disk, then the row lands in the graph.
 
     Files first, then rows, for `publish.py`'s reason: a row whose file is missing is a broken
-    picture the owner sees, and a file whose row is missing is an orphan nobody looks at.
+    picture the owner sees, and a file whose row is missing is an orphan nobody looks at. Then the
+    file the row *used* to name is removed, which is the order `pronunciations._store` writes in and
+    for the same reason: the name carries a digest of the bytes, so the picture being replaced is a
+    different file and stays readable until the row naming its successor has landed.
 
     `body` may carry a `prompt` and a `styleId` — edit-and-draw, which costs no text call. Without
     them the stored brief is drawn again with a fresh seed, so a picture you disliked is genuinely
@@ -294,10 +322,6 @@ def render_prompt(settings: Settings, owner: str, device: str, prompt_id: str,
 
     attempts = int(record["attempts"] or 0) + 1
     seed = seed_for(record["senseId"] or record["id"], attempts)
-    reference = record["imageRef"] or f"images/{record['lexemeId']}/{prompt_id}.webp"
-    # From the *stored* lexeme id, after the row was confirmed to be this owner's — never from
-    # anything the request said, which is what keeps a path traversal from being expressible.
-    destination = Path(settings.media_path) / reference
 
     # What was tried, written whether or not it worked. An edited brief has to be stored with the
     # version it was composed under: the style table and the template are what turn a brief into
@@ -314,7 +338,7 @@ def render_prompt(settings: Settings, owner: str, device: str, prompt_id: str,
     }
 
     try:
-        drawn = _draw(candidates, compose(brief, table[style_id]), seed, destination)
+        drawn = _draw(candidates, compose(brief, table[style_id]), seed)
     except ProviderRefused as declined:
         if declined.reason == "refused":
             # The provider looked at the prompt and said no. Terminal for this wording, so it is
@@ -335,16 +359,30 @@ def render_prompt(settings: Settings, owner: str, device: str, prompt_id: str,
     except ProviderError as error:
         raise refusal(error, "image") from None
 
-    return _write(owner, device, {
-        **tried,
-        "imageRef": reference,
-        "imageModelId": drawn.answer.model,
-        "failureReason": None,
-        "suppressed": False,
-    }, table)
+    media = Path(settings.media_path)
+    previous = record["imageRef"]
+    # From the *stored* lexeme id, after the row was confirmed to be this owner's — never from
+    # anything the request said, which is what keeps a path traversal from being expressible.
+    reference = image_reference(record["lexemeId"], prompt_id, drawn.data)
+    _place(media, reference, drawn.data)
+    try:
+        written = _write(owner, device, {
+            **tried,
+            "imageRef": reference,
+            "imageModelId": drawn.answer.model,
+            "failureReason": None,
+            "suppressed": False,
+        }, table)
+    except Exception:
+        # The row never landed, so the picture the owner is looking at is still the old one and this
+        # file is the orphan. `keep` covers the redraw that changed nothing: then they are one file.
+        _discard(media, reference, keep=previous)
+        raise
+    _discard(media, previous, keep=reference)
+    return written
 
 
-def _draw(candidates: tuple[chain.Candidate, ...], prompt: str, seed: int, destination: Path):
+def _draw(candidates: tuple[chain.Candidate, ...], prompt: str, seed: int):
     """Walk the pairs until one draws, resting the ones that could not.
 
     Through `chain.walk` even when there is only one pair, and that is not for tidiness: `walk` is
@@ -357,7 +395,7 @@ def _draw(candidates: tuple[chain.Candidate, ...], prompt: str, seed: int, desti
         "image",
         [candidate.named for candidate in candidates],
         load_catalogue(),
-        lambda candidate: renderer.draw(prompt, seed, destination, candidate),
+        lambda candidate: renderer.draw(prompt, seed, candidate),
         chain.stamped,
         caller="picture",
     )
@@ -393,12 +431,15 @@ def attach_picture(settings: Settings, owner: str, device: str, sense_id: str,
     """
     prompt_id = image_prompt_id(sense_id)
     lexeme_id, existing = _sense_row(owner, sense_id, prompt_id)
-    reference = (existing or {}).get("imageRef") or f"images/{lexeme_id}/{prompt_id}.webp"
-    destination = Path(settings.media_path) / reference
     try:
-        save_master(data, destination)
+        master = encode_master(data)
     except Exception as unreadable:  # noqa: BLE001 — every decoder failure means the same thing here
         raise ApiError(400, "unreadable_image", "That file could not be read as an image.") from unreadable
+
+    media = Path(settings.media_path)
+    previous = (existing or {}).get("imageRef")
+    reference = image_reference(lexeme_id, prompt_id, master)
+    _place(media, reference, master)
 
     at = now_instant()
     base = existing or {
@@ -407,18 +448,24 @@ def attach_picture(settings: Settings, owner: str, device: str, sense_id: str,
         "attempts": 0, "createdAt": at, "revision": 0,
     }
     restoring = bool(drawn_by.strip())
-    return _write(owner, device, {
-        **base,
-        "editedAt": at,
-        # A tombstoned row is revived: the id is derived, so this is the only row it could be.
-        "deleted": False,
-        "imageRef": reference,
-        "imageModelId": drawn_by.strip() or None,
-        "failureReason": None,
-        # Choosing a picture is choosing it, so nothing draws over it. A restored one is an
-        # ordinary drawn picture and stays replaceable.
-        "suppressed": not restoring,
-    }, _styles())
+    try:
+        written = _write(owner, device, {
+            **base,
+            "editedAt": at,
+            # A tombstoned row is revived: the id is derived, so this is the only row it could be.
+            "deleted": False,
+            "imageRef": reference,
+            "imageModelId": drawn_by.strip() or None,
+            "failureReason": None,
+            # Choosing a picture is choosing it, so nothing draws over it. A restored one is an
+            # ordinary drawn picture and stays replaceable.
+            "suppressed": not restoring,
+        }, _styles())
+    except Exception:
+        _discard(media, reference, keep=previous)
+        raise
+    _discard(media, previous, keep=reference)
+    return written
 
 
 def _sense_row(owner: str, sense_id: str, prompt_id: str) -> tuple[str, dict[str, Any] | None]:

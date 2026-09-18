@@ -51,7 +51,7 @@ struct AcervoApplication {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     private var window: NSWindow!
-    private var webView: WKWebView!
+    private var webView: AcervoWebView!
     private var interfaceServer: InterfaceServer?
     private var interfaceFailure: String?
     private let sessionBridge = SessionBridge()
@@ -121,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }
             configuration.setURLSchemeHandler(WebInterfaceSchemeHandler(root: interfaceRoot), forURLScheme: WebInterface.scheme)
         }
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = AcervoWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         // Without this the file input for importing a bundle opens no panel at all, silently.
         webView.uiDelegate = self

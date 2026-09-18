@@ -13,7 +13,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from acervo.images.ids import image_prompt_id  # noqa: E402
+from acervo.images.ids import image_prompt_id, image_reference  # noqa: E402
 from rekey_image_runs import rekey  # noqa: E402
 
 
@@ -69,7 +69,9 @@ def test_it_re_derives_the_id_the_filename_and_the_reference(tmp_path):
     assert record["id"] == expected
     assert record["senseId"] == "sense00000000000"
     assert record["lexemeId"] == "lexemeatraco01"
-    assert record["imageRef"] == f"images/lexemeatraco01/{expected}.webp"
+    # Recomputed from the bytes it copied, not rewritten from the old string: the source run was
+    # drawn before a reference carried a digest, and has none to carry over.
+    assert record["imageRef"] == image_reference("lexemeatraco01", expected, b"RIFFfake")
     assert (out / "images" / f"{expected}.webp").read_bytes() == b"RIFFfake"
 
 

@@ -16,6 +16,7 @@ from acervo.errors import ApiError
 from acervo.images.ids import image_prompt_id
 from acervo.services.images import MAX_ATTEMPTS, brief_lexeme, render_prompt
 
+from conftest import PNG_OTHER
 from graph_records import attestation, example, lexeme, sense, vocabulary
 
 DEVICE = "device000000001"
@@ -153,7 +154,9 @@ def test_a_render_writes_the_file_and_the_row(server):
     assert answer.status_code == 200, answer.json()
     row = answer.json()["data"]
 
-    assert row["imageRef"] == f"images/{entry['id']}/{written[itch['id']]['id']}.webp"
+    reference = row["imageRef"]
+    assert reference.startswith(f"images/{entry['id']}/{written[itch['id']]['id']}-")
+    assert reference.endswith(".webp"), "the name carries a digest of the bytes it holds"
     assert row["imageModelId"], "the record names the model that answered"
     assert row["attempts"] == 1
     assert row["failureReason"] is None
@@ -176,17 +179,24 @@ def test_the_media_route_serves_what_was_just_drawn(server):
     assert server.client.get(f"/api/acervo/media/{row['imageRef']}").status_code == 401
 
 
-def test_drawing_again_keeps_the_path_and_changes_the_seed(server):
-    """Content-addressed by the record that owns it, so a regeneration overwrites in place and
-    nothing accumulates orphans — and the seed moves so the picture is genuinely different."""
+def test_drawing_again_names_a_new_file_and_removes_the_one_the_row_named(server):
+    """A redraw is a different file, which is the whole of why a device sees the new picture.
+
+    The name carries a digest of the bytes, so nothing overwrites in place and nothing cached under
+    the old name is served for the new picture. The file the row no longer names goes once the row
+    naming its successor has landed, so at most one picture per sense is kept.
+    """
     entry, itch, chop, sentence = word(server)
     written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
     prompt_id = written[itch["id"]]["id"]
 
     first = render(server, prompt_id).json()["data"]
+    server.painter.data = PNG_OTHER
     second = render(server, prompt_id).json()["data"]
 
-    assert first["imageRef"] == second["imageRef"]
+    assert second["imageRef"] != first["imageRef"]
+    assert not (server.media / first["imageRef"]).exists()
+    assert (server.media / second["imageRef"]).is_file()
     assert second["attempts"] == 2
     # The attempt count is mixed into the seed, so deleting a picture you disliked and drawing again
     # gives a genuinely different one rather than the same picture back. It is stored either way:
@@ -194,6 +204,44 @@ def test_drawing_again_keeps_the_path_and_changes_the_seed(server):
     # `seed: "ignored"`, so nothing is sent and `call.image` says so in the answer's warnings.
     assert second["seed"] != first["seed"]
     assert "seed" not in server.painter.calls[-1]
+    assert len(list((server.media / f"images/{entry['id']}").iterdir())) == 1
+
+
+def test_drawing_the_same_picture_again_lands_on_the_same_file(server):
+    """A redraw that comes out byte-for-byte identical is one file, not a file deleted after it was
+    written. The name is a digest, so the old reference and the new one are the same string, and
+    removing "the file the row used to name" would remove the picture that is current."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    prompt_id = written[itch["id"]]["id"]
+
+    first = render(server, prompt_id).json()["data"]
+    second = render(server, prompt_id).json()["data"]
+
+    assert second["imageRef"] == first["imageRef"]
+    assert (server.media / second["imageRef"]).is_file()
+    assert len(list((server.media / f"images/{entry['id']}").iterdir())) == 1
+
+
+def test_a_row_that_cannot_be_written_leaves_the_picture_that_is_current(server, monkeypatch):
+    """The file lands before the row, so a row that fails leaves an orphan rather than a picture the
+    owner never got. The one they are looking at has to survive it."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    prompt_id = written[itch["id"]]["id"]
+    first = render(server, prompt_id).json()["data"]
+
+    from acervo.services import images as service
+
+    def refuse(*args, **kwargs):
+        raise ApiError(409, "stale_revision", "Somebody else wrote this first.")
+
+    server.painter.data = PNG_OTHER
+    monkeypatch.setattr(service, "_write", refuse)
+    with pytest.raises(ApiError):
+        render_prompt(server.settings, server.owner, DEVICE, prompt_id)
+
+    assert (server.media / first["imageRef"]).is_file(), "the picture on screen is still there"
     assert len(list((server.media / f"images/{entry['id']}").iterdir())) == 1
 
 

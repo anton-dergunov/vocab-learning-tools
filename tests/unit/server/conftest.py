@@ -122,6 +122,14 @@ PNG = base64.b64decode(
     "HqQCAQ0QzWkAAAAASUVORK5CYII="
 )
 
+# A second picture, different bytes, for the tests about redrawing. A picture's reference carries a
+# digest of what it holds, so a stub that always draws the same thing would make every "the
+# reference changed" assertion pass while proving nothing.
+PNG_OTHER = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGM8IRfFwMDAxAAGAA+YAURp"
+    "O7lOAAAAAElFTkSuQmCC"
+)
+
 
 @dataclass
 class ImageStub:

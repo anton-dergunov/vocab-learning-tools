@@ -26,7 +26,8 @@ it, refuses the whole run, and says which records are stranded.
 
 `scripts/rekey_image_runs.py` is the matching step, keyed on what survived the round trip — language,
 headword, and the sense's order within the word, all three of which the run records carry — after
-which every id, filename and `imageRef` is re-derived. It writes a new run directory and never edits
+which every id, filename and `imageRef` is re-derived — the reference from the bytes it copies, so a
+run drawn before references carried a digest gets a correct one rather than its old name rewritten. It writes a new run directory and never edits
 the one it read, and it refuses a word it cannot match rather than guessing, because a picture landing
 on the wrong sense is worse than a missing one. It is a throwaway with no second use; the prompt
 iteration that produced the images is in `experiments/sense-images/`.
@@ -145,7 +146,7 @@ Existing fields, used as follows:
 | `seed` | derived from `senseId`, so a regeneration keeps the look — on a row whose `capabilities.image.seed` is `native`; see below |
 | `modelId` | the model that *answered* the brief call, not the one asked first |
 | `promptVersion` | checksum of `prompts/acervo_image_brief.md` + the style table |
-| `imageRef` | relative path to the master, once drawn; null until then |
+| `imageRef` | relative path to the master, carrying a digest of its bytes, once drawn; null until then |
 | `imageModelId` | the model that *drew* it, which under a chain need not be the first tried |
 
 §09 says to seed from `lexemeId`, which was right when the plan was one image per word: the seed's
@@ -425,8 +426,17 @@ list thumbnail.
 > same pattern with a different directory. It keeps the database small, it byte-ranges, and
 > `package_acervo_server.sh` and `install.sh` already know how to carry a data directory.
 
-Path shape: `images/<lexemeId>/<imagePromptId>.webp`. Content-addressed by the record that owns it,
-so a regeneration overwrites in place and nothing accumulates orphans.
+Path shape: `images/<lexemeId>/<imagePromptId>-<digest8>.webp`, addressed by the record that owns it
+**and by the bytes it holds** — a truncated SHA-256 of the stored master, the way a pronunciation's
+file name is. A regeneration is therefore a new name, and the file the row used to name is removed
+once the row naming its successor has landed; at most one picture per sense is kept.
+
+The digest is not decoration. A device caches a picture under its reference, so a name that stayed
+the same across a redraw meant the device went on showing the picture that had just been replaced,
+and the invalidation bolted on beside it raced a `revision` frame it could not beat. With the bytes
+in the name there is nothing to invalidate: the new picture is asked for under a name nothing has
+ever held. Nothing parses this string — it is built in `images/ids.py`, stored, joined onto the media
+directory and unlinked — so a reference written before the digest existed still names its file.
 
 Two consequences, both now handled:
 

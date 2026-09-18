@@ -48,7 +48,7 @@ import {
 } from "./jobs";
 import ProgressStrip from "./ProgressStrip";
 import { ImageDialog } from "./ImageDialog";
-import { clearPictures, forget } from "./media";
+import { clearPictures } from "./media";
 import { fill, forgetPronunciations } from "./pronunciation";
 import { SyncChip } from "./SyncStatus";
 import {
@@ -432,17 +432,14 @@ export default function App() {
   /**
    * A write that replaces a picture, with the sense marked while it runs.
    *
-   * The forget comes *after* the write, never before: the reference is derived from the record and
-   * so does not change, and forgetting first would revoke an object URL that is still on screen.
-   * Afterwards the pull bumps the row's revision, which is what tells the picture to fetch again —
-   * without it the article went on showing the old picture until it happened to remount.
+   * Nothing is forgotten on the device and nothing needs to be: a picture's reference carries a
+   * digest of its bytes, so the new picture is a new reference and the cache is simply asked for
+   * something it has never held. The pull is what brings that reference down.
    */
   const replacePicture = useCallback(async (senseId: string, write: () => Promise<unknown>) => {
     setReplacing((held) => new Set(held).add(senseId));
-    const before = repository.snapshot().imagePrompts.find((row) => row.senseId === senseId)?.imageRef;
     try {
       await write();
-      if (before) await forget(before);
       await syncEngine.syncNow();
       setSnapshot(repository.snapshot());
     } catch (error) {
@@ -478,26 +475,6 @@ export default function App() {
       .then((job) => jobStream.apply(job))
       .catch((error) => notify(error instanceof Error ? error.message : "That could not be asked for."));
   }, [notify]);
-
-  /* A redraw keeps its picture's reference — the path is derived from the record — so the bytes this
-     device cached have to go once the new picture is written, or the old one stays on screen. After,
-     never before: forgetting first would revoke a URL the "Redrawing…" frame is still showing. */
-  const redrawsSeen = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const finished = [...jobsStatus.bySubject.values()].filter((job) =>
-      job.kind === "image.redraw" && job.state === "done" && !redrawsSeen.current.has(job.id));
-    if (!finished.length) return;
-    finished.forEach((job) => redrawsSeen.current.add(job.id));
-    void (async () => {
-      const held = repository.snapshot().imagePrompts;
-      for (const job of finished) {
-        const ref = held.find((row) => row.id === job.subject?.id)?.imageRef;
-        if (ref) await forget(ref);
-      }
-      await syncEngine.syncNow();
-      setSnapshot(repository.snapshot());
-    })();
-  }, [jobsStatus]);
 
   /* A finished job's outcome is shown for as long as its word stays open, and not the next time. */
   const shownWord = useRef<string | null>(null);

@@ -27,6 +27,22 @@ def image_prompt_id(sense_id: str) -> str:
     return "".join(out)
 
 
+def image_reference(lexeme_id: str, prompt_id: str, data: bytes) -> str:
+    """Where a drawn picture lives: from the record that owns it, and from the bytes themselves.
+
+    The digest is the whole of the cache story, and it is the reason this is not simply the prompt
+    id: a redraw produces a *different* reference, so a device that cached the old picture misses and
+    fetches the new one, and no invalidation exists anywhere to get wrong. A clip's file name carries
+    one for exactly this reason (`services/pronunciations.py`), and a picture used to be the odd one
+    out — overwritten in place, with the device left showing what it had already downloaded.
+
+    Nothing anywhere parses this string. It is built here, stored on the record, joined onto the
+    media directory and unlinked; a reference written before the digest existed still names its file.
+    """
+    digest = hashlib.sha256(data).hexdigest()[:8]
+    return f"images/{lexeme_id}/{prompt_id}-{digest}.webp"
+
+
 def seed_for(sense_id: str, attempt: int) -> int:
     """A drawing seed that is stable for a sense and different on every retry.
 

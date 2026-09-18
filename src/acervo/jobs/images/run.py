@@ -21,7 +21,7 @@ from typing import AbstractSet, Any, Callable, Iterable, Sequence
 from acervo.article import ArticleView, SenseView
 from acervo.images.brief import BriefWriter, SenseBrief
 from acervo.images.compose import compose, prompt_version
-from acervo.images.ids import image_prompt_id, seed_for
+from acervo.images.ids import image_prompt_id, image_reference, seed_for
 from acervo.images.render import Rendered, Renderer
 from acervo.images.styles import StyleTable
 from acervo.models import ChainExhausted, ProviderRefused, ProviderUnavailable, chain
@@ -97,6 +97,19 @@ class Store:
         temporary = path.with_suffix(path.suffix + ".part")
         temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         temporary.replace(path)
+
+    def write_image(self, prompt_id: str, data: bytes) -> None:
+        """The drawn master, under the flat local name the run is resumable by.
+
+        The *server* path carries a digest of these bytes; this one deliberately does not. A run
+        directory is resumed by looking at the filesystem — `is_drawn` asks whether this sense has a
+        picture — and a name that changed with the bytes could not answer that.
+        """
+        path = self.image_path(prompt_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staging = path.with_suffix(path.suffix + ".part")
+        staging.write_bytes(data)
+        staging.replace(path)
 
     def attempts(self, prompt_id: str) -> int:
         record = self.read(self.record_path(prompt_id)) or self.read(self.refusal_path(prompt_id))
@@ -298,9 +311,8 @@ class Runner:
             pair = self.pace.acquire()
             tried.append(pair)
             try:
-                drawn = self.renderer.draw(
-                    prompt, seed, self.store.image_path(job.prompt_id), self._by_pair[pair]
-                )
+                drawn = self.renderer.draw(prompt, seed, self._by_pair[pair])
+                self.store.write_image(job.prompt_id, drawn.data)
                 self.pace.succeeded(pair)
                 break
             except ProviderRefused as refusal:
@@ -350,7 +362,7 @@ class Runner:
                 self.unpriced += 1
             else:
                 self.cost_usd += drawn.answer.cost_usd
-        self.report(f"  ✓ {label} · {style.id} · {elapsed:.1f}s · {drawn.bytes_written // 1024} KiB")
+        self.report(f"  ✓ {label} · {style.id} · {elapsed:.1f}s · {len(drawn.data) // 1024} KiB")
 
     def _record(self, job: Job, brief: SenseBrief, brief_model: str, style_id: str, seed: int,
                 prompt: str, attempts: int, drawn: Rendered | None, failure: str | None,
@@ -374,10 +386,11 @@ class Runner:
             # the one that answered when it was written rather than whatever the chain says now.
             "modelId": brief_model,
             "promptVersion": self.version,
-            # The path this image will have on the server. Locally the file is flat under
-            # `images/`, so a contact sheet and a Finder window are both easy to work in; the
-            # import is what fans it out into per-lexeme directories.
-            "imageRef": f"images/{article.id}/{job.prompt_id}.webp" if drawn else None,
+            # The path this image will have on the server, carrying a digest of the bytes so a
+            # device that cached an earlier picture for this sense misses rather than keeps it.
+            # Locally the file is flat under `images/`, so a contact sheet and a Finder window are
+            # both easy to work in; the import is what fans it out into per-lexeme directories.
+            "imageRef": image_reference(article.id, job.prompt_id, drawn.data) if drawn else None,
             "imageModelId": (drawn.answer.model if drawn else None),
             # The sentence the scene was built from, so the article can put the picture under it.
             "exampleId": brief.anchor_example_id,
@@ -399,7 +412,7 @@ class Runner:
                                   "origin": anchor.get("origin")} if anchor else None,
                 "composedPrompt": prompt,
                 "file": f"{job.prompt_id}.webp" if drawn else None,
-                "bytes": drawn.bytes_written if drawn else 0,
+                "bytes": len(drawn.data) if drawn else 0,
                 "seconds": round(elapsed, 2),
                 # `tried` comes from the pool rather than from the answer: the pool is what walked
                 # the pairs, so an answer names only the one that succeeded. Recording just that

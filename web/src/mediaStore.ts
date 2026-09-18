@@ -13,9 +13,13 @@
  *
  * Keyed by the reference the record itself carries — `imageRef`, `audioRef` — rather than by a
  * record id, because a reference is what a component has in its hand and what the media route wants.
- * A regenerated picture overwrites in place, so the key is stable and the newest bytes win. A
- * re-recorded pronunciation gets a new reference instead, so the old key is simply never asked for
- * again; neither needs an invalidation of its own.
+ * **Both carry a digest of the bytes**, so a redrawn picture and a re-recorded clip each get a new
+ * reference and the old key is simply never asked for again. Neither needs an invalidation of its
+ * own, which is what lets this be a plain cache with no eviction: a key here names immutable bytes.
+ *
+ * A picture used to be the exception — overwritten in place, on the theory that the key was stable
+ * and the newest bytes won. They did not: the device went on serving what it had already
+ * downloaded, and the invalidation bolted on beside it lost a race it could not win.
  *
  * **Two object stores, one per kind of media**, so pronunciations can be switched off and forgotten
  * on a device without touching a single picture, and the other way round.
