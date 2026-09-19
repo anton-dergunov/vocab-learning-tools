@@ -229,6 +229,10 @@ def render_request(settings: Settings, owner: str, loop_id: str) -> dict[str, An
         # One render, one token, audienced to the take route and good for an hour. It is the whole of
         # what the generator is given to speak with: no provider credential reaches that container.
         "token": mint_render(resolve_secret(settings), account, loop_id),
+        # Which order the owner chose for loops. The generator builds its backend around this and
+        # declares what that backend can do, so it has to travel with the request rather than be
+        # asked for later — see `delivery`.
+        "delivery": delivery(owner),
         # The loop's own seed, so the bed is reproducible and the number that comes back is one this
         # side can store. See `SEED_LIMIT`.
         "seed": int(loop.get("seed") or 0),
@@ -243,6 +247,7 @@ def start(settings: Settings, request: dict[str, Any], **overrides: Any) -> Oper
             source_language=request["source_language"],
             target_language=request["target_language"],
             token=request["token"],
+            delivery=request["delivery"],
             pattern=loop.get("pattern") or "retrieval",
             seed=request.get("seed"),
             **overrides,
@@ -322,13 +327,45 @@ def store(settings: Settings, owner: str, device: str, loop_id: str, rendered: L
     return graph.owned_records(owner, "loops", [loop_id])[loop_id]
 
 
-def delivery(owner: str) -> str:
-    """Which order speaks a loop, as the owner chose it. Read for the record, not sent yet.
+def remove(settings: Settings, owner: str, device: str, loop_id: str) -> dict[str, Any]:
+    """Delete a loop: its row, its words, and the track itself.
 
-    The generator needs this to know whether to vary the repetitions itself or leave it to the
-    director notes (§2.6), and it has no way to find out on its own. Sending it is a field on
-    LexiBeat's request body that version 0.2.0 does not accept — its body model forbids unknown keys
-    — so this is read and logged rather than transmitted until that lands.
+    The rows are tombstones like every other deletion, written through `merge_graph` so they are
+    numbered and replicated the way a client's own write would be. The **file** is why this is a
+    route rather than a client-side `repository.delete`: a track is megabytes, nothing else would
+    ever remove it, and the same party has to write the row and unlink the file or one of them is a
+    lie. That is the shape `DELETE /images/prompts/{id}` already has, for the same reason.
+
+    The file goes **after** the rows land, and never before: a merge that raises must not take the
+    track of a loop that still exists with it. A loop that was never rendered has no track and
+    simply loses its rows.
+    """
+    loop = graph.owned_records(owner, "loops", [loop_id]).get(loop_id)
+    if loop is None or loop.get("deleted"):
+        raise ApiError(404, "not_found", "That loop is not in your vocabulary.")
+
+    at = now_instant()
+    stamp = {"deleted": True, "editedAt": at, "editedBy": device}
+    rows = [row for row in graph.loop_items(owner, loop_id) if not row.get("deleted")]
+    graph.merge_graph(owner, device, {
+        "loops": [{**loop, **stamp}],
+        "loopItems": [{**row, **stamp} for row in rows],
+    }, enqueue=None)
+
+    reference = loop.get("audioRef")
+    if reference:
+        # `missing_ok`: a track already gone is not a reason to refuse a deletion that has happened.
+        Path(settings.media_path).joinpath(reference).unlink(missing_ok=True)
+    return graph.owned_records(owner, "loops", [loop_id])[loop_id]
+
+
+def delivery(owner: str) -> str:
+    """Which order speaks a loop, as the owner chose it, and which travels with the render.
+
+    The generator needs it to know whether to vary the repetitions itself or leave that to the
+    director notes (§2.6), and it has no way to find out on its own: it holds no settings, no
+    catalogue and no credential. Choosing the clear voice is therefore worth what it says it is —
+    one recording a line rather than three — rather than three identical calls.
     """
     return pronunciation_settings.settings(owner).order_for("loops")
 

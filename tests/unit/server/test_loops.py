@@ -295,3 +295,54 @@ def test_a_seed_a_browser_could_not_hold_is_refused_rather_than_stored(server, g
     assert "seed" in refused.json()["error"]["message"].lower()
     # …and one just inside it is kept, which 2^31 would have refused.
     assert server.push({"loops": [{**loop, "seed": 2 ** 53 - 1}]}).status_code == 200
+
+
+# ── deleting one ────────────────────────────────────────────────────────────
+
+
+def test_deleting_a_loop_takes_its_words_and_its_track_with_it(server, generator):
+    """The row and the file are written by the same party, which is why this is a route.
+
+    A track is megabytes and nothing else would ever remove it, so a client-side tombstone would
+    leave one behind for every loop ever deleted.
+    """
+    made = words(server, 2)
+    loop = ask(server, [one["id"] for one in made]).json()["data"]["loop"]
+
+    track = server.media / "loops" / "es" / f"{loop['id']}-6ad2f019.mp3"
+    track.parent.mkdir(parents=True, exist_ok=True)
+    track.write_bytes(b"ID3-a-finished-track")
+    assert server.push({"loops": [{**loop, "audioRef": str(track.relative_to(server.media)),
+                                   "audioMime": "audio/mpeg", "durationSeconds": 90.0}]
+                        }).status_code == 200
+
+    answer = server.delete(f"/loops/{loop['id']}")
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["data"]["deleted"] is True
+    assert not track.exists()
+
+    changes = server.pull().json()["data"]["changes"]
+    assert [row["deleted"] for row in changes["loops"] if row["id"] == loop["id"]] == [True]
+    # Its words go with it, and nothing else does: the lexemes it named are untouched.
+    assert all(row["deleted"] for row in changes["loopItems"])
+    assert all(not row["deleted"] for row in changes["lexemes"])
+
+
+def test_deleting_a_loop_that_was_never_rendered_is_not_a_special_case(server, generator):
+    made = words(server, 1)
+    loop = ask(server, [made[0]["id"]]).json()["data"]["loop"]
+    assert loop["audioRef"] is None
+    assert server.delete(f"/loops/{loop['id']}").status_code == 200
+
+
+def test_deleting_a_loop_twice_is_not_found_the_second_time(server, generator):
+    made = words(server, 1)
+    loop = ask(server, [made[0]["id"]]).json()["data"]["loop"]
+    assert server.delete(f"/loops/{loop['id']}").status_code == 200
+    assert server.delete(f"/loops/{loop['id']}").status_code == 404
+
+
+def test_a_loop_another_account_holds_cannot_be_deleted(server, other, generator):
+    made = words(server, 1)
+    loop = ask(server, [made[0]["id"]]).json()["data"]["loop"]
+    assert other.delete(f"/loops/{loop['id']}").status_code == 404

@@ -83,6 +83,26 @@ def test_the_answer_names_who_said_it_and_whether_the_direction_landed(server):
     assert server.speech.calls[-1]["style"]
 
 
+def test_the_generators_note_reaches_the_voice_whole(server):
+    """A take's `direction` is not an adjective, and it must not be framed as one.
+
+    It is the generator's entire director note for this repetition, pace and pitch included, and the
+    pace and pitch are the *only* things that differ between a word's three takes. It used to go into
+    the example template's `sounding {emotion}` slot, which made a sentence that was not one and then
+    cancelled that clause with a "Keep a natural pace" of its own — so every take of a word came back
+    read the same way, whether or not the word carried an emotion.
+    """
+    note = ("Speak warmly, as if teaching someone, but clearly, slightly briskly, "
+            "with a slightly brighter pitch.")
+    ask(server, direction=note, text="la balsa")
+
+    style = server.speech.calls[-1]["style"]
+    assert note in style
+    assert "Spanish" in style
+    assert "sounding Speak" not in style
+    assert "natural pace" not in style
+
+
 def test_the_voice_header_means_one_thing_on_both_paths(server):
     """The voice *asked for*, empty when the owner chose none — and the same on a hit and a miss.
 

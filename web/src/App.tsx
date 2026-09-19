@@ -6,6 +6,7 @@ import ReviewBar from "./ReviewBar";
 import LoopBar from "./LoopBar";
 import LoopDialog from "./LoopDialog";
 import LoopView from "./LoopView";
+import * as loopPlayer from "./loops";
 import {
   applyOps, diffDrafts, EditRefused, type DraftDiff, type EditOp
 } from "./articleEdit";
@@ -981,6 +982,30 @@ export default function App() {
   }
 
   /**
+   * Delete a loop: its row, its words and its track.
+   *
+   * A route rather than `repository.delete`, because the track is the server's to remove and nothing
+   * else would ever remove it. So it is a write followed by a pull, the shape `replacePicture` has,
+   * and the device forgets its own copy of the bytes afterwards — the reference is gone, so nothing
+   * would ever ask for them again.
+   */
+  async function removeLoop(loopId: string) {
+    const loop = snapshot?.loops.find((row) => row.id === loopId) ?? null;
+    try {
+      await backendSession.deleteLoop(loopId, snapshot?.deviceId ?? "");
+    } catch (error) {
+      // Online-only, and nothing changed locally: the loop is still there and still plays.
+      notify(error instanceof Error ? error.message : "That loop could not be deleted.");
+      return;
+    }
+    if (loopPlayer.nowPlaying()?.loop.id === loopId) loopPlayer.stop();
+    if (loop?.audioRef) await loopPlayer.forget(loop.audioRef);
+    await syncEngine.syncNow();
+    setSnapshot(repository.snapshot());
+    notify("Deleted everywhere — the track is gone too");
+  }
+
+  /**
    * Out of the Inbox and into its topics — one word from its article, or the whole tab at once.
    *
    * The word stays open afterwards rather than closing the way a delete does: you have just read it,
@@ -1152,6 +1177,7 @@ export default function App() {
           {loops && snapshot && language ? <LoopView
           graph={snapshot} language={language} onMake={() => setMakingLoop(true)}
           onClose={() => setLoops(false)}
+          onDelete={removeLoop}
         /> : addTab ? <AddView
             // A new composition is a fresh view, not a prop change: remounting is what makes "add
             // this word, then that one" start clean rather than editing the previous draft. The key

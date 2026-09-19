@@ -53,12 +53,14 @@ describe("Settings ▸ Pronunciation", () => {
     await waitFor(() => expect(saved).toHaveBeenCalledWith({ pregenerate: { headword: true } }));
   });
 
-  it("gives each of the three uses its own choice of order", async () => {
+  it("gives what it reads its own choice of order, and leaves loops to their own page", async () => {
     const saved = await panel();
     const chooser = (name: RegExp) => screen.getByRole("combobox", { name });
     expect((chooser(/Words and definitions/) as HTMLSelectElement).value).toBe("plain");
     expect((chooser(/Example sentences/) as HTMLSelectElement).value).toBe("expressive");
-    expect((chooser(/Loops/) as HTMLSelectElement).value).toBe("expressive");
+    // The third use is the same stored value, chosen in Settings ▸ Loops: what it costs and what it
+    // does to a track are loop facts and belong beside them.
+    expect(screen.queryByRole("combobox", { name: /Loops/ })).toBeNull();
 
     // Choosing the clear order for examples *is* switching emotion off — one mechanism, not two —
     // and it moves the whole order, so the cheap voice reads them rather than the expensive one
@@ -69,7 +71,7 @@ describe("Settings ▸ Pronunciation", () => {
 
   it("names the orders for what they can do rather than for what reads them", async () => {
     await panel();
-    const options = [...screen.getByRole("combobox", { name: /Loops/ }).querySelectorAll("option")];
+    const options = [...screen.getByRole("combobox", { name: /Example sentences/ }).querySelectorAll("option")];
     expect(options.map((option) => option.textContent))
       .toEqual(["A clear, even voice", "A voice that takes a direction"]);
   });

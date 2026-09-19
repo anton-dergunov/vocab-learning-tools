@@ -24,12 +24,15 @@ type Changes = Partial<{
   voices: PronunciationSettings["voices"];
 }>;
 
-/* Three uses, two orders. The pair of orders is chosen in Settings ▸ Providers and named there for
-   what each can do; this is where each use picks one. */
+/* Two of the three uses. The pair of orders is chosen in Settings ▸ Providers and named there for
+   what each can do; this is where each use picks one.
+
+   The third use is loops, and it is chosen in Settings ▸ Loops rather than here — the same stored
+   value, on the page you are on when you are thinking about loops, because what it costs and what
+   it does to a track are loop facts and belong beside them. */
 const DELIVERY: { id: PronunciationUse; title: string; help: string }[] = [
   { id: "words", title: "Words and definitions", help: "And anything you select on the page. These should sound the same every time." },
-  { id: "examples", title: "Example sentences", help: "A sentence heard the way somebody would say it is easier to remember." },
-  { id: "loops", title: "Loops", help: "Each word is said three times, so a loop costs three calls a line rather than one." }
+  { id: "examples", title: "Example sentences", help: "A sentence heard the way somebody would say it is easier to remember." }
 ];
 
 const ORDERS: { id: PronunciationOrder; title: string; help: string }[] = [
@@ -166,7 +169,7 @@ export default function PronunciationPanel({ onNotify }: { onNotify(message: str
       Which of the two pronunciation orders reads each thing. Choosing the directed voice <em>is</em>
       {" "}asking for emotion — there is no separate switch — so the clear voice is how you read
       something plainly and cheaply. A clip already recorded keeps the delivery it has until you
-      record it again.
+      record it again. Loops choose in Settings ▸ Loops.
     </p>
     {DELIVERY.map((use) => <label key={use.id} className="config-field">
       <span>

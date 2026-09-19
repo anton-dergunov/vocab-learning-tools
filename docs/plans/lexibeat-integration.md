@@ -1,7 +1,11 @@
 # LexiBeat · integrating the loop generator
 
-**Status:** Steps 1–6 done; step 7 is next. Step 1 was this document and one word deleted from
-`models/redact.py`. Step 2 was the experiment that gated the prompt change, run 18 September 2026.
+**Status:** Steps 1–9 done, and 0.3.0 closed the two things step 7 left open — `speech.delivery` is
+sent, so the plain order costs what it is supposed to; and the director note the generator composes
+reaches the voice intact rather than being re-framed as an adjective by the example prompt.
+
+Step 1 was this document and one word deleted from `models/redact.py`. Step 2 was the experiment
+that gated the prompt change, run 18 September 2026.
 Step 3 was the whole of the work in the other repository, which now ships a wheel, a versioned
 `/api/v1` and an injected speech backend — it landed on **18 September 2026** and everything from §4
 step 4 onward is in this repository. Step 4 landed the same day: the two lexeme fields, the two
@@ -730,11 +734,11 @@ numbers are doubles — a browser, most JSON libraries — so a host that does n
 gets a value it cannot store. 2^53 would do everything 2^64 does here, the seed being a replay token
 rather than a key. And `dsp.time_stretch` / `dsp.pitch_shift` still name the wrong dependency, below.
 
-**One defect for LexiBeat's next release**, found by step 6 and not worth a release on its own:
-`dsp.time_stretch` and `dsp.pitch_shift` try pedalboard and fall back to librosa, but the slim
-runtime has no librosa — so any pedalboard problem surfaces as `ModuleNotFoundError: No module named
-'librosa'`, which names a dependency that was removed on purpose. It should say what happened to
-*both*. Fold it into whatever release step 7's `speech.delivery` needs.
+~~**One defect for LexiBeat's next release**~~ — **fixed in 0.3.0.** `dsp.time_stretch` and
+`dsp.pitch_shift` wrapped the pedalboard *call* as well as its import, so any pedalboard problem fell
+through to `import librosa` and surfaced as `ModuleNotFoundError: No module named 'librosa'`, naming
+a dependency that was removed on purpose. The `try` now covers the import alone and the refusal names
+what happened to *both*. The seed above is still open, and does not matter while Acervo mints its own.
 
 ### Step 7 · The pipeline — **done**
 
@@ -770,11 +774,13 @@ Four things this step decided:
   their own. `loops_failed` deliberately does not: a render the generator ran and could not finish is
   a fact about that request, and asking again changes nothing.
 
-**Still not sent: `speech.delivery`.** `serve.py` reads it and defaults to `directed`, which is what
-this deployment wants; `services/loops.delivery` reads the owner's choice and the job writes it into
-the step's detail, so it is visible without being transmitted. Sending it is a field on LexiBeat's
-request body that 0.2.0's model forbids as unknown — a version bump and a re-pin, together with the
-misleading `librosa` fallback message found in step 6.
+~~**Still not sent: `speech.delivery`.**~~ **Sent, in 0.3.0.** `SpeechBody` takes it, `RenderContext`
+carries it, and `services/loops.delivery` now travels with the render rather than only into the
+step's detail. So the plain order finally costs what §2.6 says it costs — one recording a line,
+varied locally — instead of three identical calls, and the fallback §2.4 promises is reachable for
+the first time. The same release narrowed `dsp.py`'s `try` to the import, so a pedalboard failure no
+longer reports itself as a missing `librosa`; that mattered more once the plain path actually ran
+that code.
 
 ### Step 9 · What the deployment taught — **done**
 

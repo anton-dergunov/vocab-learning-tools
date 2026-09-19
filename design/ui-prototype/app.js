@@ -35,7 +35,10 @@ const state = {
   loops: false,
   /* Which loop the surface is showing. What is *playing* is `player`'s, not this: a loop goes on
      playing while you read a word, which is most of the point of having one. */
-  loopOpen: null
+  loopOpen: null,
+  /* Which loop has been right-clicked. A pointer has a gesture for this and a finger does not, so
+     the finger gets the row itself: it is two snap points wide and Delete is the second. */
+  loopMenu: null
 };
 
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -1343,16 +1346,28 @@ function loopSub(loop) {
   return `${loopItemsOf(loop.id).length} words · ${clock(loop.durationSeconds)}`;
 }
 
+/* Two ways to the same Delete. A pointer right-clicks the row and gets `.loop-menu`; a finger pushes
+   the row aside and finds `.loop-swipe` behind it, which is scroll-snap rather than touch handling.
+   The row is never `disabled`: a loop that was never made is the one you most want rid of, and a
+   disabled button answers no gesture at all. */
 function loopRow(loop) {
   const ready = loopIsReady(loop);
   const on = loop.id === player.loopId;
-  return `<button class="loop-row${on ? " on" : ""}" data-loop="${loop.id}"${ready ? "" : " disabled"}>
-    <span class="loop-go${ready ? "" : " pending"}">${ready ? (on && player.playing ? ICON.pause : ICON.play) : ICON.hourglass}</span>
-    <span class="loop-main">
-      <span class="loop-title">${esc(loopTitle(loop))}</span>
-      <span class="loop-sub">${loopSub(loop)}</span>
-    </span>
-  </button>`;
+  return `<div class="loop-item" data-loop-item="${loop.id}">
+    <div class="loop-shell">
+      <button class="loop-row${on ? " on" : ""}" data-loop="${loop.id}" aria-disabled="${ready ? "false" : "true"}">
+        <span class="loop-go${ready ? "" : " pending"}">${ready ? (on && player.playing ? ICON.pause : ICON.play) : ICON.hourglass}</span>
+        <span class="loop-main">
+          <span class="loop-title">${esc(loopTitle(loop))}</span>
+          <span class="loop-sub">${loopSub(loop)}</span>
+        </span>
+      </button>
+      <div class="loop-swipe"><button class="loop-delete" data-loop-delete="${loop.id}">Delete</button></div>
+    </div>
+    ${state.loopMenu === loop.id ? `<div class="menu open loop-menu" role="menu">
+      <button role="menuitem" class="danger" data-loop-delete="${loop.id}">Delete this loop</button>
+    </div>` : ""}
+  </div>`;
 }
 
 function renderLoops() {
@@ -1582,9 +1597,31 @@ $("#main").addEventListener("click", (ev) => {
     render();
     return;
   }
+  const drop = ev.target.closest("[data-loop-delete]");
+  if (drop) {
+    const id = drop.dataset.loopDelete;
+    const items = new Set(LOOP_ITEMS.filter((row) => row.loopId === id).map((row) => row.id));
+    LOOPS.splice(LOOPS.findIndex((row) => row.id === id), 1);
+    for (let index = LOOP_ITEMS.length - 1; index >= 0; index -= 1) {
+      if (items.has(LOOP_ITEMS[index].id)) LOOP_ITEMS.splice(index, 1);
+    }
+    state.loopMenu = null;
+    if (state.loopOpen === id) state.loopOpen = null;
+    render();
+    return;
+  }
   if (ev.target.closest("#makeLoop")) { openLoopDialog(); return; }
   if (ev.target.closest("#loopBack")) { state.loopOpen = null; render(); return; }
   if (ev.target.closest("#loopsClose")) { state.loops = false; state.loopOpen = null; render(); }
+  if (state.loopMenu) { state.loopMenu = null; render(); }
+});
+
+$("#main").addEventListener("contextmenu", (ev) => {
+  const item = ev.target.closest("[data-loop-item]");
+  if (!item) return;
+  ev.preventDefault();
+  state.loopMenu = item.dataset.loopItem;
+  render();
 });
 
 function wireLoopControls(root) {

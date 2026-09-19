@@ -77,14 +77,15 @@ def test_starting_a_render_sends_the_words_and_the_render_token():
         items=[Item("asco", "disgust", "repulsed, recoiling slightly")],
         source_language={"code": "es", "name": "Spanish"},
         target_language={"code": "en", "name": "English"},
-        token="a-render-scoped-token", seed=11,
+        token="a-render-scoped-token", delivery="plain", seed=11,
     )
     body = json.loads(seen[0].content)
     assert body["items"] == [{"source": "asco", "target": "disgust",
                               "direction": "repulsed, recoiling slightly"}]
     assert body["source_language"] == {"code": "es", "name": "Spanish"}
-    # The whole of what the generator is given to speak with: it holds no provider key of its own.
-    assert body["speech"] == {"token": "a-render-scoped-token"}
+    # The whole of what the generator is given to speak with: it holds no provider key of its own,
+    # and no way of its own to find out what that voice can do.
+    assert body["speech"] == {"token": "a-render-scoped-token", "delivery": "plain"}
     assert operation.status == "queued" and not operation.finished
 
 

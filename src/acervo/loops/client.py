@@ -148,14 +148,18 @@ class LoopService:
             return False
 
     def start(self, *, items: Iterable[Item], source_language: dict[str, str],
-              target_language: dict[str, str], token: str, pattern: str = "retrieval",
-              family: str = "auto", seed: int | None = None,
+              target_language: dict[str, str], token: str, delivery: str,
+              pattern: str = "retrieval", family: str = "auto", seed: int | None = None,
               palette: str = "hybrid") -> Operation:
         """Ask for one loop. `token` is the render-scoped credential the generator calls home with.
 
         It is the *whole* of what the generator is given to speak with: no provider key reaches that
         container, so a token that is absent or refused is a render with no voice rather than one
         that quietly falls back to something else.
+
+        `delivery` goes with it because the generator cannot find it out: only this side knows which
+        order the owner chose, and that is what decides whether a repetition is its own recording
+        with its own director note or one recording varied there by pitch and speed.
         """
         body: dict[str, Any] = {
             "items": [item.to_wire() for item in items],
@@ -164,7 +168,7 @@ class LoopService:
             "pattern": pattern,
             "family": family,
             "palette": palette,
-            "speech": {"token": token},
+            "speech": {"token": token, "delivery": delivery},
         }
         if seed is not None:
             body["seed"] = seed

@@ -1,0 +1,80 @@
+/**
+ * The loops list, and the two ways out of it.
+ *
+ * A pointer right-clicks a row; a finger pushes it aside and finds Delete behind it, which is CSS
+ * and therefore invisible to jsdom — so what is pinned here is that the button exists on every row
+ * and that both routes call the same thing. The row a loop was never made for matters most: that is
+ * the one you most want rid of, and while it was a `disabled` button it answered no gesture at all.
+ */
+
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Loop, LoopItem, VocabularyGraph } from "./domain";
+import LoopView from "./LoopView";
+
+const stamp = {
+  ownerId: "owner0000000001", deleted: false, createdAt: "2026-09-16T00:00:00.000Z",
+  editedAt: "2026-09-16T00:00:00.000Z", editedBy: "device000000001", revision: 1
+};
+
+const loop = (over: Partial<Loop>): Loop => ({
+  id: "loop00000000001", language: "es", styleId: "gentle-game", seed: 104740,
+  engineVersion: "1.4.0", bedFingerprint: "f35282aaf3c40245", pattern: "retrieval",
+  audioRef: "loops/es/loop00000000001-6ad2f019.mp3", audioMime: "audio/mpeg",
+  durationSeconds: 90, position: 1, ...stamp, ...over
+});
+
+const item = (loopId: string): LoopItem => ({
+  id: `loopitem${loopId.slice(-5)}`, loopId, lexemeId: "lexeme000000001", position: 0,
+  sourceText: "asco", targetText: "disgust", emotion: "repulsed",
+  startSeconds: 0, sourceRevealSeconds: 0, targetRevealSeconds: 8, endSeconds: 20,
+  repeats: 3, repeatSeconds: 4, ...stamp
+});
+
+function view(loops: Loop[]) {
+  const graph: VocabularyGraph = {
+    vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [],
+    imagePrompts: [], pronunciations: [], studyStates: [],
+    loops, loopItems: loops.map((one) => item(one.id))
+  };
+  const onDelete = vi.fn();
+  render(<LoopView
+    graph={graph} language="es" onMake={() => undefined} onClose={() => undefined}
+    onDelete={onDelete}
+  />);
+  return onDelete;
+}
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("the loops list", () => {
+  it("offers Delete on every row, including one that was never made", () => {
+    view([loop({}), loop({ id: "loop00000000002", position: 2, audioRef: null, durationSeconds: null })]);
+    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2);
+  });
+
+  it("deletes the loop the swipe belongs to", () => {
+    const onDelete = view([loop({}), loop({ id: "loop00000000002", position: 2 })]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[1]);
+    expect(onDelete).toHaveBeenCalledWith("loop00000000002");
+  });
+
+  it("opens a menu on a right-click, and deletes from it", () => {
+    const onDelete = view([loop({ audioRef: null, durationSeconds: null })]);
+    expect(screen.queryByRole("menuitem")).toBeNull();
+
+    fireEvent.contextMenu(screen.getByText("asco"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete this loop" }));
+    expect(onDelete).toHaveBeenCalledWith("loop00000000001");
+  });
+
+  it("does not open a loop that was never made, but still lets it be right-clicked", () => {
+    const onDelete = view([loop({ audioRef: null, durationSeconds: null })]);
+    fireEvent.click(screen.getByText("asco"));
+    expect(screen.getByText(/Never made/)).toBeInTheDocument();
+
+    fireEvent.contextMenu(screen.getByText("asco"));
+    expect(screen.getByRole("menuitem", { name: "Delete this loop" })).toBeInTheDocument();
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+});

@@ -4,6 +4,9 @@
   query: the interface sampled them from the scope on screen and the server does not re-derive that
   scope. Choosing words by hand is therefore the same route with a different list, and no server
   change at all.
+- `DELETE /loops/{id}` tombstones the loop and its words and unlinks the track. It is a route
+  rather than an ordinary client write for the reason the image routes are: a track is megabytes,
+  nothing else would ever remove it, and the row and the file have to be written by the same party.
 - `GET /loops/schema` is an **allow-listed passthrough**, and one route rather than a prefix: each is
   written out, so a route the generator grows never silently becomes an Acervo route, and no path a
   client sends is concatenated into a URL. That is the rule `api/routes/speech.py` already lives by.
@@ -30,7 +33,7 @@ from acervo.api.auth import owner_id
 from acervo.api.errors import data
 from acervo.api.payload import json_body
 from acervo.repository import graph, jobs
-from acervo.services.loops import create, schema
+from acervo.services.loops import create, remove, schema
 
 router = APIRouter()
 
@@ -60,3 +63,13 @@ async def make(request: Request) -> JSONResponse:
                              subject_id=loop["id"], input={"family": family} if family else {})
     )
     return data({"loop": loop, "job": queued}, status=202)
+
+
+@router.delete("/loops/{loop_id}")
+async def drop(loop_id: str, request: Request) -> JSONResponse:
+    """Delete a loop, its words and its track."""
+    owner = owner_id(request)
+    device = graph.require_device(request.headers.get("x-acervo-device"))
+    return data(
+        await run_in_threadpool(remove, request.app.state.settings, owner, device, loop_id)
+    )

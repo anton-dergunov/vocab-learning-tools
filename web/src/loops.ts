@@ -58,10 +58,12 @@ function update(partial: Partial<Playback>): void {
 }
 
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
-const snapshot = () => state;
+
+/** Where the track is, for a caller that is not a component. `nowPlaying`'s opposite number. */
+export const playback = (): Playback => state;
 
 export function usePlayback(): Playback {
-  return useSyncExternalStore(subscribe, snapshot);
+  return useSyncExternalStore(subscribe, playback);
 }
 
 /* ── the element ─────────────────────────────────────────────────────── */
@@ -71,6 +73,17 @@ let frame = 0;
 /** The object URL the element is holding, revoked when it is replaced. */
 let held: string | null = null;
 
+/* Where the track has been asked to go and has not got to yet.
+   An element does not move the instant it is told to: it reports the old `currentTime` until the
+   seek lands, and for a track being loaded it reports zero. The clock below would read that back
+   every frame and overwrite what was asked for — which is how tapping a word used to light the word
+   before it, for as long as the blob took to arrive. While this is set it *is* the position; the
+   element's own clock resumes the moment it agrees. */
+let wanted: number | null = null;
+
+/** Close enough to call a seek landed, for an element that never fires `seeked`. */
+const SETTLED = 0.25;
+
 function audio(): HTMLAudioElement {
   if (element) return element;
   element = new Audio();
@@ -78,6 +91,7 @@ function audio(): HTMLAudioElement {
   element.addEventListener("ended", ended);
   element.addEventListener("pause", () => { update({ playing: false }); stopClock(); });
   element.addEventListener("play", () => { update({ playing: true }); startClock(); });
+  element.addEventListener("seeked", () => { wanted = null; });
   return element;
 }
 
@@ -101,7 +115,11 @@ function startClock(): void {
   const tick = () => {
     const player = element;
     if (!player || player.paused) { frame = 0; return; }
-    update({ at: player.currentTime, duration: Number.isFinite(player.duration) ? player.duration : state.duration });
+    if (wanted !== null && Math.abs(player.currentTime - wanted) < SETTLED) wanted = null;
+    update({
+      at: wanted ?? player.currentTime,
+      duration: Number.isFinite(player.duration) ? player.duration : state.duration
+    });
     frame = requestAnimationFrame(tick);
   };
   frame = requestAnimationFrame(tick);
@@ -162,16 +180,24 @@ async function trackFor(reference: string): Promise<Blob> {
 
 export async function play(loop: Loop, items: LoopItem[], { at }: { at?: number } = {}): Promise<void> {
   if (!loop.audioRef) return;
-  // Before any await, so the browser still counts this as the gesture that asked.
-  prime();
   stopSpeech();
+  // Read before `prime()`, which replaces `src` with silence when the element is paused: a word
+  // tapped while the loop is paused is still a move within a track this device already holds.
   const resuming = current?.loop.id === loop.id && element?.src === held && held !== null;
   current = { loop, items };
-  if (resuming && at === undefined) {
+  if (resuming) {
+    /* Nothing to fetch and no `src` to replace, so moving is one assignment to `currentTime` and the
+       store moves with it in the same tick. Fetching the blob again — which is what this used to do
+       whenever `at` was given — left the element playing the old position for as long as IndexedDB
+       took to answer, and the line followed the element. */
     update({ failed: null });
+    if (at !== undefined) seek(at);
     await audio().play().catch(failWith);
     return;
   }
+  // Before any await, so the browser still counts this as the gesture that asked.
+  prime();
+  wanted = at ?? 0;
   update({ loopId: loop.id, at: at ?? 0, duration: loop.durationSeconds ?? 0, loading: true, failed: null });
   try {
     const blob = await trackFor(loop.audioRef);
@@ -184,6 +210,8 @@ export async function play(loop: Loop, items: LoopItem[], { at }: { at?: number 
     describe(loop, items);
     await player.play().catch(failWith);
   } catch (error) {
+    // Nothing is going to arrive at that position now, so the clock stops being overruled by it.
+    wanted = null;
     update({ loading: false });
     failWith(error);
   }
@@ -205,6 +233,7 @@ export function pause(): void {
 export function stop(): void {
   pause();
   current = null;
+  wanted = null;
   if (held) { URL.revokeObjectURL(held); held = null; }
   if (element) element.removeAttribute("src");
   update(EMPTY);
@@ -214,6 +243,7 @@ export function seek(seconds: number): void {
   const player = element;
   if (!player || !current) return;
   const bound = Math.max(0, Math.min(state.duration || player.duration || 0, seconds));
+  wanted = bound;
   try { player.currentTime = bound; } catch { /* not seekable yet */ }
   update({ at: bound });
 }
@@ -277,6 +307,12 @@ export async function forgetLoops(): Promise<void> {
   await store.clear().catch(() => undefined);
 }
 
+/** One track, when the loop naming it is gone. `pronunciation.ts` forgets a clip the same way. */
+export async function forget(reference: string): Promise<void> {
+  if (session?.reference === reference) session = null;
+  await store.remove(reference).catch(() => undefined);
+}
+
 export function keptLoopBytes(): Promise<number> {
   return store.bytes().catch(() => 0);
 }
@@ -286,6 +322,7 @@ export function replaceStoreForTests(replacement: MediaStore): void {
   session = null;
   state = EMPTY;
   current = null;
+  wanted = null;
   queue = [];
 }
 

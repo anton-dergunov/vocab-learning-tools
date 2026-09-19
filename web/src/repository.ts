@@ -407,6 +407,11 @@ export class LocalAcervoRepository implements AcervoRepository {
       // what was actually said, and its item simply points at a tombstone from here on.
     } else if (kind === "loops") {
       // A loop's items go with it, and nothing else does: the words it named are untouched.
+      //
+      // The interface deletes a loop through `DELETE /loops/{id}` rather than here, because the
+      // track has to go with the rows and only the server can unlink it. This branch stays so the
+      // cascade is the same wherever it is written from — but a deletion that comes through it
+      // leaves megabytes on the server naming nothing.
       this.graph.loopItems.filter((record) => record.loopId === id && !record.deleted).forEach((record) => tombstone("loopItems", record));
     } else if (kind === "senses") {
       this.graph.examples.filter((record) => record.senseId === id && !record.deleted).forEach((record) => tombstone("examples", record));

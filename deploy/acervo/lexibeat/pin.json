@@ -1,12 +1,12 @@
 {
   "note": "The one version of lexibeat this deployment runs. Acervo names a version and upgrades deliberately; the two repositories do not share a release cadence. See docs/plans/lexibeat-integration.md 2.1.",
   "repository": "https://github.com/anton-dergunov/lexibeat",
-  "version": "0.2.0",
-  "tag": "v0.2.0",
+  "version": "0.3.0",
+  "tag": "v0.3.0",
   "artifacts": {
     "wheel": {
-      "file": "lexibeat-0.2.0-py3-none-any.whl",
-      "sha256": "8244750eb99603129c5c60c9cba35d5a1f5780507f08dd161f6614c9c69b22c4"
+      "file": "lexibeat-0.3.0-py3-none-any.whl",
+      "sha256": "e13a9ab7c51bee197ce748d658fc5d1ee269b1a96ba5bfc337ffaa006d6ccc14"
     }
   },
   "bundleNote": "The sample bundle is in its own block because it goes somewhere else. `artifacts` is what scripts/fetch_lexibeat.sh puts in vendor/lexibeat/ for the image build; this is ~1.9 GB of audio that is fetched ONCE, on the server, into a volume, and never enters a build context or the release archive. Its digest is inline rather than read from the release's SHA256SUMS, because that asset is written by the release workflow and the workflow does not build the bundle - `lexibeat-bundle publish` does, on a workstation, and prints this. Without the bundle the engine still serves and offers only the sample-free `electronic` palette, which is audibly a different category of thing.",

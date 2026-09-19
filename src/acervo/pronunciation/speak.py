@@ -62,9 +62,16 @@ def language_name(language: str) -> str:
     return LANGUAGE_NAMES.get(language.split("-")[0].lower(), language)
 
 
-def direction(template: str, emotion: str, language: str) -> str:
-    """The template with its two blanks filled. `replace` rather than `format`: an emotion is free text."""
-    return template.strip().replace("{language}", language_name(language)).replace("{emotion}", emotion)
+def direction(template: str, note: str, language: str) -> str:
+    """The template with its blanks filled. `replace` rather than `format`: a direction is free text.
+
+    Two names for the same blank, because the same thing is written down twice under two names. An
+    example's arrives on the record as its `emotion`; a take's arrives from the loop generator as a
+    `direction`. Both are a short English phrase saying how a line should be said, and a template
+    uses whichever name reads correctly in its own sentence.
+    """
+    filled = template.strip().replace("{language}", language_name(language))
+    return filled.replace("{emotion}", note).replace("{direction}", note)
 
 
 def asked_of(row, model: str, language: str, style: str | None,

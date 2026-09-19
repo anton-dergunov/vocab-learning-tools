@@ -28,18 +28,35 @@ function clock(seconds: number | null): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-export default function LoopView({ graph, language, onMake, onClose }: {
+export default function LoopView({ graph, language, onMake, onClose, onDelete }: {
   graph: VocabularyGraph;
   language: string;
   onMake(): void;
   /** Back to the words. The loop keeps playing; the bar and the chip are what it plays behind. */
   onClose(): void;
+  /** Online-only and loud when it fails, like every other write. */
+  onDelete(loopId: string): void;
 }) {
   const playback = player.usePlayback();
   const live = useSyncExternalStore(jobStream.subscribe, jobStream.getStatus);
   const loops = loopsIn(graph, language);
   const [openId, setOpenId] = useState<string | null>(playback.loopId);
   const open = loops.find((loop) => loop.id === openId) ?? null;
+  /* Which row has been right-clicked. A pointer has a gesture for this and a finger does not, so the
+     finger gets the row itself: the list below is two snap points wide and Delete is the second. */
+  const [menuId, setMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!menuId) return;
+    const away = () => setMenuId(null);
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuId(null); };
+    window.addEventListener("pointerdown", away);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("pointerdown", away);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [menuId]);
 
   /* The queue the player moves through when Next, or Play the next one, asks for another. Kept in
      the player rather than here, so leaving this surface does not end it: a loop goes on playing
@@ -88,32 +105,50 @@ export default function LoopView({ graph, language, onMake, onClose }: {
           ? job.message || stripOf(job)?.failure || job.error || ""
           : "";
         const here = playback.loopId === loop.id && playback.playing;
-        return <button
-          key={loop.id} className={`loop-row${playback.loopId === loop.id ? " on" : ""}`}
-          disabled={!ready}
-          onClick={() => {
-            setOpenId(loop.id);
-            if (!here) void player.play(loop, items);
-          }}
+        const remove = () => { setMenuId(null); onDelete(loop.id); };
+        /* The shell is the scroller, and Delete is its second snap point. The row itself is not
+           `disabled` even when there is nothing to play: a loop that was never made is the one you
+           most want rid of, and a disabled button answers no gesture at all. */
+        return <div
+          key={loop.id} className="loop-item"
+          onContextMenu={(event) => { event.preventDefault(); setMenuId(loop.id); }}
         >
-          <span className={`loop-go${ready ? "" : " pending"}`}>
-            {ready ? (here ? <PauseIcon /> : <PlayIcon />) : <HourglassIcon />}
-          </span>
-          <span className="loop-main">
-            <span className="loop-title">{loopTitle(graph, loop)}</span>
-            <span className="loop-sub">
-              {ready
-                ? `${items.length} words · ${clock(loop.durationSeconds)}`
-                : making
-                  /* What it is *doing*, in the generator's own words — this is a four-minute
-                     operation and "being made" says nothing you could not already see. */
-                  ? <span className="doing">{stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "Being made…"}</span>
-                  /* Why, not only that. The reason is on the job the whole time; saying "never
-                     made" and nothing else is what left a failure with no next step. */
-                  : <span className="warn">{failure ? `Never made · ${failure}` : "Never made"}</span>}
-            </span>
-          </span>
-        </button>;
+          <div className="loop-shell">
+            <button
+              className={`loop-row${playback.loopId === loop.id ? " on" : ""}`}
+              aria-disabled={!ready}
+              onClick={() => {
+                if (!ready) return;
+                setOpenId(loop.id);
+                if (!here) void player.play(loop, items);
+              }}
+            >
+              <span className={`loop-go${ready ? "" : " pending"}`}>
+                {ready ? (here ? <PauseIcon /> : <PlayIcon />) : <HourglassIcon />}
+              </span>
+              <span className="loop-main">
+                <span className="loop-title">{loopTitle(graph, loop)}</span>
+                <span className="loop-sub">
+                  {ready
+                    ? `${items.length} words · ${clock(loop.durationSeconds)}`
+                    : making
+                      /* What it is *doing*, in the generator's own words — this is a four-minute
+                         operation and "being made" says nothing you could not already see. */
+                      ? <span className="doing">{stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "Being made…"}</span>
+                      /* Why, not only that. The reason is on the job the whole time; saying "never
+                         made" and nothing else is what left a failure with no next step. */
+                      : <span className="warn">{failure ? `Never made · ${failure}` : "Never made"}</span>}
+                </span>
+              </span>
+            </button>
+            <div className="loop-swipe">
+              <button className="loop-delete" onClick={remove}>Delete</button>
+            </div>
+          </div>
+          {menuId === loop.id && <div className="menu open loop-menu" role="menu">
+            <button role="menuitem" className="danger" onClick={remove}>Delete this loop</button>
+          </div>}
+        </div>;
       })}
     </div>
 

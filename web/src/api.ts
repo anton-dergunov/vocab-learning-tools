@@ -722,6 +722,15 @@ export const backendSession = {
   makeLoop(request: LoopRequest): Promise<{ loop: Loop; job: Job }> {
     return client.call<{ loop: Loop; job: Job }>("/loops", { method: "POST", body: JSON.stringify(request) });
   },
+  /* A route rather than an ordinary tombstone, because the track goes with the rows: it is megabytes
+     and nothing else would ever remove it, so the row and the file are written by the same party —
+     the shape `removeImage` already has. */
+  deleteLoop(loopId: string, deviceId: string): Promise<Loop> {
+    return client.call<Loop>(
+      `/loops/${encodeURIComponent(loopId)}`,
+      { method: "DELETE", headers: { "X-Acervo-Device": deviceId } }
+    );
+  },
   enqueueJob(request: JobRequest): Promise<Job> {
     return client.call<Job>("/jobs", { method: "POST", body: JSON.stringify(request) });
   },

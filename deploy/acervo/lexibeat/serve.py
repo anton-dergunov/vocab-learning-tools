@@ -157,20 +157,16 @@ def backend_for(context: RenderContext) -> AcervoVoice:
 
 
 def _delivery_of(context: RenderContext) -> str:
-    """Which order the owner chose for loops, as Acervo resolved it.
+    """Which order the owner chose for loops, as Acervo resolved it and sent it.
 
-    **Today this is always `directed`, and that is deliberate rather than unfinished.** Only Acervo
-    knows the owner's setting, so it has to ride on the request — and `RenderContext` has no field
-    for it yet, because nothing sends one: Acervo does not call `POST /loops` until step 7. The
-    `getattr` is the hook, and it degrades to the better-sounding answer, which is also what a
-    hand-run `curl` should get.
+    It rides on the request because it cannot be found out from in here: this container holds no
+    settings, no catalogue and no credential, and the answer is the owner's rather than the
+    deployment's. It arrives as `speech.delivery` and reaches the factory untouched.
 
-    Step 7 adds `speech.delivery` to LexiBeat's request body, which is a version bump and a re-pin
-    over there — the cost that buys the plain order its economy. Until then a plain-order deployment
-    still works and still sounds right; it simply pays for three takes a line where one would do,
-    because Acervo drops the direction and the three requests differ only by their take index.
+    Anything other than `plain` is `directed`, which is the better-sounding answer and therefore the
+    right one for a hand-run `curl` that says nothing.
     """
-    wanted = getattr(context, "delivery", None) or DIRECTED
+    wanted = context.delivery or DIRECTED
     return PLAIN if str(wanted).lower() == PLAIN else DIRECTED
 
 

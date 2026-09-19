@@ -41,6 +41,16 @@ from acervo.settings import Settings
 
 STYLE_PROMPT = "acervo_pronounce_style"
 
+# A loop take is framed differently from an example, and it has to be. What arrives in `direction`
+# there is not an adjective written on a record — it is the generator's whole director note for this
+# repetition, pace and pitch included ("Speak warmly, as if teaching someone, but clearly, slightly
+# briskly, with a slightly brighter pitch."). Dropping that into `acervo_pronounce_style`'s
+# `sounding {emotion}` slot produced a sentence that was not one, and the template's own "Keep a
+# natural pace" then cancelled the one clause that made a word's three takes differ. This template
+# relays the note and says nothing about pace, and nothing about how many repetitions there are —
+# that is the generator's business, not ours.
+TAKE_PROMPT = "acervo_pronounce_take"
+
 # Route segment → target kind. The route is addressed by the record being read.
 ROUTE_KINDS = {plural: kind for kind, plural in COLLECTION.items()}
 
@@ -324,7 +334,7 @@ def take(settings: Settings, owner: str, body: dict[str, Any]) -> tuple[bytes, s
     style = None
     if direction_text and order == "expressive":
         style = speaking.direction(
-            prompt_text(Path(settings.prompts_path), STYLE_PROMPT), direction_text, language
+            prompt_text(Path(settings.prompts_path), TAKE_PROMPT), direction_text, language
         )
 
     def log(**extra: Any) -> None:

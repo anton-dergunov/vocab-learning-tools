@@ -935,14 +935,36 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
 .player-bed .warn { color: var(--warn); }
 
 /* ── a loop in a list ── */
+/* Two ways to the same Delete, because a pointer and a finger do not have the same gestures. A
+   pointer right-clicks and gets `.loop-menu`. A finger pushes the row aside and finds `.loop-swipe`
+   behind it — done with scroll-snap rather than touch handlers, the way the cards already swipe, so
+   there is no pointer arithmetic to get wrong and a trackpad gets it for free. */
+/* The scroller and the thing the menu hangs off are two elements, not one: `overflow-x` makes the
+   vertical axis a scroller too, and a menu positioned inside it would be clipped rather than drawn. */
+.loop-item { position: relative; }
+.loop-item + .loop-item { border-top: 1px solid var(--rule-soft); }
+.loop-shell {
+  display: flex; overflow-x: auto; overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory; border-radius: 10px;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.loop-shell::-webkit-scrollbar { display: none; }
 .loop-row {
-  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+  display: flex; align-items: center; gap: 14px; flex: 0 0 100%; text-align: left;
+  scroll-snap-align: start;
   padding: 13px 14px; border: 0; background: none; border-radius: 10px; cursor: pointer; font: inherit;
 }
-.loop-row + .loop-row { border-top: 1px solid var(--rule-soft); border-radius: 0; }
 .loop-row:hover { background: var(--surface-2); }
 .loop-row.on { background: var(--core-soft); }
-.loop-row[disabled] { cursor: default; }
+.loop-row[aria-disabled="true"] { cursor: default; }
+.loop-swipe { flex: 0 0 104px; display: grid; place-items: stretch; scroll-snap-align: end; }
+.loop-delete {
+  border: 0; border-radius: 10px; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 500;
+  background: var(--warn); color: var(--on-core);
+}
+/* Anchored to the row rather than to the list, because there is one per row and the right-click
+   that opened it was on that row. */
+.loop-menu { top: calc(100% - 8px); right: 10px; min-width: 180px; }
 .loop-go { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 999px;
            background: var(--core-soft); color: var(--core); }
 .loop-row.on .loop-go { background: var(--core); color: var(--on-core); }

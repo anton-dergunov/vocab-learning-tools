@@ -1,7 +1,10 @@
 /**
- * Settings ▸ Loops: whether tracks are kept on this device, and what the generator can do.
+ * Settings ▸ Loops: which voice speaks one, whether tracks are kept on this device, and what the
+ * generator can do.
  *
- * Two kinds of thing, kept apart on the page as `PronunciationPanel` keeps them apart. Keeping a
+ * Three kinds of thing, kept apart on the page as `PronunciationPanel` keeps its two apart. The
+ * voice is **owner** state, stored beside the other two pronunciation uses and read by the server
+ * when it renders — a phone that has never opened this screen gets the voice chosen here. Keeping a
  * track is a **device** fact — a laptop with room and a phone without want different answers, and it
  * never leaves the device. What the generator is and whether it has its sample pack is the
  * **deployment's**, read from the server and not settable here.
@@ -12,9 +15,27 @@
  */
 
 import { useEffect, useState } from "react";
-import { AcervoApiError, backendSession, type LoopSchema } from "./api";
+import {
+  AcervoApiError, backendSession, type LoopSchema, type PronunciationOrder, type PronunciationSettings
+} from "./api";
 import { setLoopCacheEnabled, useLoopCache } from "./editorPreferences";
 import { forgetLoops, keptLoopBytes } from "./loops";
+
+/* The same two orders Settings ▸ Pronunciation offers, said in terms of what each does to a loop.
+   Both facts are measured rather than felt: a directed take is its own model call per repetition,
+   and a plain one is recorded once a line and varied by the generator afterwards. */
+const ORDERS: { id: PronunciationOrder; title: string; help: string }[] = [
+  {
+    id: "expressive", title: "A voice that takes a direction",
+    help: "Every repetition is read again, with its own direction — so a word you wrote an emotion for "
+      + "sounds it, and the rest are still said three different ways. Three calls a line."
+  },
+  {
+    id: "plain", title: "A clear, even voice",
+    help: "Recorded once a line, and the repetitions are varied by the generator in pitch and speed. "
+      + "A third of the calls, and no emotion."
+  }
+];
 
 function megabytes(bytes: number): string {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -23,6 +44,7 @@ function megabytes(bytes: number): string {
 export default function LoopPanel({ onNotify }: { onNotify(message: string): void }) {
   const [schema, setSchema] = useState<LoopSchema | null>(null);
   const [trouble, setTrouble] = useState<string | null>(null);
+  const [voice, setVoice] = useState<PronunciationSettings | null>(null);
   const keeping = useLoopCache();
   const [kept, setKept] = useState<number | null>(null);
 
@@ -32,8 +54,23 @@ export default function LoopPanel({ onNotify }: { onNotify(message: string): voi
       .catch((error: unknown) => setTrouble(error instanceof AcervoApiError
         ? error.message
         : "The loop generator could not be reached."));
+    void backendSession.pronunciationSettings().then(setVoice).catch(() => undefined);
     void keptLoopBytes().then(setKept);
   }, []);
+
+  /* Optimistic, then reconciled, then rolled back if the server refused — the shape
+     `PronunciationPanel` uses, because it is the same record being written. */
+  const chooseOrder = async (order: PronunciationOrder) => {
+    const before = voice;
+    if (!before) return;
+    setVoice({ ...before, delivery: { ...before.delivery, loops: order }, chosen: true });
+    try {
+      setVoice(await backendSession.savePronunciationSettings({ delivery: { loops: order } }));
+    } catch (error) {
+      setVoice(before);
+      onNotify(error instanceof AcervoApiError ? error.message : "That could not be saved.");
+    }
+  };
 
   const keep = async (on: boolean) => {
     setLoopCacheEnabled(on);
@@ -46,6 +83,20 @@ export default function LoopPanel({ onNotify }: { onNotify(message: string): voi
       A loop takes a handful of your words and sets them to music, so they are learned while you are
       doing something else. Each word is said, then its translation, then that pair twice more.
     </p>
+
+    <h4 className="provider-heading">The voice</h4>
+    <p className="config-help">
+      Which of the two pronunciation orders speaks a loop. It is the same choice Settings ▸
+      Pronunciation makes for words and for example sentences, and a loop already made keeps the
+      voice it was made with.
+    </p>
+    {voice && ORDERS.map((order) => <label key={order.id} className="config-switch">
+      <input
+        type="radio" name="loop-delivery" checked={voice.delivery.loops === order.id}
+        onChange={() => void chooseOrder(order.id)}
+      />
+      <span><strong>{order.title}</strong><span>{order.help}</span></span>
+    </label>)}
 
     <h4 className="provider-heading">The generator</h4>
     {trouble && <p className="config-help warn">{trouble}</p>}
