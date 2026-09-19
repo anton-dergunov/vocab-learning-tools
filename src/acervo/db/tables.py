@@ -1,4 +1,4 @@
-"""The twelve owner-scoped tables, plus `users`.
+"""The fifteen owner-scoped tables, plus `users`.
 
 Ported column for column and index for index from the PocketBase bootstrap migration this replaces.
 Two of those indexes carry reasoning that must survive the move, and both comments are below.
@@ -28,15 +28,16 @@ from sqlalchemy import (
 
 metadata = MetaData()
 
-# The eleven replicated tables, in graph order: topics before lexemes, lexemes before senses and
+# The fourteen replicated tables, in graph order: topics before lexemes, lexemes before senses and
 # attestations, those before examples, sense-linked image prompts and pronunciations. Applying a batch in this order
 # means a relation always resolves, so it is also the merge order the write route uses — and,
 # reversed and with the first two dropped, the tombstone order.
 #
-# Loops come last, and both halves of that matter. A loop is not a word's descendant — it is an
-# owner-level artefact that *references* words — so it hangs off nothing and could sit anywhere after
-# `lexemes`. Last is where it goes anyway, because that is what puts it inside the word reset: a loop
-# every one of whose captions names a deleted word is a track nothing describes.
+# Loops and stories come last, and both halves of that matter. Neither is a word's descendant — each
+# is an owner-level artefact that *references* words — so they hang off nothing and could sit
+# anywhere after `lexemes`. Last is where they go anyway, because that is what puts them inside the
+# word reset: a loop every one of whose captions names a deleted word is a track nothing describes,
+# and a story whose every word is gone is one nothing asked for.
 REPLICATED = (
     "vocabularies",
     "topics",
@@ -49,6 +50,9 @@ REPLICATED = (
     "study_states",
     "loops",
     "loop_items",
+    "stories",
+    "story_parts",
+    "story_words",
 )
 
 
@@ -537,6 +541,81 @@ loop_items = Table(
     Index("idx_loop_items_owner_revision", "owner", "revision"),
     Index("idx_loop_items_owner_loop_order", "owner", "loop", "item_order"),
     Index("idx_loop_items_owner_lexeme", "owner", "lexeme"),
+)
+
+stories = Table(
+    "stories",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    Column("language", String(35), nullable=False),
+    # Which kind of story was asked for, and what it is drawn in. Both are ids into tracked config
+    # files rather than enums in the code, exactly as `image_prompts.style_id` is: a type added to
+    # `config/story-types.yaml` needs no schema change and no migration.
+    Column("type_id", String(64), nullable=False, default=""),
+    Column("style_id", String(120), nullable=False, default=""),
+    Column("title", String(240), nullable=False, default=""),
+    Column("title_translation", String(240), nullable=False, default=""),
+    Column("emoji", String(16), nullable=False, default=""),
+    # Who wrote it. Provenance, for the reason `examples.model_id` is: the model that *answered*,
+    # which under a chain is not knowable before the call.
+    Column("model_id", String(120), nullable=False, default=""),
+    # There is no status column, for the reason `loops` has none. A story with no live `story_parts`
+    # was asked for and never written, and the job says why; a part with an empty `image_ref` is one
+    # that has not been drawn. Both facts are already in the graph.
+    Column("story_order", Integer, nullable=False, default=0),
+    *_sync_fields(),
+    Index("idx_stories_owner_revision", "owner", "revision"),
+    Index("idx_stories_owner_language_order", "owner", "language", "story_order"),
+)
+
+story_parts = Table(
+    "story_parts",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    Column("story", String(15), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False),
+    Column("part_order", Integer, nullable=False, default=0),
+    Column("heading", String(240), nullable=False, default=""),
+    Column("heading_translation", String(240), nullable=False, default=""),
+    # The story itself. `Text` rather than a bounded `String` because a part is prose and the bound
+    # would be arbitrary; the model is told how long a part should be, and validation checks it.
+    Column("text", Text, nullable=False, default=""),
+    Column("translation", Text, nullable=False, default=""),
+    # The brief this part's picture was drawn from, kept on the part rather than in `image_prompts`:
+    # that table's id is derived from a *sense* id, and a story part is not a sense. One row, one
+    # picture, no second identity to hold in step.
+    Column("image_prompt", Text, nullable=False, default=""),
+    Column("image_ref", String(500), nullable=False, default=""),
+    Column("image_model_id", String(120), nullable=False, default=""),
+    Column("attempts", Integer, nullable=False, default=0),
+    Column("failure_reason", String(500), nullable=False, default=""),
+    *_sync_fields(),
+    Index("idx_story_parts_owner_revision", "owner", "revision"),
+    Index("idx_story_parts_owner_story_order", "owner", "story", "part_order"),
+)
+
+story_words = Table(
+    "story_words",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    Column("story", String(15), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False),
+    Column("lexeme", String(15), ForeignKey("lexemes.id", ondelete="CASCADE"), nullable=False),
+    Column("word_order", Integer, nullable=False, default=0),
+    # The headword as it was asked for, denormalised for the reason `loop_items.source_text` is:
+    # editing the word afterwards must not make the story claim it taught something else. It is also
+    # why deleting the word leaves this row alone.
+    Column("source_text", String(240), nullable=False),
+    # The surface forms the story actually used, which is how the reader marks them in the text. A
+    # word is inflected, so the form in the story is rarely the headword, and only the writer knows
+    # which forms it reached for. **Empty means the story did not manage to use the word** — a fact
+    # worth showing rather than hiding, and the reason this is a list and not a boolean.
+    Column("forms", JSON, nullable=False, default=list),
+    *_sync_fields(),
+    Index("idx_story_words_owner_revision", "owner", "revision"),
+    Index("idx_story_words_owner_story_order", "owner", "story", "word_order"),
+    Index("idx_story_words_owner_lexeme", "owner", "lexeme"),
 )
 
 TABLES = {table.name: table for table in metadata.tables.values()}

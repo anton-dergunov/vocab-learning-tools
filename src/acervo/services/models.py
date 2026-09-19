@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
-from typing import Any
+from typing import Any, Mapping
 
 from acervo.errors import ApiError
 from acervo.models import (
@@ -200,7 +200,8 @@ def capture_health(settings: Settings) -> dict[str, Any]:
 
 
 def llm_json(settings: Settings, owner: str | None, system: str, user: str,
-             caller: str = "text", hedge_after: float | None = None) -> tuple[Any, Answer]:
+             caller: str = "text", hedge_after: float | None = None,
+             params: Mapping[str, Any] | None = None) -> tuple[Any, Answer]:
     """One constrained call: pass text, get JSON and the model that produced it, or a code saying why not.
 
     Returning the `Answer` rather than a model id is not decoration. The locked contract is that the
@@ -218,10 +219,14 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str,
     asks of it — which of them was slow.
 
     `hedge_after` is for a caller with somebody waiting: see `chain.walk`.
+
+    `params` is what this task wants of the generation — a story hot, its translation cold. It is
+    passed straight through to `call.text`, where the row's own settings still win; see there.
     """
     def ask(candidate: chain.Candidate) -> TextResult:
         result = provider.text(
-            user, row=candidate.row, model=candidate.model, system=system, as_json=True
+            user, row=candidate.row, model=candidate.model, system=system, as_json=True,
+            params=params,
         )
         # Checked *here*, inside the chain's own callback, rather than after `walk` returns. An
         # answer in the wrong shape used to end the whole chain, so a weak model at the head made

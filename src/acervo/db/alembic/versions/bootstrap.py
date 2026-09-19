@@ -14,7 +14,10 @@ offline. That is the exact failure `bootstrap`'s guard exists to prevent, and an
 remember is what makes the guard reliable.
 
 So: change the schema and the head changes with it, whereupon a database written under the old one
-is refused by name and `--reset-database` is the documented remedy.
+is refused by name. `--reset-database` is the default remedy; a purely additive change may instead be
+carried across by a throwaway converter that creates the new tables and re-stamps this id, which is
+why `shape_of` takes its metadata as an argument — such a script compares the database it holds
+against the schema this code declares before it touches anything.
 
 Revises: nothing. There is one head and no upgrade path.
 """

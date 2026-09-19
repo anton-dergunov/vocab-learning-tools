@@ -179,6 +179,40 @@ def test_the_row_supplies_its_credential_its_endpoint_and_its_parameters(monkeyp
     assert calls[-1]["vertex_location"] == "global"
 
 
+def test_a_caller_may_ask_for_generation_settings_and_the_row_still_wins(monkeypatch):
+    """The whole design of `params` in one test.
+
+    A caller passes what the *task* wants — a story hot, its translation cold — and a row passes
+    what the *provider* needs. When they disagree the row wins, because a value in the catalogue
+    was put there because something refused or misbehaved without it, and a caller's preference
+    quietly undoing that would hide the mistake and spend money proving it again.
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "a-gemini-key")
+    monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project")
+    calls = []
+    monkeypatch.setattr(call, "completion", _recording(calls, reply("{}")))
+
+    # Gemini deliberately pins no temperature, so the caller's reaches the provider. This is the
+    # case the argument exists for.
+    assert "temperature" not in GEMINI.params_for("text")
+    call.text("write me a story", row=GEMINI, params={"temperature": 1.0})
+    assert calls[-1]["temperature"] == 1.0
+
+    call.text("translate it", row=GEMINI, params={"temperature": 0.2})
+    assert calls[-1]["temperature"] == 0.2
+
+    # And a caller cannot reach past a row that does state something: `vertex` carries
+    # `vertex_location`, and asking for another one does not move it.
+    vertex = SHIPPED.find("vertex")
+    call.text("hello", row=vertex, params={"vertex_location": "somewhere-else", "temperature": 0.9})
+    assert calls[-1]["vertex_location"] == vertex.params_for("text")["vertex_location"]
+    assert calls[-1]["temperature"] == 0.9  # untouched by the row, so it still lands
+
+    # Passing nothing changes nothing, so every existing caller is unaffected.
+    call.text("hello", row=GEMINI)
+    assert "temperature" not in calls[-1]
+
+
 def test_litellms_own_retries_are_switched_off_on_every_call(monkeypatch):
     """Both of them. `max_retries` is the provider SDK's and defaults to 2 when LiteLLM sets it.
 

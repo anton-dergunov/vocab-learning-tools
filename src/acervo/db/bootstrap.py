@@ -1,8 +1,13 @@
 """Creating the schema, and refusing to serve one that is not this one.
 
 Alembic defines and bootstraps the schema. It is **not** an upgrade path: one head, and *rebuild the
-database* stays how a schema change is deployed. Offering `alembic upgrade head` as a second,
-untested path against real data would be a promise nobody has decided to keep.
+database* is the default way a schema change is deployed. Offering `alembic upgrade head` as a
+second, untested path against real data would be a promise nobody has decided to keep.
+
+A purely additive change may instead be carried across by a throwaway converter that creates the new
+tables and re-stamps the head by hand — outside the application, deleted once it has run, so nothing
+here learns that an earlier version existed. The guard below is what makes that safe rather than
+hopeful: a database nobody has converted is refused by name rather than served.
 
 What the stamp buys is the failure this replaces. A database predating a schema rewrite used to make
 every graph route fail with an anonymous 500 that the client reported as "offline" — a long way from

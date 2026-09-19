@@ -1,0 +1,159 @@
+# What kind of story to write. Content, not code: edit freely, and every edit changes the story
+# prompt's version, so stories written afterwards use the new wording while stories already written
+# are left alone.
+#
+# `brief` is spliced into the story prompt verbatim, so write direction to a writer, not a label.
+# It is deliberately long: "write a funny story" produces a joke with a word in it, and what is
+# wanted is a story that happens to be funny, with the words load-bearing inside it.
+# `emoji` is the fallback for the list row when the writer does not choose one of its own.
+# `styles` names the image styles that suit this kind of story, by id from `config/image-styles.yaml`.
+# Surprise me picks from this list; the dialog still offers every style by hand.
+#
+# **Four image styles are deliberately in no list here**: art-nouveau (ornament crowds out what is
+# happening), constructivist-poster (a poster states, it does not narrate), pixel-art (a face is
+# unreadable at this size) and papercraft-diorama (the same character cannot be held across four
+# parts). They remain choosable by hand, because an owner who wants one knows something this file
+# does not. `vintage-botanical` is offered by `nature` alone: an engraved natural-history plate is
+# the one narrative it genuinely suits, and the subject there is a creature rather than a person.
+#
+# On the list itself: twelve of these are the types the first sketch arrived at. `everyday` is the
+# thirteenth and was added deliberately — the domestic register is where most of a learner's
+# vocabulary actually lives, and every other type here reaches for something unusual by definition.
+# Four were dropped as duplicates of others (psychology → lesson, exploration → travel/technology,
+# accidental-discovery → invention, biography → historical). "A twist ending" was dropped for a
+# different reason and is not coming back as a type: it is a *device*, so it belongs in the prompt
+# for every type rather than as one you can pick.
+
+types:
+  funny:
+    label: Funny
+    emoji: "😂"
+    brief: >-
+      A comic story. The humour comes from a situation that escalates by its own logic, not from
+      jokes dropped into it: something slightly improbable is established early, everybody in the
+      story treats it as completely normal, and the consequences follow honestly. The ending should
+      reframe what came before rather than simply stop — the best last line makes the reader
+      reconsider the first. Avoid slapstick, puns on the target words, and anything that needs a
+      culture's in-jokes to land.
+    styles: [cinematic-photoreal, comic-book, pixar-3d, claymation, anime-cel, folk-naive]
+
+  historical:
+    label: Historical
+    emoji: "🏛️"
+    brief: >-
+      A true episode from history, told as a story rather than summarised as a fact. Choose one
+      moment with a person in it, and stay at the scale of what that person could see and hear.
+      Real names, real dates, and where the popular version of the story is doubted, say so rather
+      than repeating it as settled. End on what it led to, or on the irony of what it led to.
+    styles: [oil-painting, baroque-chiaroscuro, cinematic-photoreal, golden-hour, charcoal-sketch]
+
+  science:
+    label: Science
+    emoji: "🔬"
+    brief: >-
+      One real idea from science, arrived at through a story rather than explained. Somebody wants
+      to know something, tries to find out, and what they learn is not quite what they set out to
+      find. The science must be correct and must be the point — a story where the experiment is
+      only scenery has failed. Keep the mechanism concrete enough that a reader could repeat it back.
+    styles: [cinematic-photoreal, retro-futurism, watercolour-storybook, oil-painting, anime-cel]
+
+  invention:
+    label: Inventions
+    emoji: "💡"
+    brief: >-
+      How something came to exist. Favour the awkward middle over the moment of triumph: the
+      versions that failed, the problem the inventor was actually trying to solve, the people who
+      told them it was pointless. Many of the best are accidents, and an accident is a fine story
+      as long as it is a true one. End with what the thing became, which is rarely what it was for.
+    styles: [retro-futurism, oil-painting, cinematic-photoreal, gouache-poster, charcoal-sketch]
+
+  travel:
+    label: Travel
+    emoji: "🧭"
+    brief: >-
+      A journey, and an encounter in it. The place must be specific — its weather, its food, the
+      way a street sounds at a particular hour — because a story set in "a beautiful country" is
+      set nowhere. Somebody is somewhere they do not belong, and the story is what they understand
+      by the end that they could not have understood at home.
+    styles: [golden-hour, cinematic-photoreal, gouache-poster, watercolour-storybook, oil-painting]
+
+  mystery:
+    label: Mystery
+    emoji: "🕵️"
+    brief: >-
+      Something has happened that does not make sense, and by the end it does. Play fair: every
+      fact the explanation rests on must appear before it, in plain sight, so the reader could in
+      principle have got there first. The solution should be smaller and more human than the
+      reader is expecting. It need not be a crime, and it is better when it is not.
+    styles: [film-noir, cinematic-photoreal, baroque-chiaroscuro, charcoal-sketch, manga-panel]
+
+  nature:
+    label: Nature
+    emoji: "🐒"
+    brief: >-
+      An animal, a plant or a place, and something genuinely surprising about how it lives. The
+      biology must be accurate. Let the creature be itself rather than a person in a costume — no
+      speaking animals, no moral drawn from its behaviour — because what a real animal actually
+      does is stranger than anything assigned to it.
+    styles: [golden-hour, cinematic-photoreal, watercolour-storybook, vintage-botanical, oil-painting]
+
+  technology:
+    label: Technology
+    emoji: "⚙️"
+    brief: >-
+      Machines, computers, networks, space — now or soon. If it is set in the future, change one
+      thing and follow it honestly rather than redescribing the world. The interesting question is
+      never what the technology does; it is what people do with it, which is usually smaller and
+      funnier than its inventors imagined.
+    styles: [neon-cyberpunk, retro-futurism, cinematic-photoreal, anime-cel, surrealism]
+
+  cultures:
+    label: People & cultures
+    emoji: "🌍"
+    brief: >-
+      A custom, a tradition, or a way of living, shown through somebody doing it rather than
+      described from outside. Be specific and be respectful: no culture is quaint, and the
+      narrator is not a tourist marvelling. The best of these show the reader that something they
+      assumed was universal is a local habit.
+    styles: [golden-hour, folk-naive, gouache-poster, cinematic-photoreal, oil-painting]
+
+  mythology:
+    label: Myth & folklore
+    emoji: "🏺"
+    brief: >-
+      A legend, a god, a monster, a traditional tale — retold, not invented. Keep the shape the
+      original has: myths are repetitive, abrupt and rarely fair, and smoothing that out turns one
+      into a children's story. Name the culture it comes from. Where versions disagree, pick one
+      and say it is one.
+    styles: [ukiyo-e, oil-painting, baroque-chiaroscuro, folk-naive, surrealism, watercolour-storybook]
+
+  food:
+    label: Food
+    emoji: "🍜"
+    brief: >-
+      Where a dish, an ingredient or a way of cooking came from. Food stories are almost always
+      stories about trade, poverty or accident, and they travel further than the people who made
+      them. Be concrete about taste, smell and technique. A recipe is not a story; what somebody
+      did with it is.
+    styles: [golden-hour, oil-painting, cinematic-photoreal, folk-naive, watercolour-storybook]
+
+  lesson:
+    label: A lesson
+    emoji: "❤️"
+    brief: >-
+      A story that leaves the reader with something, and never states it. The understanding must
+      arrive through what happens — a choice, its cost, what somebody sees afterwards. If the last
+      part could be replaced by a proverb, it has failed. Small and ordinary beats grand: the
+      lessons that land are about somebody's afternoon, not about life.
+    styles: [cinematic-photoreal, golden-hour, watercolour-storybook, oil-painting, charcoal-sketch]
+
+  everyday:
+    label: Everyday life
+    emoji: "☕"
+    brief: >-
+      An ordinary situation, told well. A shop, a kitchen, a bus, a neighbour, a small errand that
+      goes slightly wrong. Nothing extraordinary may happen — that is the constraint and the point,
+      because this is the register the language is actually lived in. The interest comes from
+      precise observation and from people being recognisably themselves. Let the dialogue sound
+      like speech.
+    styles: [cinematic-photoreal, golden-hour, watercolour-storybook, claymation, folk-naive, manga-panel]

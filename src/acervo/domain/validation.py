@@ -80,6 +80,20 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
     "loop_items": {
         "source_text": (True, 240), "target_text": (True, 240), "emotion": (False, 300),
     },
+    "stories": {
+        "language": (True, 35), "type_id": (False, 64), "style_id": (False, 120),
+        "title": (False, 240), "title_translation": (False, 240), "emoji": (False, 16),
+        "model_id": (False, 120),
+    },
+    "story_parts": {
+        "heading": (False, 240), "heading_translation": (False, 240),
+        # A part is prose, and these are the bounds a *story* is written to rather than arbitrary
+        # ones: `prompts/acervo_story_write.md` asks for two to four sentences a part, so a value
+        # near this ceiling is already a prompt that has gone wrong.
+        "text": (False, 4000), "translation": (False, 4000), "image_prompt": (False, 4000),
+        "image_ref": (False, 500), "image_model_id": (False, 120), "failure_reason": (False, 500),
+    },
+    "story_words": {"source_text": (True, 240)},
 }
 
 SELECT_RULES: dict[str, dict[str, tuple[tuple[str, ...], bool]]] = {
@@ -117,6 +131,9 @@ NUMBER_RULES: dict[str, dict[str, tuple[float, float | None]]] = {
         "item_order": (0, None), "start_seconds": (0, None), "source_reveal_seconds": (0, None),
         "target_reveal_seconds": (0, None), "end_seconds": (0, None),
     },
+    "stories": {"story_order": (0, None)},
+    "story_parts": {"part_order": (0, None), "attempts": (0, None)},
+    "story_words": {"word_order": (0, None)},
 }
 
 # The row a related id resolves to, or None. Supplied by the repository, so this module never learns
@@ -379,6 +396,32 @@ def validate(name: str, row: Mapping[str, Any], lookup: Lookup) -> None:
                 # What a retrieval display turns on: the answer must not be on screen before the
                 # recall gap it exists to leave has passed.
                 refuse("A loop item's times must not run backwards.")
+        return
+
+    if name == "stories":
+        valid_language(row.get("language"), "Story language")
+        return
+
+    if name == "story_parts":
+        _same_owner(row, _related(lookup, "stories", _text(row, "story"), "Story"), "Story part")
+        # A drawn picture is bytes plus the model that made them, and the projection hides the model
+        # when there is no reference — so this is the same invariant on the way in that
+        # `_project_story_part` asserts on the way out. `loops` states it for a track.
+        if _text(row, "image_model_id") and not _text(row, "image_ref"):
+            refuse("A story part that has no picture cannot name the model that drew one.")
+        return
+
+    if name == "story_words":
+        _same_owner(row, _related(lookup, "stories", _text(row, "story"), "Story"), "Story word")
+        # Same-owner and required, but deliberately *not* required to be alive, for the reason a
+        # loop item's word is not: deleting a word leaves the stories it appears in readable, and
+        # the text still truthfully says which word it was written around.
+        _same_owner(row, _related(lookup, "lexemes", _text(row, "lexeme"), "Lexeme"), "Story word")
+        forms = row.get("forms")
+        if not isinstance(forms, list) or any(not isinstance(one, str) for one in forms):
+            refuse("A story word's forms must be a list of strings.")
+        elif any(len(one) > 240 for one in forms):
+            refuse("A story word's form is too long.")
         return
 
     if name == "study_states":

@@ -23,7 +23,7 @@ import base64
 import json
 import re
 import time
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from acervo.models.catalogue import Row, base_url, key, passed
 from acervo.models.errors import RETRYABLE, ProviderRefused, ProviderUnavailable, Reason
@@ -205,11 +205,20 @@ def text(
     model: str | None = None,
     system: str | None = None,
     as_json: bool = False,
+    params: Mapping[str, Any] | None = None,
     timeout: float = TIMEOUT_SECONDS,
 ) -> TextResult:
     """One text call against one row.
 
     `model` is the one the chain chose from this row's list; without it the row's first is used.
+
+    `params` is what the **caller** wants of the generation — a story asks for a high temperature
+    and the translation of that story asks for a low one, which is a fact about the two tasks and
+    not about any provider. It is spread *before* `row.params_for("text")` and therefore **loses**
+    to it, which is the whole design: a value in the catalogue was put there because a provider
+    refused something or behaved badly without it, and a caller's preference must not quietly undo
+    a fact somebody discovered the hard way. A row that says nothing about temperature lets the
+    caller's through, which is the case this exists for.
 
     `as_json` asks for a JSON object **without naming its shape**, which is the only thing this
     package asks for and the only thing it will ask for. Where the row says it understands that
@@ -232,6 +241,8 @@ def text(
         "model": model,
         "messages": messages,
         "timeout": row.timeout_for("text", timeout),
+        # The caller's wish first, the row's facts second: the row wins. See the docstring.
+        **(params or {}),
         **row.params_for("text"),
         **_transport(row),
     }

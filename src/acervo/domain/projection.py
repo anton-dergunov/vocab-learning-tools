@@ -427,6 +427,93 @@ def _assign_loop_item(value: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _project_story(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "language": row["language"],
+        "typeId": text_or_none(row["type_id"]),
+        "styleId": text_or_none(row["style_id"]),
+        "title": text_or_none(row["title"]),
+        "titleTranslation": text_or_none(row["title_translation"]),
+        "emoji": text_or_none(row["emoji"]),
+        "modelId": text_or_none(row["model_id"]),
+        "position": to_int(row["story_order"]),
+    }
+
+
+def _assign_story(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "language": trimmed(value.get("language")),
+        "type_id": trimmed(value.get("typeId")),
+        "style_id": trimmed(value.get("styleId")),
+        "title": trimmed(value.get("title")),
+        "title_translation": trimmed(value.get("titleTranslation")),
+        "emoji": trimmed(value.get("emoji")),
+        "model_id": trimmed(value.get("modelId")),
+        "story_order": to_int(value.get("position")),
+    }
+
+
+def _project_story_part(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "storyId": row["story"],
+        "position": to_int(row["part_order"]),
+        "heading": text_or_none(row["heading"]),
+        "headingTranslation": text_or_none(row["heading_translation"]),
+        "text": row["text"],
+        "translation": row["translation"],
+        "imagePrompt": text_or_none(row["image_prompt"]),
+        # An absent reference is what "not drawn yet" looks like, so the model that would have drawn
+        # it is hidden with it rather than projected as an empty string that reads like a fact. The
+        # same treatment `_project_loop` gives a track that does not exist.
+        "imageRef": text_or_none(row["image_ref"]),
+        "imageModelId": text_or_none(row["image_model_id"]) if trimmed(row["image_ref"]) else None,
+        "attempts": to_int(row["attempts"]),
+        "failureReason": text_or_none(row["failure_reason"]),
+    }
+
+
+def _assign_story_part(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "story": trimmed(value.get("storyId")),
+        "part_order": to_int(value.get("position")),
+        "heading": trimmed(value.get("heading")),
+        "heading_translation": trimmed(value.get("headingTranslation")),
+        # Verbatim, not trimmed: this is the story, and paragraph shape is part of it.
+        "text": "" if value.get("text") is None else str(value.get("text")),
+        "translation": "" if value.get("translation") is None else str(value.get("translation")),
+        "image_prompt": trimmed(value.get("imagePrompt")),
+        "image_ref": trimmed(value.get("imageRef")),
+        "image_model_id": trimmed(value.get("imageModelId")),
+        "attempts": to_int(value.get("attempts")),
+        "failure_reason": trimmed(value.get("failureReason")),
+    }
+
+
+def _project_story_word(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "storyId": row["story"],
+        "lexemeId": row["lexeme"],
+        "position": to_int(row["word_order"]),
+        "sourceText": row["source_text"],
+        # An empty list is a real answer — the story did not manage to use this word — so it is
+        # projected as `[]` and never as `None`.
+        "forms": [str(one) for one in (row["forms"] or []) if str(one).strip()],
+    }
+
+
+def _assign_story_word(value: Mapping[str, Any]) -> dict[str, Any]:
+    forms = value.get("forms")
+    return {
+        "story": trimmed(value.get("storyId")),
+        "lexeme": trimmed(value.get("lexemeId")),
+        "word_order": to_int(value.get("position")),
+        # Verbatim, for `loop_items.source_text`'s reason: this is the word the story was asked to
+        # teach, and editing the lexeme afterwards must not rewrite what was asked.
+        "source_text": "" if value.get("sourceText") is None else str(value.get("sourceText")),
+        "forms": [str(one) for one in forms if str(one).strip()] if isinstance(forms, list) else [],
+    }
+
+
 COLLECTIONS: tuple[Collection, ...] = (
     Collection("vocabularies", tables.vocabularies, _project_vocabulary, _assign_vocabulary),
     Collection("topics", tables.topics, _project_topic, _assign_topic),
@@ -439,6 +526,9 @@ COLLECTIONS: tuple[Collection, ...] = (
     Collection("studyStates", tables.study_states, _project_study_state, _assign_study_state),
     Collection("loops", tables.loops, _project_loop, _assign_loop),
     Collection("loopItems", tables.loop_items, _project_loop_item, _assign_loop_item),
+    Collection("stories", tables.stories, _project_story, _assign_story),
+    Collection("storyParts", tables.story_parts, _project_story_part, _assign_story_part),
+    Collection("storyWords", tables.story_words, _project_story_word, _assign_story_word),
 )
 
 COLLECTION_BY_KEY = {collection.key: collection for collection in COLLECTIONS}
@@ -446,8 +536,9 @@ COLLECTION_BY_NAME = {collection.name: collection for collection in COLLECTIONS}
 
 # Every word and its descendants, newest relation first. Vocabularies and topics are excluded: a
 # reset discards the words, not the languages the owner studies or the topics they file them under.
-# Loops are included, despite hanging off no word: a loop whose every caption names a deleted word is
-# a track nothing describes, and it is what putting them last in `COLLECTIONS` buys.
+# Loops and stories are included, despite hanging off no word: a loop whose every caption names a
+# deleted word is a track nothing describes, and a story is one nothing asked for. That is what
+# putting both last in `COLLECTIONS` buys.
 WORD_COLLECTIONS: tuple[Collection, ...] = tuple(reversed(COLLECTIONS[2:]))
 
 

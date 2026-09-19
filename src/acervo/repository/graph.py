@@ -583,6 +583,46 @@ def next_loop_position(owner: str, language: str) -> int:
     return int(highest or 0) + 1
 
 
+def _children_of(owner: str, key: str, parent: str, story_id: str) -> list[dict[str, Any]]:
+    """One story's rows of a collection, in the order they are read.
+
+    The two readers below are one function because they differ only in which table they open —
+    `loop_items` above is written out separately because nothing else shares its shape, and two
+    copies of this would have been two places to fix an ordering.
+    """
+    collection = COLLECTION_BY_KEY[key]
+    table = collection.table
+    with reading() as connection:
+        rows = connection.execute(
+            select(table)
+            .where(table.c.owner == owner, table.c.story == story_id)
+            .order_by(table.c[parent], table.c.id)
+        ).mappings()
+        return [projected(collection, row) for row in rows]
+
+
+def story_parts(owner: str, story_id: str) -> list[dict[str, Any]]:
+    """The parts of one story this owner holds, in the order they are read."""
+    return _children_of(owner, "storyParts", "part_order", story_id)
+
+
+def story_words(owner: str, story_id: str) -> list[dict[str, Any]]:
+    """The words one story was asked to teach, in the order they were asked for."""
+    return _children_of(owner, "storyWords", "word_order", story_id)
+
+
+def next_story_position(owner: str, language: str) -> int:
+    """Where a new story goes: after the last one in this language. See `next_loop_position`."""
+    table = tables.stories
+    with reading() as connection:
+        highest = connection.execute(
+            select(func.max(table.c.story_order)).where(
+                table.c.owner == owner, table.c.language == language, table.c.deleted.is_(False)
+            )
+        ).scalar()
+    return int(highest or 0) + 1
+
+
 def owned_records(owner: str, key: str, ids: list[str]) -> dict[str, dict[str, Any]]:
     """This owner's records of one collection by id, tombstones included, in the wire shape.
 

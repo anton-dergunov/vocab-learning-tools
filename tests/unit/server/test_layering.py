@@ -102,6 +102,7 @@ def test_the_rules_below_are_not_vacuous():
     assert modules_under("images"), "no images/ modules: the stands-alone rule would be vacuous"
     assert modules_under("clips"), "no clips/ modules: the stands-alone rule would be vacuous"
     assert modules_under("loops"), "no loops/ modules: the stands-alone rule would be vacuous"
+    assert modules_under("stories"), "no stories/ modules: the stands-alone rule would be vacuous"
     assert modules_under("pronunciation"), "no pronunciation/ modules: the stands-alone rule would be vacuous"
     assert (PACKAGE / "article.py").exists(), "no article.py: the shared-view rule would be vacuous"
     assert modules_under("speech"), "no speech/ modules: the stands-alone rule would be vacuous"
@@ -183,6 +184,24 @@ def test_the_image_pipeline_stands_on_the_provider_package_and_nothing_else(path
     # word being enriched. Both are pure, and neither knows whose word it is.
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the image pipeline stands alone"
+
+
+@pytest.mark.parametrize("path", modules_under("stories"), ids=identify)
+def test_the_story_pipeline_stands_on_the_provider_package_and_nothing_else(path):
+    """Words and a kind of story in; parts, a translation and briefs out — and no idea whose words.
+
+    The same argument as `images/`, which this package also *imports*: `illustrate.py` reaches for
+    `images.render` and `images.styles` rather than copying a renderer and an art-direction table,
+    and both of those already stand alone by this same rule. A story picture and a sense picture are
+    drawn by one renderer in one style table, which is what stops "adding a way to draw a picture"
+    from adding a second pipeline.
+
+    `services/stories.py` is the binding layer that reads `Settings`, the graph and the owner's
+    chain. One `from acervo.errors import ApiError` here would merge the two halves in code that
+    still worked.
+    """
+    offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
+    assert not offenders, f"{path} imports {sorted(offenders)}; the story pipeline stands alone"
 
 
 @pytest.mark.parametrize("path", modules_under("clips"), ids=identify)
