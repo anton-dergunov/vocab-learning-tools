@@ -24,7 +24,7 @@ import {
   externalEntryOf, EXTERNAL_ROW_LIMIT, mergeHits, referenceTextOf,
   type ExternalEntry, type ExternalRow, type RawHit
 } from "./externalEntries";
-import { BackIcon, GearIcon, MoreIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
+import { BackIcon, FileIcon, GearIcon, MoreIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
 import { useDefaultArticleView, type ArticleView } from "./editorPreferences";
 import LexemeArticle, {
   type AskSlot, type AskTarget, type ClipSlot, type MarkSlot, type PictureSlot, HeadwordListen
@@ -980,6 +980,30 @@ export default function App() {
     notify("Deleted everywhere — the entry is kept as a tombstone");
   }
 
+  /**
+   * Out of the Inbox and into its topics — one word from its article, or the whole tab at once.
+   *
+   * The word stays open afterwards rather than closing the way a delete does: you have just read it,
+   * which is what filing it means, and the only thing that changed is where it is filed.
+   */
+  async function fileWords(ids: string[]) {
+    let moved = 0;
+    try {
+      moved = await repository.fileWords(ids);
+    } catch (error) {
+      // Nothing was changed locally, so the Inbox is exactly as it was.
+      notify(error instanceof Error ? error.message : "Those words could not be filed.");
+      return;
+    }
+    const next = repository.snapshot();
+    setSnapshot(next);
+    if (!moved) return;
+    // The rail drops the Inbox tab once it is empty, so standing on it would leave you looking at a
+    // list with no way back to itself. Only the tab moves; an open word stays open.
+    if (topic === "inbox" && language && !inboxCount(next, language)) setTopic("all");
+    notify(moved === 1 ? "Filed — it is in its topics now" : `Filed ${moved} words`);
+  }
+
   async function signOut() {
     syncEngine.stop();
     jobStream.stop();
@@ -1199,6 +1223,13 @@ export default function App() {
                   Hand-editing drops a live proposal: two sets of unsaved changes over one entry is not a
                   state worth having. */}
               {mode === "yaml" && <button className="icon-btn" aria-label="Edit as YAML" title="Edit as YAML" onClick={() => { setProposal(null); setMode("edit"); }}><PencilIcon /></button>}
+              {/* Reading the word is what takes it out of the Inbox, so the button is here, where you
+                  have just read it — and in the bar rather than on the page, because Cards has no
+                  masthead and the Inbox is exactly where an unread word is opened. */}
+              {article.lexeme.status === "inbox" && <button
+                className="icon-btn art-file" aria-label="File it" title="File it — out of the Inbox"
+                onClick={() => void fileWords([article.lexeme.id])}
+              ><FileIcon /></button>}
               <button className="icon-btn art-delete" aria-label="Delete" title="Delete" onClick={() => void removeLexeme(article.lexeme.id)}><TrashIcon /></button>
               {/* A phone has room for one control beside the word, so the views and Delete fold into this. */}
               <div className="art-more" onClick={(event) => event.stopPropagation()}>
@@ -1216,6 +1247,9 @@ export default function App() {
                       }}>{name}</button>;
                   })}
                   <div className="menu-sep" />
+                  {article.lexeme.status === "inbox" && <button role="menuitem"
+                    onClick={() => { setArticleMenu(false); void fileWords([article.lexeme.id]); }}
+                  >File it</button>}
                   <button role="menuitem" className="danger" onClick={() => { setArticleMenu(false); void removeLexeme(article.lexeme.id); }}>Delete this word</button>
                 </div>}
               </div>
@@ -1233,7 +1267,7 @@ export default function App() {
               : !article ? <LexemeList
                   rows={rows} languageName={active.name} topic={topic}
                   topicLabel={topicLabel} topicIcon={topicIcon} query={query} sort={sort}
-                  onSort={setSort} onOpen={openLexeme}
+                  onSort={setSort} onOpen={openLexeme} onFileAll={(ids) => void fileWords(ids)}
                   external={externalSearch}
                   working={(id) => isEnriching(jobsStatus, id)}
                 />

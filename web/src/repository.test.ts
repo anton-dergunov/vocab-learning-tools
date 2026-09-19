@@ -370,3 +370,47 @@ describe("loops", () => {
     expect(snapshot.loops[0].deleted).toBe(false);
   });
 });
+
+describe("taking words out of the Inbox", () => {
+  const seeded = async (statuses: ("inbox" | "active" | "learned")[]) => {
+    const repository = new LocalAcervoRepository(new MemoryDatabase());
+    await repository.load("owner0000000001");
+    const remote = fakeRemote();
+    repository.attachRemote(remote);
+    const ids = await Promise.all(statuses.map((status, index) =>
+      repository.saveLexeme({ ...lexemeInput, headword: `word${index}`, status },
+        `lexeme00000000${index}`).then((lexeme) => lexeme.id)));
+    remote.calls = 0;
+    remote.sent = [];
+    return { repository, remote, ids };
+  };
+
+  it("files every named inbox word in one round trip", async () => {
+    const { repository, remote, ids } = await seeded(["inbox", "inbox", "inbox"]);
+    expect(await repository.fileWords(ids)).toBe(3);
+
+    // One change set, not one request each: this exists to empty an Inbox a whole imported
+    // vocabulary landed in, and a few hundred round trips is minutes on a tablet.
+    expect(remote.calls).toBe(1);
+    expect(remote.sent[0].lexemes).toHaveLength(3);
+    expect(repository.snapshot().lexemes.map((lexeme) => lexeme.status)).toEqual(["active", "active", "active"]);
+  });
+
+  it("leaves a word that is not in the Inbox exactly as it is", async () => {
+    const { repository, remote, ids } = await seeded(["inbox", "learned", "active"]);
+    expect(await repository.fileWords(ids)).toBe(1);
+    expect(remote.sent[0].lexemes).toHaveLength(1);
+    expect(repository.snapshot().lexemes.map((lexeme) => lexeme.status)).toEqual(["active", "learned", "active"]);
+
+    // Filing twice costs one empty call and never a revision.
+    expect(await repository.fileWords(ids)).toBe(0);
+    expect(remote.calls).toBe(1);
+  });
+
+  it("changes nothing locally when the server refuses", async () => {
+    const { repository, remote, ids } = await seeded(["inbox", "inbox"]);
+    remote.fail = new Error("Acervo is not connected to the server, so this change was not saved.");
+    await expect(repository.fileWords(ids)).rejects.toThrow(/was not saved/);
+    expect(repository.snapshot().lexemes.map((lexeme) => lexeme.status)).toEqual(["inbox", "inbox"]);
+  });
+});

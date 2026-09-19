@@ -1132,6 +1132,43 @@ describe("Acervo application", () => {
     expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemebalsa0001")?.deleted).toBe(true);
   });
 
+  it("files a word out of the Inbox from its article, into its own topics", async () => {
+    signedIn();
+    await openList();
+    acceptWrites();
+    fireEvent.click(screen.getByRole("button", { name: /Inbox/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /espolvorear/ }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "File it" }));
+    expect(await screen.findByText(/in its topics now/)).toBeInTheDocument();
+    expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemeespolv001")!.status).toBe("active");
+
+    // The word stays open — you have just read it, which is what filing it means — and the button
+    // is gone, because there is nothing left to file.
+    expect(screen.getByRole("heading", { name: "espolvorear" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "File it" })).not.toBeInTheDocument();
+    // The Inbox is empty, so the rail drops its tab and stands on All words instead of a list with
+    // no way back to itself. The word is now in Food, which it always named.
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Inbox/ })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Food/ }));
+    expect(await screen.findByRole("button", { name: /espolvorear/ })).toBeInTheDocument();
+  });
+
+  it("offers File all only on the Inbox, and says how many it would move", async () => {
+    signedIn();
+    await openList();
+    acceptWrites();
+    // Not on a topic: those rows are filed already.
+    expect(screen.queryByRole("button", { name: /File all/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Inbox/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "File all 1" }));
+
+    expect(await screen.findByText(/in its topics now/)).toBeInTheDocument();
+    expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemeespolv001")!.status).toBe("active");
+    await screen.findByRole("heading", { name: /All words/ });
+  });
+
   it("refuses to delete while offline, and changes nothing", async () => {
     signedIn();
     await openList();

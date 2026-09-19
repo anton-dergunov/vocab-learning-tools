@@ -92,7 +92,7 @@ function ExternalSection({ query, search }: { query: string; search: ExternalSea
 }
 
 export default function LexemeList({
-  rows, languageName, topic, topicLabel, topicIcon, query, sort, onSort, onOpen, external, working
+  rows, languageName, topic, topicLabel, topicIcon, query, sort, onSort, onOpen, onFileAll, external, working
 }: {
   rows: ListRow[];
   languageName: string;
@@ -103,6 +103,8 @@ export default function LexemeList({
   sort: SortKey;
   onSort(sort: SortKey): void;
   onOpen(id: string): void;
+  /** Empties the Inbox into the words' own topics. Only the Inbox has one. */
+  onFileAll?(ids: string[]): void;
   /** Absent when nothing is being searched — an empty topic list has no external half. */
   external?: ExternalSearch;
   /** Whether the server is still filling a word in, so it can be found without opening it. */
@@ -125,6 +127,9 @@ export default function LexemeList({
   }
 
   const showExternal = Boolean(trimmed && external?.enabled);
+  // Only the Inbox tab itself, never a search that happens to turn up unreviewed words: those rows
+  // are an answer to a question, not a pile to be emptied.
+  const fileable = !trimmed && topic === "inbox" ? rows : [];
 
   return <>
     <div className="list-head">
@@ -133,6 +138,13 @@ export default function LexemeList({
         <p className="label sub">{sub}</p>
       </div>
       <div className="sortbar">
+        {/* The count is in the label rather than behind a confirmation: a bulk press should be an
+            informed one, and a dialog over a reversible field would be heavier than deleting a word,
+            which asks nothing. */}
+        {fileable.length > 0 && onFileAll
+          && <button className="sort-btn" onClick={() => onFileAll(fileable.map((row) => row.id))}>
+            File all {fileable.length}
+          </button>}
         {SORTS.map(([key, text]) =>
           <button key={key} className={`sort-btn ${sort === key ? "on" : ""}`} onClick={() => onSort(key)}>{text}</button>)}
       </div>

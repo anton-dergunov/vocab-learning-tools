@@ -680,6 +680,23 @@ export function remintIds(draft: ArticleDraft): ArticleDraft {
   };
 }
 
+/**
+ * An imported word is filed, never left in the Inbox.
+ *
+ * The Inbox holds what arrived without anyone reading it, which is why only unattended capture puts
+ * a word there. A bundle is chosen from a file picker and applied on a button press, so nothing in
+ * it arrived unread — and the bundles that exist were written when every captured word carried
+ * `status: inbox`, so honouring the line files a whole vocabulary into a room it has to be emptied
+ * out of one word at a time.
+ *
+ * Only `inbox` is rewritten. `learned`, `retired` and `suppressed` are curation the owner did, and
+ * a bundle is a backup of that; the export still writes all four, and the asymmetry is the point —
+ * the file records what a word *was*, this decides what it *becomes*.
+ */
+export function filed(draft: ArticleDraft): ArticleDraft {
+  return draft.status === "inbox" ? { ...draft, status: "active" } : draft;
+}
+
 const key = (language: string, headword: string) => `${language}\n${headword.trim().toLowerCase()}`;
 
 /**
@@ -762,7 +779,7 @@ export async function importBundle(
     try {
       // Enrichment is asked for once the bundle's pictures and clips are back, so the server fills
       // in only what the bundle did not carry and never draws over a picture it is about to get.
-      const lexemeId = await repository.saveArticle(remintIds(draft), undefined, { enrich: false });
+      const lexemeId = await repository.saveArticle(filed(remintIds(draft)), undefined, { enrich: false });
       words.add(identity);
       report.added += 1;
       // After the word exists, because a picture belongs to a sense that has to be there first —

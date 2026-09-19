@@ -52,6 +52,11 @@ export const HederaIcon = () => <svg viewBox="0 0 910 508" aria-hidden="true">
 </svg>;
 /** More actions: three dots in a row. */
 export const MoreIcon = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="18.5" cy="12" r="1.7" /></svg>;
+/* File it: the Inbox tray with an arrow leaving it — the same tray the rail's 📥 draws, going the
+   other way, so the button reads as the opposite of how the word got there. */
+export const FileIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} strokeLinejoin="round" aria-hidden="true">
+  <path d="M3 13h4l1.5 3h7l1.5-3h4" /><path d="M3 13l3-7h12l3 7v5H3z" /><path d="M12 10V2M9 5l3-3 3 3" />
+</svg>;
 
 /* ── the loop player ──
    Transport glyphs drawn solid rather than stroked: at 22 px a stroked triangle reads as the

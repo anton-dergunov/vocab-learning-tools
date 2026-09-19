@@ -80,6 +80,8 @@ export interface AcervoRepository {
   saveImagePrompt(input: ImagePromptInput, id?: string): Promise<ImagePrompt>;
   saveStudyState(input: StudyStateInput, id?: string): Promise<StudyState>;
   saveLoop(input: LoopInput, id?: string): Promise<Loop>;
+  /** Takes the named words out of the Inbox in one write, and says how many moved. */
+  fileWords(ids: readonly string[]): Promise<number>;
   delete(kind: EntityKind, id: string): Promise<void>;
 }
 
@@ -303,6 +305,27 @@ export class LocalAcervoRepository implements AcervoRepository {
    * and loud when it fails, like every other write.
    */
   saveLoop(input: LoopInput, id?: string) { return this.save("loops", input, id) as Promise<Loop>; }
+
+  /**
+   * Takes words out of the Inbox, as one write.
+   *
+   * One change set rather than a `saveLexeme` each, because the case this exists for is emptying an
+   * Inbox a whole imported vocabulary landed in: a few hundred round trips is minutes on a tablet,
+   * and half of them landing is a state nothing else here can produce.
+   *
+   * A word that is not in the Inbox is left out rather than rewritten, so filing twice costs one
+   * empty call and never a revision. The count is what was actually changed.
+   */
+  async fileWords(ids: readonly string[]): Promise<number> {
+    if (!this.ready) throw new Error("Load the Acervo repository before writing.");
+    const wanted = new Set(ids);
+    const filing = this.graph.lexemes
+      .filter((lexeme) => wanted.has(lexeme.id) && !lexeme.deleted && lexeme.status === "inbox")
+      .map((lexeme) => ({ ...lexeme, status: "active", ...this.stamp(lexeme) } as Lexeme));
+    if (!filing.length) return 0;
+    await this.commit({ lexemes: filing });
+    return filing.length;
+  }
 
   /**
    * Saves a whole article, edited as YAML, in one write — on the server.

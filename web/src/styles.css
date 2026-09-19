@@ -2337,10 +2337,10 @@ details.fold .fold-body { padding: 4px 0 18px; }
 /* Quotation marks a size up from the sentence, without opening its lines. */
 .quote-mark { font-size: 1.3em; line-height: 0; vertical-align: -.1em; }
 
-/* Phone: the word is the toolbar's title in Cards, the views and Delete fold into a menu, and a long
-   phrase steps down in size and balances over two lines rather than being cut off. */
+/* Phone: the word is the toolbar's title in Cards, the views, File it and Delete fold into a menu,
+   and a long phrase steps down in size and balances over two lines rather than being cut off. */
 @container vp (max-width: 720px) {
-  .art-views, .art-delete { display: none; }
+  .art-views, .art-delete, .art-file { display: none; }
   .art-more { display: block; }
   .art-bar.carding .spacer { display: none; }
   .art-bar.carding .art-title {

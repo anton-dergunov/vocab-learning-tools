@@ -574,6 +574,29 @@ describe("importing a bundle", () => {
     expect(article.attestations[0].id).not.toBe("attestpicar0010");
   });
 
+  it("files a word the bundle left in the Inbox, and leaves the other statuses alone", async () => {
+    // Every bundle that exists was written when a captured word carried `status: inbox`, so
+    // honouring the line files a whole vocabulary into a room it has to be emptied out of by hand.
+    // Curation the owner did is a different thing and survives.
+    const files = bundle().map((file) => file.path.endsWith("/picar.yaml")
+      ? { ...file, text: file.text.replace(/^status: .*$/m, "status: inbox") }
+      : file.path.endsWith("/turmoil.yaml")
+        ? { ...file, text: file.text.replace(/^status: .*$/m, "status: learned") }
+        : file);
+
+    const repository = await emptyReplica();
+    await importBundle(repository, readBundle(files));
+
+    const restored = repository.snapshot() as VocabularyGraph;
+    const statusOf = (headword: string) =>
+      restored.lexemes.find((lexeme) => lexeme.headword === headword)!.status;
+    expect(statusOf("picar")).toBe("active");
+    expect(statusOf("turmoil")).toBe("learned");
+    // Filed *into its topics* — the topic line was always read; the status is what hid it.
+    const picar = restored.lexemes.find((lexeme) => lexeme.headword === "picar")!;
+    expect(articleFor(restored, picar.id)!.topics.map((topic) => topic.name)).toEqual(["Food"]);
+  });
+
   it("skips a word already held rather than overwriting or duplicating it", async () => {
     const repository = await emptyReplica();
     const plan = readBundle(bundle());

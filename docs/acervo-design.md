@@ -711,7 +711,13 @@ captured → processing → inbox  → active            (it arrived unattended:
 By the time you open the app the article is built and waiting. Review is reading the rendered entry
 and saving it, not a triage session, and what you have read is not marked as unread afterwards: an
 entry you saved from the Add view is an ordinary word. The Inbox holds only what arrived without
-anyone reading it. Review is of the whole entry — a missed sense is the real risk, not one example —
+anyone reading it — which is why **an imported bundle is filed rather than piled up there**: a file
+is chosen from a picker and applied on a button press, so nothing in it arrived unattended. Only
+`inbox` is rewritten on the way in; `learned`, `retired` and `suppressed` are curation the owner did
+and a bundle is a backup of it. And because the Inbox is a room a few hundred words can land in at
+once, it has a **door**: **File it** on an article, and **File all** on the tab, both writing
+`status: active` through the ordinary graph write. Without one the only way out was editing a word's
+YAML, once per word. Review is of the whole entry — a missed sense is the real risk, not one example —
 so there is no approval flag on individual records. Add **"regenerate with a note"** — a free-text nudge that re-runs generation in
 seconds. Small feature, large effect on whether you trust the automatic path.
 

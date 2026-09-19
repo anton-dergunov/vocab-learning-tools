@@ -53,6 +53,9 @@ const ICON = {
   caret:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
   trash:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>',
+  /* File it: the Inbox tray with an arrow leaving it, so it reads as the opposite of how the word
+     got there. */
+  file:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h4l1.5 3h7l1.5-3h4"/><path d="M3 13l3-7h12l3 7v5H3z"/><path d="M12 10V2M9 5l3-3 3 3"/></svg>',
   close:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   book:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H18v14H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 1 5.5 18H20v2.5H5.5"/><path d="M8 8h6"/></svg>',
   globe:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.2 2.3 3.3 5.2 3.3 8.5S14.2 18.2 12 20.5c-2.2-2.3-3.3-5.2-3.3-8.5S9.8 5.8 12 3.5z"/></svg>',
@@ -186,6 +189,21 @@ function inLanguage()  { return LEXEMES.filter((x) => x.language === state.lang)
 function inboxCount()  { return inLanguage().filter((x) => x.status === "inbox").length; }
 function topicCount(k) { return inLanguage().filter((x) => x.topics.includes(k) && x.status !== "inbox").length; }
 
+/**
+ * Out of the Inbox and into its topics — one word, or the whole tab at once.
+ *
+ * The rail drops the Inbox tab once it is empty, so standing on it would leave you looking at a list
+ * with no way back to itself; only the tab moves, and an open word stays open.
+ */
+function fileWords(ids) {
+  const filing = LEXEMES.filter((x) => ids.includes(x.id) && x.status === "inbox");
+  if (!filing.length) return;
+  filing.forEach((x) => { x.status = "active"; });
+  if (state.topic === "inbox" && !inboxCount()) state.topic = "all";
+  render();
+  toast(filing.length === 1 ? "Filed — it is in its topics now" : `Filed ${filing.length} words`);
+}
+
 function visible() {
   let rows = inLanguage();
   const q = state.query.trim().toLowerCase();
@@ -268,6 +286,10 @@ function renderList() {
     sub = `${rows.length} word${rows.length === 1 ? "" : "s"} in ${langOf(state.lang).name}`;
   }
 
+  // Only the Inbox tab itself, never a search that happens to turn up unreviewed words: those rows
+  // are an answer to a question, not a pile to be emptied.
+  const fileable = !q && state.topic === "inbox" ? rows : [];
+
   const sortBtn = (id, text) => `<button class="sort-btn ${state.sort === id ? "on" : ""}" data-sort="${id}">${text}</button>`;
   const strength = (x) => {
     const s = x.study ? Math.min(4, Math.max(1, Math.round(Math.log10(Math.max(x.study.stability, 1.1)) * 1.7 + 1))) : 0;
@@ -282,6 +304,7 @@ function renderList() {
         <p class="label sub">${sub}</p>
       </div>
       <div class="sortbar">
+        ${fileable.length ? `<button class="sort-btn" id="fileAllBtn">File all ${fileable.length}</button>` : ""}
         ${sortBtn("recent", "Recent")}${sortBtn("alpha", "A–Z")}${sortBtn("hard", "Hardest")}
       </div>
     </div>
@@ -1655,6 +1678,7 @@ function render() {
         <button data-mode="yaml" class="${state.mode === "yaml" ? "on" : ""}">YAML</button>
       </div>
       ${state.mode === "yaml" ? `<button class="icon-btn" id="editBtn" aria-label="Edit as YAML" title="Edit as YAML">${ICON.pencil}</button>` : ""}
+      ${x.status === "inbox" ? `<button class="icon-btn art-file" id="fileBtn" aria-label="File it" title="File it \u2014 out of the Inbox">${ICON.file}</button>` : ""}
       <button class="icon-btn art-delete" id="delBtn" aria-label="Delete" title="Delete">${ICON.trash}</button>
       <div class="art-more">
         <button class="icon-btn" id="moreBtn" aria-label="Article menu">${ICON.more}</button>
@@ -1663,6 +1687,7 @@ function render() {
           <button data-view="cards" class="${view === "cards" ? "on" : ""}"${cardsOff}>Cards</button>
           <button data-mode="yaml" class="${state.mode === "yaml" ? "on" : ""}">YAML</button>
           <div class="menu-sep"></div>
+          ${x.status === "inbox" ? '<button id="fileBtn2">File it</button>' : ""}
           <button id="delBtn2" class="danger">Delete this word</button>
         </div>
       </div>`;
@@ -1803,6 +1828,10 @@ document.addEventListener("click", (ev) => {
   if (hit("#moreBtn")) { $("#articleMenu").classList.toggle("open"); return; }
   if (hit("#delBtn2")) { toast("Delete writes a tombstone — not wired up in the prototype"); return; }
   if (hit("#delBtn"))  { toast("Delete writes a tombstone — not wired up in the prototype"); return; }
+  /* Filing is wired up for real, unlike Delete: it is one field, and what it does to the rail and
+     the counts is the whole thing worth looking at. */
+  if (hit("#fileBtn") || hit("#fileBtn2")) { fileWords([state.openId]); return; }
+  if (hit("#fileAllBtn")) { fileWords(visible().map((x) => x.id)); return; }
 
   if (hit("[data-add-picture]")) { toast("Opens the picture dialog — brief, Draw, or your own picture"); return; }
   const say = hit("[data-say]");
