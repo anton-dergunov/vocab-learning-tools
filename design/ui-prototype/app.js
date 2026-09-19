@@ -38,7 +38,9 @@ const state = {
   loopOpen: null,
   /* Which loop has been right-clicked. A pointer has a gesture for this and a finger does not, so
      the finger gets the row itself: it is two snap points wide and Delete is the second. */
-  loopMenu: null
+  loopMenu: null,
+  /* Where in that row, so the menu opens under the pointer. */
+  loopMenuAt: { x: 0, y: 0 }
 };
 
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -1364,7 +1366,7 @@ function loopRow(loop) {
       </button>
       <div class="loop-swipe"><button class="loop-delete" data-loop-delete="${loop.id}">Delete</button></div>
     </div>
-    ${state.loopMenu === loop.id ? `<div class="menu open loop-menu" role="menu">
+    ${state.loopMenu === loop.id ? `<div class="menu open loop-menu" role="menu" style="--menu-x:${state.loopMenuAt.x}px;--menu-y:${state.loopMenuAt.y}px">
       <button role="menuitem" class="danger" data-loop-delete="${loop.id}">Delete this loop</button>
     </div>` : ""}
   </div>`;
@@ -1620,7 +1622,9 @@ $("#main").addEventListener("contextmenu", (ev) => {
   const item = ev.target.closest("[data-loop-item]");
   if (!item) return;
   ev.preventDefault();
+  const box = item.getBoundingClientRect();
   state.loopMenu = item.dataset.loopItem;
+  state.loopMenuAt = { x: ev.clientX - box.left, y: ev.clientY - box.top };
   render();
 });
 

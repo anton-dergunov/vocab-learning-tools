@@ -221,6 +221,23 @@ The change takes effect within a minute or two.
 > **Scope, on purpose.** Overriding at project level leaves every other project of yours protected.
 > This is the smallest change that unblocks Acervo.
 
+The following sequence of commands might also be required to get Organization Policy Administrator (`roles/orgpolicy.policyAdmin`) on the organization:
+
+```bash
+% gcloud organizations add-iam-policy-binding ORG_ID \
+  --member="user:address@gmail.com" \
+  --role="roles/orgpolicy.policyAdmin"
+% gcloud organizations get-iam-policy ORG_ID \
+  --flatten="bindings[].members" \
+  --filter="bindings.members:address@gmail.com" \
+  --format="value(bindings.role)"
+...
+roles/orgpolicy.policyAdmin
+% gcloud resource-manager org-policies disable-enforce \
+  iam.disableServiceAccountKeyCreation \
+  --project=PROJECT_ID
+```
+
 ### Step 5 · Create and download the key
 
 **Console** → [console.cloud.google.com/iam-admin/serviceaccounts](https://console.cloud.google.com/iam-admin/serviceaccounts)

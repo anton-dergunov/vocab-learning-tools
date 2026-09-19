@@ -14,7 +14,7 @@
  * simply reads as one that was asked for and not made, and Try again queues another.
  */
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { jobFor, jobStream, isOpen as jobIsOpen } from "./jobs";
 import { stripOf } from "./ProgressStrip";
 import type { VocabularyGraph } from "./domain";
@@ -42,14 +42,21 @@ export default function LoopView({ graph, language, onMake, onClose, onDelete }:
   const loops = loopsIn(graph, language);
   const [openId, setOpenId] = useState<string | null>(playback.loopId);
   const open = loops.find((loop) => loop.id === openId) ?? null;
-  /* Which row has been right-clicked. A pointer has a gesture for this and a finger does not, so the
-     finger gets the row itself: the list below is two snap points wide and Delete is the second. */
-  const [menuId, setMenuId] = useState<string | null>(null);
+  /* Which row has been right-clicked, and where within it, so the menu opens under the pointer. A
+     pointer has a gesture for this and a finger does not, so the finger gets the row itself: the
+     list below is two snap points wide and Delete is the second. */
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const menuId = menu?.id ?? null;
 
   useEffect(() => {
     if (!menuId) return;
-    const away = () => setMenuId(null);
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuId(null); };
+    /* A press inside the menu is left alone: it is the first half of the click that chooses Delete,
+       and closing on it unmounts the button before the click can arrive. */
+    const away = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(".loop-menu")) return;
+      setMenu(null);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
     window.addEventListener("pointerdown", away);
     window.addEventListener("keydown", escape);
     return () => {
@@ -105,13 +112,17 @@ export default function LoopView({ graph, language, onMake, onClose, onDelete }:
           ? job.message || stripOf(job)?.failure || job.error || ""
           : "";
         const here = playback.loopId === loop.id && playback.playing;
-        const remove = () => { setMenuId(null); onDelete(loop.id); };
+        const remove = () => { setMenu(null); onDelete(loop.id); };
         /* The shell is the scroller, and Delete is its second snap point. The row itself is not
            `disabled` even when there is nothing to play: a loop that was never made is the one you
            most want rid of, and a disabled button answers no gesture at all. */
         return <div
           key={loop.id} className="loop-item"
-          onContextMenu={(event) => { event.preventDefault(); setMenuId(loop.id); }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            const box = event.currentTarget.getBoundingClientRect();
+            setMenu({ id: loop.id, x: event.clientX - box.left, y: event.clientY - box.top });
+          }}
         >
           <div className="loop-shell">
             <button
@@ -145,7 +156,10 @@ export default function LoopView({ graph, language, onMake, onClose, onDelete }:
               <button className="loop-delete" onClick={remove}>Delete</button>
             </div>
           </div>
-          {menuId === loop.id && <div className="menu open loop-menu" role="menu">
+          {menu?.id === loop.id && <div
+            className="menu open loop-menu" role="menu"
+            style={{ "--menu-x": `${menu.x}px`, "--menu-y": `${menu.y}px` } as CSSProperties}
+          >
             <button role="menuitem" className="danger" onClick={remove}>Delete this loop</button>
           </div>}
         </div>;

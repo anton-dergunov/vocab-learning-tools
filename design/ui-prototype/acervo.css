@@ -962,9 +962,10 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
   border: 0; border-radius: 10px; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 500;
   background: var(--warn); color: var(--on-core);
 }
-/* Anchored to the row rather than to the list, because there is one per row and the right-click
-   that opened it was on that row. */
-.loop-menu { top: calc(100% - 8px); right: 10px; min-width: 180px; }
+/* Opens with its corner under the pointer, as a right-click menu does everywhere else: `--menu-x`
+   and `--menu-y` are the click's offset within the row. The `min()` keeps a click near the right
+   edge from pushing the menu past it. */
+.loop-menu { left: min(var(--menu-x), calc(100% - 190px)); top: var(--menu-y); right: auto; min-width: 180px; }
 .loop-go { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 999px;
            background: var(--core-soft); color: var(--core); }
 .loop-row.on .loop-go { background: var(--core); color: var(--on-core); }

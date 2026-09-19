@@ -64,8 +64,35 @@ describe("the loops list", () => {
     expect(screen.queryByRole("menuitem")).toBeNull();
 
     fireEvent.contextMenu(screen.getByText("asco"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete this loop" }));
+    const choice = screen.getByRole("menuitem", { name: "Delete this loop" });
+    /* A mouse presses before it clicks, and the press is what used to close the menu: a bare click
+       reached the button, a real one found it already gone. */
+    fireEvent.pointerDown(choice);
+    fireEvent.click(choice);
     expect(onDelete).toHaveBeenCalledWith("loop00000000001");
+  });
+
+  it("closes the menu on a press anywhere else, and on Escape", () => {
+    const onDelete = view([loop({})]);
+
+    fireEvent.contextMenu(screen.getByText("asco"));
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menuitem")).toBeNull();
+
+    fireEvent.contextMenu(screen.getByText("asco"));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menuitem")).toBeNull();
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it("opens the menu at the pointer", () => {
+    view([loop({})]);
+    fireEvent.contextMenu(screen.getByText("asco"), { clientX: 240, clientY: 36 });
+
+    /* jsdom has no layout, so the row's box is at the origin and the offsets are the client point. */
+    const menu = screen.getByRole("menu");
+    expect(menu.style.getPropertyValue("--menu-x")).toBe("240px");
+    expect(menu.style.getPropertyValue("--menu-y")).toBe("36px");
   });
 
   it("does not open a loop that was never made, but still lets it be right-clicked", () => {
