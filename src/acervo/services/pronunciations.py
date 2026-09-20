@@ -34,7 +34,7 @@ from acervo.pronunciation.ids import pronunciation_id
 from acervo.pronunciation.targets import COLLECTION, Target, current, target_in
 from acervo.pronunciation import takes as take_store
 from acervo.repository import graph, pronunciation_settings
-from acervo.repository.pronunciation_settings import ORDERS, PREGENERATED, USES
+from acervo.repository.pronunciation_settings import ORDERS, SWITCHES, USES
 from acervo.services.models import chain_for, refusal
 from acervo.services.prompts import prompt_text
 from acervo.settings import Settings
@@ -132,11 +132,11 @@ def apply_settings(settings: Settings, owner: str, body: dict[str, Any]) -> dict
     if "pregenerate" in body:
         submitted = body["pregenerate"]
         if not isinstance(submitted, dict) or any(
-            name not in PREGENERATED or not isinstance(value, bool) for name, value in submitted.items()
+            name not in SWITCHES or not isinstance(value, bool) for name, value in submitted.items()
         ):
             raise ApiError(
                 400, "invalid_input",
-                f"Recording in advance takes true or false for {', '.join(PREGENERATED)}.",
+                f"Recording in advance takes true or false for {', '.join(SWITCHES)}.",
             )
         changes["pregenerate"] = submitted
     if "delivery" in body:
@@ -425,10 +425,24 @@ def _target(owner: str, route_kind: str, target_id: str) -> tuple[Target, dict[s
 
 def _speak(settings: Settings, owner: str, text: str, language: str, order: str,
            style: str | None, caller: str, on_failure,
-           preferences=None) -> speaking.Spoken:
+           preferences=None, pinned: tuple[str, str, str | None] | None = None) -> speaking.Spoken:
+    """`pinned` is `(provider, model, voice)`: ask exactly that pair and that voice, and never another.
+
+    For a caller that has to hear one voice throughout — a story is read by whoever read its first
+    passage. The chain is then a chain of one, so a refusal is the answer rather than a cue to fall
+    through, and there is nothing to hedge onto.
+    """
     preferences = preferences or pronunciation_settings.settings(owner)
     chain_name = CHAINS[order]
     try:
+        if pinned is not None:
+            provider_id, model, voice_name = pinned
+            return speaking.speak(
+                text, language,
+                chosen=[(provider_id, model)], catalogue=load_catalogue(),
+                style=style, voice=lambda provider, model_id, lang: voice_name,
+                caller=caller, hedge_after=None,
+            )
         return speaking.speak(
             text, language,
             chosen=chain_for(settings, owner, chain_name), catalogue=load_catalogue(),

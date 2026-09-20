@@ -389,6 +389,15 @@ describe("reading a bundle", () => {
     expect(example.emotion).toBeNull();
   });
 
+  it("reads a bundle from the version before stories were recorded exactly as it stands", () => {
+    const files = bundle().map((file) => file.path === MANIFEST_FILE
+      ? { ...file, text: file.text.replace(`schemaVersion: ${SCHEMA_VERSION}`, "schemaVersion: 14") }
+      : file);
+    const plan = readBundle(files);
+    expect(plan.problems).toEqual([]);
+    expect(plan.articles.length).toBeGreaterThan(0);
+  });
+
   it("refuses a bundle from another schema version, naming both", () => {
     const files = bundle().map((file) => file.path === MANIFEST_FILE
       ? { ...file, text: file.text.replace(`schemaVersion: ${SCHEMA_VERSION}`, "schemaVersion: 4") }

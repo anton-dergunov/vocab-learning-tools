@@ -1509,6 +1509,16 @@ function renderStories() {
     const words = wordsOf(open.id);
     const pages = parts.length + 1;
     const at = Math.min(state.storyAt, pages - 1);
+    /* A part read by a directed voice knows where its passages are, and each is a place to start: the
+       one that is sounding is tinted, and touching another moves there. The application reads them
+       off the recording; this picture cuts the first part at its first sentence and lights it, as if
+       it were playing. A clear voice has no passages, so the other parts are plain text. */
+    const passages = (part, words, language, playing) => {
+      if (!playing) return `<p class="story-text" lang="${language}">${markWords(part.text, words)}</p>`;
+      const cut = part.text.search(/[.!?]\s/) + 2;
+      const seg = (text, on) => `<span class="story-seg${on ? " on" : ""}">${markWords(text, words)}</span>`;
+      return `<p class="story-text tappable" lang="${language}">${seg(part.text.slice(0, cut), true)}${seg(part.text.slice(cut), false)}</p>`;
+    };
     const partPage = (part, index) => {
       const shown = Boolean(state.storyShown[part.id]);
       return `<article class="card story-card" aria-label="Part ${index + 1}">
@@ -1518,8 +1528,8 @@ function renderStories() {
             : `<span class="story-pic-note">${part.failureReason ? "No picture for this part" : "Drawing\u2026"}</span>`}</div>
           <div class="story-copy">
             <span class="card-ornament above" aria-hidden="true">${ICON.hedera}</span>
-            <h3 class="story-head"><span class="story-no">${index + 1}</span> \u00b7 ${esc(part.heading)}</h3>
-            <p class="story-text" lang="${open.language}">${markWords(part.text, words)}</p>
+            <h3 class="story-head"><span class="story-no">${index + 1}</span> \u00b7 ${esc(part.heading)}<button class="say head always story-listen${index === 0 ? " playing" : ""}" data-say="${esc(strip(part.text))}" aria-label="Read this part aloud">${ICON.play}</button></h3>
+            ${passages(part, words, open.language, index === 0)}
             <div class="story-tr-slot">${shown
               ? `<p class="story-tr"><span class="story-tr-head">${esc(part.headingTranslation)}. </span>${markWords(part.translation, words, "translationForms")}</p>
                 <button class="story-hide" data-hide="${part.id}" aria-label="Hide the translation">Hide</button>`

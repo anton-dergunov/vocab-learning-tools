@@ -1,4 +1,8 @@
-"""The `story` job: write, translate, brief, draw.
+"""The `story` job: write, translate, brief, draw — and, when switched on, read aloud.
+
+Reading aloud is switched **off** for everything here, by the `models` fixture: this file is about
+the four steps that make a story, and `test_story_audio.py` is about the fifth. A step that is off
+is skipped, which is itself pinned there.
 
 The models are faked at `acervo.models.call`'s own seams — `completion` and `image_generation` —
 so this exercises the real chain, the real parsers and the real writes, and never the network.
@@ -18,7 +22,7 @@ import litellm
 import pytest
 from graph_records import lexeme, sense, vocabulary
 
-from acervo.repository import graph, jobs
+from acervo.repository import graph, jobs, pronunciation_settings
 from acervo.services import stories
 from acervo.work import kinds
 from acervo.work.runner import Runner
@@ -107,6 +111,7 @@ def models(server, monkeypatch) -> Models:
 
     # The real encoder runs, on a real PNG: it is the same WebP path a drawn picture takes, and
     # stubbing it would leave the bytes the digest is taken from untested.
+    pronunciation_settings.save(server.owner, pregenerate={pronunciation_settings.STORIES: False})
     return stub
 
 
@@ -144,10 +149,10 @@ def a_story(server, count: int = 2) -> dict:
     return answer.json()["data"]["story"]
 
 
-def test_the_kind_declares_its_four_steps_before_it_runs(server):
+def test_the_kind_declares_its_five_steps_before_it_runs(server):
     """The progress strip names them while the job is queued, so they cannot be discovered late."""
     assert kinds.find("story").steps == (
-        "story.write", "story.translate", "story.brief", "story.draw"
+        "story.write", "story.translate", "story.brief", "story.draw", "story.audio"
     )
 
 

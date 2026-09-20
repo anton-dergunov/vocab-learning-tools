@@ -94,6 +94,8 @@ function failureOf(step: JobStep): string {
       return step.message ? `The pictures could not be planned — ${step.message}` : "The pictures could not be planned";
     case "story.draw":
       return step.message ? `Some pictures could not be drawn — ${step.message}` : "Some pictures could not be drawn";
+    case "story.audio":
+      return step.message ? `Some parts could not be recorded — ${step.message}` : "Some parts could not be recorded";
     case "corpus.update":
       return "The recorded-speech corpus could not be updated";
     default:
@@ -102,12 +104,16 @@ function failureOf(step: JobStep): string {
 }
 
 /**
- * What each of a story's steps takes of the whole, by how long it tends to take. Drawing is the long
- * one, and the only one that can say how far through itself it is.
+ * What each of a story's steps takes of the whole, by how long it tends to take. Drawing and
+ * recording are the long ones, and the only two that can say how far through themselves they are.
+ * A step that is skipped — recording, when Settings ▸ Stories has it off — counts as finished.
  */
 const STORY_WEIGHTS: Record<string, number> = {
-  "story.write": 30, "story.translate": 15, "story.brief": 10, "story.draw": 45
+  "story.write": 25, "story.translate": 10, "story.brief": 10, "story.draw": 35, "story.audio": 20
 };
+
+/** The steps that report `done` of `total`, and so count for part of their weight while running. */
+const STORY_COUNTED = new Set(["story.draw", "story.audio"]);
 
 function storyLabel(step: JobStep): string {
   const waiting = step.state === "waiting" ? " (the provider is busy)" : "";
@@ -118,6 +124,11 @@ function storyLabel(step: JobStep): string {
       return `Translating it${waiting}`;
     case "story.brief":
       return `Planning the pictures${waiting}`;
+    case "story.audio":
+      if (step.total) {
+        return `Recording part ${Math.min((step.done ?? 0) + 1, step.total)} of ${step.total}${waiting}`;
+      }
+      return `Recording the story${waiting}`;
     default:
       if (step.total) {
         return `Drawing picture ${Math.min((step.done ?? 0) + 1, step.total)} of ${step.total}${waiting}`;
@@ -127,7 +138,7 @@ function storyLabel(step: JobStep): string {
 }
 
 /**
- * A story is made in four steps, but to the person waiting it is one piece of work: so this says how
+ * A story is made in five steps, but to the person waiting it is one piece of work: so this says how
  * far through the whole it is, first, and only then which part of it is going on. The loop line puts
  * its phrase first because the render's own words are the news there; here the number is, and it is
  * a fraction of everything rather than of the step.
@@ -138,8 +149,8 @@ function storyLine(job: Job): StripLine {
   const finished = steps.reduce((sum, step) => {
     const weight = STORY_WEIGHTS[step.name];
     if (step.state === "done" || step.state === "skipped") return sum + weight;
-    // Only the drawing reports a count, so only it counts for part of its weight.
-    if (step.name === "story.draw" && step.total) return sum + weight * Math.min((step.done ?? 0) / step.total, 1);
+    // Only these report a count, so only they count for part of their weight.
+    if (STORY_COUNTED.has(step.name) && step.total) return sum + weight * Math.min((step.done ?? 0) / step.total, 1);
     return sum;
   }, 0);
   // Rounded down and held under 100, because this only runs while the job is open: a line that says

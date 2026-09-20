@@ -19,17 +19,26 @@
  * the translator reported, and a story translated before that was asked for simply has none.
  * See `selectors.ts`.
  *
+ * **A part can be read aloud**, by the button beside its heading. Pressing it while it plays pauses it
+ * and pressing it again carries on; there is no scrubber, because swiping to another part and back is
+ * the way to begin again — a page that stops being the one on screen stops its audio and forgets the
+ * position. A part read by a directed voice also knows where its passages are, and each is then a
+ * place to start: touched while nothing plays it plays that passage alone, touched while it plays it
+ * moves there. The passage that is sounding is tinted, and **nothing about it moves the text** — the
+ * tint is a background, never padding, weight or size. See `storyAudio.ts`.
+ *
  * Only a page and its neighbours fetch their picture. Every page is mounted — that is what lets a
  * swipe show the next one under the finger — but a picture is a blob behind bearer auth, and a
  * story of six should not ask for six at once to read the first.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { DeckEdges, Hedera, useDeck } from "./deck";
 import type { Story, StoryPart, StoryWord } from "./domain";
-import { BackIcon } from "./icons";
+import { BackIcon, PauseIcon, PlayIcon } from "./icons";
 import { usePicture } from "./picture";
-import { storySpans, type StoryWordEntry } from "./selectors";
+import { segmentSpans, storySpans, type StorySpan, type StoryWordEntry } from "./selectors";
+import { playSegment, stopPart, toggle, useStoryAudio } from "./storyAudio";
 
 function Picture({ part, title, near }: { part: StoryPart; title: string; near: boolean }) {
   const { url, error } = usePicture(near ? part.imageRef : null);
@@ -47,17 +56,50 @@ function Picture({ part, title, near }: { part: StoryPart; title: string; near: 
   </div>;
 }
 
-function PartPage({ story, part, number, words, near, revealed, onReveal, onHide }: {
+/** One run of a part's text: the word marked, or plain. */
+function Runs({ spans }: { spans: StorySpan[] }) {
+  return <>{spans.map((span, position) => (
+    span.lexemeId
+      ? <b key={position} className="story-mark">{span.text}</b>
+      : <span key={position}>{span.text}</span>
+  ))}</>;
+}
+
+function PartPage({ story, part, number, words, near, active, recording, revealed, onReveal, onHide }: {
   story: Story;
   part: StoryPart;
   number: number;
   words: StoryWord[];
   near: boolean;
+  /** Whether this is the page on screen. The audio of any other page is stopped. */
+  active: boolean;
+  /** The story is still being made and this part's recording is one of the things it will do. */
+  recording: boolean;
   revealed: boolean;
   onReveal(): void;
   onHide(): void;
 }) {
-  const spans = useMemo(() => storySpans(part.text, words), [part.text, words]);
+  const runs = useMemo(
+    () => segmentSpans(part.text, words, part.audioSegments), [part.text, words, part.audioSegments]);
+  const tappable = runs.some((run) => run.segment !== null);
+  const audio = useStoryAudio();
+  const mine = audio.partId === part.id;
+  const status = mine ? audio.status : "idle";
+  // The page that is no longer on screen stops, and so does one that is unmounted. A stopped part
+  // forgets its position, so coming back to it starts from the top.
+  useEffect(() => { if (!active) stopPart(part.id); }, [active, part.id]);
+  useEffect(() => () => stopPart(part.id), [part.id]);
+  const waiting = recording && !part.audioRef;
+  const label = waiting ? "This part is still being recorded"
+    : status === "busy" ? (part.audioRef ? "Loading the recording" : "Recording this part — press to cancel")
+      : status === "playing" ? "Pause" : status === "paused" ? "Carry on" : "Read this part aloud";
+  const touch = (event: MouseEvent<HTMLParagraphElement>) => {
+    if (!tappable) return;
+    // A drag that selected text is a selection, not a touch on a passage.
+    if (window.getSelection()?.toString()) return;
+    const target = event.target instanceof Element ? event.target.closest("[data-segment]") : null;
+    if (target) playSegment(part, Number(target.getAttribute("data-segment")));
+  };
   // The same word in the reader's own language, where the translator said what it became.
   const translated = useMemo(
     () => storySpans(part.translation, words, "translationForms"), [part.translation, words]);
@@ -66,13 +108,22 @@ function PartPage({ story, part, number, words, near, revealed, onReveal, onHide
       <Picture part={part} title={story.title || "this story"} near={near} />
       <div className="story-copy">
         <Hedera side="above" />
-        {part.heading && <h3 className="story-head"><span className="story-no">{number}</span> · {part.heading}</h3>}
-        <p className="story-text" lang={story.language}>
-          {spans.map((span, position) => (
-            span.lexemeId
-              ? <b key={position} className="story-mark">{span.text}</b>
-              : <span key={position}>{span.text}</span>
-          ))}
+        <h3 className="story-head">
+          {part.heading && <><span className="story-no">{number}</span> · {part.heading}</>}
+          <button
+            type="button" className={`say head always story-listen${status === "playing" || status === "paused" ? " playing" : ""}${status === "busy" ? " busy" : ""}`}
+            aria-label={label} aria-busy={status === "busy"} title={label} disabled={waiting}
+            onClick={() => toggle(part)}
+          >{status === "playing" ? <PauseIcon /> : <PlayIcon />}</button>
+        </h3>
+        {mine && audio.failed && <p className="story-audio-note" role="status">{audio.failed}</p>}
+        <p className={`story-text${tappable ? " tappable" : ""}`} lang={story.language} onClick={touch}>
+          {runs.map((run, position) => run.segment === null
+            ? <Runs key={position} spans={run.spans} />
+            : <span
+              key={position} data-segment={run.segment}
+              className={`story-seg${mine && status !== "idle" && audio.segment === run.segment ? " on" : ""}`}
+            ><Runs spans={run.spans} /></span>)}
         </p>
 
         {/* The space is held whether or not it has been asked for, so revealing moves nothing. */}
@@ -128,13 +179,15 @@ function WordsPage({ entries }: { entries: StoryWordEntry[] }) {
   </article>;
 }
 
-export default function StoryReader({ story, title, parts, words, entries, onBack }: {
+export default function StoryReader({ story, title, parts, words, entries, recording = false, onBack }: {
   story: Story;
   /** What the header calls it: its own title, or the words it was asked to teach. */
   title: string;
   parts: StoryPart[];
   words: StoryWord[];
   entries: StoryWordEntry[];
+  /** The story's job is still going and has its recording still to do. */
+  recording?: boolean;
   onBack(): void;
 }) {
   const pages = parts.length ? parts.length + 1 : 0;
@@ -172,7 +225,7 @@ export default function StoryReader({ story, title, parts, words, entries, onBac
         <div className="cards-track" ref={track} onScroll={onScroll}>
           {parts.map((part, index) => <PartPage
             key={part.id} story={story} part={part} number={index + 1} words={words}
-            near={Math.abs(index - at) <= 1}
+            near={Math.abs(index - at) <= 1} active={index === at} recording={recording}
             revealed={shown.has(part.id)} onReveal={() => reveal(part.id)} onHide={() => hide(part.id)}
           />)}
           <WordsPage entries={entries} />

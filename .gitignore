@@ -74,3 +74,6 @@ Caddyfile
 # claims is in its README, so the archive is not worth a repository — the same call the two above
 # made. `ratings.json` and `review-key.json` go with them: the key would reveal the blind.
 /experiments/compose-lesson-line/runs/
+
+/spoken_plans/
+

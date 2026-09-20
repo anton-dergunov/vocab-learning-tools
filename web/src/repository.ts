@@ -12,7 +12,7 @@ import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase,
 import { newDeviceId, newId, nowInstant } from "./ids";
 import type { ArticleDraft } from "./yaml";
 
-export const LOCAL_SCHEMA_VERSION = 14;
+export const LOCAL_SCHEMA_VERSION = 15;
 
 export const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],

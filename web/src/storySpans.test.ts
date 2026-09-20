@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { storySpans } from "./selectors";
-import type { StoryWord } from "./domain";
+import { segmentSpans, storySpans } from "./selectors";
+import type { AudioSegment, StoryWord } from "./domain";
 
 function word(lexemeId: string, forms: string[], translationForms: string[] = []): StoryWord {
   return {
@@ -83,5 +83,59 @@ describe("marking a translation's words", () => {
   it("degrades to plain text when the translator reported nothing", () => {
     expect(storySpans("A dog.", [word("l1", ["perro"])], "translationForms"))
       .toEqual([{ text: "A dog.", lexemeId: null }]);
+  });
+});
+
+
+describe("a part's text cut into the passages a recording has", () => {
+  const TEXT = "Marcos subió a la balsa al amanecer. Nadie dijo nada.";
+  const passage = (text: string, start = 0): AudioSegment => ({ text, direction: "", start, end: start + 1 });
+  const cuts = [passage("Marcos subió a la balsa "), passage("al amanecer. ", 1), passage("Nadie dijo nada.", 2)];
+  const joined = (runs: ReturnType<typeof segmentSpans>) =>
+    runs.map((run) => run.spans.map((span) => span.text).join("")).join("");
+
+  it("is the text unbroken, in one ungrouped run, when there is no recording", () => {
+    expect(segmentSpans(TEXT, [], [])).toEqual([{ segment: null, spans: [{ text: TEXT, lexemeId: null }] }]);
+  });
+
+  it("groups the runs by passage and gives back exactly the text", () => {
+    const runs = segmentSpans(TEXT, [], cuts);
+
+    expect(runs.map((run) => run.segment)).toEqual([0, 1, 2]);
+    expect(joined(runs)).toBe(TEXT);
+    expect(runs[1].spans).toEqual([{ text: "al amanecer. ", lexemeId: null }]);
+  });
+
+  it("keeps a marked word marked inside its passage", () => {
+    const runs = segmentSpans(TEXT, [word("l1", ["balsa"])], cuts);
+
+    expect(runs[0].spans).toEqual([
+      { text: "Marcos subió a la ", lexemeId: null },
+      { text: "balsa", lexemeId: "l1" },
+      { text: " ", lexemeId: null }
+    ]);
+  });
+
+  it("cuts a marked word at a seam and keeps the mark on both halves", () => {
+    const runs = segmentSpans("La balsa flota.", [word("l1", ["balsa"])], [passage("La bal"), passage("sa flota.", 1)]);
+
+    expect(runs[0].spans.at(-1)).toEqual({ text: "bal", lexemeId: "l1" });
+    expect(runs[1].spans[0]).toEqual({ text: "sa", lexemeId: "l1" });
+    expect(joined(runs)).toBe("La balsa flota.");
+  });
+
+  it("gives up on passages that do not join to the text, rather than draw them over other words", () => {
+    const runs = segmentSpans("Marcos subió a otra cosa.", [], cuts);
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0].segment).toBeNull();
+    expect(joined(runs)).toBe("Marcos subió a otra cosa.");
+  });
+
+  it("counts characters the way the text does, so an accent or an emoji cannot shift a seam", () => {
+    const text = "¡Qué frío! 🥶 Nadie contestó.";
+    const runs = segmentSpans(text, [], [passage("¡Qué frío! 🥶 "), passage("Nadie contestó.", 1)]);
+
+    expect(runs.map((run) => run.spans.map((span) => span.text).join(""))).toEqual(["¡Qué frío! 🥶 ", "Nadie contestó."]);
   });
 });

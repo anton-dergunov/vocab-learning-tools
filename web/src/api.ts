@@ -1,4 +1,4 @@
-import type { Loop, PartOfSpeech, Pronunciation, Story, VocabularyGraph } from "./domain";
+import type { Loop, PartOfSpeech, Pronunciation, Story, StoryPart, VocabularyGraph } from "./domain";
 import { normalizeServerURL, sessionStore, type StoredSession } from "./session";
 import type { ArticleDraft } from "./yaml";
 
@@ -6,7 +6,7 @@ type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type LoginResponse = { token: string; user: { id: string; email: string } };
 
 /** Shared with the server hook. A mismatch stops synchronisation until the app is updated. */
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 interface SyncEnvelope {
   schemaVersion: number;
@@ -122,6 +122,8 @@ export interface PronunciationPregenerate {
   headword: boolean;
   definitions: boolean;
   examples: boolean;
+  /** Whether a story is recorded when it is made. On unless switched off; Settings ▸ Stories. */
+  stories: boolean;
 }
 
 /** One model in one of the two orders, and the voices it offers per vocabulary language. */
@@ -136,7 +138,7 @@ export interface PronunciationModel {
 }
 
 /** What a voice is asked to read. A selection reads with the `words` order. */
-export type PronunciationUse = "words" | "examples" | "loops";
+export type PronunciationUse = "words" | "examples" | "loops" | "stories";
 /** The two orders, named for their capability: a clear even voice, and one that takes a direction. */
 export type PronunciationOrder = "plain" | "expressive";
 
@@ -218,6 +220,11 @@ const UPLOAD_TIMEOUT = 300_000;
 /* A spoken word takes under two seconds and an expressive sentence three; a whole chain falling
    through its models is what this has to cover. Somebody is holding a finger over a play button. */
 const PRONOUNCE_TIMEOUT = 60_000;
+/* A part read aloud by a directed voice is one call to a text model and then one call to the voice
+   for every passage, one after another: measured at 5–7 s a passage on the free Gemini voice, so a
+   part of eight passages is close to a minute. Long enough not to give up on a recording the server
+   is still making, which would then arrive anyway and be found on the next pull. */
+const STORY_AUDIO_TIMEOUT = 180_000;
 
 /* ── capture ────────────────────────────────────────────────────────────
    The ingest endpoint of design §05. What comes back is a *proposal*: a draft the interface renders
@@ -775,6 +782,18 @@ export const backendSession = {
     return client.call<Story>(
       `/stories/${encodeURIComponent(storyId)}`,
       { method: "DELETE", headers: { "X-Acervo-Device": deviceId } }
+    );
+  },
+  /* One part read aloud now, in the voice the story is already read in. The same function the
+     `story.audio` step runs, so a part recorded either way is indistinguishable; the row it returns
+     reaches the replica on the next pull, like a clip's. One or more model calls, with a model
+     call's timeout. */
+  recordStoryPart(storyId: string, partId: string, deviceId: string): Promise<StoryPart> {
+    return client.call<StoryPart>(
+      `/stories/${encodeURIComponent(storyId)}/parts/${encodeURIComponent(partId)}/audio`,
+      { method: "POST", body: JSON.stringify({ deviceId }) },
+      false,
+      STORY_AUDIO_TIMEOUT
     );
   },
   enqueueJob(request: JobRequest): Promise<Job> {

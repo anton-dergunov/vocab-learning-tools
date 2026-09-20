@@ -41,7 +41,8 @@ plus `tr=on`, `theme=dark`, and `size=375x667` to resize the frame.
 
 Stories open the same way: `?story=1&part=0` reads the first written story from its first page
 (the last page is the words), `stories=1` alone opens the list, and `reveal=1` turns every
-translation over.
+translation over. The first part is drawn as if it were being read aloud: its button lit and its
+first sentence tinted, as the application tints the passage that is sounding.
 
 For loops: `?loops=1&t=12` is the moment the whole design is for — `picar` is
 being said and its translation is still a bar. `t=20` is a few seconds later,

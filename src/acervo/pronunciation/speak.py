@@ -35,7 +35,7 @@ LANGUAGE_NAMES = {
 # the call log should still say what was being read.
 CALLERS = {
     "words": "pronounce-word", "examples": "pronounce-sentence",
-    "selection": "pronounce-selection", "loops": "pronounce-take",
+    "selection": "pronounce-selection", "loops": "pronounce-take", "stories": "pronounce-story",
 }
 
 

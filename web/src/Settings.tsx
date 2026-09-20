@@ -6,6 +6,7 @@ import { TopicEditor, VocabularyEditor } from "./Configuration";
 import DictionaryPanel from "./DictionaryPanel";
 import ClipPanel from "./ClipPanel";
 import LoopPanel from "./LoopPanel";
+import StoryPanel from "./StoryPanel";
 import ImagePanel from "./ImagePanel";
 import ModelPanel from "./ModelPanel";
 import PronunciationPanel from "./PronunciationPanel";
@@ -25,7 +26,7 @@ import {
 const CONFIRMATION = "DELETE";
 
 export type Page =
-  | "general" | "vocabularies" | "topics" | "models" | "images" | "pronunciation" | "loops" | "clips" | "dictionaries" | "editor"
+  | "general" | "vocabularies" | "topics" | "models" | "images" | "pronunciation" | "loops" | "stories" | "clips" | "dictionaries" | "editor"
   | "activity" | "schedule" | "sync" | "data";
 
 export default function Settings({ update, email, status, snapshot, language, captureHealth, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
@@ -121,6 +122,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
     { id: "images", label: "Pictures" },
     { id: "pronunciation", label: "Pronunciation" },
     { id: "loops", label: "Loops" },
+    { id: "stories", label: "Stories" },
   { id: "clips", label: "Clips" },
     { id: "dictionaries", label: "Dictionaries" },
     { id: "editor", label: "Reading" },
@@ -231,6 +233,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
         {page === "pronunciation" && <PronunciationPanel onNotify={onNotify} />}
 
         {page === "loops" && <LoopPanel onNotify={onNotify} />}
+        {page === "stories" && <StoryPanel onNotify={onNotify} />}
       {page === "clips" && <ClipPanel onNotify={onNotify} />}
 
         {page === "dictionaries" && <DictionaryPanel onNotify={onNotify} />}

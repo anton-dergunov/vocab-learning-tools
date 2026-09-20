@@ -27,6 +27,17 @@ const LONGEST_RETRY = 30_000;
 export const isOpen = (job: Job | undefined | null): job is Job & { state: "queued" | "running" } =>
   Boolean(job && OPEN.has(job.state));
 
+/**
+ * Whether a story's job still has its recording to do: it is open and that step has neither run nor
+ * been skipped. A part with no recording is then about to get one from the job, and asking for it
+ * again on demand would record it twice.
+ */
+export function isRecording(job: Job | undefined | null): boolean {
+  if (!isOpen(job)) return false;
+  const step = job.steps.find((one) => one.name === "story.audio");
+  return step !== undefined && ["pending", "running", "waiting"].includes(step.state);
+}
+
 /** Jobs are kept per kind *and* subject: a new brief for a word must not hide its enrichment. */
 export const jobKey = (kind: string, subjectId: string) => `${kind}:${subjectId}`;
 

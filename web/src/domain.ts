@@ -342,6 +342,33 @@ export interface StoryPart extends SyncFields, OwnedFields {
   imageModelId: string | null;
   attempts: number;
   failureReason: string | null;
+  /**
+   * The part read aloud, as one file. Null until recorded, which is the whole of what "not recorded"
+   * means: there is no status. `audioRef` carries a digest of the bytes, for `imageRef`'s reason, so
+   * a re-recording is a new reference and a device that kept the old one simply misses.
+   */
+  audioRef: string | null;
+  audioMime: string | null;
+  /** The pair and voice that read it. A story is read in one, and the first part recorded chooses. */
+  audioProviderId: string | null;
+  audioModelId: string | null;
+  audioVoice: string | null;
+  /**
+   * The passages the voice was asked for one at a time, in reading order. They join back to `text`
+   * exactly, so where one sits in the text is the lengths of those before it, and `start`/`end` are
+   * where it sits in the recording, in seconds — known rather than aligned, because the file is
+   * built by joining one recording per passage. Empty for a clear voice, which reads the part in one
+   * go; the reader then offers nothing to tap. `direction` is what the voice was actually sent, and
+   * empty when it was sent nothing.
+   */
+  audioSegments: AudioSegment[];
+}
+
+export interface AudioSegment {
+  text: string;
+  direction: string;
+  start: number;
+  end: number;
 }
 
 /**
@@ -735,6 +762,22 @@ export function validateGraph(graph: VocabularyGraph): void {
     // nothing would be the one fact contradicting it.
     invariant(Boolean(record.imageRef) || !record.imageModelId, "A story part with no picture cannot name the model that drew one.");
     invariant(Number.isSafeInteger(record.attempts) && record.attempts >= 0, "Story part attempts are invalid.");
+    optionalString(record.audioRef, "Story part recording");
+    optionalString(record.audioMime, "Story part recording type");
+    optionalString(record.audioProviderId, "Story part recording provider");
+    optionalString(record.audioModelId, "Story part recording model");
+    optionalString(record.audioVoice, "Story part recording voice");
+    invariant(
+      Boolean(record.audioRef) || (!record.audioProviderId && !record.audioModelId && !record.audioVoice && record.audioSegments.length === 0),
+      "A story part with no recording cannot say who spoke it or where it is in it."
+    );
+    invariant(
+      Array.isArray(record.audioSegments) && record.audioSegments.every((one) =>
+        typeof one.text === "string" && typeof one.direction === "string"
+        && Number.isFinite(one.start) && Number.isFinite(one.end) && one.start >= 0 && one.end >= one.start
+      ),
+      "Story part passages are invalid."
+    );
   });
 
   graph.storyWords.forEach((record) => {

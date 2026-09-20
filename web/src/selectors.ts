@@ -8,7 +8,7 @@
 import {
   effectiveShortGloss,
   type Attestation, type Example, type ImagePrompt, type Lexeme, type LexemeStatus,
-  type Loop, type LoopItem, type OwnedFields, type Sense, type Story, type StoryPart,
+  type AudioSegment, type Loop, type LoopItem, type OwnedFields, type Sense, type Story, type StoryPart,
   type StoryWord, type StudyState, type SyncFields,
   type Topic, type Vocabulary, type VocabularyGraph
 } from "./domain";
@@ -733,6 +733,47 @@ export function storySpans(
   }
   if (plain) spans.push({ text: plain, lexemeId: null });
   return spans;
+}
+
+/** The runs of one passage of a part read aloud, or of the whole text when there are no passages. */
+export interface SegmentRun {
+  /** Index into the part's `audioSegments`, or null when the text has none to mark. */
+  segment: number | null;
+  spans: StorySpan[];
+}
+
+/**
+ * A part's text as `storySpans` draws it, grouped by the passage each run belongs to.
+ *
+ * A passage's place in the text is the lengths of the passages before it — they join back to `text`
+ * exactly, which is the server's guarantee and is checked here rather than trusted: passages that do
+ * *not* join to this text (a recording made from words that have since changed, or none at all) give
+ * one ungrouped run, and the reader is then exactly what it was before anything was read aloud.
+ * A marked word that straddles two passages is cut at the seam and each half keeps its mark.
+ */
+export function segmentSpans(text: string, words: StoryWord[], segments: AudioSegment[]): SegmentRun[] {
+  const spans = storySpans(text, words);
+  if (!segments.length || segments.map((one) => one.text).join("") !== text) {
+    return [{ segment: null, spans }];
+  }
+  const ends: number[] = [];
+  segments.reduce((at, one) => { ends.push(at + one.text.length); return at + one.text.length; }, 0);
+
+  const runs: SegmentRun[] = segments.map((_, index) => ({ segment: index, spans: [] }));
+  let at = 0;
+  spans.forEach((span) => {
+    let from = 0;
+    while (from < span.text.length) {
+      let segment = ends.findIndex((end) => at + from < end);
+      if (segment < 0) segment = ends.length - 1;
+      const room = ends[segment] - (at + from);
+      const part = span.text.slice(from, from + room);
+      runs[segment].spans.push({ text: part, lexemeId: span.lexemeId });
+      from += part.length;
+    }
+    at += span.text.length;
+  });
+  return runs.filter((run) => run.spans.length > 0);
 }
 
 /** Lowercased and stripped of accents, **without changing length**, so offsets still line up. */

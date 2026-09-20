@@ -142,8 +142,9 @@ def draw_pictures(context: JobContext, step: Step) -> str | None:
 
 
 def record_pronunciations(context: JobContext, step: Step) -> str | None:
-    choice = pronunciation_settings.settings(context.owner).pregenerate
-    if not any(choice.values()):
+    chosen = pronunciation_settings.settings(context.owner)
+    choice = chosen.pregenerate
+    if not chosen.words_in_advance:
         return "skipped"
     lexeme, records = _word(context)
     if lexeme is None:
@@ -198,8 +199,9 @@ def lacking(settings: Settings, owner: str, lexeme_id: str) -> list[str]:
     if image_settings.settings(owner).draw_enabled \
             and (_unbriefed(records, lexeme_id) or _drawable(records, lexeme_id)):
         found.append("pictures")
-    choice = pronunciation_settings.settings(owner).pregenerate
-    if any(choice.values()):
+    chosen = pronunciation_settings.settings(owner)
+    choice = chosen.pregenerate
+    if chosen.words_in_advance:
         clips_held = {row["id"]: row for row in records.get("pronunciations", [])}
         if any(not current(clips_held.get(pronunciation_id(target.kind, target.id)), target)
                for target in wanted(records, lexeme_id, choice)):

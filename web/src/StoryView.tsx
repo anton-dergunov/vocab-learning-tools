@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { jobFor, jobStream, isOpen as jobIsOpen } from "./jobs";
+import { isRecording, jobFor, jobStream, isOpen as jobIsOpen } from "./jobs";
 import { stripOf } from "./ProgressStrip";
 import type { VocabularyGraph } from "./domain";
 import { BackIcon, HourglassIcon, PlusIcon } from "./icons";
@@ -71,6 +71,7 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
         parts={storyPartsOf(graph, open.id)}
         words={storyWordsOf(graph, open.id)}
         entries={storyWordEntries(graph, open.id)}
+        recording={isRecording(jobFor(live, "story", open.id))}
         onBack={() => setOpenId(null)}
       />
     </section>;

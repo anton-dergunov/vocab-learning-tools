@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AcervoApiError, backendSession, type Job } from "./api";
 import {
-  FrameReader, JobStream, clipSearchOf, drawingPictures, enrichmentOf, isEnriching, jobFor
+  FrameReader, JobStream, clipSearchOf, drawingPictures, enrichmentOf, isEnriching, isRecording, jobFor
 } from "./jobs";
 import { syncEngine } from "./sync";
 
@@ -199,5 +199,33 @@ describe("reading a word's enrichment", () => {
     expect(drawingPictures(job({ state: "running", steps: [{ name: "pictures", state: "running" }] }))).toBe(true);
     expect(drawingPictures(job({ state: "running", steps: [{ name: "pictures", state: "done" }] }))).toBe(false);
     expect(drawingPictures(job({ state: "failed", steps: [{ name: "pictures", state: "pending" }] }))).toBe(false);
+  });
+});
+
+
+describe("whether a story still has its recording to do", () => {
+  const story = (state: Job["state"], audio: string) => job({
+    kind: "story", state, subject: { kind: "story", id: "storypicada0001" },
+    steps: [
+      { name: "story.write", state: "done" },
+      { name: "story.audio", state: audio as Job["steps"][number]["state"] }
+    ]
+  });
+
+  it("is yes while the job is open and the recording has neither run nor been skipped", () => {
+    expect(isRecording(story("running", "pending"))).toBe(true);
+    expect(isRecording(story("running", "running"))).toBe(true);
+    expect(isRecording(story("running", "waiting"))).toBe(true);
+  });
+
+  it("is no once it has been done or skipped, and no when nothing is running", () => {
+    expect(isRecording(story("running", "done"))).toBe(false);
+    expect(isRecording(story("running", "skipped"))).toBe(false);
+    expect(isRecording(story("failed", "pending"))).toBe(false);
+    expect(isRecording(undefined)).toBe(false);
+  });
+
+  it("is no for a job that has no such step", () => {
+    expect(isRecording(job({ state: "running", steps: [{ name: "clips", state: "pending" }] }))).toBe(false);
   });
 });

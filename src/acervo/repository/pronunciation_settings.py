@@ -20,7 +20,15 @@ from acervo.db import tables
 from acervo.domain.ids import new_record_id, now_instant
 from acervo.repository.session import reading, transaction
 
+# What is recorded when a *word* is saved.
 PREGENERATED = ("headword", "definitions", "examples")
+# Whether a story is recorded when it is made. It shares the document because it is the same
+# question asked of another record, but it is a different switch: it is read by the `story` job and
+# never by `enrich`, and it is **on** unless the owner turns it off, where every word switch is off.
+# Being read only when a story is made is what makes a recording on demand the answer when it is off.
+STORIES = "stories"
+SWITCHES = PREGENERATED + (STORIES,)
+SWITCH_DEFAULT = {**{name: False for name in PREGENERATED}, STORIES: True}
 
 # The three things a voice is asked to read, and the two orders it can be read by.
 #
@@ -33,9 +41,14 @@ PREGENERATED = ("headword", "definitions", "examples")
 #
 # A selection reads with the `words` order. Three uses, two orders, and deliberately no third chain:
 # any voice is a legitimate answer to either question.
-USES = ("words", "examples", "loops")
+#
+# A story is a fourth use: a narrator, so it defaults to the directed order, and it is chosen in
+# Settings ▸ Stories the way loops are chosen in Settings ▸ Loops.
+USES = ("words", "examples", "loops", "stories")
 ORDERS = ("plain", "expressive")
-DELIVERY_DEFAULT = {"words": "plain", "examples": "expressive", "loops": "expressive"}
+DELIVERY_DEFAULT = {
+    "words": "plain", "examples": "expressive", "loops": "expressive", "stories": "expressive",
+}
 
 
 class PronunciationSettings(Mapping):
@@ -54,7 +67,7 @@ class PronunciationSettings(Mapping):
         given = pregenerate if isinstance(pregenerate, Mapping) else {}
         # Every key present and boolean, so a hand-edited row with a stray key or a string cannot
         # switch recording on by accident.
-        self.pregenerate = {name: given.get(name) is True for name in PREGENERATED}
+        self.pregenerate = {name: given.get(name, SWITCH_DEFAULT[name]) is True for name in SWITCHES}
         self.delivery = _delivery(delivery)
         self.voices = _voices(voices)
         self.chosen = bool(chosen)
@@ -72,6 +85,11 @@ class PronunciationSettings(Mapping):
 
     def __len__(self) -> int:
         return 4
+
+    @property
+    def words_in_advance(self) -> bool:
+        """Whether saving a word should record anything. The story switch is not part of it."""
+        return any(self.pregenerate[name] for name in PREGENERATED)
 
     def order_for(self, use: str) -> str:
         """Which order reads this use. An unknown use reads plainly, which is the cheap answer."""

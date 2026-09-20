@@ -207,7 +207,15 @@ export function testGraph(): VocabularyGraph {
         translation: "Marcos climbed onto the raft at dawn.",
         imagePrompt: "A man climbs onto a wooden raft at dawn.",
         imageRef: "stories/storypicada0001/storypart000001-1f4c8b2e.webp",
-        imageModelId: "openai/gpt-image-1", attempts: 1, failureReason: null, ...sync("09-03")
+        imageModelId: "openai/gpt-image-1", attempts: 1, failureReason: null,
+        // Read aloud by a directed voice, in two passages that join back to `text`.
+        audioRef: "stories/storypicada0001/storypart000001-9a3c1d7e.ogg", audioMime: "audio/ogg",
+        audioProviderId: "google-tts", audioModelId: "gemini-3.1-flash-tts-preview", audioVoice: "Kore",
+        audioSegments: [
+          { text: "Marcos subió a la balsa ", direction: "Calm, like a bedtime story.", start: 0, end: 1.6 },
+          { text: "al amanecer.", direction: "Hushed and slow.", start: 1.72, end: 2.9 }
+        ],
+        ...sync("09-03")
       },
       {
         // Written and briefed, but never drawn — the second state a part can be in.
@@ -217,7 +225,11 @@ export function testGraph(): VocabularyGraph {
         translation: "Something began to sting beneath the water.",
         imagePrompt: "Something stirs beneath the water beside the raft.",
         imageRef: null, imageModelId: null, attempts: 2,
-        failureReason: "The image model is temporarily rate limited.", ...sync("09-03")
+        failureReason: "The image model is temporarily rate limited.",
+        // Never read aloud — the other state a part can be in.
+        audioRef: null, audioMime: null, audioProviderId: null, audioModelId: null, audioVoice: null,
+        audioSegments: [],
+        ...sync("09-03")
       }
     ],
     storyWords: [

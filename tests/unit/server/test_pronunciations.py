@@ -270,9 +270,14 @@ def test_settings_follow_the_default_until_chosen_and_are_per_owner(server, othe
     word(server)
     view = server.get("/pronunciations/settings").json()["data"]
     assert view["chosen"] is False
-    assert view["pregenerate"] == {"headword": False, "definitions": False, "examples": False}
-    # Words read by the clear, even voice; examples and loops by the one that takes a direction.
-    assert view["delivery"] == {"words": "plain", "examples": "expressive", "loops": "expressive"}
+    # No word is recorded in advance until asked; a story is, because that is what a narrator is for.
+    assert view["pregenerate"] == {
+        "headword": False, "definitions": False, "examples": False, "stories": True,
+    }
+    # Words read by the clear, even voice; examples, loops and stories by the one that takes a direction.
+    assert view["delivery"] == {
+        "words": "plain", "examples": "expressive", "loops": "expressive", "stories": "expressive",
+    }
     assert view["languages"] == ["es"]
     plain = {(entry["provider"], entry["model"]): entry for entry in view["orders"]["plain"]}
     assert plain[("google-tts", "wavenet")]["voices"]["es"][0] == "es-ES-Wavenet-F"
@@ -282,6 +287,11 @@ def test_settings_follow_the_default_until_chosen_and_are_per_owner(server, othe
         "voices": {"google-tts": {"wavenet": {"es": "es-ES-Wavenet-E"}}},
     }).json()["data"]
     assert saved["chosen"] is True and saved["pregenerate"]["headword"] is True
+    assert saved["pregenerate"]["stories"] is True, "what was not named keeps its default"
+    stories_off = server.put("/pronunciations/settings", {
+        "pregenerate": {"stories": False}, "delivery": {"stories": "plain"},
+    }).json()["data"]
+    assert stories_off["pregenerate"]["stories"] is False and stories_off["delivery"]["stories"] == "plain"
     assert other.get("/pronunciations/settings").json()["data"]["chosen"] is False
 
 

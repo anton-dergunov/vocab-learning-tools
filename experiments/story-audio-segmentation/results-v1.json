@@ -1,0 +1,697 @@
+[
+ {
+  "seconds": 17.4,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"El 1 de septiembre de 1906, Harry Houdini llegó a la cárcel del Distrito de Columbia en Washington D. C.\",\n      \"direction\": \"Formal and historical, setting the scene with a steady pace.\"\n    },\n    {\n      \"text\": \"Los guardias querían demostrar que el famoso ilusionista no podía escapar de sus instalaciones más seguras.\",\n      \"direction\": \"Slightly challenging and confident, emphasizing the guards' certainty.\"\n    },\n    {\n      \"text\": \"Tras quitarle la ropa, lo encerraron en una celda de aislamiento sin llave.\",\n      \"direction\": \"Somber and tense, pausing slightly before the final phrase.\"\n    },\n    {\n      \"text\": \"Para los agentes, aquel hombre era un preso común que pronto perdería su famosa reputación.\",\n      \"direction\": \"Skeptical and dismissive, with a touch of irony at the end.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 16.0,
+  "directions": [
+   "Formal and historical, setting the scene with a steady pace.",
+   "Slightly challenging and confident, emphasizing the guards' certainty.",
+   "Somber and tense, pausing slightly before the final phrase.",
+   "Skeptical and dismissive, with a touch of irony at the end."
+  ],
+  "texts": [
+   "El 1 de septiembre de 1906, Harry Houdini llegó a la cárcel del Distrito de Columbia en Washington D. C.",
+   "Los guardias querían demostrar que el famoso ilusionista no podía escapar de sus instalaciones más seguras.",
+   "Tras quitarle la ropa, lo encerraron en una celda de aislamiento sin llave.",
+   "Para los agentes, aquel hombre era un preso común que pronto perdería su famosa reputación."
+  ],
+  "run": 1,
+  "story": 1,
+  "part": 1,
+  "language": "es",
+  "words": 64
+ },
+ {
+  "seconds": 1.1,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"El ingeniero Tomás gastó todos sus ahorros en crear un pequeño dispositivo de traducción simultánea para animales domésticos.\",\n      \"direction\": \"Curious and slightly amused, setting the stage for an ambitious invention.\"\n    },\n    {\n      \"text\": \"El aparato, brillante y lleno de luces LED, parecía padrísimo a primera vista.\",\n      \"direction\": \"Lighthearted and playful, emphasizing the flashy gadget.\"\n    },\n    {\n      \"text\": \"Tomás lo colocó con cuidado sobre la cabeza de su gato gordo, Don Gato, y esperó en silencio las primeras palabras científicas de su querida mascota.\",\n      \"direction\": \"Anticipatory and humorous, building up to a quiet moment of suspense.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 19.0,
+  "directions": [
+   "Curious and slightly amused, setting the stage for an ambitious invention.",
+   "Lighthearted and playful, emphasizing the flashy gadget.",
+   "Anticipatory and humorous, building up to a quiet moment of suspense."
+  ],
+  "texts": [
+   "El ingeniero Tomás gastó todos sus ahorros en crear un pequeño dispositivo de traducción simultánea para animales domésticos.",
+   "El aparato, brillante y lleno de luces LED, parecía padrísimo a primera vista.",
+   "Tomás lo colocó con cuidado sobre la cabeza de su gato gordo, Don Gato, y esperó en silencio las primeras palabras científicas de su querida mascota."
+  ],
+  "run": 1,
+  "story": 2,
+  "part": 1,
+  "language": "es",
+  "words": 57
+ },
+ {
+  "seconds": 0.9,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"En la Facultad de Veterinaria de la Universidad de Buenos Aires, un gato negro llamado Bruno asistía a todas las clases de anatomía desde hacía tres años.\",\n      \"direction\": \"Amused and informative, setting the scene with a slight smile in the voice.\"\n    },\n    {\n      \"text\": \"Los profesores nunca lo echaron porque su asistencia era perfecta y su concentración absoluta.\",\n      \"direction\": \"Warm and slightly playful, delivered at a steady pace.\"\n    },\n    {\n      \"text\": \"El decano comentaba siempre que el porvenir de la institución dependía de alumnos tan aplicados como él.\",\n      \"direction\": \"Dry and humorous, emphasizing the absurdity with a gentle chuckle.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 19.3,
+  "directions": [
+   "Amused and informative, setting the scene with a slight smile in the voice.",
+   "Warm and slightly playful, delivered at a steady pace.",
+   "Dry and humorous, emphasizing the absurdity with a gentle chuckle."
+  ],
+  "texts": [
+   "En la Facultad de Veterinaria de la Universidad de Buenos Aires, un gato negro llamado Bruno asistía a todas las clases de anatomía desde hacía tres años.",
+   "Los profesores nunca lo echaron porque su asistencia era perfecta y su concentración absoluta.",
+   "El decano comentaba siempre que el porvenir de la institución dependía de alumnos tan aplicados como él."
+  ],
+  "run": 1,
+  "story": 3,
+  "part": 1,
+  "language": "es",
+  "words": 58
+ },
+ {
+  "seconds": 1.2,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Cada martes a las seis de la mañana, Mateo abría su pequeño taller en el puerto de Vigo.\",\n      \"direction\": \"Calm and unhurried, setting a quiet morning scene.\"\n    },\n    {\n      \"text\": \"Durante cincuenta años, su familia se había dedicado a salar el pescado fresco que traían los barcos del norte.\",\n      \"direction\": \"Warm and reflective, with a steady, rhythmic pace.\"\n    },\n    {\n      \"text\": \"Para Mateo no era un trabajo mecánico, sino un ritual silencioso que exigía paciencia y memoria.\",\n      \"direction\": \"Thoughtful and deliberate, emphasizing the deeper meaning.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 17.7,
+  "directions": [
+   "Calm and unhurried, setting a quiet morning scene.",
+   "Warm and reflective, with a steady, rhythmic pace.",
+   "Thoughtful and deliberate, emphasizing the deeper meaning."
+  ],
+  "texts": [
+   "Cada martes a las seis de la mañana, Mateo abría su pequeño taller en el puerto de Vigo.",
+   "Durante cincuenta años, su familia se había dedicado a salar el pescado fresco que traían los barcos del norte.",
+   "Para Mateo no era un trabajo mecánico, sino un ritual silencioso que exigía paciencia y memoria."
+  ],
+  "run": 1,
+  "story": 4,
+  "part": 1,
+  "language": "es",
+  "words": 53
+ },
+ {
+  "seconds": 1.1,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"In 1988, a food chemist named Jack worked in a grotty laboratory in Pennsylvania with peeling paint and broken tiles.\",\n      \"direction\": \"Setting the scene with a gritty, unglamorous tone at a steady pace.\"\n    },\n    {\n      \"text\": \"He was trying to invent a cheap fertilizer for farmers, operating on a tight shoestring budget that barely covered basic glassware.\",\n      \"direction\": \"Informative and slightly sympathetic, highlighting the struggle.\"\n    },\n    {\n      \"text\": \"One freezing night, his fingers grew completely numb from the drafty window while he held a glass stirring rod.\",\n      \"direction\": \"Cisual and cold, slowing down to emphasize the physical discomfort.\"\n    },\n    {\n      \"text\": \"In frustration, he tossed his notes aside, convinced that his entire career was heading toward intellectual nihilism.\",\n      \"direction\": \"Heavy and dramatic, reflecting deep despair.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 19.2,
+  "directions": [
+   "Setting the scene with a gritty, unglamorous tone at a steady pace.",
+   "Informative and slightly sympathetic, highlighting the struggle.",
+   "Cisual and cold, slowing down to emphasize the physical discomfort.",
+   "Heavy and dramatic, reflecting deep despair."
+  ],
+  "texts": [
+   "In 1988, a food chemist named Jack worked in a grotty laboratory in Pennsylvania with peeling paint and broken tiles.",
+   "He was trying to invent a cheap fertilizer for farmers, operating on a tight shoestring budget that barely covered basic glassware.",
+   "One freezing night, his fingers grew completely numb from the drafty window while he held a glass stirring rod.",
+   "In frustration, he tossed his notes aside, convinced that his entire career was heading toward intellectual nihilism."
+  ],
+  "run": 1,
+  "story": 5,
+  "part": 1,
+  "language": "en",
+  "words": 77
+ },
+ {
+  "seconds": 1.0,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Dentro de la oscura celda, Houdini comenzó a trabajar en completo silencio.\",\n      \"direction\": \"Tense and focused, building quiet suspense.\"\n    },\n    {\n      \"text\": \"Los guardias esperaban afuera con los brazos cruzados, seguros de que el truco terminaría en fracaso.\",\n      \"direction\": \"Confident and smug, at a steady pace.\"\n    },\n    {\n      \"text\": \"Sin embargo, a los diez minutos exactos, la puerta de hierro se abrió con un fuerte golpe metálico.\",\n      \"direction\": \"Surprised and sharp, picking up speed with the sudden sound.\"\n    },\n    {\n      \"text\": \"El ilusionista salió caminando con una sonrisa tranquila y el chaquetón puesto.\",\n      \"direction\": \"Cool, triumphant, and relaxed.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 14.5,
+  "directions": [
+   "Tense and focused, building quiet suspense.",
+   "Confident and smug, at a steady pace.",
+   "Surprised and sharp, picking up speed with the sudden sound.",
+   "Cool, triumphant, and relaxed."
+  ],
+  "texts": [
+   "Dentro de la oscura celda, Houdini comenzó a trabajar en completo silencio.",
+   "Los guardias esperaban afuera con los brazos cruzados, seguros de que el truco terminaría en fracaso.",
+   "Sin embargo, a los diez minutos exactos, la puerta de hierro se abrió con un fuerte golpe metálico.",
+   "El ilusionista salió caminando con una sonrisa tranquila y el chaquetón puesto."
+  ],
+  "run": 2,
+  "story": 1,
+  "part": 2,
+  "language": "es",
+  "words": 58
+ },
+ {
+  "seconds": 1.0,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"El altavoz diminuto carraspeó con un ruido metálico antes de emitir la voz del felino.\",\n      \"direction\": \"Curious and observational, at a steady pace.\"\n    },\n    {\n      \"text\": \"Don Gato miró fijamente el plato vacío de comida y exclamó con absoluta claridad: «¿Me das más pescado o te vas a arrepentir?».\",\n      \"direction\": \"Demanding and bold, with a haughty cat-like attitude.\"\n    },\n    {\n      \"text\": \"Tomás sonrió orgulloso porque el algoritmo por fin funcionaba a la perfección.\",\n      \"direction\": \"Warm and pleased, with a sense of relief.\"\n    },\n    {\n      \"text\": \"Sin embargo, decidió calibrar el tono del aparato para que el felino sonara mucho más educado y formal.\",\n      \"direction\": \"Thoughtful and amused, slowing down slightly toward the end.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 17.0,
+  "directions": [
+   "Curious and observational, at a steady pace.",
+   "Demanding and bold, with a haughty cat-like attitude.",
+   "Warm and pleased, with a sense of relief.",
+   "Thoughtful and amused, slowing down slightly toward the end."
+  ],
+  "texts": [
+   "El altavoz diminuto carraspeó con un ruido metálico antes de emitir la voz del felino.",
+   "Don Gato miró fijamente el plato vacío de comida y exclamó con absoluta claridad: «¿Me das más pescado o te vas a arrepentir?».",
+   "Tomás sonrió orgulloso porque el algoritmo por fin funcionaba a la perfección.",
+   "Sin embargo, decidió calibrar el tono del aparato para que el felino sonara mucho más educado y formal."
+  ],
+  "run": 2,
+  "story": 2,
+  "part": 2,
+  "language": "es",
+  "words": 68
+ },
+ {
+  "seconds": 1.1,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Llegó diciembre y se celebró el acto de entrega de diplomas en el salón principal.\",\n      \"direction\": \"Festive and anticipatory, setting a formal tone.\"\n    },\n    {\n      \"text\": \"Cuando llamaron a los graduados, Bruno subió al escenario con paso firme y elegante para recibirse oficialmente de veterinario.\",\n      \"direction\": \"Proud and steady, with a sense of accomplishment.\"\n    },\n    {\n      \"text\": \"El rector le puso una pequeña medalla al cuello entre los aplausos del público, y el flamante profesional maulló con solemnidad.\",\n      \"direction\": \"Comical and deadpan, delivering the punchline with a completely straight face.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 18.3,
+  "directions": [
+   "Festive and anticipatory, setting a formal tone.",
+   "Proud and steady, with a sense of accomplishment.",
+   "Comical and deadpan, delivering the punchline with a completely straight face."
+  ],
+  "texts": [
+   "Llegó diciembre y se celebró el acto de entrega de diplomas en el salón principal.",
+   "Cuando llamaron a los graduados, Bruno subió al escenario con paso firme y elegante para recibirse oficialmente de veterinario.",
+   "El rector le puso una pequeña medalla al cuello entre los aplausos del público, y el flamante profesional maulló con solemnidad."
+  ],
+  "run": 2,
+  "story": 3,
+  "part": 2,
+  "language": "es",
+  "words": 55
+ },
+ {
+  "seconds": 1.0,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Los vecinos sabían que de vez en cuando el abuelo perdía la noción del tiempo entre los barriles de madera y las redes.\",\n      \"direction\": \"Gentle and storytelling, with a touch of fond amusement.\"\n    },\n    {\n      \"text\": \"Sin embargo, nadie se atrevía a interrumpir su concentración cuando medía la cantidad exacta de sal para cada pieza.\",\n      \"direction\": \"Respectful and steady, emphasizing his quiet dedication.\"\n    },\n    {\n      \"text\": \"Él solía decir que la paciencia no se aprende en los libros, sino con las manos frías.\",\n      \"direction\": \"Wise and grounded, delivered with a slow, reflective warmth.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 19.7,
+  "directions": [
+   "Gentle and storytelling, with a touch of fond amusement.",
+   "Respectful and steady, emphasizing his quiet dedication.",
+   "Wise and grounded, delivered with a slow, reflective warmth."
+  ],
+  "texts": [
+   "Los vecinos sabían que de vez en cuando el abuelo perdía la noción del tiempo entre los barriles de madera y las redes.",
+   "Sin embargo, nadie se atrevía a interrumpir su concentración cuando medía la cantidad exacta de sal para cada pieza.",
+   "Él solía decir que la paciencia no se aprende en los libros, sino con las manos frías."
+  ],
+  "run": 2,
+  "story": 4,
+  "part": 2,
+  "language": "es",
+  "words": 59
+ },
+ {
+  "seconds": 1.1,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Despite the gloom, his chemical mixtures began to burgeon unexpectedly inside the beakers, bubbling into strange, solid foams.\",\n      \"direction\": \"Curious and suspenseful, building tension slowly.\"\n    },\n    {\n      \"text\": \"Jack did not want to convey his failure to his boss, so he decided to test the solid residue instead of throwing it away.\",\n      \"direction\": \"Pragmatic and slightly desperate, picking up the pace.\"\n    },\n    {\n      \"text\": \"He scraped a piece off the glass and popped it into his mouth, expecting something bitter and metallic.\",\n      \"direction\": \"Cautious and hesitant, building up to the moment.\"\n    },\n    {\n      \"text\": \"Instead, he tasted a surprisingly savory crunch that made him pause with his spoon in mid-air.\",\n      \"direction\": \"Surprised and perplexed, with a sudden shift in tone.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 19.0,
+  "directions": [
+   "Curious and suspenseful, building tension slowly.",
+   "Pragmatic and slightly desperate, picking up the pace.",
+   "Cautious and hesitant, building up to the moment.",
+   "Surprised and perplexed, with a sudden shift in tone."
+  ],
+  "texts": [
+   "Despite the gloom, his chemical mixtures began to burgeon unexpectedly inside the beakers, bubbling into strange, solid foams.",
+   "Jack did not want to convey his failure to his boss, so he decided to test the solid residue instead of throwing it away.",
+   "He scraped a piece off the glass and popped it into his mouth, expecting something bitter and metallic.",
+   "Instead, he tasted a surprisingly savory crunch that made him pause with his spoon in mid-air."
+  ],
+  "run": 2,
+  "story": 5,
+  "part": 2,
+  "language": "en",
+  "words": 76
+ },
+ {
+  "seconds": 1.2,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Los carceleros corrieron a revisar el cerrojo y se quedaron mudos de asombro.\",\n      \"direction\": \"Fast-paced and tense, conveying sudden shock.\"\n    },\n    {\n      \"text\": \"La cerradura seguía intacta y completamente cerrada desde el exterior, sin señales de violencia.\",\n      \"direction\": \"Puzzled and slow, emphasizing the disbelief.\"\n    },\n    {\n      \"text\": \"Houdini no había roto nada ni había pagado ningún pasaje secreto para huir del edificio.\",\n      \"direction\": \"Clear and matter-of-fact, debunking the obvious theories.\"\n    },\n    {\n      \"text\": \"Simplemente conocía los secretos de las cerraduras antiguas mejor que los propios fabricantes.\",\n      \"direction\": \"Admiring and clever, with a triumphant, knowing tone.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 13.8,
+  "directions": [
+   "Fast-paced and tense, conveying sudden shock.",
+   "Puzzled and slow, emphasizing the disbelief.",
+   "Clear and matter-of-fact, debunking the obvious theories.",
+   "Admiring and clever, with a triumphant, knowing tone."
+  ],
+  "texts": [
+   "Los carceleros corrieron a revisar el cerrojo y se quedaron mudos de asombro.",
+   "La cerradura seguía intacta y completamente cerrada desde el exterior, sin señales de violencia.",
+   "Houdini no había roto nada ni había pagado ningún pasaje secreto para huir del edificio.",
+   "Simplemente conocía los secretos de las cerraduras antiguas mejor que los propios fabricantes."
+  ],
+  "run": 3,
+  "story": 1,
+  "part": 3,
+  "language": "es",
+  "words": 55
+ },
+ {
+  "seconds": 15.1,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Al día siguiente, Tomás invitó a cenar a la jefa de su empresa para demostrarle la utilidad comercial del invento.\",\n      \"direction\": \"Curious and building anticipation, at a steady narrative pace.\"\n    },\n    {\n      \"text\": \"Mientras la mujer explicaba su estrategia financiera, Don Gato se acercó despacio a la mesa con el traductor encendido.\",\n      \"direction\": \"Slipping into a suspenseful and stealthy tone, slightly slower.\"\n    },\n    {\n      \"text\": \"Cuando ella le ofreció un trozo de jamón barato, el gato emitió un pitido agudo y soltó un rotundo: «¡Ni de coña me comes esta porquería reseca!».\",\n      \"direction\": \"Outraged, sharp, and full of feline attitude, emphasizing the exclamation.\"\n    },\n    {\n      \"text\": \"El silencio en el comedor fue tan profundo que se escuchaba el zumbido de la nevera.\",\n      \"direction\": \"Awkward, deadpan, and deeply amused, dragging out the final words.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 20.5,
+  "directions": [
+   "Curious and building anticipation, at a steady narrative pace.",
+   "Slipping into a suspenseful and stealthy tone, slightly slower.",
+   "Outraged, sharp, and full of feline attitude, emphasizing the exclamation.",
+   "Awkward, deadpan, and deeply amused, dragging out the final words."
+  ],
+  "texts": [
+   "Al día siguiente, Tomás invitó a cenar a la jefa de su empresa para demostrarle la utilidad comercial del invento.",
+   "Mientras la mujer explicaba su estrategia financiera, Don Gato se acercó despacio a la mesa con el traductor encendido.",
+   "Cuando ella le ofreció un trozo de jamón barato, el gato emitió un pitido agudo y soltó un rotundo: «¡Ni de coña me comes esta porquería reseca!».",
+   "El silencio en el comedor fue tan profundo que se escuchaba el zumbido de la nevera."
+  ],
+  "run": 3,
+  "story": 2,
+  "part": 3,
+  "language": "es",
+  "words": 82
+ },
+ {
+  "seconds": 0.9,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Al día siguiente, un famoso andinista de Bariloche llegó al hospital universitario cargando a su perro ovejero con una pata fracturada en la montaña.\",\n      \"direction\": \"Narrative and steady, setting the scene with a touch of urgency.\"\n    },\n    {\n      \"text\": \"Al entrar en la consulta, vio al gato con su bata blanca examinando radiografías sobre el negatoscopio.\",\n      \"direction\": \"Surprised and slightly amused, slowing down at the end.\"\n    },\n    {\n      \"text\": \"El montañista dudó un momento, pero decidió confiar en el especialista.\",\n      \"direction\": \"Amused and resigned, with a warm, storytelling tone.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 17.3,
+  "directions": [
+   "Narrative and steady, setting the scene with a touch of urgency.",
+   "Surprised and slightly amused, slowing down at the end.",
+   "Amused and resigned, with a warm, storytelling tone."
+  ],
+  "texts": [
+   "Al día siguiente, un famoso andinista de Bariloche llegó al hospital universitario cargando a su perro ovejero con una pata fracturada en la montaña.",
+   "Al entrar en la consulta, vio al gato con su bata blanca examinando radiografías sobre el negatoscopio.",
+   "El montañista dudó un momento, pero decidió confiar en el especialista."
+  ],
+  "run": 3,
+  "story": 3,
+  "part": 3,
+  "language": "es",
+  "words": 52
+ },
+ {
+  "seconds": 1.0,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Este año, la falta de aprendices obligó a Mateo a replantearse el futuro del taller artesanal.\",\n      \"direction\": \"Reflective and slightly heavy, setting a serious tone.\"\n    },\n    {\n      \"text\": \"Su nieto Lucas apareció por la puerta con una mochila moderna y ropa de ciudad, dispuesto a ayudar durante el verano.\",\n      \"direction\": \"Brighter and faster, introducing a fresh contrast.\"\n    },\n    {\n      \"text\": \"Al principio, el muchacho pensó que podría cambiar el método tradicional en pocas semanas.\",\n      \"direction\": \"Amused and knowing, hinting at the challenges ahead.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 17.0,
+  "directions": [
+   "Reflective and slightly heavy, setting a serious tone.",
+   "Brighter and faster, introducing a fresh contrast.",
+   "Amused and knowing, hinting at the challenges ahead."
+  ],
+  "texts": [
+   "Este año, la falta de aprendices obligó a Mateo a replantearse el futuro del taller artesanal.",
+   "Su nieto Lucas apareció por la puerta con una mochila moderna y ropa de ciudad, dispuesto a ayudar durante el verano.",
+   "Al principio, el muchacho pensó que podría cambiar el método tradicional en pocas semanas."
+  ],
+  "run": 3,
+  "story": 4,
+  "part": 3,
+  "language": "es",
+  "words": 51
+ },
+ {
+  "seconds": 1.2,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"He realized the chemical reaction had accidentally created an entirely new texture, hiding beneath a veil of ordinary starch and salt.\",\n      \"direction\": \"Curious and intrigued, building up slight wonder at the discovery.\"\n    },\n    {\n      \"text\": \"It was neither a fertilizer nor a plastic, but a crisp, airy snack that dissolved instantly on the tongue.\",\n      \"direction\": \"Lighter and more playful, emphasizing the surprising texture.\"\n    },\n    {\n      \"text\": \"He rushed to the local bakery the next morning to share his creation with friends over coffee.\",\n      \"direction\": \"Energetic and eager, picking up the pace.\"\n    },\n    {\n      \"text\": \"They chewed thoughtfully, staring at the strange shape, and immediately asked for more.\",\n      \"direction\": \"Amused and satisfied, with a warm, lighthearted tone at the end.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 17.5,
+  "directions": [
+   "Curious and intrigued, building up slight wonder at the discovery.",
+   "Lighter and more playful, emphasizing the surprising texture.",
+   "Energetic and eager, picking up the pace.",
+   "Amused and satisfied, with a warm, lighthearted tone at the end."
+  ],
+  "texts": [
+   "He realized the chemical reaction had accidentally created an entirely new texture, hiding beneath a veil of ordinary starch and salt.",
+   "It was neither a fertilizer nor a plastic, but a crisp, airy snack that dissolved instantly on the tongue.",
+   "He rushed to the local bakery the next morning to share his creation with friends over coffee.",
+   "They chewed thoughtfully, staring at the strange shape, and immediately asked for more."
+  ],
+  "run": 3,
+  "story": 5,
+  "part": 3,
+  "language": "en",
+  "words": 70
+ },
+ {
+  "seconds": 1.0,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Años más tarde, los registros demostraron que las cosas no ocurrieron exactamente como la prensa sensacionalista contó aquel día.\",\n      \"direction\": \"Reflective and slightly cynical, setting the record straight at a measured pace.\"\n    },\n    {\n      \"text\": \"Los guardias, impresionados por el número, habían colaborado en secreto para dejarlo salir y ganar publicidad.\",\n      \"direction\": \"Confidential and revealing, as if sharing a whispered backstage secret.\"\n    },\n    {\n      \"text\": \"Aquel espectáculo, que parecía un fuego artificial de magia pura, era en realidad un acuerdo publicitario perfectamente calculado.\",\n      \"direction\": \"Dry and revealing, delivering the punchline with a touch of worldly amusement.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 17.7,
+  "directions": [
+   "Reflective and slightly cynical, setting the record straight at a measured pace.",
+   "Confidential and revealing, as if sharing a whispered backstage secret.",
+   "Dry and revealing, delivering the punchline with a touch of worldly amusement."
+  ],
+  "texts": [
+   "Años más tarde, los registros demostraron que las cosas no ocurrieron exactamente como la prensa sensacionalista contó aquel día.",
+   "Los guardias, impresionados por el número, habían colaborado en secreto para dejarlo salir y ganar publicidad.",
+   "Aquel espectáculo, que parecía un fuego artificial de magia pura, era en realidad un acuerdo publicitario perfectamente calculado."
+  ],
+  "run": 4,
+  "story": 1,
+  "part": 4,
+  "language": "es",
+  "words": 53
+ },
+ {
+  "seconds": 4.2,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"La jefa parpadeó tres veces, miró al animal con severidad y luego le ofreció un contrato inmediato al gato con un sueldo mayor que el de Tomás.\",\n      \"direction\": \"Surprised and slightly comedic, building up to the absurd offer.\"\n    },\n    {\n      \"text\": \"El ingeniero comprendió entonces que la cagada monumental de su vida no había sido el diseño del aparato, sino haberle dado voz a un felino tan grosero y sincero.\",\n      \"direction\": \"Regretful and dramatic, pausing slightly before the punchline.\"\n    },\n    {\n      \"text\": \"Desde aquella noche, Tomás atiende las órdenes de su nuevo jefe con un delantal puesto y una taza de café bien caliente.\",\n      \"direction\": \"Resigned and deadpan, with a touch of dry humor at the end.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 26.0,
+  "directions": [
+   "Surprised and slightly comedic, building up to the absurd offer.",
+   "Regretful and dramatic, pausing slightly before the punchline.",
+   "Resigned and deadpan, with a touch of dry humor at the end."
+  ],
+  "texts": [
+   "La jefa parpadeó tres veces, miró al animal con severidad y luego le ofreció un contrato inmediato al gato con un sueldo mayor que el de Tomás.",
+   "El ingeniero comprendió entonces que la cagada monumental de su vida no había sido el diseño del aparato, sino haberle dado voz a un felino tan grosero y sincero.",
+   "Desde aquella noche, Tomás atiende las órdenes de su nuevo jefe con un delantal puesto y una taza de café bien caliente."
+  ],
+  "run": 4,
+  "story": 2,
+  "part": 4,
+  "language": "es",
+  "words": 78
+ },
+ {
+  "seconds": 0.9,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Bruno revisó la pata del perro con dos suaves toques y recetó reposo absoluto y una lata de atún diario.\",\n      \"direction\": \"Professional and caring, with a touch of gentle warmth.\"\n    },\n    {\n      \"text\": \"El dueño firmó los papeles con alivio, pensando que ningún médico humano tenía tanta intuición clínica.\",\n      \"direction\": \"Relieved and amused, smiling slightly through the narration.\"\n    },\n    {\n      \"text\": \"Afuera, el resto de los callejeros del barrio ya hacían cola en la puerta para pedir turno.\",\n      \"direction\": \"Lighthearted and slightly mischievous, building up to a quiet punchline.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 17.7,
+  "directions": [
+   "Professional and caring, with a touch of gentle warmth.",
+   "Relieved and amused, smiling slightly through the narration.",
+   "Lighthearted and slightly mischievous, building up to a quiet punchline."
+  ],
+  "texts": [
+   "Bruno revisó la pata del perro con dos suaves toques y recetó reposo absoluto y una lata de atún diario.",
+   "El dueño firmó los papeles con alivio, pensando que ningún médico humano tenía tanta intuición clínica.",
+   "Afuera, el resto de los callejeros del barrio ya hacían cola en la puerta para pedir turno."
+  ],
+  "run": 4,
+  "story": 3,
+  "part": 4,
+  "language": "es",
+  "words": 53
+ },
+ {
+  "seconds": 1.1,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Al ver la montaña de pescado fresco que llenaba las mesas, Lucas tuvo que asumir la responsabilidad completa del proceso sin ayuda.\",\n      \"direction\": \"Overwhelmed and serious, at a steady, thoughtful pace.\"\n    },\n    {\n      \"text\": \"Metió los dedos en el cuenco y comprendió que aquel producto final no era solo comida, sino una historia viva que continuaría.\",\n      \"direction\": \"Reflective and warm, slowing down slightly with growing realization.\"\n    },\n    {\n      \"text\": \"Mateo sonrió desde la puerta, sabiendo que el oficio ya tenía quien lo cuidara.\",\n      \"direction\": \"Reassuring and peaceful, with a gentle sense of passing the torch.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 19.3,
+  "directions": [
+   "Overwhelmed and serious, at a steady, thoughtful pace.",
+   "Reflective and warm, slowing down slightly with growing realization.",
+   "Reassuring and peaceful, with a gentle sense of passing the torch."
+  ],
+  "texts": [
+   "Al ver la montaña de pescado fresco que llenaba las mesas, Lucas tuvo que asumir la responsabilidad completa del proceso sin ayuda.",
+   "Metió los dedos en el cuenco y comprendió que aquel producto final no era solo comida, sino una historia viva que continuaría.",
+   "Mateo sonrió desde la puerta, sabiendo que el oficio ya tenía quien lo cuidara."
+  ],
+  "run": 4,
+  "story": 4,
+  "part": 4,
+  "language": "es",
+  "words": 58
+ },
+ {
+  "seconds": 0.8,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Jack never managed to help the farmers grow better crops in the fields that year.\",\n      \"direction\": \"Slightly disappointed and flat, setting up a failed endeavor.\"\n    },\n    {\n      \"text\": \"Instead, his failed laboratory experiment turned into the world-famous crunchy snack food found in every grocery store aisle.\",\n      \"direction\": \"Surprised and upbeat, with a sudden shift in tone.\"\n    },\n    {\n      \"text\": \"The awkward middle of cold fingers and ruined chemicals had accidentally birthed a billion-dollar industry.\",\n      \"direction\": \"Amused and reflective, at a steady, matter-of-fact pace.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 16.0,
+  "directions": [
+   "Slightly disappointed and flat, setting up a failed endeavor.",
+   "Surprised and upbeat, with a sudden shift in tone.",
+   "Amused and reflective, at a steady, matter-of-fact pace."
+  ],
+  "texts": [
+   "Jack never managed to help the farmers grow better crops in the fields that year.",
+   "Instead, his failed laboratory experiment turned into the world-famous crunchy snack food found in every grocery store aisle.",
+   "The awkward middle of cold fingers and ruined chemicals had accidentally birthed a billion-dollar industry."
+  ],
+  "run": 4,
+  "story": 5,
+  "part": 4,
+  "language": "en",
+  "words": 48
+ },
+ {
+  "seconds": 6.7,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"El 1 de septiembre de 1906, Harry Houdini llegó a la cárcel del Distrito de Columbia en Washington D. C.\",\n      \"direction\": \"Matter-of-fact and precise, setting the historical scene.\"\n    },\n    {\n      \"text\": \"Los guardias querían demostrar que el famoso ilusionista no podía escapar de sus instalaciones más seguras.\",\n      \"direction\": \"Slightly mocking and confident, highlighting the guards' arrogance.\"\n    },\n    {\n      \"text\": \"Tras quitarle la ropa, lo encerraron en una celda de aislamiento sin llave.\",\n      \"direction\": \"Gritty and tense, slowing the pace for dramatic effect.\"\n    },\n    {\n      \"text\": \"Para los agentes, aquel hombre era un preso común que pronto perdería su famosa reputación.\",\n      \"direction\": \"Cynical and dismissive, with a final, lingering note of doubt.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 16.0,
+  "directions": [
+   "Matter-of-fact and precise, setting the historical scene.",
+   "Slightly mocking and confident, highlighting the guards' arrogance.",
+   "Gritty and tense, slowing the pace for dramatic effect.",
+   "Cynical and dismissive, with a final, lingering note of doubt."
+  ],
+  "texts": [
+   "El 1 de septiembre de 1906, Harry Houdini llegó a la cárcel del Distrito de Columbia en Washington D. C.",
+   "Los guardias querían demostrar que el famoso ilusionista no podía escapar de sus instalaciones más seguras.",
+   "Tras quitarle la ropa, lo encerraron en una celda de aislamiento sin llave.",
+   "Para los agentes, aquel hombre era un preso común que pronto perdería su famosa reputación."
+  ],
+  "run": 5,
+  "story": 1,
+  "part": 1,
+  "language": "es",
+  "words": 64
+ },
+ {
+  "seconds": 1.1,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"El ingeniero Tomás gastó todos sus ahorros en crear un pequeño dispositivo de traducción simultánea para animales domésticos.\",\n      \"direction\": \"Curious and amused, setting up an unusual situation.\"\n    },\n    {\n      \"text\": \"El aparato, brillante y lleno de luces LED, parecía padrísimo a primera vista.\",\n      \"direction\": \"Enthusiastic and a bit playful, highlighting the gadget's flashy nature.\"\n    },\n    {\n      \"text\": \"Tomás lo colocó con cuidado sobre la cabeza de su gato gordo, Don Gato, y esperó en silencio las primeras palabras científicas de su querida mascota.\",\n      \"direction\": \"Suspenseful and slightly humorous, slowing down for the final expectant wait.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 19.0,
+  "directions": [
+   "Curious and amused, setting up an unusual situation.",
+   "Enthusiastic and a bit playful, highlighting the gadget's flashy nature.",
+   "Suspenseful and slightly humorous, slowing down for the final expectant wait."
+  ],
+  "texts": [
+   "El ingeniero Tomás gastó todos sus ahorros en crear un pequeño dispositivo de traducción simultánea para animales domésticos.",
+   "El aparato, brillante y lleno de luces LED, parecía padrísimo a primera vista.",
+   "Tomás lo colocó con cuidado sobre la cabeza de su gato gordo, Don Gato, y esperó en silencio las primeras palabras científicas de su querida mascota."
+  ],
+  "run": 5,
+  "story": 2,
+  "part": 1,
+  "language": "es",
+  "words": 57
+ },
+ {
+  "seconds": 1.1,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"En la Facultad de Veterinaria de la Universidad de Buenos Aires, un gato negro llamado Bruno asistía a todas las clases de anatomía desde hacía tres años.\",\n      \"direction\": \"Amused and narrative, setting the quirky scene with a steady pace.\"\n    },\n    {\n      \"text\": \"Los profesores nunca lo echaron porque su asistencia era perfecta y su concentración absoluta.\",\n      \"direction\": \"Warm and slightly playful, emphasizing the cat's impressive dedication.\"\n    },\n    {\n      \"text\": \"El decano comentaba siempre que el porvenir de la institución dependía de alumnos tan aplicados como él.\",\n      \"direction\": \"Dry and humorous, delivering the punchline with a touch of mock seriousness.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 19.3,
+  "directions": [
+   "Amused and narrative, setting the quirky scene with a steady pace.",
+   "Warm and slightly playful, emphasizing the cat's impressive dedication.",
+   "Dry and humorous, delivering the punchline with a touch of mock seriousness."
+  ],
+  "texts": [
+   "En la Facultad de Veterinaria de la Universidad de Buenos Aires, un gato negro llamado Bruno asistía a todas las clases de anatomía desde hacía tres años.",
+   "Los profesores nunca lo echaron porque su asistencia era perfecta y su concentración absoluta.",
+   "El decano comentaba siempre que el porvenir de la institución dependía de alumnos tan aplicados como él."
+  ],
+  "run": 5,
+  "story": 3,
+  "part": 1,
+  "language": "es",
+  "words": 58
+ },
+ {
+  "seconds": 0.9,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"Cada martes a las seis de la mañana, Mateo abría su pequeño taller en el puerto de Vigo.\",\n      \"direction\": \"Calm and unhurried, like the start of a story.\"\n    },\n    {\n      \"text\": \"Durante cincuenta años, su familia se había dedicado a salar el pescado fresco que traían los barcos del norte.\",\n      \"direction\": \"Warm and a little proud, at an even pace.\"\n    },\n    {\n      \"text\": \"Para Mateo no era un trabajo mecánico, sino un ritual silencioso que exigía paciencia y memoria.\",\n      \"direction\": \"Reflective and slightly reverent, slowing down gently towards the end.\"\n    }\n  ]\n}",
+  "segments": 3,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 3,
+  "mean_words": 17.7,
+  "directions": [
+   "Calm and unhurried, like the start of a story.",
+   "Warm and a little proud, at an even pace.",
+   "Reflective and slightly reverent, slowing down gently towards the end."
+  ],
+  "texts": [
+   "Cada martes a las seis de la mañana, Mateo abría su pequeño taller en el puerto de Vigo.",
+   "Durante cincuenta años, su familia se había dedicado a salar el pescado fresco que traían los barcos del norte.",
+   "Para Mateo no era un trabajo mecánico, sino un ritual silencioso que exigía paciencia y memoria."
+  ],
+  "run": 5,
+  "story": 4,
+  "part": 1,
+  "language": "es",
+  "words": 53
+ },
+ {
+  "seconds": 5.1,
+  "error": null,
+  "reply": "{\n  \"segments\": [\n    {\n      \"text\": \"In 1988, a food chemist named Jack worked in a grotty laboratory in Pennsylvania with peeling paint and broken tiles.\",\n      \"direction\": \"Setting the scene with a gritty, unglamorous tone at a steady pace.\"\n    },\n    {\n      \"text\": \"He was trying to invent a cheap fertilizer for farmers, operating on a tight shoestring budget that barely covered basic glassware.\",\n      \"direction\": \"Matter-of-fact, emphasizing the difficult and modest working conditions.\"\n    },\n    {\n      \"text\": \"One freezing night, his fingers grew completely numb from the drafty window while he held a glass stirring rod.\",\n      \"direction\": \"Cold and atmospheric, building a sense of physical discomfort.\"\n    },\n    {\n      \"text\": \"In frustration, he tossed his notes aside, convinced that his entire career was heading toward intellectual nihilism.\",\n      \"direction\": \"Heavy and dramatic, reflecting deep professional despair on the final word.\"\n    }\n  ]\n}",
+  "segments": 4,
+  "strict": true,
+  "loose": true,
+  "dropped": 0,
+  "filled": 0,
+  "directed": 4,
+  "mean_words": 19.2,
+  "directions": [
+   "Setting the scene with a gritty, unglamorous tone at a steady pace.",
+   "Matter-of-fact, emphasizing the difficult and modest working conditions.",
+   "Cold and atmospheric, building a sense of physical discomfort.",
+   "Heavy and dramatic, reflecting deep professional despair on the final word."
+  ],
+  "texts": [
+   "In 1988, a food chemist named Jack worked in a grotty laboratory in Pennsylvania with peeling paint and broken tiles.",
+   "He was trying to invent a cheap fertilizer for farmers, operating on a tight shoestring budget that barely covered basic glassware.",
+   "One freezing night, his fingers grew completely numb from the drafty window while he held a glass stirring rod.",
+   "In frustration, he tossed his notes aside, convinced that his entire career was heading toward intellectual nihilism."
+  ],
+  "run": 5,
+  "story": 5,
+  "part": 1,
+  "language": "en",
+  "words": 77
+ }
+]

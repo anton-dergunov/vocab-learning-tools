@@ -14,9 +14,9 @@
  * reference and a device holding the old one simply misses. There is no invalidation here and there
  * must not be.
  *
- * **One sound at a time.** This module stops `pronunciation.ts` before it plays and registers its own
- * pause with it, so a word read aloud silences the loop. The dependency runs one way: this imports
- * that, and nothing imports this back.
+ * **One sound at a time.** This module stops `pronunciation.ts` and pauses every other registered
+ * player before it plays, and registers its own pause with it, so a word read aloud, or a story,
+ * silences the loop. The dependency runs one way: this imports that, and nothing imports this back.
  *
  * Which word is being taught, which of its two lines was last spoken and whether the answer has been
  * given are all `selectors.ts`'s, derived from the clock every frame. Nothing about the reveal is
@@ -29,7 +29,7 @@ import { AcervoApiError, backendSession } from "./api";
 import type { Loop, LoopItem } from "./domain";
 import { loopAutoplayEnabled, loopCacheEnabled, loopRepeatEnabled } from "./editorPreferences";
 import { createMediaStore, type MediaStore } from "./mediaStore";
-import { silenceOthersWith, stop as stopSpeech } from "./pronunciation";
+import { registerPlayer, silencePlayers, stop as stopSpeech } from "./pronunciation";
 
 let store: MediaStore = createMediaStore("loops");
 
@@ -181,6 +181,7 @@ async function trackFor(reference: string): Promise<Blob> {
 export async function play(loop: Loop, items: LoopItem[], { at }: { at?: number } = {}): Promise<void> {
   if (!loop.audioRef) return;
   stopSpeech();
+  silencePlayers(pause);
   // Read before `prime()`, which replaces `src` with silence when the element is paused: a word
   // tapped while the loop is paused is still a move within a track this device already holds.
   const resuming = current?.loop.id === loop.id && element?.src === held && held !== null;
@@ -326,4 +327,4 @@ export function replaceStoreForTests(replacement: MediaStore): void {
   queue = [];
 }
 
-silenceOthersWith(pause);
+registerPlayer(pause);

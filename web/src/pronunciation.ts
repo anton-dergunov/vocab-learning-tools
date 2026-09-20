@@ -109,17 +109,26 @@ function prime(): void {
   } catch { /* jsdom, or a browser with no audio at all */ }
 }
 
-/** Stop whatever is being heard. */
 /* What else on this page makes sound. Two audio elements racing for one output is a bug with no
-   good failure mode, so a loop registers its own pause here and this module calls it before it
-   plays — and `loops.ts` calls `stop()` before it does. The registration runs this way round so the
-   dependency does too: `loops.ts` imports this module and nothing imports `loops.ts` back. */
-let silenceOthers: (() => void) | null = null;
+   good failure mode, so every other player registers its own pause here, and each of them — this
+   module included — calls `silencePlayers` before it plays. Registration runs this way round so the
+   dependency does too: `loops.ts` and `storyAudio.ts` import this module and nothing imports them
+   back. It was one slot while a loop was the only other player; a story's recording is the second,
+   and a slot that the second overwrote would have left the first unsilenced. */
+const players = new Set<() => void>();
 
-export function silenceOthersWith(pause: (() => void) | null): void {
-  silenceOthers = pause;
+/** Register a player's pause. Returns the way to take it out again. */
+export function registerPlayer(pause: () => void): () => void {
+  players.add(pause);
+  return () => { players.delete(pause); };
 }
 
+/** Pause every other player. A player passes its own pause to be left alone. */
+export function silencePlayers(except?: () => void): void {
+  players.forEach((pause) => { if (pause !== except) pause(); });
+}
+
+/** Stop whatever is being heard. */
 export function stop(): void {
   const player = element;
   if (player) {
@@ -132,7 +141,7 @@ export function stop(): void {
 
 async function sound(blob: Blob, key: string): Promise<void> {
   stop();
-  silenceOthers?.();
+  silencePlayers();
   const player = audio();
   const url = URL.createObjectURL(blob);
   update({ playing: key });
@@ -189,7 +198,7 @@ async function download(reference: string): Promise<Blob> {
 }
 
 /** The clip's bytes: this device first, then the server — kept on the device when keeping is on. */
-async function clipBlob(reference: string): Promise<Blob> {
+export async function clipBlob(reference: string): Promise<Blob> {
   const kept = await store.read(reference).catch(() => null);
   if (kept) return kept.blob;
   const remembered = session.get(reference);
@@ -286,19 +295,25 @@ async function forget(reference: string): Promise<void> {
 let filling: Promise<number> | null = null;
 
 /**
- * Bring every clip the replica names onto this device, so a word recorded elsewhere — or in advance —
- * plays offline. One at a time and stopping at the first failure, because the usual failure is
+ * Bring every clip the replica names onto this device — and every recording of a story part — so a
+ * word recorded elsewhere, or in advance, plays offline. One at a time and stopping at the first failure, because the usual failure is
  * "offline" and the next sync will try again. Only while keeping is on.
  */
-export function fill(graph: Pick<VocabularyGraph, "pronunciations"> = repository.snapshot()): Promise<number> {
+export function fill(graph: Pick<VocabularyGraph, "pronunciations" | "storyParts"> = repository.snapshot()): Promise<number> {
   if (filling || !pronunciationCacheEnabled()) return filling ?? Promise.resolve(0);
   filling = (async () => {
     let fetched = 0;
-    for (const clip of graph.pronunciations) {
-      if (clip.deleted || !clip.audioRef) continue;
-      if (await store.read(clip.audioRef).catch(() => null)) continue;
+    // A part of a story read aloud is kept with the clips: it is spoken audio of the same order of
+    // size, and it is what lets a story be heard on a plane. Same store, same key — the reference.
+    const references = [
+      ...graph.pronunciations.filter((clip) => !clip.deleted).map((clip) => clip.audioRef),
+      ...graph.storyParts.filter((part) => !part.deleted).map((part) => part.audioRef)
+    ];
+    for (const reference of references) {
+      if (!reference) continue;
+      if (await store.read(reference).catch(() => null)) continue;
       try {
-        await store.save(clip.audioRef, await download(clip.audioRef));
+        await store.save(reference, await download(reference));
         fetched += 1;
       } catch {
         break;

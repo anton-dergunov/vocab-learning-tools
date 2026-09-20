@@ -435,10 +435,16 @@ export interface BundlePlan {
  * the sentence it illustrates and does not get an anchor invented for it — matching by position or
  * by text would be a guess, and a wrong anchor puts the picture under the wrong sentence.
  */
-const READABLE = new Set([SCHEMA_VERSION, 9, 8, 7, 6]);
+const READABLE = new Set([SCHEMA_VERSION, 14, 9, 8, 7, 6]);
 
+/**
+ * Version 15 gave a story part a recording. A story is not in a bundle and no word file changed, so
+ * a version 14 bundle is read exactly as it stands — accepted, with nothing to rewrite, which is the
+ * form of this exception to prefer. Without this line every bundle exported the day before would
+ * have been refused for a change that has nothing to do with it.
+ */
 function upgradeBundle(files: BundleFile[], from: number): BundleFile[] {
-  if (from === SCHEMA_VERSION) return files;
+  if (from === SCHEMA_VERSION || from === 14) return files;
   if (READABLE.has(from)) {
     return files.map((file) => isWordFile(file.path)
       ? {

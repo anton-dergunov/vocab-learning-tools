@@ -1,8 +1,8 @@
-"""The one-off converter that added `story_words.translation_forms`.
+"""The one-off converter that added the recording columns to `story_parts`.
 
-**Delete this file together with `scripts/throwaway/add_story_translation_forms.py`**, once that has
-run. It is tested against a database built the way the owner's was — the current schema minus the one
-column, stamped with the head from before it — because the point of a converter is that words,
+**Delete this file together with `scripts/throwaway/add_story_part_audio.py`**, once that has run. It
+is tested against a database built the way the owner's was — the current schema minus the new
+columns, stamped with the head from before them — because the point of a converter is that words,
 pictures and recordings survive it, and a test that started from an empty database would prove
 nothing about that.
 """
@@ -24,7 +24,7 @@ from acervo.db.alembic.versions.bootstrap import revision as HEAD  # noqa: E402
 from acervo.db.tables import metadata  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location(
-    "add_story_translation_forms", ROOT / "scripts" / "throwaway" / "add_story_translation_forms.py")
+    "add_story_part_audio", ROOT / "scripts" / "throwaway" / "add_story_part_audio.py")
 converter = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(converter)
 
@@ -48,15 +48,16 @@ def _row(table, **overrides) -> dict:
 
 @pytest.fixture
 def old(tmp_path) -> Path:
-    """The owner's database as it was: the current schema without the column, one story word in it."""
+    """The owner's database as it was: the current schema without the columns, one part in it."""
     path = tmp_path / "acervo.db"
     engine = create_engine(f"sqlite+pysqlite:///{path}")
     metadata.create_all(engine)
-    words = metadata.tables[converter.TABLE]
-    row = _row(words, id="storyword000001", forms='["balsa"]', source_text="la balsa")
+    parts = metadata.tables[converter.TABLE]
+    row = _row(parts, id="storypart000001", text="Cada martes.", image_ref="stories/a/b-1.webp")
     with engine.begin() as connection:
-        connection.execute(text(f"ALTER TABLE {converter.TABLE} DROP COLUMN {converter.COLUMN}"))
-        row.pop(converter.COLUMN, None)
+        for column in converter.COLUMNS:
+            connection.execute(text(f"ALTER TABLE {converter.TABLE} DROP COLUMN {column}"))
+            row.pop(column, None)
         connection.execute(text(
             f"INSERT INTO {converter.TABLE} ({', '.join(row)}) VALUES ({', '.join(':' + k for k in row)})"), row)
         connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
@@ -83,14 +84,14 @@ def _stamp(path: Path) -> str | None:
         engine.dispose()
 
 
-def test_it_converts_from_the_head_it_was_written_for_and_keeps_every_row(old, capsys):
+def test_it_converts_from_the_head_it_was_written_for_and_keeps_every_row(old):
     assert converter.main(["--database", str(old)]) == 0
 
     assert _stamp(old) == HEAD
-    rows = _query(old, f"SELECT id, source_text, forms, {converter.COLUMN} FROM {converter.TABLE}")
+    rows = _query(old, f"SELECT id, text, image_ref, audio_ref, audio_voice, audio_segments FROM {converter.TABLE}")
     assert len(rows) == 1
-    assert rows[0][:3] == ("storyword000001", "la balsa", '["balsa"]'), "what was there survives"
-    assert rows[0][3] == "[]", "and every word starts as 'the translator did not say'"
+    assert rows[0][:3] == ("storypart000001", "Cada martes.", "stories/a/b-1.webp"), "what was there survives"
+    assert rows[0][3:] == ("", "", "[]"), "and every part starts as 'not recorded'"
     engine = create_engine(f"sqlite+pysqlite:///{old}")
     assert schemacheck.compare(engine, metadata, sorted(metadata.tables)) == []
 
@@ -99,8 +100,8 @@ def test_a_dry_run_checks_everything_and_writes_nothing(old, capsys):
     assert converter.main(["--database", str(old), "--dry-run"]) == 0
 
     assert _stamp(old) == converter.FROM_REVISION
-    assert converter.COLUMN not in {
-        row[1] for row in _query(old, f"PRAGMA table_info({converter.TABLE})")}
+    held = {row[1] for row in _query(old, f"PRAGMA table_info({converter.TABLE})")}
+    assert not held & set(converter.COLUMNS)
     assert "nothing was written" in capsys.readouterr().out
 
 
@@ -110,13 +111,13 @@ def test_running_it_twice_is_harmless(old, capsys):
     assert "Nothing to do" in capsys.readouterr().out
 
 
-def test_a_run_that_added_the_column_and_stopped_before_restamping_can_be_finished(old):
-    """The stamp and the column are two statements; a crash between them must not strand the
-    database on a converter that then refuses because the column is already there."""
+def test_a_run_that_added_the_columns_and_stopped_before_restamping_can_be_finished(old):
+    """The stamp and the columns are separate statements; a crash between them must not strand the
+    database on a converter that then refuses because the columns are already there."""
     engine = create_engine(f"sqlite+pysqlite:///{old}")
     with engine.begin() as connection:
-        connection.execute(text(
-            f"ALTER TABLE {converter.TABLE} ADD COLUMN {converter.COLUMN} JSON NOT NULL DEFAULT '[]'"))
+        for name, definition in converter.COLUMNS.items():
+            connection.execute(text(f"ALTER TABLE {converter.TABLE} ADD COLUMN {name} {definition}"))
     engine.dispose()
     assert _stamp(old) == converter.FROM_REVISION
 
@@ -138,7 +139,7 @@ def test_it_refuses_a_database_stamped_with_any_other_revision_naming_both(old, 
     assert "--reset-database" in error
 
 
-def test_it_refuses_when_anything_but_that_one_column_has_moved(old, capsys):
+def test_it_refuses_when_anything_but_those_columns_has_moved(old, capsys):
     """The change is only safe because it was purely additive. If another table differs the
     converter is the wrong tool, and it says which."""
     engine = create_engine(f"sqlite+pysqlite:///{old}")

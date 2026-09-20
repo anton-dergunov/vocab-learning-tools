@@ -211,6 +211,29 @@ def _gloss_language(owner: str, language: str) -> str:
     return ((vocabulary or {}).get("glossLangs") or ["en"])[0]
 
 
+# What each of the first three steps has already done, asked of the graph. A step that finds its
+# work there is skipped rather than repeated: Try again exists to redo what failed, and the way a story
+# fails most often — a recording that would not finish — must not cost a second story.
+
+
+def _live_parts(owner: str, story_id: str) -> list[dict[str, Any]]:
+    return [row for row in graph.story_parts(owner, story_id) if not row.get("deleted")]
+
+
+def is_written(owner: str, story_id: str) -> bool:
+    return bool(_live_parts(owner, story_id))
+
+
+def is_translated(owner: str, story_id: str) -> bool:
+    parts = _live_parts(owner, story_id)
+    return bool(parts) and all((row.get("translation") or "").strip() for row in parts)
+
+
+def is_briefed(owner: str, story_id: str) -> bool:
+    parts = _live_parts(owner, story_id)
+    return bool(parts) and all((row.get("imagePrompt") or "").strip() for row in parts)
+
+
 def write_story(settings: Settings, owner: str, device: str, story_id: str) -> dict[str, Any]:
     """Ask for the story, and write its parts. The first and only creative call."""
     story = _story(owner, story_id)
@@ -495,7 +518,7 @@ def _discard(media: Path, reference: str | None, *, keep: str | None) -> None:
 
 
 def remove(settings: Settings, owner: str, device: str, story_id: str) -> dict[str, Any]:
-    """Delete a story: its row, its parts, its words, and the pictures themselves.
+    """Delete a story: its row, its parts, its words, and the pictures and recordings themselves.
 
     A route rather than a client-side tombstone for `services/loops.remove`'s reason: the pictures
     are megabytes, nothing else would ever remove them, and the same party has to write the row and
@@ -517,6 +540,7 @@ def remove(settings: Settings, owner: str, device: str, story_id: str) -> dict[s
 
     media = Path(settings.media_path)
     for row in parts:
-        if row.get("imageRef"):
-            media.joinpath(row["imageRef"]).unlink(missing_ok=True)
+        for reference in (row.get("imageRef"), row.get("audioRef")):
+            if reference:
+                media.joinpath(reference).unlink(missing_ok=True)
     return graph.owned_records(owner, "stories", [story_id])[story_id]

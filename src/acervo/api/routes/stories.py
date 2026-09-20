@@ -7,6 +7,11 @@
   A route rather than an ordinary client write for the reason the image routes are: the pictures
   are megabytes, nothing else would ever remove them, and the rows and the files have to be
   written by the same party.
+- `POST /stories/{id}/parts/{part}/audio` reads one part aloud **now** and answers with its row. It is
+  the on-demand half of what the `story.audio` step does when Settings ▸ Stories records a story as
+  it is made, and it is the *same* function, so a part recorded either way is indistinguishable.
+  Synchronous, like `POST /pronunciations/{collection}/{id}`: a person pressed a button and is
+  waiting, and the recording is worth having the moment it exists.
 - `GET /stories/types` is the dialog's one round trip: the kinds of story and the styles they can
   be drawn in, together, because the choice is meaningless without the labels.
 
@@ -29,6 +34,7 @@ from acervo.api.errors import data
 from acervo.api.payload import json_body
 from acervo.repository import graph, jobs
 from acervo.services.stories import create, remove, types_view
+from acervo.services.story_audio import narrate_part
 
 router = APIRouter()
 
@@ -65,3 +71,14 @@ async def drop(story_id: str, request: Request) -> JSONResponse:
     return data(
         await run_in_threadpool(remove, request.app.state.settings, owner, device, story_id)
     )
+
+
+@router.post("/stories/{story_id}/parts/{part_id}/audio")
+async def read_aloud(story_id: str, part_id: str, request: Request) -> JSONResponse:
+    """Record one part, in the voice the story is already being read in, and answer with its row."""
+    owner = owner_id(request)
+    body = await json_body(request)
+    device = graph.require_device(body.get("deviceId"))
+    return data(await run_in_threadpool(
+        narrate_part, request.app.state.settings, owner, device, story_id, part_id,
+    ))

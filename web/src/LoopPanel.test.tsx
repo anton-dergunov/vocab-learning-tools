@@ -21,8 +21,8 @@ const SCHEMA: LoopSchema = {
 
 function settings(loops: "plain" | "expressive" = "expressive"): PronunciationSettings {
   return {
-    pregenerate: { headword: false, definitions: false, examples: false },
-    delivery: { words: "plain", examples: "expressive", loops },
+    pregenerate: { headword: false, definitions: false, examples: false, stories: true },
+    delivery: { words: "plain", examples: "expressive", loops, stories: "expressive" },
     voices: {}, chosen: false, languages: ["es"], orders: { plain: [], expressive: [] }
   };
 }
