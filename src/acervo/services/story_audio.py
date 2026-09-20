@@ -24,11 +24,15 @@ So the expressive order is filtered to the pairs that declare `style: instructio
 them can be reached the part is read whole, in one call, with no passages** — a plain reading of the
 whole paragraph rather than an expensive one that is plain anyway.
 
-**A part is one file made of many recordings.** A directed voice is asked for one passage at a time,
-each with its own direction (`stories/narrate.py` decides where they break), and the recordings are
-joined here. Because they are joined here, where every passage sits in the file is known exactly, and
-the reader can mark the passage that is sounding and start from any of them without anything having
-to be aligned. A clear voice reads the whole part in one call and records no passages.
+**A part is one file per passage, and never one joined file.** A directed voice is asked for one
+passage at a time, each with its own direction (`stories/narrate.py` decides where they break), and
+each recording is stored as it came. The alternative was tried: join them, remember where each one
+starts, and seek. It does not work, because **a browser seeks a compressed stream to a page boundary**
+— one second, in the Ogg libsndfile writes — so a passage started after its first words or after the
+end of the one before it, unpredictably, and the element reports the time that was *asked for* rather
+than the time it gave, so there is nothing to correct against. A file that begins where the passage
+begins needs no seek and cannot be wrong. A clear voice records one passage covering the whole part,
+so the shape is the same either way and the reader simply has nothing to tap.
 
 Every operation is read (transaction) → calls (**no** transaction, tens of seconds of them) → write
 (transaction), for `services/stories.py`'s reason.
@@ -84,7 +88,7 @@ def narrate_story(
     """
     stories._story(owner, story_id)
     parts = stories._parts(owner, story_id)
-    pending = [row for row in parts if not row.get("audioRef")]
+    pending = [row for row in parts if not row.get("audioSegments")]
     done = len(parts) - len(pending)
     if progress is not None:
         progress(done, len(parts))
@@ -132,13 +136,14 @@ def narrate_part(
         recordings, pin = _record(settings, owner, segments, language, order, preferences, None,
                                   (), every, gate)
 
-    data, mime, marked = _assemble(segments, recordings)
-    row = _place_and_write(settings, owner, device, story_id, part_id, data, mime, pin, marked)
+    row = _place_and_store(settings, owner, device, story_id, part_id, segments, recordings, pin)
     journal.outcome(
         "story-audio", False, story=story_id, part=part_id, order=order, passages=len(segments),
-        directed=sum(1 for one in marked if one["direction"]),
+        directed=sum(1 for _data, said in recordings if said),
         pair=f"{pin[0]}:{pin[1]}" if pin else None, voice=pin[2] if pin else None,
-        bytes=len(data), seconds=time.monotonic() - started,
+        bytes=sum(len(one.get("audioRef") or "") for one in (row.get("audioSegments") or [])) and
+        sum(len(data) for data, _said in recordings),
+        seconds=time.monotonic() - started,
     )
     return row
 
@@ -258,7 +263,7 @@ def _pin(parts: list[dict[str, Any]], language: str) -> Pin | None:
     asked for. A pair that has since left the catalogue, lost its credential or stopped speaking the
     language is not one to insist on — a story then starts again with whatever answers first."""
     for part in sorted(parts, key=lambda row: row.get("position", 0)):
-        if part.get("audioRef") and part.get("audioProviderId") and part.get("audioModelId"):
+        if part.get("audioSegments") and part.get("audioProviderId") and part.get("audioModelId"):
             pair = (part["audioProviderId"], part["audioModelId"])
             try:
                 usable = speaking.speakers([pair], load_catalogue(), language)
@@ -302,57 +307,75 @@ def _segments(settings: Settings, owner: str, text: str, language: str, order: s
     return tiled.segments
 
 
-def _assemble(
-    segments: tuple[narrate.Segment, ...], recordings: list[tuple[bytes, str]],
-) -> tuple[bytes, str, list[dict[str, Any]]]:
-    """One file, and where each passage is in it. One passage is the file as it came, untouched and
-    unmarked: there is no other passage to tell it from."""
-    try:
-        if len(recordings) == 1:
-            data, mime = encode.compact(recordings[0][0], audio_mime(recordings[0][0]))
-            return data, mime, []
-        joined = encode.concat([one for one, _said in recordings])
-    except encode.CannotEncode as unwritable:
-        raise ApiError(500, "audio_unencodable", f"The recording could not be assembled: {unwritable}") from None
-    marked = [
-        # The short direction the model wrote, and only if the voice was really sent one: what
-        # `Spoken.direction` holds is the whole framed instruction, and it is None when the model
-        # that answered cannot take one. Recording what was asked would claim a reading nobody gave.
-        {"text": segment.text, "direction": said, "start": start, "end": end}
-        for segment, (_data, said), (start, end) in zip(segments, recordings, joined.spans)
-    ]
-    return joined.data, joined.mime, marked
-
-
-def _place_and_write(
+def _place_and_store(
     settings: Settings, owner: str, device: str, story_id: str, part_id: str,
-    data: bytes, mime: str, pin: Pin | None, marked: list[dict[str, Any]],
+    segments: tuple[narrate.Segment, ...], recordings: list[tuple[bytes, str]], pin: Pin | None,
 ) -> dict[str, Any]:
-    if len(data) > pronunciations.CLIP_LIMIT:
-        raise ApiError(400, "invalid_input", "That recording is too large to keep.")
+    """Write every passage's file, then the row, then remove the files the row used to name.
+
+    The same order `services/pronunciations._store` writes a clip in and for the same reason: a
+    device that cached a passage by its reference simply misses the new one, and nothing is unlinked
+    until the row naming its successor has landed.
+    """
     media = Path(settings.media_path)
-    reference = (f"stories/{story_id}/{part_id}-{hashlib.sha256(data).hexdigest()[:8]}"
-                 f".{speaking.extension_for(mime)}")
-    stories._place(media, reference, data)
+    written: list[dict[str, Any]] = []
+    for index, (segment, (data, said)) in enumerate(zip(segments, recordings)):
+        try:
+            compact, mime = encode.compact(data, audio_mime(data))
+        except encode.CannotEncode as unwritable:
+            _discard_all(media, written, keep=())
+            raise ApiError(500, "audio_unencodable",
+                           f"That recording could not be stored: {unwritable}") from None
+        if len(compact) > pronunciations.CLIP_LIMIT:
+            _discard_all(media, written, keep=())
+            raise ApiError(400, "invalid_input", "That recording is too large to keep.")
+        reference = (f"stories/{story_id}/{part_id}-{index:02d}"
+                     f"-{hashlib.sha256(compact).hexdigest()[:8]}.{speaking.extension_for(mime)}")
+        stories._place(media, reference, compact)
+        written.append({
+            "text": segment.text, "direction": said, "audioRef": reference, "audioMime": mime,
+            "durationSeconds": _seconds(compact),
+        })
+
     # Read again *after* the calls, which took a while: the row this replaces may have moved — a
     # picture landed, or the other of the job and the route finished first — and a write states the
     # revision it was made from.
     fresh = graph.owned_records(owner, "storyParts", [part_id]).get(part_id)
     if fresh is None or fresh.get("deleted"):
         # The story was deleted while this was being recorded; its files go with it.
-        stories._discard(media, reference, keep=None)
+        _discard_all(media, written, keep=())
         raise ApiError(404, "not_found", "That part is not in this story any more.")
-    previous = fresh.get("audioRef")
+    previous = fresh.get("audioSegments") or []
     at = now_instant()
     try:
         graph.merge_graph(owner, device, {"storyParts": [{
-            **fresh, "audioRef": reference, "audioMime": mime,
-            "audioProviderId": pin[0] if pin else "", "audioModelId": pin[1] if pin else "",
-            "audioVoice": (pin[2] or "") if pin else "", "audioSegments": marked,
+            **fresh, "audioProviderId": pin[0] if pin else "", "audioModelId": pin[1] if pin else "",
+            "audioVoice": (pin[2] or "") if pin else "", "audioSegments": written,
             "editedAt": at, "editedBy": device,
         }]}, enqueue=None)
     except Exception:
-        stories._discard(media, reference, keep=previous)
+        _discard_all(media, written, keep=[one["audioRef"] for one in previous])
         raise
-    stories._discard(media, previous, keep=reference)
+    _discard_all(media, previous, keep=[one["audioRef"] for one in written])
     return graph.owned_records(owner, "storyParts", [part_id])[part_id]
+
+
+def _discard_all(media: Path, passages, keep) -> None:
+    kept = set(keep)
+    for one in passages:
+        reference = one.get("audioRef") if isinstance(one, dict) else None
+        if reference and reference not in kept:
+            media.joinpath(reference).unlink(missing_ok=True)
+
+
+def _seconds(data: bytes) -> float:
+    """How long a passage lasts, so the reader can draw where it is without decoding it first."""
+    import io
+
+    try:
+        import soundfile
+
+        with soundfile.SoundFile(io.BytesIO(data)) as reading:
+            return round(len(reading) / reading.samplerate, 3)
+    except Exception:  # noqa: BLE001 — a length nobody could read is a length nobody needs
+        return 0.0

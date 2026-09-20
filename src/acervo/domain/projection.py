@@ -469,20 +469,19 @@ def _project_story_part(row: Mapping[str, Any]) -> dict[str, Any]:
         "imageModelId": text_or_none(row["image_model_id"]) if trimmed(row["image_ref"]) else None,
         "attempts": to_int(row["attempts"]),
         "failureReason": text_or_none(row["failure_reason"]),
-        # Hidden together with the recording they describe, as `imageModelId` is with its picture.
-        "audioRef": text_or_none(row["audio_ref"]),
-        "audioMime": text_or_none(row["audio_mime"]) if trimmed(row["audio_ref"]) else None,
-        "audioProviderId": text_or_none(row["audio_provider_id"]) if trimmed(row["audio_ref"]) else None,
-        "audioModelId": text_or_none(row["audio_model_id"]) if trimmed(row["audio_ref"]) else None,
-        "audioVoice": text_or_none(row["audio_voice"]) if trimmed(row["audio_ref"]) else None,
-        "audioSegments": _project_segments(row["audio_segments"]) if trimmed(row["audio_ref"]) else [],
+        # Hidden together with the passages they describe, as `imageModelId` is with its picture.
+        "audioProviderId": text_or_none(row["audio_provider_id"]) if row["audio_segments"] else None,
+        "audioModelId": text_or_none(row["audio_model_id"]) if row["audio_segments"] else None,
+        "audioVoice": text_or_none(row["audio_voice"]) if row["audio_segments"] else None,
+        "audioSegments": _project_segments(row["audio_segments"]),
     }
 
 
 def _project_segments(value: Any) -> list[dict[str, Any]]:
     return [
         {"text": str(one.get("text") or ""), "direction": str(one.get("direction") or ""),
-         "start": float(one.get("start") or 0), "end": float(one.get("end") or 0)}
+         "audioRef": str(one.get("audioRef") or ""), "audioMime": str(one.get("audioMime") or ""),
+         "durationSeconds": float(one.get("durationSeconds") or 0)}
         for one in (value or []) if isinstance(one, Mapping)
     ]
 
@@ -495,7 +494,8 @@ def _assign_segments(value: Any) -> list[dict[str, Any]]:
     return [
         {"text": "" if one.get("text") is None else str(one.get("text")),
          "direction": trimmed(one.get("direction")),
-         "start": to_float(one.get("start")), "end": to_float(one.get("end"))}
+         "audioRef": trimmed(one.get("audioRef")), "audioMime": trimmed(one.get("audioMime")),
+         "durationSeconds": to_float(one.get("durationSeconds"))}
         for one in value if isinstance(one, Mapping)
     ]
 
@@ -514,8 +514,6 @@ def _assign_story_part(value: Mapping[str, Any]) -> dict[str, Any]:
         "image_model_id": trimmed(value.get("imageModelId")),
         "attempts": to_int(value.get("attempts")),
         "failure_reason": trimmed(value.get("failureReason")),
-        "audio_ref": trimmed(value.get("audioRef")),
-        "audio_mime": trimmed(value.get("audioMime")),
         "audio_provider_id": trimmed(value.get("audioProviderId")),
         "audio_model_id": trimmed(value.get("audioModelId")),
         "audio_voice": trimmed(value.get("audioVoice")),

@@ -104,26 +104,36 @@ function failureOf(step: JobStep): string {
 }
 
 /**
- * What each of a story's steps takes of the whole, by how long it tends to take. Drawing and
- * recording are the long ones, and the only two that can say how far through themselves they are.
- * A step that is skipped — recording, when Settings ▸ Stories has it off — counts as finished.
+ * What each of a story's steps takes of the whole, **by how long it actually takes** — measured from
+ * real jobs on a real deployment rather than guessed: writing, translating and briefing together are
+ * about fifteen seconds, four pictures about a minute, and four parts of narration about two. The
+ * three text steps therefore share a tenth of the bar between them. Splitting it evenly, as it was,
+ * put half the bar on the fastest fifth of the work, so the figure shot to 45% in a few seconds and
+ * then crawled — which is the one thing a progress figure must not do.
+ *
+ * Only `story.draw` and `story.audio` can say how far through themselves they are, and only they are
+ * long enough for it to matter.
  */
 const STORY_WEIGHTS: Record<string, number> = {
-  "story.write": 25, "story.translate": 10, "story.brief": 10, "story.draw": 35, "story.audio": 20
+  "story.write": 5, "story.translate": 3, "story.brief": 2, "story.draw": 35, "story.audio": 55
 };
 
 /** The steps that report `done` of `total`, and so count for part of their weight while running. */
 const STORY_COUNTED = new Set(["story.draw", "story.audio"]);
 
+const STORY_FINISHED = new Set(["done", "skipped", "failed"]);
+
 function storyLabel(step: JobStep): string {
   const waiting = step.state === "waiting" ? " (the provider is busy)" : "";
   switch (step.name) {
+    /* One message for the three text steps. They take a few seconds between them, so naming each
+       one flashes three phrases past faster than they can be read, and "writing the story" is what
+       all three of them are. A *failure* still names the step it happened in — `failureOf` does
+       that, and there the distinction is the whole point. */
     case "story.write":
-      return `Writing the story${waiting}`;
     case "story.translate":
-      return `Translating it${waiting}`;
     case "story.brief":
-      return `Planning the pictures${waiting}`;
+      return `Writing the story${waiting}`;
     case "story.audio":
       if (step.total) {
         return `Recording part ${Math.min((step.done ?? 0) + 1, step.total)} of ${step.total}${waiting}`;
@@ -142,6 +152,13 @@ function storyLabel(step: JobStep): string {
  * far through the whole it is, first, and only then which part of it is going on. The loop line puts
  * its phrase first because the render's own words are the news there; here the number is, and it is
  * a fraction of everything rather than of the step.
+ *
+ * **"Waiting to start" means waiting to start, and nothing else.** It used to be what came out
+ * whenever no step was *running* — which is true before the job is picked up, and false in two
+ * common cases that between them covered most of a slow story: a step that is resting out a busy
+ * provider is put back to `pending`, so a ten-minute rest read as "waiting to start", and once every
+ * step has finished the job is still open for as long as it takes to close, so the line said
+ * "waiting to start" at 99%.
  */
 function storyLine(job: Job): StripLine {
   const steps = job.steps.filter((step) => step.name in STORY_WEIGHTS);
@@ -156,8 +173,17 @@ function storyLine(job: Job): StripLine {
   // Rounded down and held under 100, because this only runs while the job is open: a line that says
   // 100% and is still going is a small lie, and the last picture's step is when it would tell it.
   const percent = whole ? Math.min(Math.floor((finished / whole) * 100), 99) : 0;
-  const current = steps.find((step) => step.state === "running" || step.state === "waiting");
-  const text = current ? storyLabel(current) : "Waiting to start";
+
+  const current = steps.find((step) => step.state === "running" || step.state === "waiting")
+    ?? steps.find((step) => !STORY_FINISHED.has(step.state));
+  const started = steps.some((step) => step.state !== "pending");
+  // Resting between steps: the step was put back to `pending` and the job told to wait, so the row
+  // itself is what says a provider is being waited for rather than the step.
+  const resting = Boolean(job.notBefore) && Date.parse(job.notBefore!) > Date.now();
+  const text = !started ? "Waiting to start"
+    : !current ? "Finishing"
+      : resting && current.state === "pending" ? `${storyLabel(current)} (the provider is busy)`
+        : storyLabel(current);
   return { phases: [{ text: `${percent}% · ${text}`, current: true }], failure: null };
 }
 

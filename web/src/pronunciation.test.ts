@@ -100,12 +100,13 @@ describe("playing a pronunciation", () => {
 
   it("brings the clips the replica names onto this device, and nothing when keeping is off", async () => {
     const fetched = served();
-    // The word's clip, and the recording of the one story part that has been read aloud: a story is
-    // kept with the clips, so it plays offline too.
-    expect(await fill(repository.snapshot())).toBe(2);
+    // The word's clip, and **every passage** of the one story part that has been read aloud: a story
+    // is kept with the clips, so it plays offline too, and a part is a file per passage.
+    expect(await fill(repository.snapshot())).toBe(3);
     expect(fetched.mock.calls.map(([url]) => String(url)).sort()).toEqual([
       "https://acervo.example.com/media/audio/lexemepicar0001/hl08nur0wl9h0n1-1a2b3c4d.mp3",
-      "https://acervo.example.com/media/stories/storypicada0001/storypart000001-9a3c1d7e.ogg"
+      "https://acervo.example.com/media/stories/storypicada0001/storypart000001-00-9a3c1d7e.ogg",
+      "https://acervo.example.com/media/stories/storypicada0001/storypart000001-01-4b2e8f01.ogg"
     ].sort());
     expect(await fill(repository.snapshot())).toBe(0);
 

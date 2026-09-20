@@ -208,12 +208,15 @@ export function testGraph(): VocabularyGraph {
         imagePrompt: "A man climbs onto a wooden raft at dawn.",
         imageRef: "stories/storypicada0001/storypart000001-1f4c8b2e.webp",
         imageModelId: "openai/gpt-image-1", attempts: 1, failureReason: null,
-        // Read aloud by a directed voice, in two passages that join back to `text`.
-        audioRef: "stories/storypicada0001/storypart000001-9a3c1d7e.ogg", audioMime: "audio/ogg",
+        // Read aloud by a directed voice, in two passages that join back to `text`, one file each.
         audioProviderId: "google-tts", audioModelId: "gemini-3.1-flash-tts-preview", audioVoice: "Kore",
         audioSegments: [
-          { text: "Marcos subió a la balsa ", direction: "Calm, like a bedtime story.", start: 0, end: 1.6 },
-          { text: "al amanecer.", direction: "Hushed and slow.", start: 1.72, end: 2.9 }
+          { text: "Marcos subió a la balsa ", direction: "Calm, like a bedtime story.",
+            audioRef: "stories/storypicada0001/storypart000001-00-9a3c1d7e.ogg",
+            audioMime: "audio/ogg", durationSeconds: 1.6 },
+          { text: "al amanecer.", direction: "Hushed and slow.",
+            audioRef: "stories/storypicada0001/storypart000001-01-4b2e8f01.ogg",
+            audioMime: "audio/ogg", durationSeconds: 1.18 }
         ],
         ...sync("09-03")
       },
@@ -227,8 +230,7 @@ export function testGraph(): VocabularyGraph {
         imageRef: null, imageModelId: null, attempts: 2,
         failureReason: "The image model is temporarily rate limited.",
         // Never read aloud — the other state a part can be in.
-        audioRef: null, audioMime: null, audioProviderId: null, audioModelId: null, audioVoice: null,
-        audioSegments: [],
+        audioProviderId: null, audioModelId: null, audioVoice: null, audioSegments: [],
         ...sync("09-03")
       }
     ],

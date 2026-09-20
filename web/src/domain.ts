@@ -342,33 +342,33 @@ export interface StoryPart extends SyncFields, OwnedFields {
   imageModelId: string | null;
   attempts: number;
   failureReason: string | null;
-  /**
-   * The part read aloud, as one file. Null until recorded, which is the whole of what "not recorded"
-   * means: there is no status. `audioRef` carries a digest of the bytes, for `imageRef`'s reason, so
-   * a re-recording is a new reference and a device that kept the old one simply misses.
-   */
-  audioRef: string | null;
-  audioMime: string | null;
   /** The pair and voice that read it. A story is read in one, and the first part recorded chooses. */
   audioProviderId: string | null;
   audioModelId: string | null;
   audioVoice: string | null;
   /**
-   * The passages the voice was asked for one at a time, in reading order. They join back to `text`
-   * exactly, so where one sits in the text is the lengths of those before it, and `start`/`end` are
-   * where it sits in the recording, in seconds — known rather than aligned, because the file is
-   * built by joining one recording per passage. Empty for a clear voice, which reads the part in one
-   * go; the reader then offers nothing to tap. `direction` is what the voice was actually sent, and
-   * empty when it was sent nothing.
+   * The part read aloud, **one recording per passage**, in reading order. No passages is the whole
+   * of what "not recorded" means: there is no status and no separate reference to disagree with it.
+   * A clear voice records one passage covering the whole part, so the shape is the same either way
+   * and the reader simply has nothing to tap.
+   *
+   * The passages join back to `text` exactly, so where one sits in the text is the lengths of those
+   * before it. A file each rather than one joined file because **a passage must start where its
+   * first word does**: a joined file has to be seeked into, and a browser seeks a compressed stream
+   * to a page boundary, landing after the target or before it — and reporting the time that was
+   * asked for either way, so there is nothing to correct against.
    */
   audioSegments: AudioSegment[];
 }
 
 export interface AudioSegment {
   text: string;
+  /** What the voice was actually sent. Empty when it was sent nothing. */
   direction: string;
-  start: number;
-  end: number;
+  /** This passage's own recording. It carries a digest of its bytes, as every media name does. */
+  audioRef: string;
+  audioMime: string;
+  durationSeconds: number;
 }
 
 /**
@@ -762,21 +762,21 @@ export function validateGraph(graph: VocabularyGraph): void {
     // nothing would be the one fact contradicting it.
     invariant(Boolean(record.imageRef) || !record.imageModelId, "A story part with no picture cannot name the model that drew one.");
     invariant(Number.isSafeInteger(record.attempts) && record.attempts >= 0, "Story part attempts are invalid.");
-    optionalString(record.audioRef, "Story part recording");
-    optionalString(record.audioMime, "Story part recording type");
     optionalString(record.audioProviderId, "Story part recording provider");
     optionalString(record.audioModelId, "Story part recording model");
     optionalString(record.audioVoice, "Story part recording voice");
     invariant(
-      Boolean(record.audioRef) || (!record.audioProviderId && !record.audioModelId && !record.audioVoice && record.audioSegments.length === 0),
-      "A story part with no recording cannot say who spoke it or where it is in it."
-    );
-    invariant(
       Array.isArray(record.audioSegments) && record.audioSegments.every((one) =>
         typeof one.text === "string" && typeof one.direction === "string"
-        && Number.isFinite(one.start) && Number.isFinite(one.end) && one.start >= 0 && one.end >= one.start
+        && typeof one.audioRef === "string" && one.audioRef.length > 0
+        && Number.isFinite(one.durationSeconds) && one.durationSeconds >= 0
       ),
       "Story part passages are invalid."
+    );
+    invariant(
+      record.audioSegments.length > 0
+        || (!record.audioProviderId && !record.audioModelId && !record.audioVoice),
+      "A story part that has not been read aloud cannot say who spoke it."
     );
   });
 

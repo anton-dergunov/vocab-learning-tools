@@ -34,6 +34,12 @@ let api: typeof import("./api");
 
 const [recorded, unrecorded] = testGraph().storyParts;
 
+/** One passage of a part the server has just recorded. */
+const fresh = (digest: string) => ({
+  text: unrecorded.text, direction: "", audioMime: "audio/ogg", durationSeconds: 2,
+  audioRef: `stories/storypicada0001/storypart000002-00-${digest}.ogg`
+});
+
 async function playing(): Promise<void> {
   await vi.waitFor(() => expect(player.storyPlayback().status).toBe("playing"));
 }
@@ -107,10 +113,10 @@ describe("pressing the button on a part", () => {
     await playing();
 
     expect(player.storyPlayback().partId).toBe(recorded.id);
-    expect(fetch).toHaveBeenCalledTimes(1);
+    // Every passage is fetched before the first sounds, so the swap between them is an assignment.
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(String((fetch as unknown as { mock: { calls: string[][] } }).mock.calls[0][0]))
-      .toBe(`https://acervo.example.com/media/${recorded.audioRef}`);
-    expect(asked).toBe(0);
+      .toBe(`https://acervo.example.com/media/${recorded.audioSegments[0].audioRef}`);
   });
 
   it("pauses when it is playing and carries on from where it was when pressed again", async () => {
@@ -124,8 +130,6 @@ describe("pressing the button on a part", () => {
 
     player.toggle(recorded);
     expect(player.storyPlayback().status).toBe("playing");
-    expect(reported).toBe(1.4);
-    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("stops and forgets the position when its page stops being the one on screen", async () => {
@@ -140,10 +144,9 @@ describe("pressing the button on a part", () => {
     expect(paused).toBe(true);
 
     // Coming back to it starts from the top, which is what swiping away and back is for.
-    reported = 2;
     player.toggle(recorded);
     await playing();
-    expect(asked).toBe(0);
+    expect(player.storyPlayback().segment).toBe(0);
   });
 
   it("is not ended by the silence that was started to keep the gesture", async () => {
@@ -155,7 +158,7 @@ describe("pressing the button on a part", () => {
     made!.dispatchEvent(new Event("ended"));   // the silence finishing, long before the part exists
     expect(player.storyPlayback()).toMatchObject({ status: "busy", partId: unrecorded.id });
 
-    arrive({ ...unrecorded, audioRef: "stories/storypicada0001/storypart000002-aaaa1111.ogg" });
+    arrive({ ...unrecorded, audioSegments: [fresh("aaaa1111")] });
     await playing();
   });
 
@@ -171,7 +174,7 @@ describe("pressing the button on a part", () => {
 
 describe("a part that has not been recorded", () => {
   it("is recorded by the server when it is pressed, and plays the row that comes back", async () => {
-    const row: StoryPart = { ...unrecorded, audioRef: "stories/storypicada0001/storypart000002-aaaa1111.ogg", audioMime: "audio/ogg" };
+    const row: StoryPart = { ...unrecorded, audioSegments: [fresh("aaaa1111")] };
     const record = vi.spyOn(api.backendSession, "recordStoryPart").mockResolvedValue(row);
 
     player.toggle(unrecorded);
@@ -179,7 +182,7 @@ describe("a part that has not been recorded", () => {
 
     expect(record).toHaveBeenCalledWith(unrecorded.storyId, unrecorded.id, expect.any(String));
     expect(String((fetch as unknown as { mock: { calls: string[][] } }).mock.calls[0][0]))
-      .toBe(`https://acervo.example.com/media/${row.audioRef}`);
+      .toBe(`https://acervo.example.com/media/${row.audioSegments[0].audioRef}`);
   });
 
   it("says why when the server could not, and leaves the button pressable", async () => {
@@ -205,58 +208,68 @@ describe("a part that has not been recorded", () => {
 });
 
 describe("the passages of a part", () => {
-  it("marks the passage that is sounding, following the recording", async () => {
+  /** A part of three passages, so "carry on to the end" has somewhere to carry on to. */
+  const three: StoryPart = {
+    ...recorded,
+    audioSegments: [0, 1, 2].map((index) => ({
+      text: `Passage ${index}. `, direction: "", audioMime: "audio/ogg", durationSeconds: 1,
+      audioRef: `stories/storypicada0001/storypart000001-0${index}-aaaa000${index}.ogg`
+    }))
+  };
+  /** The passage that just ended, so the next one starts — what a browser does at the end of a file. */
+  const ended = () => made!.dispatchEvent(new Event("ended"));
+
+  it("marks the passage that is sounding, and moves the mark when that file ends", async () => {
     player.toggle(recorded);
     await playing();
     expect(player.storyPlayback().segment).toBe(0);
 
-    reported = 1.75;   // the second has started
-    tick();
-    expect(player.storyPlayback().segment).toBe(1);
-
-    reported = 1.65;   // in the rest between the two, the first is still the one that was said
-    tick();
-    expect(player.storyPlayback().segment).toBe(0);
+    ended();
+    await vi.waitFor(() => expect(player.storyPlayback().segment).toBe(1));
   });
 
   it("plays only the passage that was touched when nothing of the part is playing", async () => {
-    player.playSegment(recorded, 1);
+    player.playSegment(three, 1);
     await playing();
 
-    expect(asked).toBe(1.72);
     expect(player.storyPlayback().segment).toBe(1);
+    // Only that passage was even fetched: the point of a file each is that nothing else is needed.
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String((fetch as unknown as { mock: { calls: string[][] } }).mock.calls[0][0]))
+      .toContain("storypart000001-01-");
 
-    reported = 2.95;   // past where it ends
-    tick();
+    ended();
 
     expect(player.storyPlayback()).toMatchObject({ status: "idle", partId: null });
-    expect(paused).toBe(true);
   });
 
-  it("moves the recording there, and carries on to the end, when the part is already playing", async () => {
-    player.toggle(recorded);
+  it("carries on to the end of the part when a passage is touched while it is playing", async () => {
+    player.toggle(three);
     await playing();
+    (fetch as unknown as { mockClear(): void }).mockClear();
 
-    player.playSegment(recorded, 1);
-    expect(asked).toBe(1.72);
-    expect(player.storyPlayback()).toMatchObject({ status: "playing", segment: 1 });
+    player.playSegment(three, 1);
+    await vi.waitFor(() => expect(player.storyPlayback().segment).toBe(1));
 
-    reported = 2.95;   // past the second's end, which would have stopped a passage played alone
-    tick();
-    expect(player.storyPlayback().status).toBe("playing");
+    ended();
+    await vi.waitFor(() => expect(player.storyPlayback().segment).toBe(2));
+    ended();
+    expect(player.storyPlayback()).toMatchObject({ status: "idle", partId: null });
   });
 
-  it("ignores a passage the part does not have", async () => {
+  it("ignores a passage the part does not have", () => {
     player.playSegment(recorded, 7);
     expect(player.storyPlayback().status).toBe("idle");
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("ends when the recording does", async () => {
+  it("ends when the last passage does", async () => {
     player.toggle(recorded);
     await playing();
 
-    made!.dispatchEvent(new Event("ended"));
+    ended();                                   // the first passage; the second follows
+    await vi.waitFor(() => expect(player.storyPlayback().segment).toBe(1));
+    ended();                                   // the last
 
     expect(player.storyPlayback()).toMatchObject({ status: "idle", partId: null });
   });
@@ -299,10 +312,12 @@ describe("resuming", () => {
   it("presses that only pause and resume do not fetch again", async () => {
     player.toggle(recorded);
     await playing();
+    (fetch as unknown as { mockClear(): void }).mockClear();
+
     player.toggle(recorded);
     player.toggle(recorded);
 
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).not.toHaveBeenCalled();
     expect(plays).toBeGreaterThanOrEqual(2);
   });
 });

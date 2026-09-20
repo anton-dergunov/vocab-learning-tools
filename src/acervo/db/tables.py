@@ -591,23 +591,27 @@ story_parts = Table(
     Column("attempts", Integer, nullable=False, default=0),
     Column("failure_reason", String(500), nullable=False, default=""),
     *_sync_fields(),
-    # The part read aloud, as one file. Kept on the part for the reason the picture is: a part is not
-    # a word, so the `pronunciations` collection (whose `lexeme` is required) cannot hold it. An empty
-    # `audio_ref` is *not recorded yet*, and there is no status column to get out of step with that.
-    # The pair and the voice are recorded because a story is spoken in **one** of them: the first
-    # part to be recorded chooses, and every later part is asked for exactly that.
+    # The part read aloud. Kept on the part for the reason the picture is: a part is not a word, so
+    # the `pronunciations` collection (whose `lexeme` is required) cannot hold it. The pair and the
+    # voice are recorded because a story is spoken in **one** of them: the first part to be recorded
+    # chooses, and every later part asks for exactly that.
     # Declared last so a database that gained them by `ALTER TABLE` has its columns in the order a
     # fresh one does.
-    Column("audio_ref", String(500), nullable=False, default=""),
-    Column("audio_mime", String(120), nullable=False, default=""),
     Column("audio_provider_id", String(120), nullable=False, default=""),
     Column("audio_model_id", String(120), nullable=False, default=""),
     Column("audio_voice", String(120), nullable=False, default=""),
-    # `[{"text", "direction", "start", "end"}]`, in reading order. The passages join back to `text`
-    # exactly, so a passage's place in the text is the lengths of those before it, and `start`/`end`
-    # are where it is in the recording, in seconds — known rather than aligned, because the file was
-    # built by joining one recording per passage. Empty for a clear voice, which reads the part in
-    # one go, and the reader then offers no passage to tap.
+    # `[{"text", "direction", "audioRef", "audioMime", "durationSeconds"}]`, in reading order, and
+    # **one file per passage**. A part with no passages has not been recorded; there is no status
+    # column and no separate reference to get out of step with that. A clear voice records one
+    # passage covering the whole part, so the shape is the same either way and the reader simply has
+    # nothing to tap.
+    #
+    # One file each rather than one joined file, because **a passage must start where its first word
+    # does**. A joined file has to be seeked into, and a browser seeks a compressed stream to a page
+    # boundary — measured at one second in the Ogg libsndfile writes — landing after the target
+    # (missing the first words) or before it (playing the end of the sentence before). There is no
+    # asking again: the element reports the time that was asked for, not the time it gave. A file
+    # that begins at the passage is exact by construction and needs no seek at all.
     Column("audio_segments", JSON, nullable=False, default=list),
     Index("idx_story_parts_owner_revision", "owner", "revision"),
     Index("idx_story_parts_owner_story_order", "owner", "story", "part_order"),

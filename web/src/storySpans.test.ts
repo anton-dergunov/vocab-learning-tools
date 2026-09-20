@@ -89,13 +89,21 @@ describe("marking a translation's words", () => {
 
 describe("a part's text cut into the passages a recording has", () => {
   const TEXT = "Marcos subió a la balsa al amanecer. Nadie dijo nada.";
-  const passage = (text: string, start = 0): AudioSegment => ({ text, direction: "", start, end: start + 1 });
+  const passage = (text: string, index = 0): AudioSegment =>
+    ({ text, direction: "", audioRef: `stories/s/p-${index}.ogg`, audioMime: "audio/ogg", durationSeconds: 1 });
   const cuts = [passage("Marcos subió a la balsa "), passage("al amanecer. ", 1), passage("Nadie dijo nada.", 2)];
   const joined = (runs: ReturnType<typeof segmentSpans>) =>
     runs.map((run) => run.spans.map((span) => span.text).join("")).join("");
 
   it("is the text unbroken, in one ungrouped run, when there is no recording", () => {
     expect(segmentSpans(TEXT, [], [])).toEqual([{ segment: null, spans: [{ text: TEXT, lexemeId: null }] }]);
+  });
+
+  /* A clear voice records the whole part as one passage. There is nothing to tell it from, so there
+     is nothing to tap, and the reader draws it exactly as it draws a part with no recording. */
+  it("offers nothing to tap when the whole part is one passage", () => {
+    expect(segmentSpans(TEXT, [], [passage(TEXT)]))
+      .toEqual([{ segment: null, spans: [{ text: TEXT, lexemeId: null }] }]);
   });
 
   it("groups the runs by passage and gives back exactly the text", () => {

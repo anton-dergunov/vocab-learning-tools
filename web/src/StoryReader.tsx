@@ -93,8 +93,8 @@ function PartPage({ story, part, number, words, near, active, recording, reveale
      case it mattered: a job resting out a daily quota holds the part for twenty-five minutes, and a
      dead button with no explanation is all you get. Pressing it records the part now, through the
      same function the job would have used; the job then finds it done and moves on. */
-  const queued = recording && !part.audioRef && status === "idle";
-  const label = status === "busy" ? (part.audioRef ? "Loading the recording" : "Recording this part — press to cancel")
+  const queued = recording && !part.audioSegments.length && status === "idle";
+  const label = status === "busy" ? (part.audioSegments.length ? "Loading the recording" : "Recording this part — press to cancel")
     : status === "playing" ? "Pause" : status === "paused" ? "Carry on"
       : queued ? "Waiting to be recorded — press to record it now" : "Read this part aloud";
   const touch = (event: MouseEvent<HTMLParagraphElement>) => {

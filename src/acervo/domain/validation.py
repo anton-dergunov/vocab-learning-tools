@@ -92,8 +92,7 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
         # near this ceiling is already a prompt that has gone wrong.
         "text": (False, 4000), "translation": (False, 4000), "image_prompt": (False, 4000),
         "image_ref": (False, 500), "image_model_id": (False, 120), "failure_reason": (False, 500),
-        "audio_ref": (False, 500), "audio_mime": (False, 120), "audio_provider_id": (False, 120),
-        "audio_model_id": (False, 120), "audio_voice": (False, 120),
+        "audio_provider_id": (False, 120), "audio_model_id": (False, 120), "audio_voice": (False, 120),
     },
     "story_words": {"source_text": (True, 240)},
 }
@@ -190,9 +189,9 @@ def _related(lookup: Lookup, table: str, identifier: str, label: str) -> Mapping
 
 
 def _audio_segments(value: Any) -> None:
-    """A part's passages: each one has words, a direction that fits where a direction is recorded,
-    and times that run forwards. Whether they join back to the part's text is not checked here — the
-    text is the story's and a recording made from an earlier text is simply not shown on the device
+    """A part's passages: each one has words, its own recording, and a direction that fits where a
+    direction is recorded. Whether they join back to the part's text is not checked here — the text
+    is the story's and a recording made from an earlier text is simply not shown on the device
     (`segmentSpans` refuses passages that do not tile it)."""
     if value is None or value == []:
         return
@@ -200,19 +199,17 @@ def _audio_segments(value: Any) -> None:
         refuse("A story part's passages must be a list.")
     if len(value) > 32:
         refuse("A story part has too many passages.")
-    last = 0.0
     for one in value:
         if not isinstance(one, Mapping) or not isinstance(one.get("text"), str) or not one["text"]:
             refuse("A passage of a story part must have text.")
         if len(str(one.get("direction") or "")) > 300:
             refuse("A passage's direction is too long.")
-        start, end = one.get("start"), one.get("end")
-        if isinstance(start, bool) or isinstance(end, bool) or not isinstance(start, (int, float)) \
-                or not isinstance(end, (int, float)):
-            refuse("A passage of a story part must say when it starts and ends.")
-        if start < last or end < start:
-            refuse("A story part's passages must run forwards.")
-        last = float(end)
+        # Its own file, which is the whole of what "recorded" means here: a passage without one is a
+        # passage nothing can play, and a part is written only once every one of them exists.
+        if not str(one.get("audioRef") or "").strip():
+            refuse("A passage of a story part must name its own recording.")
+        if len(str(one.get("audioRef"))) > 500 or len(str(one.get("audioMime") or "")) > 120:
+            refuse("A passage's recording is named too long.")
 
 
 def _same_owner(row: Mapping[str, Any], parent: Mapping[str, Any], label: str) -> None:
@@ -437,11 +434,10 @@ def validate(name: str, row: Mapping[str, Any], lookup: Lookup) -> None:
         # `_project_story_part` asserts on the way out. `loops` states it for a track.
         if _text(row, "image_model_id") and not _text(row, "image_ref"):
             refuse("A story part that has no picture cannot name the model that drew one.")
-        if not _text(row, "audio_ref") and (
+        if not row.get("audio_segments") and (
             _text(row, "audio_provider_id") or _text(row, "audio_model_id") or _text(row, "audio_voice")
-            or row.get("audio_segments")
         ):
-            refuse("A story part that has no recording cannot say who spoke it or where it is in it.")
+            refuse("A story part that has not been read aloud cannot say who spoke it.")
         _audio_segments(row.get("audio_segments"))
         return
 

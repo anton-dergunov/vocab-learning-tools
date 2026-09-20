@@ -307,7 +307,8 @@ export function fill(graph: Pick<VocabularyGraph, "pronunciations" | "storyParts
     // size, and it is what lets a story be heard on a plane. Same store, same key — the reference.
     const references = [
       ...graph.pronunciations.filter((clip) => !clip.deleted).map((clip) => clip.audioRef),
-      ...graph.storyParts.filter((part) => !part.deleted).map((part) => part.audioRef)
+      ...graph.storyParts.filter((part) => !part.deleted)
+        .flatMap((part) => part.audioSegments.map((passage) => passage.audioRef))
     ];
     for (const reference of references) {
       if (!reference) continue;

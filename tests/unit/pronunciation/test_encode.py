@@ -15,7 +15,7 @@ import wave
 
 import pytest
 
-from acervo.pronunciation.encode import CannotEncode, PASSAGE_GAP, STORED_MIME, compact, concat, to_opus
+from acervo.pronunciation.encode import CannotEncode, STORED_MIME, compact, to_opus
 
 RATE = 24_000
 SECONDS = 1.5
@@ -71,44 +71,3 @@ def test_the_voices_sample_rate_is_kept_whatever_it_is():
     """A provider that answers at 48 kHz — Opus's own rate — must not be resampled on the way in."""
     kept, _mime = compact(spoken_wav(48_000), "audio/wav")
     assert kept[:4] == b"OggS"
-
-
-# ── joining recordings ──────────────────────────────────────────────────────
-
-
-def _seconds(ogg: bytes) -> float:
-    import soundfile
-
-    with soundfile.SoundFile(io.BytesIO(ogg)) as read:
-        return len(read) / read.samplerate
-
-
-def test_recordings_are_joined_into_one_file_and_each_says_where_it_sits():
-    joined = concat([spoken_wav(), spoken_wav(), spoken_wav()])
-
-    assert joined.mime == STORED_MIME and joined.data[:4] == b"OggS"
-    assert joined.spans[0][0] == 0
-    # Each is SECONDS long and a rest of PASSAGE_GAP separates them: the spans are arithmetic on the
-    # samples, so they are exact and not an estimate.
-    for (start, end), (next_start, _) in zip(joined.spans, joined.spans[1:]):
-        assert end - start == pytest.approx(SECONDS, abs=0.001)
-        assert next_start - end == pytest.approx(PASSAGE_GAP, abs=0.001)
-    assert _seconds(joined.data) == pytest.approx(joined.spans[-1][1], abs=0.05)
-
-
-def test_one_recording_joins_to_itself():
-    joined = concat([spoken_wav()])
-
-    assert joined.spans == ((0.0, SECONDS),)
-
-
-def test_recordings_at_different_sample_rates_are_refused_not_resampled():
-    with pytest.raises(CannotEncode, match="sample rate"):
-        concat([spoken_wav(24_000), spoken_wav(16_000)])
-
-
-def test_nothing_to_join_and_unreadable_audio_are_refused():
-    with pytest.raises(CannotEncode):
-        concat([])
-    with pytest.raises(CannotEncode, match="could not be read"):
-        concat([spoken_wav(), b"not audio"])

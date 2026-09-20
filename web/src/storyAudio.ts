@@ -2,25 +2,29 @@
  * Hearing a story: the third place in Acervo where anything is heard, after `pronunciation.ts` (a word
  * or a sentence) and `loops.ts` (a track), and modelled on the second.
  *
- * **A part is one file.** The server built it by joining one recording per passage, so it can say
- * where every passage sits in it, and this module needs nothing else to mark the passage that is
- * sounding or to start from any of them: the position is read from the element every frame, and the
- * passage is the last one that has started. Nothing here is aligned or guessed.
+ * **A part is a queue of passages, and nothing is ever seeked.** Each passage is its own file, so
+ * playing one is playing it from its first sample, and playing from a passage to the end of the part
+ * is playing that file and then the ones after it. The alternative was tried and does not work: join
+ * the passages, remember where each begins, and set `currentTime`. A browser seeks a compressed
+ * stream to a page boundary — one second, in the Ogg the server writes — so a passage started a word
+ * or two late, or a word or two into the sentence before, unpredictably; and the element reports the
+ * position that was *asked for* rather than the one it gave, so nothing can detect it or correct it.
+ * A file that begins where the passage begins cannot be wrong.
  *
  * **Pause is pause, and leaving is stop.** Pressing play on a part that is playing pauses it, and
- * pressing it again carries on from where it was. There is deliberately no scrubber — a story is read
- * a part at a time, and swiping to another part and back is the way to begin again, because leaving a
- * part *stops* it and drops its position. `stop(partId)` is what the reader calls when a page stops
- * being the one on screen.
+ * pressing it again carries on from where it was. There is no scrubber — a story is read a part at a
+ * time, and swiping to another part and back is the way to begin again, because leaving a part
+ * *stops* it and drops its position. `stopPart` is what the reader calls when a page stops being the
+ * one on screen.
  *
  * **A passage is a place to start.** Touching one when nothing of this part is playing plays that
- * passage and then stops; touching one while the part is playing moves the recording there and it
- * carries on to the end. The first answers "what was that sentence?", the second "go back to there".
+ * passage alone; touching one while the part is playing goes there and carries on to the end. The
+ * first answers "what was that sentence?", the second "go back to there".
  *
- * **On demand is the same route the job takes.** A part with no recording asks the server for one,
- * which is one call to the same function `story.audio` runs, and plays it when it arrives. The
- * element is started on silence in the press itself, before that wait, for `pronunciation.ts`'s
- * reason: iOS lets an element play only from inside the gesture that asked.
+ * **On demand is the same route the job takes.** A part with no passages asks the server for them,
+ * which is one call to the same function `story.audio` runs, and plays when they arrive. The element
+ * is started on silence in the press itself, before that wait, for `pronunciation.ts`'s reason: iOS
+ * lets an element play only from inside the gesture that asked.
  *
  * One sound at a time: this stops `pronunciation.ts`, pauses every other registered player before it
  * plays, and registers its own pause with them. The dependency runs one way, as it does for loops.
@@ -28,7 +32,7 @@
 
 import { useSyncExternalStore } from "react";
 import { AcervoApiError, backendSession } from "./api";
-import type { StoryPart } from "./domain";
+import type { AudioSegment, StoryPart } from "./domain";
 import { clipBlob, registerPlayer, silencePlayers, stop as stopSpeech } from "./pronunciation";
 import { repository } from "./repository";
 import { syncEngine } from "./sync";
@@ -39,7 +43,7 @@ export interface StoryPlayback {
   /** The part being fetched, recorded, heard or paused. Kept while `failed`, so its row can say why. */
   partId: string | null;
   status: StoryAudioStatus;
-  /** Index of the passage that is sounding, or null when the part has none to mark. */
+  /** Index of the passage that is sounding, or null when nothing of this part is. */
   segment: number | null;
   failed: string | null;
 }
@@ -65,29 +69,25 @@ export function useStoryAudio(): StoryPlayback {
 /* ── the element ─────────────────────────────────────────────────────── */
 
 let element: HTMLAudioElement | null = null;
-let frame = 0;
 /** The object URL the element is holding, revoked when it is let go. */
 let held: string | null = null;
-/** The row being played — the freshest one, which may be newer than the reader's until a pull lands. */
-let active: StoryPart | null = null;
-/** Where to stop, for a single passage; null plays on to the end of the part. */
-let stopAt: number | null = null;
 /** Bumped by every press that starts something, so an answer that arrives late knows it is stale. */
 let run = 0;
+
+/** What is queued: the passages, which one is sounding, which is the last, and their bytes. */
+let queue: { passages: AudioSegment[]; at: number; last: number; blobs: Map<string, Blob> } | null = null;
 
 function audio(): HTMLAudioElement {
   if (element) return element;
   element = new Audio();
   element.preload = "auto";
-  // The part's own end only: the silence `prime` starts ends too, long before the part has arrived.
-  element.addEventListener("ended", () => { if (held && element?.src === held) finish(); });
+  // The passage's own end only: the silence `prime` starts ends too, long before one has arrived.
+  element.addEventListener("ended", () => { if (held && element?.src === held) void advance(); });
   element.addEventListener("pause", () => {
-    stopClock();
     if (state.status === "playing" && held && element?.src === held) update({ status: "paused" });
   });
   element.addEventListener("play", () => {
-    // Only the part's own sound: the silence `prime` starts also fires `play`.
-    if (held && element?.src === held) { update({ status: "playing" }); startClock(); }
+    if (held && element?.src === held) update({ status: "playing" });
   });
   return element;
 }
@@ -102,72 +102,43 @@ function prime(): void {
   catch { /* jsdom, or a browser with no audio at all */ }
 }
 
-/** Settled enough to move: the element knows its own duration. */
-function ready(player: HTMLAudioElement): Promise<void> {
-  if (player.readyState >= 1) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => { player.removeEventListener("loadedmetadata", done); player.removeEventListener("error", done); resolve(); };
-    player.addEventListener("loadedmetadata", done);
-    player.addEventListener("error", done);
-  });
-}
-
-/* Ask again when the element lands somewhere else. A compressed stream is seekable only to the
-   granularity its container was written with, and a browser may answer a request with the nearest
-   point it can decode from; asking a second time from there converges. One retry, because a second
-   miss means the element cannot do better and a loop would only delay the audio. */
-const CLOSE_ENOUGH = 0.05;
-
-function seekTo(player: HTMLAudioElement, seconds: number): void {
-  try { player.currentTime = seconds; } catch { return; }
-  if (Math.abs(player.currentTime - seconds) > CLOSE_ENOUGH) {
-    try { player.currentTime = seconds; } catch { /* as close as it goes */ }
-  }
-}
-
-/** The passage that is sounding at `seconds`: the last one that has started. */
-function segmentAt(seconds: number): number | null {
-  const segments = active?.audioSegments ?? [];
-  let found: number | null = null;
-  segments.forEach((one, index) => { if (seconds >= one.start) found = index; });
-  return found;
-}
-
-/* `timeupdate` is about four a second, which cannot stop a single passage where it ends or move a
-   mark as the words change. So the position is read every frame while playing, and not at all while
-   paused. */
-function startClock(): void {
-  if (frame) return;
-  const tick = () => {
-    const player = element;
-    if (!player || player.paused) { frame = 0; return; }
-    const at = player.currentTime;
-    if (stopAt !== null && at >= stopAt) { frame = 0; finish(); return; }
-    const segment = segmentAt(at);
-    if (segment !== state.segment) update({ segment });
-    frame = requestAnimationFrame(tick);
-  };
-  frame = requestAnimationFrame(tick);
-}
-
-function stopClock(): void {
-  if (frame) cancelAnimationFrame(frame);
-  frame = 0;
-}
-
-/** Let go of the element: nothing is playing, nothing is held, and the position is forgotten. */
+/** Let go of the element: nothing is playing, nothing is held, and the queue is forgotten. */
 function release(): void {
-  stopClock();
   if (element) {
     try { element.pause(); } catch { /* nothing to stop */ }
     element.removeAttribute("src");
   }
   if (held) { URL.revokeObjectURL(held); held = null; }
-  active = null;
-  stopAt = null;
+  queue = null;
 }
 
-/** The end of the part, or of the one passage that was asked for. Either way the next press starts over. */
+/** Play the passage the queue is on. */
+async function sound(): Promise<void> {
+  if (!queue) return;
+  const passage = queue.passages[queue.at];
+  const blob = queue.blobs.get(passage.audioRef);
+  if (!blob) { finish(); return; }
+  const player = audio();
+  if (held) URL.revokeObjectURL(held);
+  held = URL.createObjectURL(blob);
+  player.src = held;
+  update({ status: "playing", segment: queue.at });
+  await player.play();
+}
+
+/** This passage ended: on to the next, unless it was the last that was asked for. */
+async function advance(): Promise<void> {
+  if (!queue) return;
+  if (queue.at >= queue.last) { finish(); return; }
+  queue.at += 1;
+  try {
+    await sound();
+  } catch (error) {
+    console.warn("Acervo: a story passage could not be played", error);
+    finish();
+  }
+}
+
 function finish(): void {
   run += 1;
   release();
@@ -186,7 +157,15 @@ function failure(error: unknown): string {
   return error instanceof Error ? error.message : "That part could not be read aloud.";
 }
 
-async function start(part: StoryPart, from: number, until: number | null): Promise<void> {
+/**
+ * Play `part` from passage `from`, stopping after `last`.
+ *
+ * Every passage that will be played is fetched before the first one sounds. They are a few tens of
+ * kilobytes each and already on the device in the ordinary case, and holding them is what makes the
+ * swap from one to the next an assignment rather than a fetch — which keeps the seam between two
+ * sentences as short as the silence a speaker leaves anyway.
+ */
+async function start(part: StoryPart, from: number, last: number): Promise<void> {
   const mine = ++run;
   release();
   stopSpeech();
@@ -195,29 +174,25 @@ async function start(part: StoryPart, from: number, until: number | null): Promi
   prime();
   update({ partId: part.id, status: "busy", segment: null, failed: null });
   try {
-    let row = part;
-    if (!row.audioRef) {
-      row = await backendSession.recordStoryPart(part.storyId, part.id, repository.snapshot().deviceId);
+    let passages = part.audioSegments;
+    if (!passages.length) {
+      const row = await backendSession.recordStoryPart(part.storyId, part.id, repository.snapshot().deviceId);
       if (mine !== run) return;
       // The row reaches the replica the way every server-written row does; it plays meanwhile.
       void syncEngine.syncNow();
+      passages = row.audioSegments;
+      from = 0;
+      last = passages.length - 1;
     }
-    const blob = await clipBlob(row.audioRef!);
-    if (mine !== run) return;
-    const player = audio();
-    held = URL.createObjectURL(blob);
-    active = row;
-    stopAt = until;
-    player.src = held;
-    // **Wait for the metadata before moving.** A position written straight after `src` is written
-    // against a media element that does not yet know its own duration, and the browser is entitled
-    // to drop it or clamp it — which is what made a passage start a word or two late and run into
-    // the sentence after it. `loops.ts` only ever starts at zero, so it never met this.
-    await ready(player);
-    if (mine !== run) return;
-    seekTo(player, from);
-    update({ status: "playing", segment: segmentAt(from) });
-    await player.play();
+    if (!passages.length) throw new Error("That part has no recording.");
+    const stop = Math.min(last, passages.length - 1);
+    const blobs = new Map<string, Blob>();
+    for (const passage of passages.slice(from, stop + 1)) {
+      blobs.set(passage.audioRef, await clipBlob(passage.audioRef));
+      if (mine !== run) return;
+    }
+    queue = { passages, at: from, last: stop, blobs };
+    await sound();
   } catch (error) {
     if (mine !== run) return;
     console.warn("Acervo: a story part could not be played", { part: part.id, error });
@@ -233,29 +208,22 @@ export function toggle(part: StoryPart): void {
     if (state.status === "paused") { resume(); return; }
     if (state.status === "busy") { stop(); return; }
   }
-  void start(part, 0, null);
+  void start(part, 0, Math.max(part.audioSegments.length - 1, 0));
 }
 
 /**
- * A touch on a passage. While this part is playing it moves the recording there and it goes on to
- * the end; otherwise it plays that passage alone.
+ * A touch on a passage. While this part is sounding it goes there and carries on to the end;
+ * otherwise it plays that passage alone.
  */
 export function playSegment(part: StoryPart, index: number): void {
-  const passage = part.audioSegments[index];
-  if (!passage) return;
-  if (state.partId === part.id && state.status === "playing" && element) {
-    stopAt = null;
-    seekTo(element, passage.start);
-    update({ segment: index });
-    return;
-  }
-  void start(part, passage.start, passage.end);
+  if (!part.audioSegments[index]) return;
+  const sounding = state.partId === part.id && (state.status === "playing" || state.status === "paused");
+  void start(part, index, sounding ? part.audioSegments.length - 1 : index);
 }
 
 export function pause(): void {
   if (state.status !== "playing") return;
   try { element?.pause(); } catch { /* nothing to stop */ }
-  stopClock();
   update({ status: "paused" });
 }
 

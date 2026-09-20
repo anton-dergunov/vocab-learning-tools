@@ -122,10 +122,13 @@ def test_a_clear_voice_reads_the_part_in_one_go_with_no_passages_and_no_text_cal
     assert server.speech.calls[0]["words"] == part["text"]
     assert not server.speech.calls[0].get("style"), "a clear voice is not sent a direction"
     assert models.texts == [] and len(models.prompts) == 3, "and nobody was asked where to cut it"
-    assert row["audioRef"].startswith(f"stories/{story['id']}/{part['id']}-")
-    assert row["audioMime"] == "audio/ogg" and row["audioSegments"] == []
+    assert len(row["audioSegments"]) == 1, "the whole part is one passage, so there is nothing to tap"
+    only = row["audioSegments"][0]
+    assert only["text"] == part["text"] and only["direction"] == ""
+    assert only["audioRef"].startswith(f"stories/{story['id']}/{part['id']}-")
+    assert only["audioMime"] == "audio/ogg" and only["durationSeconds"] > 0
     assert (row["audioProviderId"], row["audioModelId"]) == ("google-tts", "wavenet")
-    assert Path(server.settings.media_path, row["audioRef"]).read_bytes()[:4] == b"OggS"
+    assert Path(server.settings.media_path, only["audioRef"]).read_bytes()[:4] == b"OggS"
 
 
 def test_a_directed_voice_reads_a_passage_at_a_time_and_says_where_each_is(server, models, runner):
@@ -143,7 +146,13 @@ def test_a_directed_voice_reads_a_passage_at_a_time_and_says_where_each_is(serve
     for call, passage in zip(server.speech.calls, passages):
         assert passage["direction"] in call["style"], "the direction reached the voice"
         assert "storyteller" in call["style"], "framed as a narrator, not as a person in the moment"
-    assert passages[0]["start"] == 0 and passages[0]["end"] < passages[1]["start"] < passages[1]["end"]
+    # **A file each, and no times at all.** A joined file has to be seeked into, and a browser seeks
+    # a compressed stream to a page boundary, so a passage began after its first words or after the
+    # end of the one before. A file that begins at the passage cannot be wrong.
+    assert len({one["audioRef"] for one in passages}) == 2, "one recording each"
+    for one in passages:
+        assert one["durationSeconds"] > 0
+        assert Path(server.settings.media_path, one["audioRef"]).read_bytes()[:4] == b"OggS"
     assert row["audioProviderId"] == "google-tts" and row["audioModelId"] == FIRST
 
 
@@ -173,7 +182,7 @@ def test_a_part_no_directed_voice_can_reach_is_read_whole_and_plainly(server, mo
     row = read(server, story, part)
 
     assert row["audioModelId"] == "wavenet", "the plain voice read it"
-    assert row["audioSegments"] == [], "and there is nothing to tap"
+    assert len(row["audioSegments"]) == 1, "one passage, so there is nothing to tap"
     assert [call["words"] for call in server.speech.calls][-1] == part["text"], "the whole part, in one call"
 
 
@@ -233,7 +242,7 @@ def test_a_pinned_voice_that_runs_out_is_stepped_over_so_the_story_still_finishe
 
     row = read(server, story, second)
 
-    assert row["audioRef"], "the part was recorded rather than left silent"
+    assert row["audioSegments"], "the part was recorded rather than left silent"
     assert row["audioModelId"] != pinned, "by the next voice in the order"
     assert len({one["model"] for one in server.speech.calls if one["model"] != pinned}) == 1, \
         "and that one voice read the whole part, so a paragraph is never read by two"
@@ -268,7 +277,7 @@ def test_a_pair_that_can_no_longer_be_asked_for_does_not_hold_the_story_to_it(se
 
     row = read(server, story, second)
 
-    assert row["audioRef"], "it was recorded with whatever answers first"
+    assert row["audioSegments"], "it was recorded with whatever answers first"
 
 
 # ── when the models let it down ─────────────────────────────────────────────
@@ -283,7 +292,7 @@ def test_a_part_the_text_models_cannot_cut_is_read_whole_rather_than_left_silent
 
     assert [call["words"] for call in server.speech.calls] == [part["text"]]
     assert not server.speech.calls[0].get("style"), "there was no direction to send"
-    assert row["audioRef"] and row["audioSegments"] == []
+    assert len(row["audioSegments"]) == 1 and row["audioSegments"][0]["audioRef"]
 
 
 def test_a_rate_limited_text_model_is_a_wait_not_a_fallback(server, models, runner, monkeypatch):
@@ -316,13 +325,12 @@ def test_a_passage_already_paid_for_is_not_recorded_again(server, models, runner
     server.speech.calls.clear()
     held = graph.owned_records(server.owner, "storyParts", [first["id"]])[first["id"]]
     graph.merge_graph(server.owner, DEVICE, {"storyParts": [{
-        **held, "audioRef": "", "audioMime": "", "audioProviderId": "", "audioModelId": "",
-        "audioVoice": "", "audioSegments": [],
+        **held, "audioProviderId": "", "audioModelId": "", "audioVoice": "", "audioSegments": [],
     }]}, enqueue=None)
     row = read(server, story, first)
 
     assert server.speech.calls == [], "every passage came from the take cache"
-    assert row["audioRef"], "and the part was written all the same"
+    assert row["audioSegments"], "and the part was written all the same"
 
 
 # ── the job ─────────────────────────────────────────────────────────────────
@@ -341,7 +349,7 @@ def test_the_job_reads_every_part_in_one_voice_and_reports_how_far_it_has_got(se
     runner.run_until_idle()
 
     held = parts_of(server, story)
-    assert all(part["audioRef"] for part in held)
+    assert all(part["audioSegments"] for part in held)
     assert len({(part["audioProviderId"], part["audioModelId"], part["audioVoice"]) for part in held}) == 1
     step = _step(server, "story.audio")
     assert step["state"] == "done" and (step["done"], step["total"]) == (3, 3)
@@ -356,7 +364,7 @@ def test_a_story_is_not_recorded_when_the_switch_is_off(server, models, runner):
 
     assert server.speech.calls == []
     assert _step(server, "story.audio")["state"] == "skipped"
-    assert not any(part["audioRef"] for part in parts_of(server, story))
+    assert not any(part["audioSegments"] for part in parts_of(server, story))
 
 
 def test_trying_again_after_a_failed_recording_records_the_rest_and_writes_no_second_story(
@@ -379,7 +387,7 @@ def test_trying_again_after_a_failed_recording_records_the_rest_and_writes_no_se
 
     monkeypatch.setattr("acervo.models.google_tts.speech", flaky)
     runner.run_until_idle()
-    assert [bool(part["audioRef"]) for part in parts_of(server, story)] == [True, True, False]
+    assert [bool(part["audioSegments"]) for part in parts_of(server, story)] == [True, True, False]
     ids_before = [part["id"] for part in parts_of(server, story)]
 
     monkeypatch.setattr("acervo.models.google_tts.speech", original)
@@ -390,7 +398,7 @@ def test_trying_again_after_a_failed_recording_records_the_rest_and_writes_no_se
 
     held = parts_of(server, story)
     assert [part["id"] for part in held] == ids_before, "no second set of parts"
-    assert all(part["audioRef"] for part in held)
+    assert all(part["audioSegments"] for part in held)
     assert len(models.prompts) == 3 + 3 + 1, "the writer, translator and briefer were not asked again"
 
 
@@ -402,10 +410,10 @@ def test_deleting_a_story_removes_its_recordings_with_its_pictures(server, model
     part = parts_of(server, story)[0]
     models.texts = [narrate_reply(part["text"])]
     row = read(server, story, part)
-    recording = Path(server.settings.media_path, row["audioRef"])
-    assert recording.exists()
+    recordings = [Path(server.settings.media_path, one["audioRef"]) for one in row["audioSegments"]]
+    assert recordings and all(one.exists() for one in recordings)
 
     answer = server.delete(f"/stories/{story['id']}", headers={"x-acervo-device": DEVICE})
 
     assert answer.status_code == 200, answer.text
-    assert not recording.exists()
+    assert not any(one.exists() for one in recordings), "every passage's file went with the rows"

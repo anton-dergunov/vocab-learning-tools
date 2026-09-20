@@ -540,7 +540,11 @@ def remove(settings: Settings, owner: str, device: str, story_id: str) -> dict[s
 
     media = Path(settings.media_path)
     for row in parts:
-        for reference in (row.get("imageRef"), row.get("audioRef")):
+        # The picture, and one file for every passage that was read aloud.
+        references = [row.get("imageRef")] + [
+            one.get("audioRef") for one in (row.get("audioSegments") or []) if isinstance(one, dict)
+        ]
+        for reference in references:
             if reference:
                 media.joinpath(reference).unlink(missing_ok=True)
     return graph.owned_records(owner, "stories", [story_id])[story_id]

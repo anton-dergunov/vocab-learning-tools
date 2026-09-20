@@ -142,22 +142,25 @@ describe("a story being made", () => {
     expect(line?.phases).toEqual([{ text: "0% · Writing the story", current: true }]);
   });
 
-  it("counts a finished step as its share of the whole", () => {
-    // Write 25 + translate 10 of 100.
+  /* The three text steps take about fifteen seconds between them and the two long ones take minutes.
+     Naming each text step flashed three phrases past unreadably, and weighting them evenly put half
+     the bar on the fastest fifth of the work. */
+  it("calls all three text steps one thing, and gives them a tenth of the bar between them", () => {
+    expect(story(steps(["done", "running", "pending", "pending"]))?.phases[0].text)
+      .toBe("5% · Writing the story");
     expect(story(steps(["done", "done", "running", "pending"]))?.phases[0].text)
-      .toBe("35% · Planning the pictures");
+      .toBe("8% · Writing the story");
+    expect(story(steps(["done", "done", "done", "running"]))?.phases[0].text)
+      .toBe("10% · Drawing the pictures");
   });
 
-  it("says which picture it is on, and counts the pictures already drawn towards the total", () => {
-    // 45 for the first three steps + 35 * 2/4 for the drawing = 62.5, shown rounded down.
+  it("gives the pictures and the recording the rest of the bar, where the time actually goes", () => {
+    // 10 for the text + 35 * 2/4 for the drawing.
     expect(story(steps(["done", "done", "done", "running"], { done: 2, total: 4 }))?.phases[0].text)
-      .toBe("62% · Drawing picture 3 of 4");
-  });
-
-  it("says which part it is recording, and counts the parts already recorded towards the total", () => {
-    // 80 for the first four steps + 20 * 1/3 for the recording = 86.6, shown rounded down.
+      .toBe("27% · Drawing picture 3 of 4");
+    // 45 for everything up to the recording + 55 * 1/3 of it.
     expect(story(steps(["done", "done", "done", "done", "running"], {}, { done: 1, total: 3 }))?.phases[0].text)
-      .toBe("86% · Recording part 2 of 3");
+      .toBe("63% · Recording part 2 of 3");
   });
 
   it("counts a recording that was switched off as finished, so it does not hold the figure back", () => {
@@ -171,20 +174,35 @@ describe("a story being made", () => {
   });
 
   it("says when the provider is busy without losing the number", () => {
-    expect(story(steps(["done", "waiting", "pending", "pending"]))?.phases[0].text)
-      .toBe("25% · Translating it (the provider is busy)");
+    expect(story(steps(["done", "done", "done", "done", "waiting"], {}, { done: 1, total: 4 }))?.phases[0].text)
+      .toBe("58% · Recording part 2 of 4 (the provider is busy)");
   });
 
-  it("says it is waiting to start before anything has begun", () => {
+  /* "Waiting to start" means waiting to start. It used to be whatever came out when no step was
+     *running*, which covered a ten-minute rest and the whole of the job closing. */
+  it("says it is waiting to start only before anything has run", () => {
     expect(story(steps(["pending", "pending", "pending", "pending"]))?.phases[0].text)
       .toBe("0% · Waiting to start");
   });
 
-  it("keeps the reason a step failed", () => {
-    const line = stripOf(job("failed", [
+  it("names the step that is resting rather than claiming it has not begun", () => {
+    const line = story(steps(["done", "done", "done", "done", "pending"], {}, { done: 2, total: 4 }),
+                       { notBefore: new Date(Date.now() + 60_000).toISOString() });
+    expect(line?.phases[0].text).toBe("72% · Recording part 3 of 4 (the provider is busy)");
+  });
+
+  it("says it is finishing once every step is done and the job is still closing", () => {
+    const line = story(steps(["done", "done", "done", "done", "done"]));
+    expect(line?.phases[0].text).toBe("99% · Finishing");
+  });
+
+  it("keeps the reason a step failed, and still names the step it failed in", () => {
+    expect(stripOf(job("failed", [
       { name: "story.write", state: "failed", message: "that word is a slur" }
-    ], { kind: "story" }));
-    expect(line?.failure).toBe("The story could not be written — that word is a slur");
+    ], { kind: "story" }))?.failure).toBe("The story could not be written — that word is a slur");
+    expect(stripOf(job("failed", [
+      { name: "story.translate", state: "failed", message: "it would not hold its shape" }
+    ], { kind: "story" }))?.failure).toBe("The story could not be translated — it would not hold its shape");
   });
 
   it("keeps the reason a recording failed, and says it was the recording", () => {

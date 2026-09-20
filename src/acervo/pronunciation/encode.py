@@ -19,8 +19,6 @@ no system package, and libsndfile 1.2 writes Ogg Opus directly.
 from __future__ import annotations
 
 import io
-from collections.abc import Sequence
-from dataclasses import dataclass
 
 # Everything the providers Acervo speaks to can answer with, and whether it is already compressed.
 UNCOMPRESSED = ("audio/wav", "audio/x-wav", "audio/wave")
@@ -102,61 +100,6 @@ def to_opus(wav: bytes, compression: float = COMPRESSION) -> bytes:
         return _opus(samples, rate, compression)
     except Exception as unreadable:  # noqa: BLE001 — every decoder failure means the same thing here
         raise CannotEncode(f"that audio could not be re-encoded: {unreadable}") from None
-
-
-# The rest a reader would want between two passages. A voice's own leading and trailing silence is
-# a few tens of milliseconds and differs from call to call, so on its own it leaves the seams uneven;
-# this is what makes them even.
-PASSAGE_GAP = 0.12
-
-
-@dataclass(frozen=True)
-class Joined:
-    data: bytes
-    mime: str
-    # `(start, end)` in seconds of each input, in the order given. They are *known* rather than
-    # aligned: the file is built here from one recording per passage, so where each one sits is
-    # arithmetic on the sample counts, exact to the sample.
-    spans: tuple[tuple[float, float], ...]
-
-
-def concat(recordings: Sequence[bytes], gap: float = PASSAGE_GAP) -> Joined:
-    """Several recordings of one voice, one after another, as one Ogg Opus file.
-
-    They must share a sample rate and a channel count, which a voice held fixed for a story does and
-    a mixture of voices might not — that is refused rather than resampled, because a rate that
-    differs is a sign the recordings are not from the voice they were meant to be. A recording that
-    arrived compressed is decoded to be joined, which is a second lossy generation; the one caller
-    that can meet it (an English voice that answers MP3) has no alternative, since a file cannot be
-    joined without being decoded.
-    """
-    if not recordings:
-        raise CannotEncode("there is nothing to join")
-    soundfile = _soundfile()
-    try:
-        decoded = [soundfile.read(io.BytesIO(data), dtype="int16", always_2d=True) for data in recordings]
-    except Exception as unreadable:  # noqa: BLE001 — every decoder failure means the same thing here
-        raise CannotEncode(f"that audio could not be read: {unreadable}") from None
-    rate, channels = decoded[0][1], decoded[0][0].shape[1]
-    if any(one[1] != rate or one[0].shape[1] != channels for one in decoded):
-        raise CannotEncode("the recordings differ in sample rate or channels and cannot be joined")
-
-    import numpy
-
-    silence = numpy.zeros((round(rate * gap), channels), dtype="int16")
-    pieces, spans, at = [], [], 0
-    for index, (samples, _rate) in enumerate(decoded):
-        if index:
-            pieces.append(silence)
-            at += len(silence)
-        pieces.append(samples)
-        spans.append((round(at / rate, 3), round((at + len(samples)) / rate, 3)))
-        at += len(samples)
-    try:
-        return Joined(data=_opus(numpy.concatenate(pieces), rate, COMPRESSION), mime=STORED_MIME,
-                      spans=tuple(spans))
-    except Exception as unwritable:  # noqa: BLE001 — same as above, for the encoder
-        raise CannotEncode(f"that audio could not be re-encoded: {unwritable}") from None
 
 
 def _soundfile():

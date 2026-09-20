@@ -753,7 +753,8 @@ export interface SegmentRun {
  */
 export function segmentSpans(text: string, words: StoryWord[], segments: AudioSegment[]): SegmentRun[] {
   const spans = storySpans(text, words);
-  if (!segments.length || segments.map((one) => one.text).join("") !== text) {
+  // One passage is the whole part: there is nothing to tell it from, so there is nothing to tap.
+  if (segments.length < 2 || segments.map((one) => one.text).join("") !== text) {
     return [{ segment: null, spans }];
   }
   const ends: number[] = [];
