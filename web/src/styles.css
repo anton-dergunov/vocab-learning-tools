@@ -2431,7 +2431,23 @@ details.fold .fold-body { padding: 4px 0 18px; }
 /* A line of text carries empty space above its letters — half its leading and the room the font
    keeps for accents — and a rule or a pill below it carries none. Pulling the quote up by that much
    makes the leaf above and the leaf below sit at the same visible distance from what they frame. */
-.card-main.quoted .card-ex { margin-top: -.55em; }
+.card-main.quoted .card-ex { margin-top: -.55em; margin-bottom: -1.6px; }
+/* …and at the foot, so the leaf below sits as far from the last line as the leaf above does from the
+   ascender line. Every card gets 1.6px: the opening quote mark stands 2.4px above that line, which is
+   the rest of the top gap. A card that ends in a pill (your own sentence, a clip) or a translation
+   needs nothing more — measured, all of them sit within 2px of each other.
+
+   A card that ends in the sentence alone has 6.8px of empty line below its baseline that nothing took
+   away, which left the leaf below 9.5px further from the words than the leaf above; it gets the rest.
+   (A separate trim for a translation was tried and overshot: an italic line carries about 1px below
+   its baseline, not the 5 that was assumed from the font's metrics.) */
+.card-main.quoted .card-ex:has(> .t:last-child) { margin-bottom: -7.2px; }
+@container vp (max-width: 720px) {
+  /* At this width's 20.5px sentence. After the rule above, not with the other phone type rules: at
+     equal specificity the later one wins. */
+  .card-main.quoted .card-ex { margin-bottom: -2.3px; }
+  .card-main.quoted .card-ex:has(> .t:last-child) { margin-bottom: -7.5px; }
+}
 
 /* ── stories ──
    The list reuses `.loops`' rows wholesale: it is the same shape of thing — a made object that can
@@ -2540,7 +2556,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
    the words. Narrow, the picture opens the page and there is nothing to make up. */
 .story-copy .card-ornament { display: none; align-self: center; }
 .story-copy .card-ornament.above { margin-bottom: 14px; }
-.story-copy .card-ornament.below { margin-top: 14px; }
+.story-copy .card-ornament.below { margin-top: 21px; }
 
 /* Centred over the paragraph, which stays flush left. The number is set in the heading's own face and
    weight, and not in the muted mono it started in: a smaller, lighter numeral beside bold words sits
@@ -2588,13 +2604,18 @@ details.fold .fold-body { padding: 4px 0 18px; }
 /* **The slot is held whether or not the translation has been asked for**, so revealing it does not
    move the story — `LoopPlayer`'s rule that an answer must never shift the text, in the one other
    place Acervo makes you ask for one. */
-.story-tr-slot { margin-top: 18px; min-height: 76px; }
+/* The slot holds the room a revealed translation will take, and the dashed box that asks for it *fills*
+   that room. Held but not filled, it left 28px of nothing under the box, which read as the bottom leaf
+   floating 42px away where the top one sits 23px from the heading; now the box's own edge is the
+   slot's, and the leaf's 22px margin balances the heading's. */
+.story-tr-slot { margin-top: 18px; min-height: 76px; display: flex; flex-direction: column; }
 .story-tr {
-  margin: 0; font-family: var(--serif); font-style: italic; font-size: 16px; line-height: 1.45;
+  margin: 0 0 6px; font-family: var(--serif); font-style: italic; font-size: 16px; line-height: 1.45;
   color: var(--ink-3);
 }
 .story-tr-head { font-style: normal; color: var(--ink-2); }
 .story-reveal {
+  flex: 1 1 auto; display: flex; align-items: center;
   width: 100%; padding: 14px 16px; border-radius: 8px; text-align: left;
   border: 1px dashed var(--rule); background: none; cursor: pointer;
   font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
@@ -2604,7 +2625,12 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .story-reveal:disabled { cursor: default; opacity: .6; }
 /* Quiet, at the foot of the translation and to the right: it is a way back, not an invitation. */
 .story-hide {
-  display: block; margin: 6px 0 0 auto; padding: 4px 0 4px 10px; background: none; border: 0; cursor: pointer;
+  /* `line-height: 1` and no bottom padding: the room under its baseline is what sits between it and
+     the leaf, and the inherited 1.6 made that 8.7px against the box edge's none. */
+  /* `margin-top: auto`: pinned to the foot of the slot, so a translation shorter than the room the slot
+     holds leaves its slack between the text and this rather than under it, where it would push the
+     leaf away from the last thing you can see. */
+  display: block; margin: auto 0 -1px auto; padding: 4px 0 0 10px; line-height: 1; background: none; border: 0; cursor: pointer;
   font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
   color: var(--ink-3); transition: color .12s;
 }
