@@ -142,6 +142,17 @@ def test_the_timer_queues_one_run_and_looks_at_most_once_a_minute(server, madrid
 
 def test_missed_nights_do_not_pile_up(server, madrid):
     clock = Clock()  # nothing has ever run: every night so far was missed
+    # **The hour is pinned two hours behind now, and it has to be.** A job is stamped with the real
+    # time while the timer reads this clock, so advancing an hour past the scheduled hour makes a
+    # genuinely new night due — correctly. With the default hour of 2 this test therefore failed
+    # for the whole of 01:00–02:00 in the deployment's zone and passed the other 23 hours, which is
+    # a time bomb rather than a test. Two hours back keeps `last_scheduled` on the same instant
+    # before and after the advance, so what is measured is repeat queueing *within* one window.
+    local_hour = datetime.fromtimestamp(clock.now, timezone.utc).astimezone(
+        schedule.zone(madrid)
+    ).hour
+    schedule_settings.save(server.owner, hour=(local_hour - 2) % 24)
+
     runner = Runner(madrid, clock=clock)
     runner.ticks.append(nightly.timer(madrid, clock))
     runner.run_until_idle()
@@ -150,6 +161,27 @@ def test_missed_nights_do_not_pile_up(server, madrid):
     clock.advance(3600)
     runner.run_until_idle()
     assert len([job for job in jobs.recent(server.owner) if job["kind"] == "nightly"]) == 1
+
+
+def test_the_next_night_is_due_once_its_hour_has_struck(server, madrid):
+    """The other half, and the behaviour the test above used to trip over by accident.
+
+    Not piling up must not mean never running again: once the scheduled hour passes, the next
+    night's run is due even though the previous one was queued only an hour earlier.
+    """
+    clock = Clock()
+    local = datetime.fromtimestamp(clock.now, timezone.utc).astimezone(schedule.zone(madrid))
+    # The hour strikes one hour from now, so the advance below crosses it.
+    schedule_settings.save(server.owner, hour=(local.hour + 1) % 24)
+
+    runner = Runner(madrid, clock=clock)
+    runner.ticks.append(nightly.timer(madrid, clock))
+    runner.run_until_idle()
+    assert len([job for job in jobs.recent(server.owner) if job["kind"] == "nightly"]) == 1
+
+    clock.advance(3600 * 2)
+    runner.run_until_idle()
+    assert len([job for job in jobs.recent(server.owner) if job["kind"] == "nightly"]) == 2
 
 
 def test_a_runner_built_outside_the_application_queues_no_nights(server):

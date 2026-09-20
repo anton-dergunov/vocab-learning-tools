@@ -55,6 +55,18 @@ function phase(step: JobStep): string | null {
     }
     case "loop.store":
       return "Storing the track";
+    case "story.write": {
+      const parts = typeof step.detail?.parts === "number" ? step.detail.parts : 0;
+      return `Writing the story${parts ? ` · ${parts} parts` : ""}${waiting}`;
+    }
+    case "story.translate":
+      return `Translating it${waiting}`;
+    case "story.brief":
+      return `Planning the pictures${waiting}`;
+    case "story.draw": {
+      const drawn = typeof step.detail?.drawn === "number" ? step.detail.drawn : 0;
+      return `Drawing the pictures${drawn ? ` · ${drawn} done` : ""}${waiting}`;
+    }
     case "capture": {
       const words = Array.isArray(step.detail?.words) ? step.detail.words.length : 0;
       return `Reading the text${words ? ` · ${words} so far` : ""}${waiting}`;
@@ -84,6 +96,16 @@ function failureOf(step: JobStep): string {
       return step.message
         ? `The loop was made but its track could not be stored — ${step.message}`
         : "The loop was made but its track could not be stored";
+    /* Lead with what happened and then say why, exactly as the loop steps do: a constant here is
+       what turns a refusal that named the reason into one that names nothing. */
+    case "story.write":
+      return step.message ? `The story could not be written — ${step.message}` : "The story could not be written";
+    case "story.translate":
+      return step.message ? `The story could not be translated — ${step.message}` : "The story could not be translated";
+    case "story.brief":
+      return step.message ? `The pictures could not be planned — ${step.message}` : "The pictures could not be planned";
+    case "story.draw":
+      return step.message ? `Some pictures could not be drawn — ${step.message}` : "Some pictures could not be drawn";
     case "corpus.update":
       return "The recorded-speech corpus could not be updated";
     default:

@@ -35,7 +35,8 @@ function view(loops: Loop[]) {
   const graph: VocabularyGraph = {
     vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [],
     imagePrompts: [], pronunciations: [], studyStates: [],
-    loops, loopItems: loops.map((one) => item(one.id))
+    loops, loopItems: loops.map((one) => item(one.id)),
+    stories: [], storyParts: [], storyWords: []
   };
   const onDelete = vi.fn();
   render(<LoopView

@@ -27,6 +27,7 @@ from acervo.api.routes import (
     pronunciations,
     session,
     speech,
+    stories,
 )
 from acervo.repository.session import open_database
 from acervo.services.models import open_call_log
@@ -83,7 +84,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     api = APIRouter(prefix=API_ROOT)
     for module in (health, session, graph, articles, capture, chat, clips, dictionaries, events, images,
-                   jobs, loops, mac_release, models, pronunciations, schedule, speech):
+                   jobs, loops, mac_release, models, pronunciations, schedule, speech,
+                   stories):
         api.include_router(module.router)
     app.include_router(api)
 

@@ -28,6 +28,7 @@ COPY prompts /app/prompts
 # the package exactly as the two catalogues above do — hence the matching path rather than a third
 # environment variable.
 COPY config/image-styles.yaml /app/config/image-styles.yaml
+COPY config/story-types.yaml /app/config/story-types.yaml
 # The built interface. `.dockerignore` excludes `web/dist`, so `scripts/stage-web.sh` is what puts it
 # somewhere a build context can see.
 COPY deploy/acervo/server/web /app/web

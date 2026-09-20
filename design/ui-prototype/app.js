@@ -40,7 +40,15 @@ const state = {
      the finger gets the row itself: it is two snap points wide and Delete is the second. */
   loopMenu: null,
   /* Where in that row, so the menu opens under the pointer. */
-  loopMenuAt: { x: 0, y: 0 }
+  loopMenuAt: { x: 0, y: 0 },
+  /* Stories, the same shape as loops: `stories` is whether the surface is open, `storyOpen` is
+     which one is being read, and `storyAt` is which part of it. `storyShown` is the set of parts
+     whose translation has been turned over — per part, because revealing one answer must not
+     reveal the next. */
+  stories: false,
+  storyOpen: null,
+  storyAt: 0,
+  storyShown: {}
 };
 
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -53,6 +61,7 @@ const esc     = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").re
 const ICON = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>',
   back:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  forward:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
   plus:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   play:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>',
   caret:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
@@ -1175,7 +1184,7 @@ function toast(msg) {
    from it exactly as it is driven from `timeupdate` in the application. Which is the point of
    drawing this at all — how the reveal *feels* is not a question a still picture can answer.
 
-   The application's counterparts are `LoopView.tsx`, `LoopPlayer.tsx`, `LoopBar.tsx` and
+   The application's counterparts are `LoopView.tsx`, `LoopPlayer.tsx`, `MadeBar.tsx` and
    `LoopDialog.tsx`, and `loopMomentAt` in `selectors.ts` is the derivation this repeats. */
 
 const player = { loopId: null, at: 0, playing: false, speed: 1, frame: null, last: 0, scrubbing: false,
@@ -1372,6 +1381,110 @@ function loopRow(loop) {
   </div>`;
 }
 
+/* ── stories ───────────────────────────────────────────────────────────────
+   The same shape as loops: a list of made objects, each open, being made, or asked for and never
+   made. The reader is a deck rather than a scroller — a part is a picture and a few sentences,
+   which is about one screen, so a column of them is a page you scroll to see what a swipe shows
+   whole. */
+function storiesIn(lang) {
+  return STORIES.filter((one) => one.language === lang).sort((a, b) => a.position - b.position);
+}
+function storyOf(id) { return STORIES.find((one) => one.id === id) || null; }
+function partsOf(id) {
+  return STORY_PARTS.filter((one) => one.storyId === id).sort((a, b) => a.position - b.position);
+}
+function wordsOf(id) {
+  return STORY_WORDS.filter((one) => one.storyId === id).sort((a, b) => a.position - b.position);
+}
+function storyTitle(story) {
+  if (story.title) return story.title;
+  const words = wordsOf(story.id);
+  return words.length ? words.map((w) => w.sourceText).join(", ") : "Empty story";
+}
+
+/* Marks are **found rather than stored**: the writer reports the forms it wrote, and this locates
+   them. A form it cannot find is simply not marked — degraded, never broken. */
+function markWords(text, words) {
+  const forms = [];
+  words.forEach((word) => word.forms.forEach((form) => { if (form.trim()) forms.push(form.trim()); }));
+  if (!forms.length) return esc(text);
+  forms.sort((a, b) => b.length - a.length);
+  const pattern = new RegExp("(" + forms.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "gi");
+  return esc(text).replace(pattern, '<b class="story-mark">$1</b>');
+}
+
+function storyRow(story) {
+  const parts = partsOf(story.id);
+  const written = parts.length > 0;
+  const drawn = parts.filter((one) => one.imageRef).length;
+  const sub = written
+    ? `${parts.length} parts \u00b7 ${drawn === parts.length ? "illustrated" : `${drawn} of ${parts.length} drawn`}`
+    : '<span class="warn">Never written</span>';
+  return `<div class="loop-item">
+    <div class="loop-shell">
+      <button class="loop-row" data-story="${story.id}" aria-disabled="${!written}">
+        <span class="loop-go story-go${written ? "" : " pending"}">${written ? story.emoji : ICON.hourglass}</span>
+        <span class="loop-main">
+          <span class="loop-title">${esc(storyTitle(story))}</span>
+          <span class="loop-sub">${sub}</span>
+        </span>
+      </button>
+      <div class="loop-swipe"><button class="loop-delete">Delete</button></div>
+    </div>
+  </div>`;
+}
+
+function renderStories() {
+  const open = state.storyOpen ? storyOf(state.storyOpen) : null;
+  if (open) {
+    const parts = partsOf(open.id);
+    const words = wordsOf(open.id);
+    const at = Math.min(state.storyAt, Math.max(parts.length - 1, 0));
+    const part = parts[at];
+    const shown = Boolean(state.storyShown[part && part.id]);
+    return `<section class="loops stories">
+      <div class="loops-back">
+        <button class="icon-btn" id="storyBack" aria-label="Back to the stories">${ICON.back}</button>
+        <span class="label">Stories</span><span class="spacer"></span>
+      </div>
+      <div class="story-read">
+        <div class="story-dots">${parts.map((one, i) =>
+          `<span class="story-dot${i === at ? " on" : ""}"></span>`).join("")}</div>
+        <article class="story-part">
+          <div class="story-pic${part.imageRef ? " is-ready" : ""}">${part.imageRef
+            ? `<img src="${part.imageRef}" alt="">`
+            : `<span class="story-pic-note">${part.failureReason ? "No picture for this part" : "Drawing\u2026"}</span>`}</div>
+          <h3 class="story-head">${esc(part.heading)}</h3>
+          <p class="story-text" lang="${open.language}">${markWords(part.text, words)}</p>
+          <div class="story-tr-slot">${shown
+            ? `<p class="story-tr"><span class="story-tr-head">${esc(part.headingTranslation)}. </span>${esc(part.translation)}</p>`
+            : '<button class="story-reveal" id="storyReveal">Tap to read it in your own language</button>'}</div>
+        </article>
+        <footer class="story-controls">
+          <button class="icon-btn" id="storyPrev" aria-label="The part before" ${at === 0 ? "disabled" : ""}>${ICON.back}</button>
+          <span class="story-count">${at + 1} of ${parts.length}</span>
+          <button class="icon-btn" id="storyNext" aria-label="The next part" ${at >= parts.length - 1 ? "disabled" : ""}>${ICON.forward}</button>
+        </footer>
+      </div>
+    </section>`;
+  }
+  return `<section class="loops stories">
+    <div class="loops-back">
+      <button class="icon-btn" id="storiesClose" aria-label="Back to the list">${ICON.back}</button>
+      <span class="label">Your words</span><span class="spacer"></span>
+    </div>
+    <div class="loops-head"><h2>Stories</h2><span class="spacer"></span>
+      <button class="tb-btn primary">${ICON.plus}<span>Make a story</span></button></div>
+    <div class="loops-list">${storiesIn(state.lang).map(storyRow).join("")}</div>
+  </section>`;
+}
+
+function openStories() {
+  state.stories = true; state.loops = false;
+  state.openId = null; state.openExt = null; state.add = false;
+  render();
+}
+
 function renderLoops() {
   const loops = loopsIn(state.lang);
   const open = state.loopOpen ? loopOf(state.loopOpen) : null;
@@ -1401,12 +1514,18 @@ function renderLoopBar() {
   const loops = loopsIn(state.lang);
   const loop = player.loopId ? loopOf(player.loopId) : null;
   if (!loop) {
-    return `<span class="loopbar-note">${ICON.note}</span>
-      <button class="loopbar-main" id="openLoops">
+    /* Split in two, and **no `+`**: both surfaces carry their own Make button in their own header,
+       and a bar whose job is to be a way in should not also be a way to start something. */
+    return `<button class="madebar-half" id="openLoops">
+        <span class="madebar-ic">${ICON.note}</span>
         <span class="loopbar-title">Loops</span>
-        <span class="loopbar-sub">${loops.length} · ${esc(state.lang.toUpperCase())}</span>
+        <span class="loopbar-sub">${loops.length}</span>
       </button>
-      <button class="tb-btn loopbar-make" id="makeLoopBar">${ICON.plus}<span class="wide-only">Make a loop</span></button>`;
+      <button class="madebar-half" id="openStories">
+        <span class="madebar-ic">\u{1F4D6}</span>
+        <span class="loopbar-title">Stories</span>
+        <span class="loopbar-sub">${storiesIn(state.lang).length}</span>
+      </button>`;
   }
   return `<span class="loopbar-line" style="width:0"></span>
     <button class="loopbar-play" id="barPlay" aria-label="Play">${ICON.play}</button>
@@ -1615,6 +1734,23 @@ $("#main").addEventListener("click", (ev) => {
   if (ev.target.closest("#makeLoop")) { openLoopDialog(); return; }
   if (ev.target.closest("#loopBack")) { state.loopOpen = null; render(); return; }
   if (ev.target.closest("#loopsClose")) { state.loops = false; state.loopOpen = null; render(); }
+  if (ev.target.closest("#storiesClose")) { state.stories = false; state.storyOpen = null; render(); return; }
+  if (ev.target.closest("#storyBack")) { state.storyOpen = null; state.storyAt = 0; render(); return; }
+  if (ev.target.closest("#storyPrev")) { state.storyAt = Math.max(0, state.storyAt - 1); render(); return; }
+  if (ev.target.closest("#storyNext")) { state.storyAt += 1; render(); return; }
+  if (ev.target.closest("#storyReveal")) {
+    const part = partsOf(state.storyOpen)[state.storyAt];
+    if (part) state.storyShown[part.id] = true;
+    render();
+    return;
+  }
+  const storyRowEl = ev.target.closest("[data-story]");
+  if (storyRowEl) {
+    if (partsOf(storyRowEl.dataset.story).length) {
+      state.storyOpen = storyRowEl.dataset.story; state.storyAt = 0; render();
+    }
+    return;
+  }
   if (state.loopMenu) { state.loopMenu = null; render(); }
 });
 
@@ -1634,7 +1770,7 @@ function wireLoopControls(root) {
       player.playing ? loopPause() : loopPlay();
       return;
     }
-    if (ev.target.closest("#makeLoopBar")) { openLoopDialog(); return; }
+    if (ev.target.closest("#openStories")) { openStories(); return; }
     if (ev.target.closest("#openLoops") || ev.target.closest("#chipOpen")) {
       state.loopOpen = player.loopId;
       openLoops();
@@ -1671,6 +1807,12 @@ function render() {
   paintLoops();
   $("#paneWrap").style.display = composing ? "none" : "";
   $("#composer").style.display = composing ? "" : "none";
+  if (state.stories) {
+    // Its own surface for the reason the loops one is: a thing you go to, needing the whole column.
+    $("#composer").innerHTML = renderStories();
+    document.title = "Stories — Acervo";
+    return;
+  }
   if (state.loops) {
     // Its own surface rather than a sheet over the list: a player is a place you go to, and the
     // words it shows need the whole column.
@@ -1949,6 +2091,7 @@ function paintSwitches() {
   $("#viewBtn").classList.toggle("on", Boolean(state.view));
   $("#trBtn").classList.toggle("on", state.sayTranslations);
   $("#layoutBtn").classList.toggle("on", state.loops);
+  $("#storyBtn").classList.toggle("on", state.stories);
   $("#speedBtn").textContent = `${player.speed}×`;
   $("#speedBtn").classList.toggle("on", player.speed !== 1);
 }
@@ -1964,6 +2107,7 @@ $("#harness").addEventListener("click", (ev) => {
   if (b.id === "viewBtn") { state.view = state.view === null ? "page" : state.view === "page" ? "cards" : null; }
   else if (b.id === "trBtn") { state.sayTranslations = !state.sayTranslations; }
   else if (b.id === "layoutBtn") { if (state.loops) { state.loops = false; state.loopOpen = null; } else openLoops(); }
+  else if (b.id === "storyBtn") { if (state.stories) { state.stories = false; state.storyOpen = null; } else openStories(); }
   /* A word takes twenty-two seconds in a real loop. Watching the reveal at that rate is the right
      test of the *rhythm* and a poor test of everything else, so the clock can be wound on. */
   else if (b.id === "speedBtn") { player.speed = player.speed === 1 ? 4 : player.speed === 4 ? 12 : 1; }

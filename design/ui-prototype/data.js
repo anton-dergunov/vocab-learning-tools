@@ -740,3 +740,61 @@ const LOOP_SCHEMA = {
   patterns: ["retrieval"], families: ["gentle game", "late piano", "bright pop", "slow dub", "electronic"],
   maxItems: 40
 };
+
+/* ── stories ──
+   A story is a handful of words told back as a short illustrated tale. Its state is derived, like a
+   loop's: having no parts is the whole of what "never written" means, and a part with no `imageRef`
+   has not been drawn. There is no status column on either. */
+const STORIES = [
+  {
+    id: "st4m19pqb7wzx2c", language: "es", position: 1, typeId: "funny", styleId: "comic-book",
+    title: "El perro de la panadería", titleTranslation: "The bakery dog", emoji: "\u{1F415}",
+    modelId: "gemini/gemini-3.5-flash-lite", createdAt: "2026-09-19", editedAt: "2026-09-19"
+  },
+  {
+    id: "st8c50fkd3vnr6h", language: "es", position: 2, typeId: "everyday", styleId: "golden-hour",
+    title: "El café de las siete", titleTranslation: "The seven o'clock coffee", emoji: "☕",
+    modelId: "gemini/gemini-3.5-flash-lite", createdAt: "2026-09-19", editedAt: "2026-09-19"
+  },
+  /* Asked for and never written: no parts at all, which is the whole of what says so. */
+  {
+    id: "st2v77hjs9blm4k", language: "es", position: 3, typeId: "mystery", styleId: "film-noir",
+    title: null, titleTranslation: null, emoji: "\u{1F575}", modelId: null,
+    createdAt: "2026-09-19", editedAt: "2026-09-19"
+  }
+];
+
+const STORY_PARTS = [
+  {
+    id: "sp01", storyId: "st4m19pqb7wzx2c", position: 0,
+    heading: "La panadería a las ocho", headingTranslation: "The bakery at eight",
+    text: "Cada martes a las ocho en punto, un perro marrón entra en la pequeña panadería de la esquina. No viene a buscar migajas como los demás animales de la calle. Camina con paso firme hacia el mostrador y espera su turno.",
+    translation: "Every Tuesday at eight sharp, a brown dog walks into the little bakery on the corner. He does not come looking for crumbs like the other animals on the street. He walks firmly up to the counter and waits his turn.",
+    imageRef: "img/sense-a.webp", imageModelId: "openai/gpt-image-1", attempts: 1, failureReason: null
+  },
+  {
+    id: "sp02", storyId: "st4m19pqb7wzx2c", position: 1,
+    heading: "El pan perfecto", headingTranslation: "The perfect loaf",
+    text: "Don Mateo saca una barra caliente del horno y la coloca sobre la madera limpia. El perro se acerca despacio y huele la corteza con atención. Si algo no está bien, empieza a ladrar de inmediato.",
+    translation: "Don Mateo takes a warm loaf from the oven and sets it on the clean wood. The dog comes closer slowly and smells the crust carefully. If something is not right, he starts barking at once.",
+    imageRef: null, imageModelId: null, attempts: 2,
+    failureReason: "The image model is temporarily rate limited."
+  },
+  {
+    id: "sp03", storyId: "st4m19pqb7wzx2c", position: 2,
+    heading: "El verdadero dueño", headingTranslation: "The real owner",
+    text: "Al final del mes, el perro regresa con una cartera llena de billetes en la boca. Don Mateo comprendió demasiado tarde que su mejor cliente tenía un restaurante propio.",
+    translation: "At the end of the month, the dog comes back with a wallet full of notes in his mouth. Don Mateo understood too late that his best customer had a restaurant of his own.",
+    imageRef: null, imageModelId: null, attempts: 0, failureReason: null
+  }
+];
+
+/* One row per word the story was asked to teach. **An empty `forms` means the story did not manage
+   to use it**, which is a fact worth showing rather than hiding — and the forms are what the reader
+   searches the text for, so a mark is found rather than stored. */
+const STORY_WORDS = [
+  { id: "sw01", storyId: "st4m19pqb7wzx2c", lexemeId: "wd1", position: 0, sourceText: "la panadería", forms: ["panadería"] },
+  { id: "sw02", storyId: "st4m19pqb7wzx2c", lexemeId: "wd2", position: 1, sourceText: "ladrar", forms: ["ladrar"] },
+  { id: "sw03", storyId: "st4m19pqb7wzx2c", lexemeId: "wd3", position: 2, sourceText: "el mostrador", forms: ["mostrador"] },
+  { id: "sw04", storyId: "st2v77hjs9blm4k", lexemeId: "wd2", position: 0, sourceText: "ladrar", forms: [] }
+];

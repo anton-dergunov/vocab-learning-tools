@@ -1,4 +1,4 @@
-import type { Loop, PartOfSpeech, Pronunciation, VocabularyGraph } from "./domain";
+import type { Loop, PartOfSpeech, Pronunciation, Story, VocabularyGraph } from "./domain";
 import { normalizeServerURL, sessionStore, type StoredSession } from "./session";
 import type { ArticleDraft } from "./yaml";
 
@@ -539,6 +539,38 @@ export interface LoopRequest {
   family?: string;
 }
 
+/* ── stories ──
+   The kinds of story and the styles they can be drawn in, as `GET /stories/types` reports them.
+   Both are tracked config the server ships, never enums copied here: a kind added to
+   `config/story-types.yaml` appears in the dialog with nothing changing on this side. */
+export interface StoryTypeOption {
+  id: string;
+  label: string;
+  emoji: string;
+  /** The styles this kind suggests. "Surprise me" picks from these; the dialog offers them all. */
+  styles: string[];
+}
+
+export interface StoryTypes {
+  types: StoryTypeOption[];
+  /** Every style the owner has left switched on, so one may be picked that no kind suggests. */
+  styles: { id: string; label: string }[];
+  minWords: number;
+  maxWords: number;
+  minParts: number;
+  maxParts: number;
+  defaultParts: number;
+}
+
+export interface StoryRequest {
+  deviceId: string;
+  language: string;
+  /** Word ids, sampled from the scope on screen. The server never re-derives that scope. */
+  lexemeIds: string[];
+  typeId?: string;
+  styleId?: string;
+}
+
 export interface JobRequest {
   kind: string;
   subject: { kind: string; id: string };
@@ -728,6 +760,20 @@ export const backendSession = {
   deleteLoop(loopId: string, deviceId: string): Promise<Loop> {
     return client.call<Loop>(
       `/loops/${encodeURIComponent(loopId)}`,
+      { method: "DELETE", headers: { "X-Acervo-Device": deviceId } }
+    );
+  },
+  storyTypes(): Promise<StoryTypes> { return client.call<StoryTypes>("/stories/types"); },
+  /* Answers 202 with the row and the job that will write it. The row exists either way: a story
+     that was asked for and never written is one with no parts, which is all "not written" means. */
+  makeStory(request: StoryRequest): Promise<{ story: Story; job: Job }> {
+    return client.call<{ story: Story; job: Job }>("/stories", { method: "POST", body: JSON.stringify(request) });
+  },
+  /* A route rather than an ordinary tombstone, for `deleteLoop`'s reason: the pictures go with the
+     rows, and only the party that writes the rows can unlink them. */
+  deleteStory(storyId: string, deviceId: string): Promise<Story> {
+    return client.call<Story>(
+      `/stories/${encodeURIComponent(storyId)}`,
       { method: "DELETE", headers: { "X-Acervo-Device": deviceId } }
     );
   },

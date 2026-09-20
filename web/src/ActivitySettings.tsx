@@ -19,7 +19,8 @@ const KIND_LABELS: Record<string, string> = {
   "image.rebrief": "Rewriting picture briefs",
   nightly: "Nightly run",
   "corpus.update": "Updating recorded speech",
-  loop: "Making a loop"
+  loop: "Making a loop",
+  story: "Making a story"
 };
 
 export function describeJob(job: Job, snapshot: ReplicaSnapshot | null): string {
@@ -30,7 +31,7 @@ export function describeJob(job: Job, snapshot: ReplicaSnapshot | null): string 
 }
 
 /* The kinds a person can ask for again from here. A capture is resubmitted by its transport. */
-const RETRYABLE = new Set(["enrich", "image.redraw", "image.rebrief", "loop"]);
+const RETRYABLE = new Set(["enrich", "image.redraw", "image.rebrief", "loop", "story"]);
 
 function when(instant: string | null): string {
   if (!instant) return "";

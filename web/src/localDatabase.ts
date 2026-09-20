@@ -1,8 +1,8 @@
 import type { VocabularyGraph } from "./domain";
 
 const DATABASE_NAME = "acervo";
-const DATABASE_VERSION = 7;
-export const RECORD_STORES = ["vocabularies", "topics", "lexemes", "senses", "attestations", "examples", "imagePrompts", "pronunciations", "studyStates", "loops", "loopItems"] as const;
+const DATABASE_VERSION = 8;
+export const RECORD_STORES = ["vocabularies", "topics", "lexemes", "senses", "attestations", "examples", "imagePrompts", "pronunciations", "studyStates", "loops", "loopItems", "stories", "storyParts", "storyWords"] as const;
 const STORES = [...RECORD_STORES, "meta"] as const;
 /** Stores from superseded schemas. Opening the database drops them rather than reading around them. */
 const RETIRED_STORES = ["pending"] as const;
@@ -113,7 +113,7 @@ class IndexedDatabase implements LocalDatabase {
 
 const EMPTY_CONTENTS = (): DatabaseContents => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [],
-  imagePrompts: [], pronunciations: [], studyStates: [], loops: [], loopItems: [], meta: {}
+  imagePrompts: [], pronunciations: [], studyStates: [], loops: [], loopItems: [], stories: [], storyParts: [], storyWords: [], meta: {}
 });
 
 export class MemoryDatabase implements LocalDatabase {

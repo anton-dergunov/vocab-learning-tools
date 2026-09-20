@@ -1,0 +1,489 @@
+"""Acervo's binding to the story pipeline: words in, a story and its pictures out.
+
+The other half of the split `acervo.stories` makes, and the same split `services/images.py` makes
+against `acervo.images`. That package knows what a story is; this one knows whose words they are,
+which chain writes it, which language it is translated into, where the pictures go and what
+Acervo's API calls a failure.
+
+Every operation is read (transaction) → call (**no** transaction, tens of seconds of it) → write
+(transaction), for `services/loops.py`'s reason: a repository function is a transaction and owns
+its session, and a model call inside one blocks every other request while it runs.
+
+**A story's state is derived, and this is where that pays.** `create` writes the `stories` row and
+its `storyWords` with no parts at all; the job fills them in. So a story whose job failed to queue,
+or failed outright, simply reads as one that was asked for and never written — there is no status
+column to get out of step with what happened, and Try again queues another.
+
+**Each step re-derives what is missing from the graph** rather than being handed it, which is what
+makes a retry cost only what it has to: `draw_pictures` draws the parts with no `imageRef`, so a
+run that lost its last picture to a timeout redraws one picture and not four.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+from pathlib import Path
+from typing import Any
+
+from acervo.domain.ids import is_record_id, new_record_id, now_instant
+from acervo.errors import ApiError
+from acervo.images.styles import load_styles
+from acervo.models import chain, load_catalogue
+from acervo.models.errors import ChainExhausted, ProviderError, ProviderRefused
+from acervo.pronunciation.speak import language_name
+from acervo.repository import image_settings
+from acervo.repository import graph
+from acervo.repository.graph import article_records
+from acervo.services.models import chain_for, refusal
+from acervo.services.prompts import prompt_text
+from acervo.settings import Settings
+from acervo.stories import illustrate, translate, write
+from acervo.stories.types import story_types
+
+# A story is built around a handful of words, not a vocabulary list. The ceiling is about what the
+# writer can weave into twenty sentences without the prose buckling, which the experiment found
+# starts happening well before it: three is the default the dialog offers.
+MIN_WORDS = 1
+MAX_WORDS = 8
+
+# What the dialog offers and the writer is asked for. The model chooses within this.
+MIN_PARTS = 4
+MAX_PARTS = 6
+DEFAULT_PARTS = 4
+
+# Named without `.md`: `prompt_text` appends the extension itself.
+WRITE_TEMPLATE = "acervo_story_write"
+TRANSLATE_TEMPLATE = "acervo_story_translate"
+BRIEF_TEMPLATE = "acervo_story_brief"
+
+# A picture that has failed this many times is left alone. `images/` uses the same number for the
+# same reason: past this it is the brief that is wrong, not the weather.
+MAX_ATTEMPTS = 4
+
+
+def _template(settings: Settings, name: str) -> str:
+    return prompt_text(Path(settings.prompts_path), name)
+
+
+def _candidates(settings: Settings, owner: str, kind: str) -> tuple[chain.Candidate, ...]:
+    """The owner's chain for one kind, resolved per call. See `services/images._candidates`."""
+    try:
+        return chain.resolve(kind, chain_for(settings, owner, kind), load_catalogue())
+    except ProviderError as error:
+        raise refusal(error, kind) from None
+
+
+def _require(candidates: tuple[chain.Candidate, ...], settings: Settings, owner: str, kind: str) -> None:
+    if not candidates:
+        raise refusal(chain.unconfigured(kind, chain_for(settings, owner, kind), load_catalogue()), kind)
+
+
+# ── what can be asked for ───────────────────────────────────────────────────
+
+
+def types_view(settings: Settings, owner: str) -> dict[str, Any]:
+    """The kinds of story and the styles they can be drawn in, for the dialog.
+
+    The styles travel with the types for `services/images.settings_view`'s reason: the choice is
+    meaningless without the labels, and one round trip cannot render a half-loaded screen.
+    """
+    table = story_types()
+    styles = load_styles()
+    off = set(image_settings.settings(owner).styles_off)
+    return {
+        "types": [
+            {"id": one.id, "label": one.label, "emoji": one.emoji, "styles": list(one.styles)}
+            for one in table.types
+        ],
+        # Every style the owner has left switched on, so a story may be drawn in one its type does
+        # not suggest. "Surprise me" reaches only for the type's own; this is the whole list.
+        "styles": [
+            {"id": style.id, "label": style.label}
+            for style in styles.styles if style.id not in off
+        ],
+        "minWords": MIN_WORDS, "maxWords": MAX_WORDS,
+        "minParts": MIN_PARTS, "maxParts": MAX_PARTS, "defaultParts": DEFAULT_PARTS,
+    }
+
+
+# ── asking for one ──────────────────────────────────────────────────────────
+
+
+def create(settings: Settings, owner: str, device: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Write the story and the words it must use. Writing the story itself is the job's.
+
+    The route takes **ids**, never a query, for `services/loops.create`'s reason: the interface
+    sampled them from the scope on screen, and choosing words by hand later is the same route with
+    a different list.
+    """
+    language = str(body.get("language") or "").strip()
+    ids = body.get("lexemeIds")
+    if not isinstance(ids, list) or not all(isinstance(one, str) for one in ids):
+        raise ApiError(400, "invalid_input", "A story is made from a list of word ids.")
+    wanted = [one for one in ids if is_record_id(one)]
+    if len(wanted) != len(ids) or not MIN_WORDS <= len(wanted) <= MAX_WORDS:
+        raise ApiError(400, "invalid_input",
+                       f"A story takes between {MIN_WORDS} and {MAX_WORDS} words.")
+    if len(set(wanted)) != len(wanted):
+        raise ApiError(400, "invalid_input", "A story cannot be asked to teach the same word twice.")
+
+    table = story_types()
+    type_id = str(body.get("typeId") or "").strip()
+    if type_id and type_id not in table:
+        raise ApiError(400, "invalid_input", f"There is no “{type_id}” kind of story.")
+
+    styles = load_styles()
+    style_id = str(body.get("styleId") or "").strip()
+    if style_id and style_id not in styles:
+        raise ApiError(400, "invalid_input", f"There is no “{style_id}” style.")
+
+    parts = int(body.get("parts") or DEFAULT_PARTS)
+    if not MIN_PARTS <= parts <= MAX_PARTS:
+        raise ApiError(400, "invalid_input",
+                       f"A story has between {MIN_PARTS} and {MAX_PARTS} parts.")
+
+    held = graph.owned_records(owner, "lexemes", wanted)
+    words: list[dict[str, Any]] = []
+    for identifier in wanted:
+        lexeme = held.get(identifier)
+        if lexeme is None or lexeme.get("deleted"):
+            raise ApiError(404, "not_found", "One of those words is not in your vocabulary.")
+        if language and lexeme.get("language") != language:
+            raise ApiError(400, "invalid_input", "Every word in a story is in one language.")
+        language = language or str(lexeme.get("language") or "")
+        words.append(lexeme)
+
+    story_id = new_record_id()
+    # Chosen now rather than at render time, so Try again on a story that was never written reaches
+    # for the same kind and the same look rather than quietly becoming a different story.
+    chosen_type = table[type_id] if type_id else table.surprise(story_id)
+    off = set(image_settings.settings(owner).styles_off)
+    allowed = [style.id for style in styles.styles if style.id not in off]
+    chosen_style = style_id or table.style_for(chosen_type, story_id, allowed=allowed)
+
+    at = now_instant()
+    stamp = {"ownerId": owner, "deleted": False, "createdAt": at, "editedAt": at,
+             "editedBy": device, "revision": 0}
+    graph.merge_graph(owner, device, {
+        "stories": [{
+            "id": story_id, "language": language,
+            "typeId": chosen_type.id, "styleId": chosen_style,
+            # Everything the writer decides is empty until it has. No parts at all is the whole of
+            # what "not written yet" means.
+            "title": "", "titleTranslation": "", "emoji": chosen_type.emoji, "modelId": "",
+            "position": graph.next_story_position(owner, language),
+            **stamp,
+        }],
+        "storyWords": [{
+            "id": new_record_id(), "storyId": story_id, "lexemeId": word["id"], "position": index,
+            "sourceText": str(word.get("headword") or ""),
+            # Filled in by the writer, and an empty list afterwards is a real answer: the story did
+            # not manage to use this word.
+            "forms": [],
+            **stamp,
+        } for index, word in enumerate(words)],
+    }, enqueue=None)
+    return graph.owned_records(owner, "stories", [story_id])[story_id]
+
+
+# ── writing it ──────────────────────────────────────────────────────────────
+
+
+def _story(owner: str, story_id: str) -> dict[str, Any]:
+    story = graph.owned_records(owner, "stories", [story_id]).get(story_id)
+    if story is None or story.get("deleted"):
+        raise ApiError(404, "not_found", "That story is not in your vocabulary.")
+    return story
+
+
+def _gloss_language(owner: str, language: str) -> str:
+    """The language a story is translated into: the first the vocabulary is glossed into.
+
+    The same one a loop speaks (`services/loops.render_request`), and deliberately not `notesLang`.
+    A note is unbounded contrastive prose about a word; a story translation is a rendering of a
+    text, which is what a gloss language means. `notesLang` already defaults to this, so the two
+    agree unless the owner has deliberately split them.
+    """
+    vocabulary = next(
+        (one for one in graph.owner_vocabularies(owner) if one["language"] == language), None
+    )
+    return ((vocabulary or {}).get("glossLangs") or ["en"])[0]
+
+
+def write_story(settings: Settings, owner: str, device: str, story_id: str) -> dict[str, Any]:
+    """Ask for the story, and write its parts. The first and only creative call."""
+    story = _story(owner, story_id)
+    rows = [row for row in graph.story_words(owner, story_id) if not row.get("deleted")]
+    if not rows:
+        raise ApiError(422, "empty_story", "That story has no words in it.")
+
+    held = graph.owned_records(owner, "lexemes", [row["lexemeId"] for row in rows])
+    words = []
+    for row in rows:
+        lexeme = held.get(row["lexemeId"]) or {}
+        # `article_records` is the reader the image pipeline already feeds from, and it keeps
+        # tombstones — `live()` elsewhere is what drops them, and doing it twice is how two readers
+        # come to disagree. One definition is enough here: the writer needs to know which meaning
+        # is being learned, not the whole article.
+        senses = [one for one in article_records(owner, row["lexemeId"]).get("senses", [])
+                  if not one.get("deleted")]
+        words.append({
+            "id": row["lexemeId"],
+            "headword": lexeme.get("headword") or row["sourceText"],
+            "lemma": lexeme.get("lemma") or "",
+            "pos": lexeme.get("pos") or "",
+            "gloss": lexeme.get("shortGloss") or lexeme.get("primaryGloss") or "",
+            "definition": (senses[0].get("definition") if senses else "") or "",
+        })
+
+    candidates = _candidates(settings, owner, "text")
+    _require(candidates, settings, owner, "text")
+    table = story_types()
+    story_type = table.get(story["typeId"] or "") or table.surprise(story_id)
+
+    writer = write.StoryWriter(load_catalogue(), candidates, _template(settings, WRITE_TEMPLATE))
+    request = write.build_request(
+        language=story["language"], language_name=language_name(story["language"]),
+        words=words, story_type_brief=story_type.brief, story_type_label=story_type.label,
+        parts=DEFAULT_PARTS,
+    )
+    try:
+        written, usage = writer.write(request, words)
+    except write.StoryRefused as refused:
+        # The writer's judgement, not a shape failure. Terminal, and in its own words — the rule
+        # `services/loops.refusal` states: the code is ours, the sentence is theirs.
+        raise ApiError(422, "story_refused", refused.reason) from None
+    except ChainExhausted as exhausted:
+        raise refusal(exhausted.last, "text") from None
+    except ProviderError as error:
+        raise refusal(error, "text") from None
+
+    at = now_instant()
+    stamp = {"ownerId": owner, "deleted": False, "createdAt": at, "editedAt": at,
+             "editedBy": device, "revision": 0}
+    graph.merge_graph(owner, device, {
+        "stories": [{**story, "title": written.title,
+                     "emoji": written.emoji or story.get("emoji") or story_type.emoji,
+                     "modelId": usage["model"], "editedAt": at, "editedBy": device}],
+        "storyParts": [{
+            "id": new_record_id(), "storyId": story_id, "position": index,
+            "heading": part.heading, "text": part.text,
+            "headingTranslation": "", "translation": "",
+            "imagePrompt": "", "imageRef": "", "imageModelId": "",
+            "attempts": 0, "failureReason": "",
+            **stamp,
+        } for index, part in enumerate(written.parts)],
+        # The forms it actually used, so the reader can mark them. A word it could not use keeps
+        # its empty list, which is what the interface shows as unused.
+        "storyWords": [{**row, "forms": list(written.forms.get(row["lexemeId"], ())),
+                        "editedAt": at, "editedBy": device} for row in rows],
+    }, enqueue=None)
+    return {"parts": len(written.parts), "unused": list(written.unused([w["id"] for w in words])),
+            **usage}
+
+
+def _parts(owner: str, story_id: str) -> list[dict[str, Any]]:
+    rows = [row for row in graph.story_parts(owner, story_id) if not row.get("deleted")]
+    if not rows:
+        raise ApiError(422, "story_unwritten", "That story has not been written yet.")
+    return rows
+
+
+def translate_story(settings: Settings, owner: str, device: str, story_id: str) -> dict[str, Any]:
+    """Translate the whole story at once. See `stories/translate.py` for why not part by part."""
+    story = _story(owner, story_id)
+    rows = _parts(owner, story_id)
+    into = _gloss_language(owner, story["language"])
+
+    candidates = _candidates(settings, owner, "text")
+    _require(candidates, settings, owner, "text")
+    translator = translate.Translator(
+        load_catalogue(), candidates, _template(settings, TRANSLATE_TEMPLATE)
+    )
+    parts = [write.Part(row["heading"] or "", row["text"] or "") for row in rows]
+    try:
+        done, usage = translator.translate(
+            translate.build_request(
+                title=story.get("title") or "", parts=parts,
+                source_name=language_name(story["language"]),
+                target_name=language_name(into), target_code=into,
+            ),
+            parts,
+        )
+    except ChainExhausted as exhausted:
+        raise refusal(exhausted.last, "text") from None
+    except ProviderError as error:
+        raise refusal(error, "text") from None
+
+    at = now_instant()
+    graph.merge_graph(owner, device, {
+        "stories": [{**story, "titleTranslation": done.title, "editedAt": at, "editedBy": device}],
+        "storyParts": [
+            {**row, "translation": done.parts[index].text,
+             "headingTranslation": done.parts[index].heading, "editedAt": at, "editedBy": device}
+            for index, row in enumerate(rows)
+        ],
+    }, enqueue=None)
+    return {"parts": len(rows), "into": into, **usage}
+
+
+def brief_story(settings: Settings, owner: str, device: str, story_id: str) -> dict[str, Any]:
+    """One call covering every part, so the same character can be kept across every picture."""
+    story = _story(owner, story_id)
+    rows = _parts(owner, story_id)
+
+    candidates = _candidates(settings, owner, "text")
+    _require(candidates, settings, owner, "text")
+    briefer = illustrate.BriefWriter(
+        load_catalogue(), candidates, _template(settings, BRIEF_TEMPLATE)
+    )
+    parts = [write.Part(row["heading"] or "", row["text"] or "") for row in rows]
+    try:
+        briefed, usage = briefer.write(
+            illustrate.build_request(
+                title=story.get("title") or "", parts=parts,
+                language_name=language_name(story["language"]),
+            ),
+            parts,
+        )
+    except ChainExhausted as exhausted:
+        raise refusal(exhausted.last, "text") from None
+    except ProviderError as error:
+        raise refusal(error, "text") from None
+
+    at = now_instant()
+    graph.merge_graph(owner, device, {"storyParts": [
+        {**row, "imagePrompt": briefed.briefs[index], "editedAt": at, "editedBy": device}
+        for index, row in enumerate(rows)
+    ]}, enqueue=None)
+    return {"parts": len(rows), **usage}
+
+
+def draw_pictures(settings: Settings, owner: str, device: str, story_id: str,
+                  gate: Any = None) -> dict[str, Any]:
+    """Draw the parts that have no picture yet, every one in the story's own style.
+
+    **What is missing is re-derived here rather than passed in**, which is what makes a retry cost
+    only what it has to: a run that lost its last picture redraws one and not four.
+    """
+    story = _story(owner, story_id)
+    styles = load_styles()
+    style_id = story.get("styleId") or ""
+    if style_id not in styles:
+        raise ApiError(422, "unknown_style", "That story names a style this server does not have.")
+    style = styles[style_id]
+
+    candidates = _candidates(settings, owner, "image")
+    _require(candidates, settings, owner, "image")
+    media = Path(settings.media_path)
+    drawn = 0
+    failed: list[str] = []
+
+    for row in _parts(owner, story_id):
+        if row.get("imageRef") or not (row.get("imagePrompt") or "").strip():
+            continue
+        if int(row.get("attempts") or 0) >= MAX_ATTEMPTS:
+            continue
+        if gate is not None:
+            gate()
+        try:
+            rendered = illustrate.draw(
+                row["imagePrompt"], style,
+                seed=_seed_for(row["id"], int(row.get("attempts") or 0)),
+                candidates=candidates, catalogue=load_catalogue(),
+            )
+        except ChainExhausted as exhausted:
+            # **Not counted against the part, and the step stops here.** `services/images.py` states
+            # the first half: an allowance that ran out is not something wrong with this brief, so
+            # it must not use up the part's retries. The second half is this loop's own — every
+            # remaining part would walk the same exhausted chain, so drawing them is spending time
+            # to collect the same refusal four times.
+            raise refusal(exhausted.last, "image") from None
+        except ProviderRefused as declined:
+            # This brief, refused. Recorded on its own row and the loop carries on: one part that
+            # could not be drawn must not cost the other three. Try again picks up exactly these.
+            at = now_instant()
+            graph.merge_graph(owner, device, {"storyParts": [{
+                **row, "attempts": int(row.get("attempts") or 0) + 1,
+                "failureReason": refusal(declined, "image").message[:500],
+                "editedAt": at, "editedBy": device,
+            }]}, enqueue=None)
+            failed.append(row["id"])
+            continue
+
+        reference = _picture_reference(story_id, row["id"], rendered.data)
+        _place(media, reference, rendered.data)
+        previous = row.get("imageRef")
+        at = now_instant()
+        try:
+            graph.merge_graph(owner, device, {"storyParts": [{
+                **row, "imageRef": reference, "imageModelId": rendered.answer.model,
+                "attempts": int(row.get("attempts") or 0) + 1, "failureReason": "",
+                "editedAt": at, "editedBy": device,
+            }]}, enqueue=None)
+        except Exception:
+            _discard(media, reference, keep=previous)
+            raise
+        _discard(media, previous, keep=reference)
+        drawn += 1
+
+    return {"drawn": drawn, "failed": failed}
+
+
+def _seed_for(part_id: str, attempt: int) -> int:
+    digest = hashlib.sha256(f"acervo/storyPart/v1:{part_id}:{attempt}".encode()).digest()
+    return int.from_bytes(digest[:4], "big") % (2 ** 31)
+
+
+def _picture_reference(story_id: str, part_id: str, data: bytes) -> str:
+    """A digest of the bytes, so a redraw is a *new* reference and a cached picture simply misses.
+
+    `images/ids.image_reference`'s rule, and the reason `mediaStore.ts` is a cache with no
+    invalidation in it at all.
+    """
+    return f"stories/{story_id}/{part_id}-{hashlib.sha256(data).hexdigest()[:8]}.webp"
+
+
+def _place(media: Path, reference: str, data: bytes) -> None:
+    destination = media / reference
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial = destination.with_name(destination.name + ".part")
+    partial.write_bytes(data)
+    os.replace(partial, destination)
+
+
+def _discard(media: Path, reference: str | None, *, keep: str | None) -> None:
+    if reference and reference != keep:
+        media.joinpath(reference).unlink(missing_ok=True)
+
+
+# ── removing one ────────────────────────────────────────────────────────────
+
+
+def remove(settings: Settings, owner: str, device: str, story_id: str) -> dict[str, Any]:
+    """Delete a story: its row, its parts, its words, and the pictures themselves.
+
+    A route rather than a client-side tombstone for `services/loops.remove`'s reason: the pictures
+    are megabytes, nothing else would ever remove them, and the same party has to write the row and
+    unlink the file or one of them is a lie.
+
+    The files go **after** the rows land, never before: a merge that raises must not take the
+    pictures of a story that still exists with it.
+    """
+    story = _story(owner, story_id)
+    at = now_instant()
+    stamp = {"deleted": True, "editedAt": at, "editedBy": device}
+    parts = [row for row in graph.story_parts(owner, story_id) if not row.get("deleted")]
+    words = [row for row in graph.story_words(owner, story_id) if not row.get("deleted")]
+    graph.merge_graph(owner, device, {
+        "stories": [{**story, **stamp}],
+        "storyParts": [{**row, **stamp} for row in parts],
+        "storyWords": [{**row, **stamp} for row in words],
+    }, enqueue=None)
+
+    media = Path(settings.media_path)
+    for row in parts:
+        if row.get("imageRef"):
+            media.joinpath(row["imageRef"]).unlink(missing_ok=True)
+    return graph.owned_records(owner, "stories", [story_id])[story_id]

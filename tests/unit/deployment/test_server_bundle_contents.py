@@ -94,6 +94,30 @@ def test_the_capture_prompts_are_packaged_and_named_as_the_service_reads_them():
         assert (ROOT / "prompts" / f"{name}.md").is_file(), f"prompts/{name}.md is missing"
 
 
+def test_every_config_file_the_server_reads_is_copied_into_its_image():
+    """`config/` is copied **file by file**, so a new one is missing until somebody says otherwise.
+
+    This is `prompts/`'s failure a directory along, and worse: `COPY prompts /app/prompts` takes a
+    new prompt for free, while `COPY config/image-styles.yaml …` takes nothing it is not told about.
+    A config the server reads but the image lacks builds cleanly, deploys cleanly, passes the
+    healthcheck, and fails at the first request that needs it.
+
+    Found the hard way — `config/story-types.yaml` was written, read by `acervo.stories.types`, and
+    would have shipped in an image that did not contain it.
+    """
+    wanted = set()
+    for source in (ROOT / "src" / "acervo").rglob("*.py"):
+        wanted.update(re.findall(r'"config"\s*/\s*"([A-Za-z0-9._-]+)"', source.read_text()))
+    assert wanted, "expected the server to read at least one file out of config/"
+
+    dockerfile = (ROOT / "deploy" / "acervo" / "server" / "Dockerfile").read_text()
+    for name in sorted(wanted):
+        assert (ROOT / "config" / name).is_file(), f"config/{name} is read but does not exist"
+        assert f"config/{name}" in dockerfile, (
+            f"config/{name} is read by the server but never copied into its image"
+        )
+
+
 def test_no_dockerfile_relies_on_a_bare_chmod_plus_x():
     """`+x` without a "who" is masked by the umask, and the installer extracts a release under
     `umask 077` — so the file arrives owner-only, stays owner-only, and the container, which runs as

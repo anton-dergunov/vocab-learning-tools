@@ -8,7 +8,8 @@
 import {
   effectiveShortGloss,
   type Attestation, type Example, type ImagePrompt, type Lexeme, type LexemeStatus,
-  type Loop, type LoopItem, type OwnedFields, type Sense, type StudyState, type SyncFields,
+  type Loop, type LoopItem, type OwnedFields, type Sense, type Story, type StoryPart,
+  type StoryWord, type StudyState, type SyncFields,
   type Topic, type Vocabulary, type VocabularyGraph
 } from "./domain";
 import { glossLanguagesFor, languageOf, notesLanguageFor, presentationOf, type LanguagePresentation } from "./languages";
@@ -554,4 +555,156 @@ export function loopMomentAt(items: readonly LoopItem[], at: number): LoopMoment
     sounding: spoken < 0 ? null : spoken % 2 === 0 ? "source" : "target",
     revealed: at >= item.targetRevealSeconds
   };
+}
+
+/* ── stories ────────────────────────────────────────────────────────────
+   A story is a handful of words told back as a short illustrated tale. As with a loop, everything
+   the interface shows is derived: there is no status column and no stored list of marks. */
+
+/** The stories of one language, in the order the owner put them. */
+export function storiesIn(graph: VocabularyGraph, language: string): Story[] {
+  return live(graph.stories)
+    .filter((story) => story.language === language)
+    .sort((left, right) => left.position - right.position || left.id.localeCompare(right.id));
+}
+
+/** One story's parts, in reading order. */
+export function storyPartsOf(graph: VocabularyGraph, storyId: string): StoryPart[] {
+  return live(graph.storyParts)
+    .filter((part) => part.storyId === storyId)
+    .sort((left, right) => left.position - right.position || left.id.localeCompare(right.id));
+}
+
+/** One story's words, in the order they were asked for. */
+export function storyWordsOf(graph: VocabularyGraph, storyId: string): StoryWord[] {
+  return live(graph.storyWords)
+    .filter((word) => word.storyId === storyId)
+    .sort((left, right) => left.position - right.position || left.id.localeCompare(right.id));
+}
+
+/**
+ * Whether a story has been written. Having no parts is the whole of what says it has not.
+ *
+ * `loopIsReady`'s counterpart, and derived for the same reason: a status column would be a fifth
+ * fact to keep in step with four that already say all of it.
+ */
+export function storyIsWritten(graph: VocabularyGraph, storyId: string): boolean {
+  return storyPartsOf(graph, storyId).length > 0;
+}
+
+/** How many of a story's pictures have been drawn, out of how many parts. */
+export function storyPictures(graph: VocabularyGraph, storyId: string): { drawn: number; total: number } {
+  const parts = storyPartsOf(graph, storyId);
+  return { drawn: parts.filter((part) => part.imageRef).length, total: parts.length };
+}
+
+/**
+ * A name for a story: its own title once it has one, else the words it was asked to teach.
+ *
+ * Unlike a loop, a story *does* have a title — it is a thing the writer produced, not a string
+ * derived to stand in for one. Before it is written there is no title to show, and the words are
+ * the only honest description of what was asked for.
+ */
+export function storyTitle(graph: VocabularyGraph, story: Story, limit = 3): string {
+  const title = story.title?.trim();
+  if (title) return title;
+  const words = storyWordsOf(graph, story.id);
+  if (!words.length) return "Empty story";
+  const named = words.slice(0, limit).map((word) => word.sourceText);
+  const rest = words.length - named.length;
+  return rest > 0 ? `${named.join(", ")} +${rest}` : named.join(", ");
+}
+
+/**
+ * Words a story could be built from, sampled out of what is on screen.
+ *
+ * Eligibility is deliberately **weaker than a loop's**: a loop speaks one term on a beat and so
+ * needs `primaryGloss`, while a story only needs to know roughly what a word means and can read
+ * that from `shortGloss` or a sense. So a word that cannot be in a loop can still be in a story,
+ * which is most of the vocabulary.
+ */
+export function storyCandidates(graph: VocabularyGraph, query: ListQuery): Lexeme[] {
+  const rows = new Set(visibleRows(graph, query).map((row) => row.id));
+  return live(graph.lexemes).filter((lexeme) => {
+    if (!rows.has(lexeme.id)) return false;
+    return Boolean(lexeme.shortGloss?.trim() || lexeme.primaryGloss?.trim()
+      || effectiveShortGloss(graph, lexeme.id));
+  });
+}
+
+/** One run of a story's text: plain, or one of the words the story was asked to teach. */
+export interface StorySpan {
+  text: string;
+  /** The word this run is a form of, when it is one. */
+  lexemeId: string | null;
+}
+
+/**
+ * A part's text, split into the runs the reader draws — the target words marked, the rest plain.
+ *
+ * **Marks are found rather than stored**, and that is the design. The writer reports the surface
+ * forms it actually wrote and the server verifies each one appears in the text and is a form of the
+ * word it was reported against; this then locates them. Putting markers in the text itself would
+ * leak them into the translation, into anything that reads the story aloud, and into every diff.
+ *
+ * A form that cannot be found simply is not marked — degraded, never broken. Longest forms are
+ * matched first so `asombrosos` wins over `asombroso`, and matching is accent- and case-insensitive
+ * because a word at the start of a sentence is capitalised and is still the word.
+ */
+export function storySpans(text: string, words: StoryWord[]): StorySpan[] {
+  const wanted: { form: string; lexemeId: string }[] = [];
+  words.forEach((word) => word.forms.forEach((form) => {
+    const trimmed = form.trim();
+    if (trimmed) wanted.push({ form: trimmed, lexemeId: word.lexemeId });
+  }));
+  if (!wanted.length) return [{ text, lexemeId: null }];
+  // Longest first, so a longer form is never pre-empted by a shorter one it contains.
+  wanted.sort((left, right) => right.form.length - left.form.length);
+
+  const flat = fold(text);
+  const claimed: ({ lexemeId: string; length: number } | null)[] = new Array(text.length).fill(null);
+  const taken = new Array(text.length).fill(false);
+
+  wanted.forEach(({ form, lexemeId }) => {
+    const needle = fold(form);
+    if (!needle) return;
+    let from = 0;
+    for (;;) {
+      const at = flat.indexOf(needle, from);
+      if (at < 0) break;
+      from = at + needle.length;
+      // Only on a word boundary: `pan` must not mark the middle of `panadería`.
+      if (isWordish(flat[at - 1]) || isWordish(flat[at + needle.length])) continue;
+      if (taken.slice(at, at + needle.length).some(Boolean)) continue;
+      for (let index = at; index < at + needle.length; index += 1) taken[index] = true;
+      claimed[at] = { lexemeId, length: needle.length };
+    }
+  });
+
+  const spans: StorySpan[] = [];
+  let index = 0;
+  let plain = "";
+  while (index < text.length) {
+    const mark = claimed[index];
+    if (!mark) { plain += text[index]; index += 1; continue; }
+    if (plain) { spans.push({ text: plain, lexemeId: null }); plain = ""; }
+    spans.push({ text: text.slice(index, index + mark.length), lexemeId: mark.lexemeId });
+    index += mark.length;
+  }
+  if (plain) spans.push({ text: plain, lexemeId: null });
+  return spans;
+}
+
+/** Lowercased and stripped of accents, **without changing length**, so offsets still line up. */
+function fold(value: string): string {
+  return Array.from(value).map((character) => {
+    const bare = character.normalize("NFD").replace(/\p{Mn}/gu, "");
+    // A character whose decomposition is not one character would move every later offset, so it is
+    // left exactly as it was. Marking is best-effort; alignment is not negotiable.
+    return (bare.length === 1 ? bare : character).toLowerCase();
+  }).join("");
+}
+
+function isWordish(character: string | undefined): boolean {
+  return character !== undefined && /[\p{L}\p{N}]/u.test(character);
 }

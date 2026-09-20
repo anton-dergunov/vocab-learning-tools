@@ -842,7 +842,7 @@ rejected in a minute of looking at them.
 
 `App.tsx` for the way in and the view switch; `styles.css` with `design/ui-prototype/` changed in the
 same commit and the loops section byte-identical between them; `LoopView.tsx`, `LoopPlayer.tsx`,
-`LoopBar.tsx`, `LoopDialog.tsx` and `loops.ts`; `mediaStore.ts`'s third kind; `ActivitySettings.tsx`'s
+`MadeBar.tsx` (was `LoopBar.tsx`, renamed when Stories joined it), `LoopDialog.tsx` and `loops.ts`; `mediaStore.ts`'s third kind; `ActivitySettings.tsx`'s
 label and retry set; `ProgressStrip.tsx`'s two phases; and Settings ▸ Loops with keep-on-device, the
 kept byte count and the generator's own state.
 

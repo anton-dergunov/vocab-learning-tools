@@ -828,6 +828,22 @@ details.fold .fold-body { padding: 4px 0 18px; }
                text-transform: uppercase; color: var(--ink-3); margin-top: 2px; }
 .loopbar-make { flex: none; }
 
+/* ── the bar split in two ──
+   Loops and Stories side by side, with no `+`: both surfaces carry their own Make button in their
+   own header, and a bar whose job is to be a way in should not also be a way to start something.
+   Equal halves, because neither is the primary one. */
+.madebar { gap: 0; padding: 0; }
+.madebar-half {
+  flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 10px;
+  height: 100%; padding: 0 18px; background: none; border: 0; text-align: left;
+  color: inherit; cursor: pointer;
+}
+.madebar-half + .madebar-half { border-left: 1px solid var(--rule); }
+.madebar-half:active { background: var(--core-soft); }
+.madebar-ic { display: grid; place-items: center; flex: none; width: 20px; color: var(--ink-3); }
+.madebar-ic svg { width: 16px; height: 16px; }
+.madebar-half .loopbar-sub { margin-top: 1px; }
+
 /* ── the chip in the top bar ──
    A bar across the foot of a wide window is a lot of furniture for one line of text, and the top bar
    is already where everything reachable from anywhere lives. Idle it is one icon; playing it widens
@@ -2401,3 +2417,95 @@ details.fold .fold-body { padding: 4px 0 18px; }
    keeps for accents — and a rule or a pill below it carries none. Pulling the quote up by that much
    makes the leaf above and the leaf below sit at the same visible distance from what they frame. */
 .card-main.quoted .card-ex { margin-top: -.55em; }
+
+/* ── stories ──
+   The list reuses `.loops`' rows wholesale: it is the same shape of thing — a made object that can
+   be open, still being made, or asked for and never made — and a second set of rules would be two
+   places to keep one look. Only what genuinely differs is written here. */
+
+/* A story's badge is its own emoji rather than a transport control, so it carries no fill: a
+   coloured disc behind an emoji reads as a button, and this one does not play anything. */
+.story-go { background: none; font-size: 20px; line-height: 1; }
+.loop-row.on .story-go { background: none; }
+
+/* ── reading one ──
+   A deck, not a scroller: a part is a picture and two to four sentences, which is about one
+   screen, so a column of them is a page you scroll to see what a swipe shows whole. The column
+   owns its height and the controls are its footer, so Next is always where you left it. */
+.story-read { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+
+.story-dots { display: flex; justify-content: center; gap: 6px; padding: 10px 0 2px; flex: none; }
+.story-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--rule); transition: background .15s; }
+.story-dot.on { background: var(--core); }
+
+/* The one part on screen. It scrolls only if a part overruns what the prompt asks for — which is
+   a failure of the prompt rather than a layout to design around, so the scroll is a safety net and
+   not the way this is meant to be read. */
+.story-part {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: 8px 20px 20px; max-width: 680px; width: 100%; margin: 0 auto;
+}
+
+/* The frame is drawn whether or not the picture has arrived, so a picture landing does not move
+   the words under it — `SenseImage`'s rule, which matters more here because the reader is
+   mid-sentence when the last of them lands. */
+.story-pic {
+  position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--rule);
+  display: grid; place-items: center; margin-bottom: 16px;
+}
+.story-pic.is-ready { border-color: transparent; }
+.story-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.story-pic-note {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3); padding: 0 16px; text-align: center;
+}
+
+.story-head {
+  margin: 0 0 8px; font-family: var(--serif); font-weight: 700; font-size: 17px; color: var(--ink-2);
+}
+
+/* The flashcard measure rather than the article's: a story is read at arm's length, in one pass,
+   and `.ex .t`'s 16.5px is a size for studying a sentence rather than reading a page of them. */
+.story-text { margin: 0; font-family: var(--serif); font-size: 20px; line-height: 1.5; color: var(--ink); }
+/* The words the story was asked to teach. Weight and colour only — no background, no underline:
+   these sit inside running prose and a marked run that changes the line's metrics makes the
+   paragraph ripple as the eye passes it. */
+.story-mark { font-weight: 700; color: var(--core); }
+
+/* **The slot is held whether or not the translation has been asked for**, so revealing it does not
+   move the story — `LoopPlayer`'s rule that an answer must never shift the text, in the one other
+   place Acervo makes you ask for one. */
+.story-tr-slot { margin-top: 18px; min-height: 76px; }
+.story-tr {
+  margin: 0; font-family: var(--serif); font-style: italic; font-size: 16px; line-height: 1.45;
+  color: var(--ink-3);
+}
+.story-tr-head { font-style: normal; color: var(--ink-2); }
+.story-reveal {
+  width: 100%; padding: 14px 16px; border-radius: 8px; text-align: left;
+  border: 1px dashed var(--rule); background: none; cursor: pointer;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3); transition: border-color .12s, color .12s;
+}
+.story-reveal:hover:not(:disabled) { border-color: var(--core); color: var(--core); }
+.story-reveal:disabled { cursor: default; opacity: .6; }
+
+/* A footer of the column, never a sticky element inside the scroller: the part scrolls, these do
+   not, and Next stays where the thumb left it. */
+.story-controls {
+  flex: none; display: flex; align-items: center; justify-content: center; gap: 20px;
+  padding: 12px 20px; padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--rule); background: var(--surface);
+}
+.story-count {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--ink-3);
+  min-width: 68px; text-align: center;
+}
+.story-controls .icon-btn:disabled { opacity: .3; cursor: default; }
+
+@container vp (max-width: 720px) {
+  .story-part { padding: 8px 16px 16px; }
+  .story-text { font-size: 18.5px; }
+  .story-tr { font-size: 15px; }
+}

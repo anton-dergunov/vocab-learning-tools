@@ -11,7 +11,7 @@ export type Register = typeof REGISTERS[number];
 export type LexemeStatus = typeof LEXEME_STATUSES[number];
 export type SourceKind = typeof SOURCE_KINDS[number];
 export type ExampleOrigin = typeof EXAMPLE_ORIGINS[number];
-export type EntityKind = "vocabularies" | "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "pronunciations" | "studyStates" | "loops" | "loopItems";
+export type EntityKind = "vocabularies" | "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "pronunciations" | "studyStates" | "loops" | "loopItems" | "stories" | "storyParts" | "storyWords";
 /** What a pronunciation reads: a lexeme's headword, a sense's definition, an example's or an attestation's text. */
 export const PRONUNCIATION_TARGETS = ["lexeme", "sense", "example", "attestation"] as const;
 export type PronunciationTarget = typeof PRONUNCIATION_TARGETS[number];
@@ -292,6 +292,79 @@ export interface LoopItem extends SyncFields, OwnedFields {
   repeatSeconds: number;
 }
 
+/**
+ * A story: a handful of words told back to you as a short illustrated tale.
+ *
+ * **Its state is derived and there is no status column**, exactly as for a `Loop`. A story with no
+ * live `StoryPart`s was asked for and never written; a part with no `imageRef` has not been drawn.
+ * Both facts are already in the graph, so a fifth one would only be something to keep in step.
+ *
+ * `typeId` and `styleId` are chosen when the story is *asked for* rather than when it is written,
+ * so Try again reaches for the same kind of story and the same look rather than quietly becoming a
+ * different one. Both are ids into tracked config the server ships, never enums in this code.
+ */
+export interface Story extends SyncFields, OwnedFields {
+  id: string;
+  language: string;
+  typeId: string | null;
+  styleId: string | null;
+  /** Null until the story has been written, which is also what having no parts says. */
+  title: string | null;
+  titleTranslation: string | null;
+  emoji: string | null;
+  /** The model that answered, not the one asked first. Provenance, like `Example.modelId`. */
+  modelId: string | null;
+  /** Sparse, renumbered on reorder. Ordering is respected rather than enforced. */
+  position: number;
+}
+
+/**
+ * One part of a story: a picture, a paragraph, and the same paragraph translated.
+ *
+ * The translation is hidden until the reader asks for it, which is why it travels with the part
+ * rather than being fetched — a reveal that had to wait for the network would not be a reveal.
+ *
+ * `imageRef` carries a digest of the picture's bytes, so a redraw is a *new* reference and a device
+ * holding the old one simply misses. That is what lets `mediaStore.ts` be a cache with no
+ * invalidation, and it is the rule every picture in Acervo follows.
+ */
+export interface StoryPart extends SyncFields, OwnedFields {
+  id: string;
+  storyId: string;
+  position: number;
+  heading: string | null;
+  headingTranslation: string | null;
+  text: string;
+  translation: string;
+  imagePrompt: string | null;
+  /** Null until drawn. `failureReason` says why when it stayed that way. */
+  imageRef: string | null;
+  imageModelId: string | null;
+  attempts: number;
+  failureReason: string | null;
+}
+
+/**
+ * One word a story was asked to teach, and the forms it actually used.
+ *
+ * `sourceText` is denormalised for `LoopItem.sourceText`'s reason: it records what was *asked for*,
+ * so editing the word afterwards cannot rewrite what the story set out to teach — and it is why
+ * deleting the word leaves this row alone, with `lexemeId` pointing at a tombstone.
+ *
+ * **An empty `forms` means the story did not manage to use the word**, which is a fact worth
+ * showing rather than hiding, and the reason this is a list and not a boolean. The forms are the
+ * surface strings the writer actually wrote, verified against the text on the server, and they are
+ * what the reader searches for to mark the word in the story.
+ */
+export interface StoryWord extends SyncFields, OwnedFields {
+  id: string;
+  storyId: string;
+  lexemeId: string;
+  position: number;
+  sourceText: string;
+  forms: string[];
+}
+
 export interface VocabularyGraph {
   vocabularies: Vocabulary[];
   topics: Topic[];
@@ -304,6 +377,9 @@ export interface VocabularyGraph {
   studyStates: StudyState[];
   loops: Loop[];
   loopItems: LoopItem[];
+  stories: Story[];
+  storyParts: StoryPart[];
+  storyWords: StoryWord[];
 }
 
 export type VocabularyInput = Omit<Vocabulary, "id" | keyof SyncFields | keyof OwnedFields>;
@@ -316,6 +392,9 @@ export type ImagePromptInput = Omit<ImagePrompt, "id" | keyof SyncFields | keyof
 export type StudyStateInput = Omit<StudyState, "id" | keyof SyncFields | keyof OwnedFields>;
 export type LoopInput = Omit<Loop, "id" | keyof SyncFields | keyof OwnedFields>;
 export type LoopItemInput = Omit<LoopItem, "id" | keyof SyncFields | keyof OwnedFields>;
+export type StoryInput = Omit<Story, "id" | keyof SyncFields | keyof OwnedFields>;
+export type StoryPartInput = Omit<StoryPart, "id" | keyof SyncFields | keyof OwnedFields>;
+export type StoryWordInput = Omit<StoryWord, "id" | keyof SyncFields | keyof OwnedFields>;
 
 const RECORD_ID = /^[a-z0-9]{15}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -614,6 +693,56 @@ export function validateGraph(graph: VocabularyGraph): void {
     invariant(times.every((value, index) => index === 0 || value >= times[index - 1]), "A loop item's times must not run backwards.");
     invariant(Number.isSafeInteger(record.repeats) && record.repeats >= 0, "Loop item repeat count is invalid.");
     invariant(Number.isFinite(record.repeatSeconds) && record.repeatSeconds >= 0, "Loop item repeat interval is invalid.");
+  });
+
+  const stories = new Map<string, Story>();
+  graph.stories.forEach((record) => {
+    remember(record);
+    language(record.language, "Story language");
+    optionalString(record.typeId, "Story kind");
+    optionalString(record.styleId, "Story style");
+    optionalString(record.title, "Story title");
+    optionalString(record.titleTranslation, "Story title translation");
+    optionalString(record.emoji, "Story emoji");
+    optionalString(record.modelId, "Story model");
+    invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Story position is invalid.");
+    stories.set(record.id, record);
+  });
+
+  graph.storyParts.forEach((record) => {
+    remember(record);
+    const story = stories.get(record.storyId);
+    invariant(story, "Story part references a missing story.");
+    invariant(record.ownerId === story.ownerId, "Story part and story must have the same owner.");
+    invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Story part position is invalid.");
+    invariant(typeof record.text === "string", "Story part text is invalid.");
+    invariant(typeof record.translation === "string", "Story part translation is invalid.");
+    optionalString(record.heading, "Story part heading");
+    optionalString(record.headingTranslation, "Story part heading translation");
+    optionalString(record.imagePrompt, "Story part image brief");
+    optionalString(record.imageRef, "Story part image reference");
+    optionalString(record.imageModelId, "Story part image model");
+    optionalString(record.failureReason, "Story part failure");
+    // A drawn picture is bytes plus the model that made them. There is no status column, so an
+    // absent reference is the whole of what "not drawn" means — and naming a model that drew
+    // nothing would be the one fact contradicting it.
+    invariant(Boolean(record.imageRef) || !record.imageModelId, "A story part with no picture cannot name the model that drew one.");
+    invariant(Number.isSafeInteger(record.attempts) && record.attempts >= 0, "Story part attempts are invalid.");
+  });
+
+  graph.storyWords.forEach((record) => {
+    remember(record);
+    const story = stories.get(record.storyId);
+    invariant(story, "Story word references a missing story.");
+    invariant(record.ownerId === story.ownerId, "Story word and story must have the same owner.");
+    // Looked up among *all* lexemes, tombstones included, for a loop item's reason: a story that
+    // has been written stays readable and still truthfully says which word it was built around.
+    const lexeme = lexemes.get(record.lexemeId);
+    invariant(lexeme, "Story word references a missing lexeme.");
+    invariant(record.ownerId === lexeme.ownerId, "Story word and lexeme must have the same owner.");
+    invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Story word position is invalid.");
+    invariant(record.sourceText.length > 0, "A story word records the word it was asked to teach.");
+    invariant(Array.isArray(record.forms) && record.forms.every((one) => typeof one === "string"), "Story word forms are invalid.");
   });
 }
 

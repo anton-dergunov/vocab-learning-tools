@@ -19,6 +19,19 @@ SECRET_SHAPE = re.compile(
     r"\b(?:AIza[A-Za-z0-9_-]{30,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{30,})\b"
 )
 
+# Placeholder local parts, allowed on any domain.
+#
+# The reserved `.example.com` domains cover almost everything, but not documentation that has to
+# name a *provider* account: `docs/acervo-vertex-setup.md` tells the owner to bind an IAM role to
+# their Google login, and `learner@account.example.com` there would be worse than useless — it
+# implies a domain that cannot be a Google account, so a reader would copy something that cannot
+# work. The address has to look like what they will actually type.
+#
+# **The local part is the identifying half**, which is why the exception is written here and not as
+# an allowed domain. `address@gmail.com` names nobody; the leak this test exists to catch is a real
+# local part, and that is caught on gmail.com exactly as before.
+PLACEHOLDER_LOCALS = {"address", "you", "your-account", "name"}
+
 
 def candidate_text_files():
     listing = subprocess.run(
@@ -51,6 +64,8 @@ def test_candidate_repository_files_contain_no_personal_details_or_secrets():
             if match.group(0).endswith("@2x.png"):
                 continue  # Standard Apple Retina asset filename, not an address.
             domain = match.group(2).lower()
+            if match.group(1).lower() in PLACEHOLDER_LOCALS:
+                continue  # Names nobody, whatever the domain. See PLACEHOLDER_LOCALS.
             if not (domain.endswith(".example.com") or domain.endswith(".example.test")):
                 violations.append(f"{relative}: non-reserved address {match.group(0)!r}")
         for match in PRIVATE_ADDRESS.finditer(contents):

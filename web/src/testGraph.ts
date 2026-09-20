@@ -185,6 +185,55 @@ export function testGraph(): VocabularyGraph {
         startSeconds: 44.12, sourceRevealSeconds: 44.12, targetRevealSeconds: 52.94,
         endSeconds: 79.41, repeats: 3, repeatSeconds: 4.41, ...sync("09-01")
       }
+    ],
+    stories: [
+      {
+        id: "storypicada0001", language: "es", typeId: "funny", styleId: "comic-book",
+        title: "La balsa que picaba", titleTranslation: "The raft that stung",
+        emoji: "\u{1F6F6}", modelId: "gemini/gemini-3.5-flash-lite", position: 0, ...sync("09-03")
+      },
+      {
+        // Asked for and never written: having no parts is the whole of what says so.
+        id: "storyqueued0001", language: "es", typeId: "mystery", styleId: "film-noir",
+        title: null, titleTranslation: null, emoji: "\u{1F575}", modelId: null,
+        position: 1, ...sync("09-04")
+      }
+    ],
+    storyParts: [
+      {
+        id: "storypart000001", storyId: "storypicada0001", position: 0,
+        heading: "La balsa", headingTranslation: "The raft",
+        text: "Marcos subió a la balsa al amanecer.",
+        translation: "Marcos climbed onto the raft at dawn.",
+        imagePrompt: "A man climbs onto a wooden raft at dawn.",
+        imageRef: "stories/storypicada0001/storypart000001-1f4c8b2e.webp",
+        imageModelId: "openai/gpt-image-1", attempts: 1, failureReason: null, ...sync("09-03")
+      },
+      {
+        // Written and briefed, but never drawn — the second state a part can be in.
+        id: "storypart000002", storyId: "storypicada0001", position: 1,
+        heading: "El picor", headingTranslation: "The sting",
+        text: "Algo empezó a picar bajo el agua.",
+        translation: "Something began to sting beneath the water.",
+        imagePrompt: "Something stirs beneath the water beside the raft.",
+        imageRef: null, imageModelId: null, attempts: 2,
+        failureReason: "The image model is temporarily rate limited.", ...sync("09-03")
+      }
+    ],
+    storyWords: [
+      {
+        id: "storyword000001", storyId: "storypicada0001", lexemeId: "lexemebalsa0001",
+        position: 0, sourceText: "la balsa", forms: ["balsa"], ...sync("09-03")
+      },
+      {
+        id: "storyword000002", storyId: "storypicada0001", lexemeId: "lexemepicar0001",
+        position: 1, sourceText: "picar", forms: ["picar"], ...sync("09-03")
+      },
+      {
+        // Asked for and never used, which is a fact worth showing rather than hiding.
+        id: "storyword000003", storyId: "storyqueued0001", lexemeId: "lexemepicar0001",
+        position: 0, sourceText: "picar", forms: [], ...sync("09-04")
+      }
     ]
   };
 }

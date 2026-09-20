@@ -3,9 +3,11 @@ import AddView, { type AddTab, type CaptureSeed } from "./AddView";
 import type { ImagePrompt } from "./domain";
 import AskDock, { type Detent } from "./AskDock";
 import ReviewBar from "./ReviewBar";
-import LoopBar from "./LoopBar";
+import MadeBar from "./MadeBar";
 import LoopDialog from "./LoopDialog";
 import LoopView from "./LoopView";
+import StoryDialog from "./StoryDialog";
+import StoryView from "./StoryView";
 import * as loopPlayer from "./loops";
 import {
   applyOps, diffDrafts, EditRefused, type DraftDiff, type EditOp
@@ -41,7 +43,7 @@ import { repository, type ReplicaSnapshot } from "./repository";
 import {
   articleFor, articleFromDraft, inboxCount, languageOptions, lexemesIn, shortGlossOf,
   topicOptions, visibleRows, type SortKey, type TopicSelection
-} from "./selectors";
+, loopsIn, storiesIn } from "./selectors";
 import Settings, { type Page as SettingsPage } from "./Settings";
 import SignIn from "./SignIn";
 import { setSearchScope, useSearchScope, type SearchScope } from "./searchScope";
@@ -208,6 +210,7 @@ export default function App() {
   const openCapture = useCallback((seed: CaptureSeed | null) => {
     setProblems([]);
     setLoops(false);
+    setStories(false);
     setAddSeed(seed);
     setAddTab("capture");
     setComposition((count) => count + 1);
@@ -243,10 +246,20 @@ export default function App() {
      playing while you read a word. */
   const [loops, setLoops] = useState(false);
   const [makingLoop, setMakingLoop] = useState(false);
+  const [stories, setStories] = useState(false);
+  const [makingStory, setMakingStory] = useState(false);
   /* One door in, so everything that opens it also closes whatever it replaces — the same shape
      `openCapture` has. */
   const openLoops = useCallback(() => {
     setLoops(true);
+    setStories(false);
+    setOpenId(null);
+    setExternal(null);
+    setAddTab(null);
+  }, []);
+  const openStories = useCallback(() => {
+    setStories(true);
+    setLoops(false);
     setOpenId(null);
     setExternal(null);
     setAddTab(null);
@@ -684,6 +697,7 @@ export default function App() {
   const chooseTopic = useCallback((next: TopicSelection) => {
     setTopic(next);
     setLoops(false);
+    setStories(false);
     setOpenId(null);
     setProposal(null);
     setExternal(null);
@@ -697,6 +711,7 @@ export default function App() {
         // Reaching for search is asking for the list, and the list is not drawn while a loop
         // surface owns the pane. The loop itself plays on; the bar is what it plays behind.
         setLoops(false);
+        setStories(false);
         search.current?.focus();
         search.current?.select();
       }
@@ -707,6 +722,7 @@ export default function App() {
         else if (external) setExternal(null);
         else if (openId) setOpenId(null);
         else if (loops) setLoops(false);
+        else if (stories) setStories(false);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -1006,6 +1022,26 @@ export default function App() {
   }
 
   /**
+   * Delete a story everywhere, pictures and all.
+   *
+   * A route rather than an ordinary tombstone for `removeLoop`'s reason: the pictures are
+   * megabytes and nothing else would ever remove them, so the rows and the files are written by
+   * the same party. Online-only and loud when it fails, like every other write.
+   */
+  async function removeStory(storyId: string) {
+    try {
+      await backendSession.deleteStory(storyId, snapshot?.deviceId ?? "");
+    } catch (error) {
+      // Nothing changed locally: the story is still there and still readable.
+      notify(error instanceof Error ? error.message : "That story could not be deleted.");
+      return;
+    }
+    await syncEngine.syncNow();
+    setSnapshot(repository.snapshot());
+    notify("Deleted everywhere — the pictures are gone too");
+  }
+
+  /**
    * Out of the Inbox and into its topics — one word from its article, or the whole tab at once.
    *
    * The word stays open afterwards rather than closing the way a delete does: you have just read it,
@@ -1057,7 +1093,7 @@ export default function App() {
   /** Both surfaces you compose in. The main region stops scrolling and hands that to the view. */
   /* `asking` joins this for the same reason the other two are here: a surface that owns the height
      and scrolls itself must not sit inside a region that also scrolls. */
-  const composing = Boolean(addTab) || Boolean(article && mode === "edit") || asking || loops;
+  const composing = Boolean(addTab) || Boolean(article && mode === "edit") || asking || loops || stories;
   const inbox = snapshot && language ? inboxCount(snapshot, language) : 0;
   const currentTopic = topics.find((option) => option.id === topic);
   const topicLabel = topic === "all" ? "All words" : topic === "inbox" ? "Inbox" : currentTopic?.name ?? "Topic";
@@ -1069,7 +1105,7 @@ export default function App() {
       {/* Reading a word on a phone or a tablet does not need the topic rail beside it. The loops
           surface is *not* given `article-open`: it keeps the rail wherever there is room for it,
           and drops it only on a phone, where an article drops it too. */}
-      <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops ? " loops-open" : ""}`}>
+      <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops || stories ? " loops-open" : ""}`}>
         <div className="brand"><span className="mark">A.</span></div>
 
         <header className="topbar">
@@ -1080,10 +1116,10 @@ export default function App() {
               value={query}
               // Typing is asking for the list, so it leaves the loops surface. Whatever is playing
               // keeps playing — that is what the bar and the chip are for.
-              onChange={(event) => { setQuery(event.target.value); setOpenId(null); setExternal(null); setLoops(false); }}
+              onChange={(event) => { setQuery(event.target.value); setOpenId(null); setExternal(null); setLoops(false); setStories(false); }}
               // ⏎ is the only thing that ever reaches an online dictionary. Everything else here
               // answers off this device or off your own server.
-              onKeyDown={(event) => { if (event.key === "Enter") { setLoops(false); searchOnline(); } }}
+              onKeyDown={(event) => { if (event.key === "Enter") { setLoops(false); setStories(false); searchOnline(); } }}
             />
             <span className="kbd">⌘K</span>
             <button
@@ -1117,9 +1153,9 @@ export default function App() {
 
           {/* Wide windows only: on a phone this is the bar at the foot instead, which is where a
               player belongs on a device held in one hand. `styles.css` picks which. */}
-          {snapshot && language && <LoopBar
+          {snapshot && language && <MadeBar
             graph={snapshot} language={language} chip
-            onOpen={openLoops} onMake={() => { openLoops(); setMakingLoop(true); }}
+            onLoops={openLoops} onStories={openStories}
           />}
 
           {/* Shown on the native host too. The Mac window owns where the server is and how the
@@ -1168,13 +1204,38 @@ export default function App() {
             <span className="ic">{option.icon}</span><span className="nm">{option.name}</span>
             {option.count !== null && <span className="cnt">{option.count}</span>}
           </button>)}
+
+          {/* **Made for you**: the things Acervo builds out of your words, rather than the words
+              themselves. A second group at the foot of the rail, because the rail is already the
+              navigation surface and is present at every width a list is — and because a third
+              learning method later is one more row here rather than another button in the top bar,
+              which was already carrying as much as it can. */}
+          <div className="rail-sep" />
+          <button
+            className={`tab ${loops ? "on" : ""}`} title="Loops" aria-label="Loops"
+            onClick={openLoops}
+          >
+            <span className="ic">♪</span><span className="nm">Loops</span>
+            <span className="cnt">{snapshot && language ? loopsIn(snapshot, language).length : 0}</span>
+          </button>
+          <button
+            className={`tab ${stories ? "on" : ""}`} title="Stories" aria-label="Stories"
+            onClick={openStories}
+          >
+            <span className="ic">📖</span><span className="nm">Stories</span>
+            <span className="cnt">{snapshot && language ? storiesIn(snapshot, language).length : 0}</span>
+          </button>
         </nav>
 
         {/* Composing replaces the list rather than covering it: the entry you are writing is the
             work, the list behind it is not, and a bounded column is the only shape that keeps a
             title and a save button on screen at every window size. */}
         <main className={`main ${composing ? "composing" : ""}${carding && !composing ? " cards-on" : ""}`} ref={main}>
-          {loops && snapshot && language ? <LoopView
+          {stories && snapshot && language ? <StoryView
+          graph={snapshot} language={language} onMake={() => setMakingStory(true)}
+          onClose={() => setStories(false)}
+          onDelete={removeStory}
+        /> : loops && snapshot && language ? <LoopView
           graph={snapshot} language={language} onMake={() => setMakingLoop(true)}
           onClose={() => setLoops(false)}
           onDelete={removeLoop}
@@ -1343,12 +1404,21 @@ export default function App() {
             carries the view segments, the delete control, the progress strip and the ask dock, and
             §2.13 forbids a second one there. Narrow windows only — a wide one has the chip in the
             top bar instead, and `styles.css` is what picks. */}
-        {snapshot && language && !article && !external && !addTab && !loops && <LoopBar
+        {snapshot && language && !article && !external && !addTab && !loops && !stories && <MadeBar
           graph={snapshot} language={language} chip={false}
-          onOpen={openLoops} onMake={() => { openLoops(); setMakingLoop(true); }}
+          onLoops={openLoops} onStories={openStories}
         />}
       </div>
     </div>
+
+    {makingStory && snapshot && language && <StoryDialog
+      graph={snapshot}
+      query={{ language, topic, query, sort }}
+      deviceId={snapshot.deviceId ?? ""}
+      onClose={() => setMakingStory(false)}
+      onMade={() => { void syncEngine.syncNow().then(() => setSnapshot(repository.snapshot())); }}
+      onNotify={notify}
+    />}
 
     {makingLoop && snapshot && language && <LoopDialog
       graph={snapshot} query={{ language, topic, query, sort }} deviceId={snapshot.deviceId}

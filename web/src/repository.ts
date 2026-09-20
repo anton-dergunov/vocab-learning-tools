@@ -3,7 +3,9 @@ import {
   type Attestation, type AttestationInput, type EntityKind, type Example, type ExampleInput,
   type ImagePrompt, type ImagePromptInput, type Lexeme, type LexemeInput, type Loop, type LoopInput,
   type LoopItem, type LoopItemInput, type Pronunciation, type Sense, type SenseInput,
-  type OwnedFields, type StudyState, type StudyStateInput, type SyncFields, type Topic, type TopicInput,
+  type OwnedFields, type Story, type StoryInput, type StoryPart, type StoryPartInput,
+  type StoryWord, type StoryWordInput,
+  type StudyState, type StudyStateInput, type SyncFields, type Topic, type TopicInput,
   type Vocabulary, type VocabularyInput, type VocabularyGraph
 } from "./domain";
 import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase, type ReplicaMeta } from "./localDatabase";
@@ -14,11 +16,12 @@ export const LOCAL_SCHEMA_VERSION = 13;
 
 export const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],
-  pronunciations: [], studyStates: [], loops: [], loopItems: []
+  pronunciations: [], studyStates: [], loops: [], loopItems: [], stories: [], storyParts: [],
+  storyWords: []
 });
 
-export type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | Pronunciation | StudyState | Loop | LoopItem;
-type EntityInput = VocabularyInput | TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput | LoopInput | LoopItemInput;
+export type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | Pronunciation | StudyState | Loop | LoopItem | Story | StoryPart | StoryWord;
+type EntityInput = VocabularyInput | TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput | LoopInput | LoopItemInput | StoryInput | StoryPartInput | StoryWordInput;
 
 /** What the server returns for a batch of applied records. */
 export interface RemoteWrite {
@@ -132,7 +135,10 @@ export class LocalAcervoRepository implements AcervoRepository {
         pronunciations: contents.pronunciations,
         studyStates: contents.studyStates,
         loops: contents.loops,
-        loopItems: contents.loopItems
+        loopItems: contents.loopItems,
+        stories: contents.stories,
+        storyParts: contents.storyParts,
+        storyWords: contents.storyWords
       };
       validateGraph(graph);
       const allRecords: Entity[][] = [
@@ -403,8 +409,9 @@ export class LocalAcervoRepository implements AcervoRepository {
       this.graph.imagePrompts.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("imagePrompts", record));
       this.graph.pronunciations.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("pronunciations", record));
       this.graph.studyStates.filter((record) => record.lexemeId === id && !record.deleted).forEach((record) => tombstone("studyStates", record));
-      // `loopItems` is deliberately absent. A loop is a recording: it keeps playing, captioned with
-      // what was actually said, and its item simply points at a tombstone from here on.
+      // `loopItems` and `storyWords` are deliberately absent. A loop is a recording and a story is
+      // written: both stay truthful about what they said, and their rows simply point at a
+      // tombstone from here on.
     } else if (kind === "loops") {
       // A loop's items go with it, and nothing else does: the words it named are untouched.
       //
@@ -413,6 +420,12 @@ export class LocalAcervoRepository implements AcervoRepository {
       // cascade is the same wherever it is written from — but a deletion that comes through it
       // leaves megabytes on the server naming nothing.
       this.graph.loopItems.filter((record) => record.loopId === id && !record.deleted).forEach((record) => tombstone("loopItems", record));
+    } else if (kind === "stories") {
+      // A story's parts and words go with it, and nothing else does: the words it taught are
+      // untouched. Deleted through `DELETE /stories/{id}` rather than here for the reason a loop
+      // is — the pictures have to go with the rows, and only the server can unlink them.
+      this.graph.storyParts.filter((record) => record.storyId === id && !record.deleted).forEach((record) => tombstone("storyParts", record));
+      this.graph.storyWords.filter((record) => record.storyId === id && !record.deleted).forEach((record) => tombstone("storyWords", record));
     } else if (kind === "senses") {
       this.graph.examples.filter((record) => record.senseId === id && !record.deleted).forEach((record) => tombstone("examples", record));
       this.graph.imagePrompts.filter((record) => record.senseId === id && !record.deleted).forEach((record) => tombstone("imagePrompts", record));
