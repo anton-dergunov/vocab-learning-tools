@@ -122,6 +122,57 @@ def prune_takes(settings: Settings, older_than_days: float, dry_run: bool) -> in
     return 0
 
 
+def show_story(settings: Settings, story_id: str, email: str | None) -> int:
+    """A story's parts as they are stored: the text, the passages, and what each was read as.
+
+    A reading command, and the one place a story's *audio* can be looked at without a browser. What
+    it is for is the question the interface cannot answer — whether a passage carries the direction
+    the writer wrote, or an empty one because the voice that answered could not take it, and where
+    each passage sits in the recording.
+    """
+    from acervo.repository import accounts, graph
+
+    owner = None
+    if email:
+        account = accounts.by_email(email)
+        if account is None:
+            print(f"There is no account for {email}.", file=sys.stderr)
+            return 2
+        owner = account["id"]
+    else:
+        held = accounts.all_ids()
+        if len(held) != 1:
+            print("This server holds more than one account; name one with --owner-email.", file=sys.stderr)
+            return 2
+        owner = held[0]
+
+    story = graph.owned_records(owner, "stories", [story_id]).get(story_id)
+    if story is None:
+        print(f"There is no story {story_id} in that account.", file=sys.stderr)
+        return 2
+    parts = [row for row in graph.story_parts(owner, story_id) if not row.get("deleted")]
+    words = [row for row in graph.story_words(owner, story_id) if not row.get("deleted")]
+    print(f"{story.get('emoji') or ''} {story.get('title') or '(untitled)'}   {story_id}")
+    print(f"{story.get('language')}  ·  {len(parts)} parts  ·  {len(words)} words"
+          f"  ·  written by {story.get('modelId') or '-'}")
+    for part in sorted(parts, key=lambda row: row.get("position", 0)):
+        segments = part.get("audioSegments") or []
+        directed = sum(1 for one in segments if (one.get("direction") or "").strip())
+        print(f"\n{'-' * 76}\nPART {part.get('position', 0) + 1}  {part.get('heading') or ''}   {part['id']}")
+        print(f"  picture: {part.get('imageRef') or '(none)'}"
+              f"{'  ' + (part.get('failureReason') or '') if part.get('failureReason') else ''}")
+        print(f"  recording: {part.get('audioRef') or '(none)'}")
+        if part.get("audioRef"):
+            print(f"             {part.get('audioProviderId')}:{part.get('audioModelId')}"
+                  f"  voice {part.get('audioVoice')}  ·  {len(segments)} passages, {directed} directed")
+        print(f"  text: {part.get('text') or ''}")
+        for index, one in enumerate(segments, 1):
+            print(f"    {index:>2}. [{float(one.get('start') or 0):6.2f}-{float(one.get('end') or 0):6.2f}] "
+                  f"{one.get('direction') or '(no direction sent)'}")
+            print(f"        {(one.get('text') or '').strip()!r}")
+    return 0
+
+
 def serve(settings: Settings, host: str, port: int) -> int:
     import uvicorn
 
@@ -329,6 +380,13 @@ def main(argv: list[str] | None = None) -> int:
     enqueue_parser.add_argument("--limit", type=int, default=0, help="at most this many words")
     enqueue_parser.add_argument("--dry-run", action="store_true", help="print them and queue nothing")
 
+    story_parser = commands.add_parser("stories", help="stories, as they are stored")
+    story_commands = story_parser.add_subparsers(dest="story_command", required=True)
+    show_story_parser = story_commands.add_parser("show", help="one story's parts, passages and directions")
+    show_story_parser.add_argument("story_id", help="the story's record id")
+    show_story_parser.add_argument("--owner-email", default=None,
+                                   help="whose story, where the server holds more than one account")
+
     takes_parser = commands.add_parser("takes", help="the loop take cache")
     take_commands = takes_parser.add_subparsers(dest="take_command", required=True)
     take_commands.add_parser("show", help="how many takes are kept, and what they weigh")
@@ -351,6 +409,8 @@ def main(argv: list[str] | None = None) -> int:
         return seed(settings, arguments.owner_email)
     if arguments.command == "providers":
         return providers()
+    if arguments.command == "stories":
+        return show_story(settings, arguments.story_id, arguments.owner_email)
     if arguments.command == "takes":
         if arguments.take_command == "show":
             return show_takes(settings)

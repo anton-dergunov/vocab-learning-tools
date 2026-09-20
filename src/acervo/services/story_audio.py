@@ -44,8 +44,9 @@ from typing import Any, Callable
 from acervo.domain.ids import now_instant
 from acervo.errors import ApiError
 from acervo.models import journal, load_catalogue
+from acervo.models.call import audio_mime
 from acervo.models.errors import ChainExhausted, ProviderError
-from acervo.pronunciation import encode, speak as speaking
+from acervo.pronunciation import encode, speak as speaking, takes as take_store
 from acervo.repository import graph, pronunciation_settings
 from acervo.services import pronunciations, stories
 from acervo.services.models import chain_for, refusal
@@ -143,22 +144,70 @@ def narrate_part(
 
 
 def _record(settings: Settings, owner: str, segments, language: str, order: str, preferences,
-            pin: Pin | None, directed, every, gate) -> tuple[list[speaking.Spoken], Pin | None]:
-    """Say every passage, in one voice. The pair that answers the first is asked for the rest."""
-    recordings: list[speaking.Spoken] = []
+            pin: Pin | None, directed, every, gate) -> tuple[list[tuple[bytes, str]], Pin | None]:
+    """Say every passage, in one voice. The pair that answers the first is asked for the rest.
+
+    **A passage already recorded is not recorded again.** A part is written only once every one of
+    its passages exists, so a part that ran out of allowance halfway used to throw away the passages
+    it had already paid for and buy them again on the next try — on a tier of ten calls a day, that
+    is the difference between finishing a story and never finishing one. The masters go in the same
+    content-addressed store a loop take uses, under the same key, so a retry costs only what is
+    genuinely missing.
+    """
+    cache = Path(settings.takes_path)
+    recordings: list[tuple[bytes, str]] = []
     for segment in segments:
         if gate is not None:
             gate()
+        text = segment.text.strip()
         style = None
         if directed and segment.direction:
             style = speaking.direction(
                 stories._template(settings, SPEAK_TEMPLATE), segment.direction, language)
-        spoken = _say(settings, owner, segment.text.strip(), language, order, style,
+        # A direction is recorded on the row only where one was really sent, and a directed story
+        # asks only pairs that can take one — so `style` says both what was sent and what to key on.
+        said = segment.direction if style else ""
+        kept = _remembered(cache, text, language, style, pin, directed if style else every)
+        if kept is not None:
+            data, pin = kept
+            recordings.append((data, said))
+            continue
+        spoken = _say(settings, owner, text, language, order, style,
                       preferences, pin, directed if style else every)
         answered = spoken.result.answer
         pin = (answered.provider_id, answered.model, spoken.result.voice)
-        recordings.append(spoken)
+        master, mime = encode.master(spoken.result.data, spoken.result.mime)
+        take_store.store(cache, _take_key(text, language, style, pin), master, mime)
+        recordings.append((spoken.result.data, said))
     return recordings, pin
+
+
+def _take_key(text: str, language: str, direction: str | None, pin: Pin) -> str:
+    return take_store.key(
+        text=text, language=language, direction=direction, take=0,
+        provider=pin[0], model=pin[1], voice=pin[2],
+    )
+
+
+def _remembered(cache: Path, text: str, language: str, style: str | None, pin: Pin | None,
+                candidates) -> tuple[bytes, Pin] | None:
+    """This passage, if it has already been paid for, and the voice it was paid for in.
+
+    The story's own pair is asked for first. Failing that, every pair the order offers is tried, the
+    way `pronunciations.take` probes its cache: a passage recorded yesterday by a pair that has since
+    fallen out of favour is the same words in the same voice, and paying for it again on a tier of
+    ten calls a day is the thing this exists to avoid. A hit becomes the pin, so the rest of the part
+    is read by whoever read this.
+    """
+    wanted: list[Pin] = [pin] if pin else []
+    for candidate in candidates:
+        voice = next(iter(candidate.row.voices_for(candidate.model, language)), None)
+        wanted.append((candidate.row.id, candidate.model, voice))
+    for pair in wanted:
+        found = take_store.find(cache, _take_key(text, language, style, pair))
+        if found:
+            return found[0], pair
+    return None
 
 
 def _say(settings: Settings, owner: str, text: str, language: str, order: str, style: str | None,
@@ -254,24 +303,23 @@ def _segments(settings: Settings, owner: str, text: str, language: str, order: s
 
 
 def _assemble(
-    segments: tuple[narrate.Segment, ...], recordings: list[speaking.Spoken],
+    segments: tuple[narrate.Segment, ...], recordings: list[tuple[bytes, str]],
 ) -> tuple[bytes, str, list[dict[str, Any]]]:
     """One file, and where each passage is in it. One passage is the file as it came, untouched and
     unmarked: there is no other passage to tell it from."""
     try:
         if len(recordings) == 1:
-            data, mime = encode.compact(recordings[0].result.data, recordings[0].result.mime)
+            data, mime = encode.compact(recordings[0][0], audio_mime(recordings[0][0]))
             return data, mime, []
-        joined = encode.concat([one.result.data for one in recordings])
+        joined = encode.concat([one for one, _said in recordings])
     except encode.CannotEncode as unwritable:
         raise ApiError(500, "audio_unencodable", f"The recording could not be assembled: {unwritable}") from None
     marked = [
         # The short direction the model wrote, and only if the voice was really sent one: what
         # `Spoken.direction` holds is the whole framed instruction, and it is None when the model
         # that answered cannot take one. Recording what was asked would claim a reading nobody gave.
-        {"text": segment.text, "direction": segment.direction if spoken.direction else "",
-         "start": start, "end": end}
-        for segment, spoken, (start, end) in zip(segments, recordings, joined.spans)
+        {"text": segment.text, "direction": said, "start": start, "end": end}
+        for segment, (_data, said), (start, end) in zip(segments, recordings, joined.spans)
     ]
     return joined.data, joined.mime, marked
 

@@ -247,7 +247,7 @@ describe("pictures", () => {
 
 describe("reading a part aloud", () => {
   const first = () => testGraph().storyParts[0];
-  const listen = (index = 0) => screen.getAllByRole("button", { name: /read this part aloud|pause|carry on|still being recorded|recording this part|loading/i })[index];
+  const listen = (index = 0) => screen.getAllByRole("button", { name: /read this part aloud|pause|carry on|waiting to be recorded|recording this part|loading/i })[index];
 
   it("puts a button in each part's heading, and pressing it asks for that part", () => {
     reader();
@@ -274,12 +274,15 @@ describe("reading a part aloud", () => {
     expect(listen(0)).toHaveClass("playing");
   });
 
-  it("dims and disables the button of a part the story's job is still about to record", () => {
+  it("offers to record a part the job has not reached, rather than disabling it", () => {
+    /* A job resting out a daily quota holds a part for twenty-five minutes. A dead button with no
+       explanation was all you got; now it says what is happening and records it on the spot. */
     reader("storypicada0001", () => undefined, true);
-    // The first part already has its recording, so it can be heard; the second is waiting for the job.
-    expect(listen(0)).not.toBeDisabled();
-    expect(listen(1)).toBeDisabled();
-    expect(listen(1)).toHaveAccessibleName("This part is still being recorded");
+
+    expect(listen(1)).not.toBeDisabled();
+    expect(listen(1)).toHaveAccessibleName("Waiting to be recorded — press to record it now");
+    fireEvent.click(listen(1));
+    expect(toggle.mock.calls[0][0]).toMatchObject({ id: "storypart000002" });
   });
 
   it("says why a recording could not be made, under the heading of that part", () => {

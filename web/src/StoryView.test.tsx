@@ -1,5 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Job } from "./api";
+import { jobStream } from "./jobs";
 import StoryView from "./StoryView";
 import { testGraph } from "./testGraph";
 
@@ -85,5 +87,51 @@ describe("the stories surface", () => {
   it("says so when there are no stories at all", () => {
     view({ language: "de" });
     expect(screen.getByText(/No stories yet/)).toBeInTheDocument();
+  });
+});
+
+
+describe("a story that is still being made", () => {
+  const making = (steps: Job["steps"]): Job => ({
+    id: "job000000000001", ownerId: "owner0000000001", parentId: null, kind: "story",
+    subject: { kind: "story", id: "storypicada0001" }, input: {}, state: "running",
+    trigger: "manual", steps, rerun: false, cancelRequested: false, dismissed: false,
+    error: null, message: null, notBefore: null, createdAt: "2026-09-20T10:00:00.000Z",
+    startedAt: "2026-09-20T10:00:00.000Z", finishedAt: null
+  });
+
+  function withJob(steps: Job["steps"]) {
+    const job = making(steps);
+    vi.spyOn(jobStream, "getStatus").mockReturnValue({
+      jobs: [job], bySubject: new Map([["story:storypicada0001", job]]), connected: true
+    } as ReturnType<typeof jobStream.getStatus>);
+    vi.spyOn(jobStream, "subscribe").mockImplementation(() => () => undefined);
+    return view();
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  /* The figure used to vanish the moment the first part landed, and the recording then ran for
+     half an hour with nothing on screen to say so. */
+  it("shows the one figure even once it has parts, and says it can be read", () => {
+    withJob([
+      { name: "story.write", state: "done" }, { name: "story.translate", state: "done" },
+      { name: "story.brief", state: "done" }, { name: "story.draw", state: "done" },
+      { name: "story.audio", state: "running", done: 1, total: 4 }
+    ]);
+
+    expect(screen.getByText(/Recording part 2 of 4/)).toBeInTheDocument();
+    expect(screen.getByText("Ready to read")).toBeInTheDocument();
+    expect(screen.queryByText("2 parts · 2 words")).not.toBeInTheDocument();
+  });
+
+  it("says when it is the provider holding things up, rather than going quiet", () => {
+    withJob([
+      { name: "story.write", state: "done" }, { name: "story.translate", state: "done" },
+      { name: "story.brief", state: "done" }, { name: "story.draw", state: "done" },
+      { name: "story.audio", state: "waiting", done: 1, total: 4, rests: 6 }
+    ]);
+
+    expect(screen.getByText(/the provider is busy/)).toBeInTheDocument();
   });
 });

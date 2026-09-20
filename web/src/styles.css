@@ -1011,6 +1011,12 @@ details.fold .fold-body { padding: 4px 0 18px; }
             text-transform: uppercase; color: var(--ink-3); margin-top: 3px; }
 .loop-sub .warn { color: var(--warn); }
 .loop-sub .doing { color: var(--core); }
+/* A story can be read the moment it has parts; its pictures and its recording arrive after. Said
+   where the counts go, in their measure, so the row does not change shape when it finishes. */
+.story-ready {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--core);
+}
 
 /* ── make a loop ── */
 .loop-dialog { width: min(560px, 100%); }

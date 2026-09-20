@@ -301,6 +301,30 @@ def test_a_rate_limited_text_model_is_a_wait_not_a_fallback(server, models, runn
     assert server.speech.calls == [], "the voice is not spent on a part nobody has cut yet"
 
 
+def test_a_passage_already_paid_for_is_not_recorded_again(server, models, runner):
+    """A part is written only once all its passages exist, so a part that ran out of allowance
+    halfway used to buy its first passages twice. On ten calls a day that is the whole story."""
+    story = written(server, models, runner, parts=3)
+    first, second, *_ = parts_of(server, story)
+    models.texts = [narrate_reply(first["text"]), narrate_reply(first["text"]), narrate_reply(second["text"])]
+    read(server, story, first)
+    spent = len(server.speech.calls)
+    assert spent >= 2, "the passages were recorded the first time"
+
+    # The same part again — "Record again" is not a thing here, but the job re-derives what is
+    # missing and a retry must not re-spend. Ask for the part whose passages are already in hand.
+    server.speech.calls.clear()
+    held = graph.owned_records(server.owner, "storyParts", [first["id"]])[first["id"]]
+    graph.merge_graph(server.owner, DEVICE, {"storyParts": [{
+        **held, "audioRef": "", "audioMime": "", "audioProviderId": "", "audioModelId": "",
+        "audioVoice": "", "audioSegments": [],
+    }]}, enqueue=None)
+    row = read(server, story, first)
+
+    assert server.speech.calls == [], "every passage came from the take cache"
+    assert row["audioRef"], "and the part was written all the same"
+
+
 # ── the job ─────────────────────────────────────────────────────────────────
 
 
