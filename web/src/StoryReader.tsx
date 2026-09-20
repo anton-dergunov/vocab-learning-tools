@@ -7,7 +7,8 @@
  * moves the same way: a swipe that follows the finger, a horizontal scroll, the arrow keys, and two
  * arrows that sit beside the column when there is margin for them and under it when there is not.
  * There are no dots and no footer — where you are is the counter in the header, and a control that
- * needs its own row is a row the story does not get.
+ * needs its own row is a row the story does not get. The ivy leaves are for the wide layout only,
+ * where they fill the space the picture leaves the words; narrow, the picture opens the page.
  *
  * **The translation is never drawn before it is asked for**, which is `LoopPlayer`'s rule about an
  * answer arriving before the recall gap has passed, in the one other place Acervo has one. The
@@ -46,7 +47,7 @@ function Picture({ part, title, near }: { part: StoryPart; title: string; near: 
   </div>;
 }
 
-function PartPage({ story, part, number, words, near, revealed, onReveal }: {
+function PartPage({ story, part, number, words, near, revealed, onReveal, onHide }: {
   story: Story;
   part: StoryPart;
   number: number;
@@ -54,6 +55,7 @@ function PartPage({ story, part, number, words, near, revealed, onReveal }: {
   near: boolean;
   revealed: boolean;
   onReveal(): void;
+  onHide(): void;
 }) {
   const spans = useMemo(() => storySpans(part.text, words), [part.text, words]);
   // The same word in the reader's own language, where the translator said what it became.
@@ -76,14 +78,20 @@ function PartPage({ story, part, number, words, near, revealed, onReveal }: {
         {/* The space is held whether or not it has been asked for, so revealing moves nothing. */}
         <div className="story-tr-slot">
           {revealed
-            ? <p className="story-tr">
-              {part.headingTranslation && <span className="story-tr-head">{part.headingTranslation}. </span>}
-              {translated.map((span, position) => (
-                span.lexemeId
-                  ? <b key={position} className="story-mark">{span.text}</b>
-                  : <span key={position}>{span.text}</span>
-              ))}
-            </p>
+            ? <>
+              <p className="story-tr">
+                {part.headingTranslation && <span className="story-tr-head">{part.headingTranslation}. </span>}
+                {translated.map((span, position) => (
+                  span.lexemeId
+                    ? <b key={position} className="story-mark">{span.text}</b>
+                    : <span key={position}>{span.text}</span>
+                ))}
+              </p>
+              {/* A way back to the withheld state: reading it again is the point of the app, and a
+                  translation that could only ever be revealed would be there for the rest of the
+                  visit. A button and not a tap on the text, so the text can still be selected. */}
+              <button className="story-hide" onClick={onHide} aria-label="Hide the translation">Hide</button>
+            </>
             : <button className="story-reveal" onClick={onReveal} disabled={!part.translation}>
               {part.translation ? "Tap to read it in your own language" : "Not translated yet"}
             </button>}
@@ -136,15 +144,26 @@ export default function StoryReader({ story, title, parts, words, entries, onBac
      between visits: coming back to a story you have read is reading it again. */
   const [shown, setShown] = useState<Set<string>>(() => new Set());
   const reveal = (id: string) => setShown((current) => new Set(current).add(id));
+  const hide = (id: string) => setShown((current) => {
+    const next = new Set(current);
+    next.delete(id);
+    return next;
+  });
 
   return <div className={`cards story-read${beside ? " edges-beside" : ""}`} ref={root}>
-    {/* Where you are, and what it is, in the line the back arrow already owns. The title gives way
-        (it is cut short) before the counter does. */}
+    {/* Where you are, and what it is, in the line the back arrow already owns: the way back on the
+        left, the title in the middle of the view, the counter on the right. The title gives way (it
+        is cut short) before either side does. */}
     <div className="loops-back story-bar">
-      <button className="icon-btn" onClick={onBack} aria-label="Back to the stories"><BackIcon /></button>
-      <span className="label">Stories</span>
+      <span className="story-bar-side">
+        <button className="icon-btn" onClick={onBack} aria-label="Back to the stories"><BackIcon /></button>
+        <span className="label">Stories</span>
+      </span>
       <span className="story-bar-title">{title}</span>
-      {pages > 0 && <span className="story-bar-count">{Math.min(at + 1, pages)} / {pages}</span>}
+      {/* An empty cell when there is no counter, so the title stays in the middle column. */}
+      {pages > 0
+        ? <span className="story-bar-count">{Math.min(at + 1, pages)} / {pages}</span>
+        : <span />}
     </div>
 
     {parts.length === 0
@@ -154,7 +173,7 @@ export default function StoryReader({ story, title, parts, words, entries, onBac
           {parts.map((part, index) => <PartPage
             key={part.id} story={story} part={part} number={index + 1} words={words}
             near={Math.abs(index - at) <= 1}
-            revealed={shown.has(part.id)} onReveal={() => reveal(part.id)}
+            revealed={shown.has(part.id)} onReveal={() => reveal(part.id)} onHide={() => hide(part.id)}
           />)}
           <WordsPage entries={entries} />
         </div>

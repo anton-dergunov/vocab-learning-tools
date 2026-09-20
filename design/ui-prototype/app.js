@@ -886,6 +886,36 @@ function goStory(at) {
   track.scrollTo({ left: to * track.clientWidth, behavior: "smooth" });
 }
 
+/* The words of a story on one line: as many whole words as fit, then `\u00b7 \u2026` — `FitWords` in the
+   application. Each word, the separator and the ellipsis are measured once in a hidden copy that
+   inherits the line's font, and the line is set again whenever the window changes size. */
+function fitStoryWords() {
+  document.querySelectorAll(".story-words[data-words]").forEach((line) => {
+    const words = line.dataset.words.split("|");
+    const text = line.querySelector(".fit-text");
+    let ruler = line.querySelector(".fit-ruler");
+    if (!ruler) {
+      ruler = document.createElement("span");
+      ruler.className = "fit-ruler";
+      ruler.setAttribute("aria-hidden", "true");
+      ruler.innerHTML = [...words, " \u00b7 ", "\u2026"].map((piece) => `<span>${esc(piece)}</span>`).join("");
+      line.appendChild(ruler);
+    }
+    const widths = [...ruler.children].map((one) => one.getBoundingClientRect().width);
+    const [separator, ellipsis] = widths.slice(words.length);
+    const across = (n) => widths.slice(0, n).reduce((sum, w) => sum + w, 0) + Math.max(n - 1, 0) * separator;
+    let shown = words.length;
+    if (across(shown) > line.clientWidth) {
+      shown = 1;
+      for (let n = words.length - 1; n >= 1; n -= 1) {
+        if (across(n) + separator + ellipsis <= line.clientWidth) { shown = n; break; }
+      }
+    }
+    text.textContent = words.slice(0, shown).join(" \u00b7 ") + (shown < words.length ? " \u00b7 \u2026" : "");
+  });
+}
+window.addEventListener("resize", fitStoryWords);
+
 function goCard(at) {
   const track = $("#cardsTrack");
   if (!track) return;
@@ -1449,15 +1479,16 @@ function storyRow(story) {
   const drawn = parts.filter((one) => one.imageRef).length;
   const words = wordsOf(story.id);
   const plural = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+  const names = words.map((w) => w.sourceText);
   const sub = written
-    ? `<span class="story-words">${esc(words.map((w) => w.sourceText).join(" \u00b7 "))}</span>`
+    ? `<span class="story-words" data-words="${esc(names.join("|"))}" title="${esc(names.join(", "))}"><span class="fit-text">${esc(names.join(" \u00b7 "))}</span></span>`
     : '<span class="warn">Never written</span>';
   const meta = written
-    ? `<span class="story-meta"><span>${plural(parts.length, "part")} \u00b7 ${plural(words.length, "word")}</span>${
+    ? `<span class="story-meta"><span class="story-counts">${plural(parts.length, "part")} \u00b7 ${plural(words.length, "word")}</span>${
       drawn < parts.length ? `<span class="warn">${drawn} of ${parts.length} drawn</span>` : ""}</span>`
     : "";
   return `<div class="loop-item">
-    <div class="loop-shell">
+    <div class="loop-shell story-shell">
       <button class="loop-row" data-story="${story.id}" aria-disabled="${!written}">
         <span class="loop-go story-go${written ? "" : " pending"}">${written ? story.emoji : ICON.hourglass}</span>
         <span class="loop-main">
@@ -1490,7 +1521,8 @@ function renderStories() {
             <h3 class="story-head"><span class="story-no">${index + 1}</span> \u00b7 ${esc(part.heading)}</h3>
             <p class="story-text" lang="${open.language}">${markWords(part.text, words)}</p>
             <div class="story-tr-slot">${shown
-              ? `<p class="story-tr"><span class="story-tr-head">${esc(part.headingTranslation)}. </span>${markWords(part.translation, words, "translationForms")}</p>`
+              ? `<p class="story-tr"><span class="story-tr-head">${esc(part.headingTranslation)}. </span>${markWords(part.translation, words, "translationForms")}</p>
+                <button class="story-hide" data-hide="${part.id}" aria-label="Hide the translation">Hide</button>`
               : `<button class="story-reveal" data-reveal="${part.id}">Tap to read it in your own language</button>`}</div>
             <span class="card-ornament below" aria-hidden="true">${ICON.hedera}</span>
           </div>
@@ -1513,8 +1545,10 @@ function renderStories() {
     return `<section class="loops stories reading">
       <div class="cards story-read">
         <div class="loops-back story-bar">
-          <button class="icon-btn" id="storyBack" aria-label="Back to the stories">${ICON.back}</button>
-          <span class="label">Stories</span>
+          <span class="story-bar-side">
+            <button class="icon-btn" id="storyBack" aria-label="Back to the stories">${ICON.back}</button>
+            <span class="label">Stories</span>
+          </span>
           <span class="story-bar-title">${esc(storyTitle(open))}</span>
           <span class="story-bar-count">${at + 1} / ${pages}</span>
         </div>
@@ -1800,6 +1834,8 @@ $("#main").addEventListener("click", (ev) => {
   if (storyStep) { goStory(state.storyAt + Number(storyStep.dataset.storyStep)); return; }
   const reveal = ev.target.closest("[data-reveal]");
   if (reveal) { state.storyShown[reveal.dataset.reveal] = true; render(); return; }
+  const hide = ev.target.closest("[data-hide]");
+  if (hide) { delete state.storyShown[hide.dataset.hide]; render(); return; }
   const storyRowEl = ev.target.closest("[data-story]");
   if (storyRowEl) {
     if (partsOf(storyRowEl.dataset.story).length) {
@@ -1866,6 +1902,7 @@ function render() {
   if (state.stories) {
     // Its own surface for the reason the loops one is: a thing you go to, needing the whole column.
     $("#composer").innerHTML = renderStories();
+    fitStoryWords();
     wireStories();
     document.title = "Stories — Acervo";
     return;

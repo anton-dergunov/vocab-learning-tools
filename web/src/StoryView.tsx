@@ -18,6 +18,7 @@ import { jobFor, jobStream, isOpen as jobIsOpen } from "./jobs";
 import { stripOf } from "./ProgressStrip";
 import type { VocabularyGraph } from "./domain";
 import { BackIcon, HourglassIcon, PlusIcon } from "./icons";
+import FitWords from "./FitWords";
 import StoryReader from "./StoryReader";
 import {
   storiesIn, storyIsWritten, storyPartsOf, storyPictures, storyTitle, storyWordEntries, storyWordsOf
@@ -112,7 +113,7 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
             setMenu({ id: story.id, x: event.clientX - box.left, y: event.clientY - box.top });
           }}
         >
-          <div className="loop-shell">
+          <div className="loop-shell story-shell">
             <button
               className="loop-row" aria-disabled={!written}
               onClick={() => { if (written) setOpenId(story.id); }}
@@ -126,7 +127,7 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
                   {written
                     /* The words it was made from, on one line: what a story *is about* is what tells
                        two of them apart, and the ones that do not fit are simply cut off. */
-                    ? <span className="story-words">{words.map((word) => word.sourceText).join(" · ")}</span>
+                    ? <FitWords className="story-words" words={words.map((word) => word.sourceText)} />
                     : making
                       /* What it is *doing*, in the job's own words — this takes a minute, and
                          "being made" says nothing you could not already see. */
@@ -136,7 +137,7 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
                 </span>
               </span>
               {written && <span className="story-meta">
-                <span>{count(pictures.total, "part")} · {count(words.length, "word")}</span>
+                <span className="story-counts">{count(pictures.total, "part")} · {count(words.length, "word")}</span>
                 {pictures.drawn < pictures.total
                   && <span className="warn">{pictures.drawn} of {pictures.total} drawn</span>}
               </span>}
