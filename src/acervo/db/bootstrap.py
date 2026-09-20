@@ -57,8 +57,12 @@ def bootstrap(engine: Engine) -> None:
     if stamped is None and not inspect(engine).has_table("users"):
         command.upgrade(_config(engine), "head")
         return
+    # Both ways out are named, and the carrying one first. Naming only `--reset-database` sent a
+    # real deployment at rebuilding a vocabulary whose release shipped a converter for exactly this
+    # revision — the owner had to know `--transition` existed to find it.
     raise SchemaOutOfDate(
         f"The Acervo database is at schema revision {stamped or 'none'}, but this server expects "
-        f"{head}. Development databases and incompatible replicas are disposable: redeploy with "
-        f"--reset-database to rebuild it."
+        f"{head}. If this release ships a converter for that revision, ./deploy.sh --transition "
+        f"carries the database across; otherwise redeploy with --reset-database to rebuild it, "
+        f"which is disposable for a development database or an incompatible replica."
     )

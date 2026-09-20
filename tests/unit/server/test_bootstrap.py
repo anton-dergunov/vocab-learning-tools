@@ -134,6 +134,10 @@ def test_a_database_written_under_another_schema_is_refused_by_name(engine):
         bootstrap(engine)
     assert "0002_bootstrap" in str(refused.value)
     assert head_revision() in str(refused.value)
+    # **Both ways out, and the carrying one first.** Naming only `--reset-database` pointed a real
+    # deployment at rebuilding a vocabulary whose release shipped a converter for exactly that
+    # revision; the owner had to already know `--transition` existed to find it.
+    assert "--transition" in str(refused.value)
     assert "--reset-database" in str(refused.value)
 
 

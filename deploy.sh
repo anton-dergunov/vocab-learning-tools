@@ -21,6 +21,7 @@ reset_data=false
 reset_database=false
 transition=false
 cancel_jobs=false
+jobs_arguments=
 remember=false
 bind_address=
 anki_port=
@@ -44,6 +45,7 @@ usage:
               [--app-bind-address ADDRESS] [--app-port PORT]
               [--https-port PORT] [--service NAME] [--reset-data]
               [--reset-database | --transition] [--cancel-jobs]
+       deploy.sh --jobs open | cancel
               [--configure-llm [--llm-chain IDS] [--llm-set NAME=VALUE]...
                [--llm-key NAME --llm-api-key-stdin]]
   ./deploy.sh [--target USER@HOST] [--remember-target] --install-helper
@@ -66,7 +68,15 @@ usage:
                       left alone; one no converter fits is refused and nothing is deployed.
                       The backup goes in the dated directory under the deployment's
                       backups/, and its path is printed
-  --cancel-jobs       cancel the server's open jobs instead of refusing to deploy
+  --cancel-jobs       cancel the server's open jobs instead of refusing to deploy. It may be
+                      given with --transition, which is the combination to reach for when a
+                      schema change is waiting behind an open job: nothing is deployed until
+                      the jobs have gone, and the converter then runs against a stopped server
+  --jobs OPERATION    ask the server about its jobs and deploy nothing: `open` or `cancel`,
+                      which are what the launcher's fixed operation list offers. The way out
+                      when a deploy cannot run yet — a database waiting for --transition
+                      cannot start, so a deploy that would have cancelled the jobs for you
+                      never gets that far
                       while they run. A deploy never carries a job across versions
   --create-account    create one account on the running server, reading the address
                       and password from the terminal
@@ -141,6 +151,7 @@ while [ "$#" -gt 0 ]; do
     # Everything after --worker belongs to the worker, so parsing stops here rather than trying to
     # tell an operation's flags apart from this script's.
     --worker) choose_action worker; shift; worker_arguments=$*; break ;;
+    --jobs) choose_action jobs; shift; jobs_arguments=$*; break ;;
     --create-account) choose_action create-account; shift ;;
     --install-samples) choose_action install-samples; shift ;;
     --reset-data) reset_data=true; shift ;;
@@ -482,7 +493,21 @@ if [ "$mode" = local ]; then
     printf '%s\n' "$account_password" | $create_account_command "$account_email"
     exit $?
   fi
-  if [ "$action" = install-samples ]; then
+  if [ "$action" = jobs ]; then
+  # The jobs command on its own, deploying nothing. `--cancel-jobs` cancels *and then deploys*,
+  # which is the wrong shape when the deploy is what cannot run: a database waiting for a converter
+  # refuses to start, so the server never comes back up to be asked again.
+  if [ "$remote_mode" = root ]; then
+    echo "--jobs needs the reviewed launcher; install it once with ./deploy.sh --install-helper" >&2
+    exit 2
+  fi
+  [ -n "$jobs_arguments" ] || usage
+  ssh -T "$target" "sudo -n $helper_path jobs $jobs_arguments"
+  exit $?
+fi
+
+
+if [ "$action" = install-samples ]; then
     # Locally there is no launcher and no ssh: the same compose invocation, run here. The env file
     # is the point of it either way — without it compose falls back to a named volume and the
     # bundle lands somewhere the service does not mount.
@@ -608,6 +633,20 @@ if [ "$action" = worker ]; then
   fi
   [ -n "$worker_arguments" ] || usage
   ssh -T "$target" "sudo -n $helper_path worker $worker_arguments"
+  exit $?
+fi
+
+
+if [ "$action" = jobs ]; then
+  # The jobs command on its own, deploying nothing. `--cancel-jobs` cancels *and then deploys*,
+  # which is the wrong shape when the deploy is what cannot run: a database waiting for a converter
+  # refuses to start, so the server never comes back up to be asked again.
+  if [ "$remote_mode" = root ]; then
+    echo "--jobs needs the reviewed launcher; install it once with ./deploy.sh --install-helper" >&2
+    exit 2
+  fi
+  [ -n "$jobs_arguments" ] || usage
+  ssh -T "$target" "sudo -n $helper_path jobs $jobs_arguments"
   exit $?
 fi
 
