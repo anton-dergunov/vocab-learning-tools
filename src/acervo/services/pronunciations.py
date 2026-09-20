@@ -425,12 +425,18 @@ def _target(owner: str, route_kind: str, target_id: str) -> tuple[Target, dict[s
 
 def _speak(settings: Settings, owner: str, text: str, language: str, order: str,
            style: str | None, caller: str, on_failure,
-           preferences=None, pinned: tuple[str, str, str | None] | None = None) -> speaking.Spoken:
+           preferences=None, pinned: tuple[str, str, str | None] | None = None,
+           chosen: Any = None) -> speaking.Spoken:
     """`pinned` is `(provider, model, voice)`: ask exactly that pair and that voice, and never another.
 
-    For a caller that has to hear one voice throughout — a story is read by whoever read its first
-    passage. The chain is then a chain of one, so a refusal is the answer rather than a cue to fall
-    through, and there is nothing to hedge onto.
+    For a caller that has to hear one voice throughout a passage — a story keeps the voice that read
+    its first part. The chain is then a chain of one, so there is nothing to hedge onto, and a caller
+    that would rather change voice than stall asks again **without** the pin when it refuses; that
+    judgement belongs to the caller and not here.
+
+    `chosen` narrows the chain to a list this caller built — the pairs that can take a direction, for
+    a story that is being read one directed passage at a time. Without it the owner's own order for
+    this use is walked, which is the ordinary case.
     """
     preferences = preferences or pronunciation_settings.settings(owner)
     chain_name = CHAINS[order]
@@ -445,7 +451,8 @@ def _speak(settings: Settings, owner: str, text: str, language: str, order: str,
             )
         return speaking.speak(
             text, language,
-            chosen=chain_for(settings, owner, chain_name), catalogue=load_catalogue(),
+            chosen=chain_for(settings, owner, chain_name) if chosen is None else chosen,
+            catalogue=load_catalogue(),
             style=style, voice=preferences.voice, caller=caller, hedge_after=HEDGE[order],
         )
     except speaking.NoVoice:

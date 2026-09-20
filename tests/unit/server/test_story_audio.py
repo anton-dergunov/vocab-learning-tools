@@ -147,19 +147,46 @@ def test_a_directed_voice_reads_a_passage_at_a_time_and_says_where_each_is(serve
     assert row["audioProviderId"] == "google-tts" and row["audioModelId"] == FIRST
 
 
-def test_a_direction_is_recorded_only_when_it_was_actually_sent(server, models, runner):
-    """The order is a chain, and a model in it may not take a direction. Recording the direction that
-    was *asked* would claim a reading nobody gave."""
+def test_only_a_voice_that_can_take_a_direction_reads_a_directed_story(server, models, runner):
+    """The passages exist to carry a direction. A pair that cannot take one would turn four calls a
+    part into four times the cost of one for nothing, which is what emptied a real allowance."""
     story = written(server, models, runner, parts=3)
     part = parts_of(server, story)[0]
-    server.speech.fail[FIRST] = ProviderUnavailable("unavailable", "down", provider_id="google-tts", model=FIRST)
-    server.speech.fail[SECOND] = ProviderUnavailable("unavailable", "down", provider_id="google-tts", model=SECOND)
     models.texts = [narrate_reply(part["text"])]
 
     row = read(server, story, part)
 
-    assert row["audioModelId"] == "wavenet", "the last pair in the order answered"
-    assert all(one["direction"] == "" for one in row["audioSegments"])
+    assert row["audioModelId"] in (FIRST, SECOND), "one of the two that declare `instruction`"
+    assert "wavenet" not in {call["model"] for call in server.speech.calls}, "the plain voice was never asked"
+    assert all(one["direction"] for one in row["audioSegments"])
+
+
+def test_a_part_no_directed_voice_can_reach_is_read_whole_and_plainly(server, models, runner):
+    """The fallback, and the reason it is one call and not four: a part nobody can read expressively
+    is going to be read plainly, so it is read plainly *once*, and offers no passages to tap."""
+    story = written(server, models, runner, parts=3)
+    part = parts_of(server, story)[0]
+    for model in (FIRST, SECOND):
+        server.speech.fail[model] = ProviderUnavailable("unavailable", "down", provider_id="google-tts", model=model)
+    models.texts = [narrate_reply(part["text"])]
+
+    row = read(server, story, part)
+
+    assert row["audioModelId"] == "wavenet", "the plain voice read it"
+    assert row["audioSegments"] == [], "and there is nothing to tap"
+    assert [call["words"] for call in server.speech.calls][-1] == part["text"], "the whole part, in one call"
+
+
+def test_a_clear_voice_is_never_asked_where_to_cut_a_part(server, models, runner):
+    """The text call exists to place the directions. With no direction to place it is a call spent
+    on nothing, so it is not made — for the chosen clear voice, or for a directed one out of reach."""
+    story = written(server, models, runner, parts=3)
+    switch(server, delivery={"stories": "plain"})
+    before = len(models.prompts)
+
+    read(server, story, parts_of(server, story)[0])
+
+    assert len(models.prompts) == before, "no model was asked where to cut it"
 
 
 def test_a_part_that_is_not_in_the_story_is_not_found(server, models, runner):
@@ -192,19 +219,42 @@ def test_the_pair_that_answered_first_reads_every_later_passage_and_part(server,
     assert {call["voice"] for call in server.speech.calls} == {held[0]["audioVoice"]}
 
 
-def test_a_pair_that_is_pinned_is_never_left_for_another_when_it_refuses(server, models, runner):
+def test_a_pinned_voice_that_runs_out_is_stepped_over_so_the_story_still_finishes(server, models, runner):
+    """The pin is a preference, not a cage. Insisting on it cost a real story three silent parts: the
+    pinned pair was a free row whose daily allowance had gone, and a chain of one has no way out."""
     story = written(server, models, runner, parts=3)
     first, second, *_ = parts_of(server, story)
     models.texts = [narrate_reply(first["text"]), narrate_reply(second["text"])]
     read(server, story, first)
+    pinned = parts_of(server, story)[0]["audioModelId"]
     server.speech.calls.clear()
-    server.speech.fail[FIRST] = ProviderUnavailable("unavailable", "down", provider_id="google-tts", model=FIRST)
+    server.speech.fail[pinned] = ProviderUnavailable(
+        "rate_limited", "no allowance left today", provider_id="google-tts", model=pinned)
+
+    row = read(server, story, second)
+
+    assert row["audioRef"], "the part was recorded rather than left silent"
+    assert row["audioModelId"] != pinned, "by the next voice in the order"
+    assert len({one["model"] for one in server.speech.calls if one["model"] != pinned}) == 1, \
+        "and that one voice read the whole part, so a paragraph is never read by two"
+
+
+def test_a_pinned_voice_is_not_stepped_over_for_a_mistake_in_the_deployment(server, models, runner):
+    """A rejected credential is something to fix, not a condition to wait out or route around —
+    `models/` states it for a chain and it holds here: spending another allowance hides it."""
+    story = written(server, models, runner, parts=3)
+    first, second, *_ = parts_of(server, story)
+    models.texts = [narrate_reply(first["text"]), narrate_reply(second["text"])]
+    read(server, story, first)
+    pinned = parts_of(server, story)[0]["audioModelId"]
+    server.speech.calls.clear()
+    server.speech.fail[pinned] = ProviderUnavailable(
+        "authentication", "that key was rejected", provider_id="google-tts", model=pinned)
 
     error = read(server, story, second, expect=503)
 
-    assert error["code"] == "llm_unavailable"
-    assert {call["model"] for call in server.speech.calls} == {FIRST}, "nothing else was asked"
-    assert not parts_of(server, story)[1]["audioRef"], "and nothing was written"
+    assert error["code"] == "llm_authentication"
+    assert {call["model"] for call in server.speech.calls} == {pinned}, "nothing else was asked"
 
 
 def test_a_pair_that_can_no_longer_be_asked_for_does_not_hold_the_story_to_it(server, models, runner):

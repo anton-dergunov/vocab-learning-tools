@@ -45,6 +45,10 @@ beforeEach(async () => {
     configurable: true, get: () => reported, set: (value: number) => { asked = value; reported = value; }
   });
   Object.defineProperty(HTMLMediaElement.prototype, "paused", { configurable: true, get: () => paused });
+  // jsdom has no media pipeline, so an element never reaches HAVE_METADATA on its own and never
+  // fires `loadedmetadata`. The player waits for that before moving to a passage, so the fake says
+  // what a browser says once a blob is in hand.
+  Object.defineProperty(HTMLMediaElement.prototype, "readyState", { configurable: true, get: () => 1 });
   const originalPlay = HTMLMediaElement.prototype.play;
   const originalPause = HTMLMediaElement.prototype.pause;
   HTMLMediaElement.prototype.play = function play(this: HTMLMediaElement) {
@@ -94,6 +98,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   Reflect.deleteProperty(HTMLMediaElement.prototype, "currentTime");
   Reflect.deleteProperty(HTMLMediaElement.prototype, "paused");
+  Reflect.deleteProperty(HTMLMediaElement.prototype, "readyState");
 });
 
 describe("pressing the button on a part", () => {

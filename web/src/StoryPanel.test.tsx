@@ -60,7 +60,7 @@ describe("Settings ▸ Stories", () => {
 
   it("records a story when it is made unless that is switched off", async () => {
     const saved = await panel();
-    const recording = screen.getByRole("checkbox", { name: /Record a story when it is made/ });
+    const recording = screen.getByRole("checkbox", { name: /Read a new story aloud as it is made/ });
     expect(recording).toBeChecked();
 
     fireEvent.click(recording);

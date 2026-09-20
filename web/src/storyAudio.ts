@@ -102,6 +102,29 @@ function prime(): void {
   catch { /* jsdom, or a browser with no audio at all */ }
 }
 
+/** Settled enough to move: the element knows its own duration. */
+function ready(player: HTMLAudioElement): Promise<void> {
+  if (player.readyState >= 1) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => { player.removeEventListener("loadedmetadata", done); player.removeEventListener("error", done); resolve(); };
+    player.addEventListener("loadedmetadata", done);
+    player.addEventListener("error", done);
+  });
+}
+
+/* Ask again when the element lands somewhere else. A compressed stream is seekable only to the
+   granularity its container was written with, and a browser may answer a request with the nearest
+   point it can decode from; asking a second time from there converges. One retry, because a second
+   miss means the element cannot do better and a loop would only delay the audio. */
+const CLOSE_ENOUGH = 0.05;
+
+function seekTo(player: HTMLAudioElement, seconds: number): void {
+  try { player.currentTime = seconds; } catch { return; }
+  if (Math.abs(player.currentTime - seconds) > CLOSE_ENOUGH) {
+    try { player.currentTime = seconds; } catch { /* as close as it goes */ }
+  }
+}
+
 /** The passage that is sounding at `seconds`: the last one that has started. */
 function segmentAt(seconds: number): number | null {
   const segments = active?.audioSegments ?? [];
@@ -186,7 +209,13 @@ async function start(part: StoryPart, from: number, until: number | null): Promi
     active = row;
     stopAt = until;
     player.src = held;
-    player.currentTime = from;
+    // **Wait for the metadata before moving.** A position written straight after `src` is written
+    // against a media element that does not yet know its own duration, and the browser is entitled
+    // to drop it or clamp it — which is what made a passage start a word or two late and run into
+    // the sentence after it. `loops.ts` only ever starts at zero, so it never met this.
+    await ready(player);
+    if (mine !== run) return;
+    seekTo(player, from);
     update({ status: "playing", segment: segmentAt(from) });
     await player.play();
   } catch (error) {
@@ -216,7 +245,7 @@ export function playSegment(part: StoryPart, index: number): void {
   if (!passage) return;
   if (state.partId === part.id && state.status === "playing" && element) {
     stopAt = null;
-    try { element.currentTime = passage.start; } catch { /* not seekable yet */ }
+    seekTo(element, passage.start);
     update({ segment: index });
     return;
   }

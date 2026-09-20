@@ -91,11 +91,11 @@ export default function StoryPanel({ onNotify }: { onNotify(message: string): vo
         )}
       />
       <span>
-        <strong>Record a story when it is made</strong>
+        <strong>Read a new story aloud as it is made</strong>
         <span>
-          Every part is recorded along with the story, so it is ready when you open it. Off, a part is
-          recorded the first time you press its button, which takes a few seconds — longer with a voice
-          that takes a direction.
+          Every part is recorded along with the story, so the audio is ready when you open it. Off,
+          a part is recorded the first time you press its play button, which takes a few seconds —
+          longer with a voice that takes a direction, which records a passage at a time.
         </span>
       </span>
     </label>}
