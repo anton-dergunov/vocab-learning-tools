@@ -613,6 +613,13 @@ story_words = Table(
     # worth showing rather than hiding, and the reason this is a list and not a boolean.
     Column("forms", JSON, nullable=False, default=list),
     *_sync_fields(),
+    # The words of the *translation* that render this one, found in the text the way `forms` are
+    # found in the original. Reported by the translator, which is the only thing that knows what it
+    # called the word, and kept only where they really appear in what it wrote. Empty is ordinary —
+    # a story translated before this existed, or a word the translator could not point to — and the
+    # reader simply marks nothing. Declared last so a database that gained it by `ALTER TABLE` has
+    # its columns in the order a fresh one does.
+    Column("translation_forms", JSON, nullable=False, default=list),
     Index("idx_story_words_owner_revision", "owner", "revision"),
     Index("idx_story_words_owner_story_order", "owner", "story", "word_order"),
     Index("idx_story_words_owner_lexeme", "owner", "lexeme"),

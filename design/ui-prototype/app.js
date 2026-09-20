@@ -856,6 +856,36 @@ function syncCard(track) {
   $(".cards-edge.next").disabled = at === track.children.length - 1;
 }
 
+/* A story is the same deck: a snapping track that follows the finger, with the counter and the arrows
+   kept in step with it. Everything is redrawn on a reveal, so where the reader was is put back. */
+function wireStories() {
+  const track = $("#storyTrack");
+  if (!track) return;
+  placeEdges();
+  track.scrollLeft = state.storyAt * track.clientWidth;
+  let frame = 0;
+  track.addEventListener("scroll", () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => syncStory(track));
+  });
+  syncStory(track);
+}
+
+function syncStory(track) {
+  const at = Math.round(track.scrollLeft / Math.max(track.clientWidth, 1));
+  state.storyAt = at;
+  $(".story-bar-count").textContent = `${at + 1} / ${track.children.length}`;
+  $(".cards-edge.prev").disabled = at === 0;
+  $(".cards-edge.next").disabled = at === track.children.length - 1;
+}
+
+function goStory(at) {
+  const track = $("#storyTrack");
+  if (!track) return;
+  const to = Math.max(0, Math.min(at, track.children.length - 1));
+  track.scrollTo({ left: to * track.clientWidth, behavior: "smooth" });
+}
+
 function goCard(at) {
   const track = $("#cardsTrack");
   if (!track) return;
@@ -1404,9 +1434,9 @@ function storyTitle(story) {
 
 /* Marks are **found rather than stored**: the writer reports the forms it wrote, and this locates
    them. A form it cannot find is simply not marked — degraded, never broken. */
-function markWords(text, words) {
+function markWords(text, words, field = "forms") {
   const forms = [];
-  words.forEach((word) => word.forms.forEach((form) => { if (form.trim()) forms.push(form.trim()); }));
+  words.forEach((word) => (word[field] || []).forEach((form) => { if (form.trim()) forms.push(form.trim()); }));
   if (!forms.length) return esc(text);
   forms.sort((a, b) => b.length - a.length);
   const pattern = new RegExp("(" + forms.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "gi");
@@ -1417,9 +1447,15 @@ function storyRow(story) {
   const parts = partsOf(story.id);
   const written = parts.length > 0;
   const drawn = parts.filter((one) => one.imageRef).length;
+  const words = wordsOf(story.id);
+  const plural = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
   const sub = written
-    ? `${parts.length} parts \u00b7 ${drawn === parts.length ? "illustrated" : `${drawn} of ${parts.length} drawn`}`
+    ? `<span class="story-words">${esc(words.map((w) => w.sourceText).join(" \u00b7 "))}</span>`
     : '<span class="warn">Never written</span>';
+  const meta = written
+    ? `<span class="story-meta"><span>${plural(parts.length, "part")} \u00b7 ${plural(words.length, "word")}</span>${
+      drawn < parts.length ? `<span class="warn">${drawn} of ${parts.length} drawn</span>` : ""}</span>`
+    : "";
   return `<div class="loop-item">
     <div class="loop-shell">
       <button class="loop-row" data-story="${story.id}" aria-disabled="${!written}">
@@ -1428,6 +1464,7 @@ function storyRow(story) {
           <span class="loop-title">${esc(storyTitle(story))}</span>
           <span class="loop-sub">${sub}</span>
         </span>
+        ${meta}
       </button>
       <div class="loop-swipe"><button class="loop-delete">Delete</button></div>
     </div>
@@ -1439,32 +1476,55 @@ function renderStories() {
   if (open) {
     const parts = partsOf(open.id);
     const words = wordsOf(open.id);
-    const at = Math.min(state.storyAt, Math.max(parts.length - 1, 0));
-    const part = parts[at];
-    const shown = Boolean(state.storyShown[part && part.id]);
-    return `<section class="loops stories">
-      <div class="loops-back">
-        <button class="icon-btn" id="storyBack" aria-label="Back to the stories">${ICON.back}</button>
-        <span class="label">Stories</span><span class="spacer"></span>
-      </div>
-      <div class="story-read">
-        <div class="story-dots">${parts.map((one, i) =>
-          `<span class="story-dot${i === at ? " on" : ""}"></span>`).join("")}</div>
-        <article class="story-part">
+    const pages = parts.length + 1;
+    const at = Math.min(state.storyAt, pages - 1);
+    const partPage = (part, index) => {
+      const shown = Boolean(state.storyShown[part.id]);
+      return `<article class="card story-card" aria-label="Part ${index + 1}">
+        <div class="story-body">
           <div class="story-pic${part.imageRef ? " is-ready" : ""}">${part.imageRef
             ? `<img src="${part.imageRef}" alt="">`
             : `<span class="story-pic-note">${part.failureReason ? "No picture for this part" : "Drawing\u2026"}</span>`}</div>
-          <h3 class="story-head">${esc(part.heading)}</h3>
-          <p class="story-text" lang="${open.language}">${markWords(part.text, words)}</p>
-          <div class="story-tr-slot">${shown
-            ? `<p class="story-tr"><span class="story-tr-head">${esc(part.headingTranslation)}. </span>${esc(part.translation)}</p>`
-            : '<button class="story-reveal" id="storyReveal">Tap to read it in your own language</button>'}</div>
-        </article>
-        <footer class="story-controls">
-          <button class="icon-btn" id="storyPrev" aria-label="The part before" ${at === 0 ? "disabled" : ""}>${ICON.back}</button>
-          <span class="story-count">${at + 1} of ${parts.length}</span>
-          <button class="icon-btn" id="storyNext" aria-label="The next part" ${at >= parts.length - 1 ? "disabled" : ""}>${ICON.forward}</button>
-        </footer>
+          <div class="story-copy">
+            <span class="card-ornament above" aria-hidden="true">${ICON.hedera}</span>
+            <h3 class="story-head"><span class="story-no">${index + 1}</span> \u00b7 ${esc(part.heading)}</h3>
+            <p class="story-text" lang="${open.language}">${markWords(part.text, words)}</p>
+            <div class="story-tr-slot">${shown
+              ? `<p class="story-tr"><span class="story-tr-head">${esc(part.headingTranslation)}. </span>${markWords(part.translation, words, "translationForms")}</p>`
+              : `<button class="story-reveal" data-reveal="${part.id}">Tap to read it in your own language</button>`}</div>
+            <span class="card-ornament below" aria-hidden="true">${ICON.hedera}</span>
+          </div>
+        </div>
+      </article>`;
+    };
+    /* The last page: the words the story was made from, as the word list draws them. A word it could
+       not work in is dimmed rather than dropped. */
+    const wordsPage = `<article class="card story-card story-words-page" aria-label="Words in this story">
+      <div class="story-body"><div class="story-copy">
+        <span class="card-ornament above" aria-hidden="true">${ICON.hedera}</span>
+        <h3 class="story-head">Words</h3>
+        <div class="rows">${words.map((word) => `<div class="row${word.forms.length ? "" : " unused"}">
+          <span class="plate" aria-hidden="true">${word.emoji || "\u{1F4C4}"}</span>
+          <span><span class="word">${esc(word.sourceText)}</span><span class="gloss">${esc(word.gloss || "")}</span></span>
+        </div>`).join("")}</div>
+        <span class="card-ornament below" aria-hidden="true">${ICON.hedera}</span>
+      </div></div>
+    </article>`;
+    return `<section class="loops stories reading">
+      <div class="cards story-read">
+        <div class="loops-back story-bar">
+          <button class="icon-btn" id="storyBack" aria-label="Back to the stories">${ICON.back}</button>
+          <span class="label">Stories</span>
+          <span class="story-bar-title">${esc(storyTitle(open))}</span>
+          <span class="story-bar-count">${at + 1} / ${pages}</span>
+        </div>
+        <div class="cards-stage">
+          <div class="cards-track" id="storyTrack">${parts.map(partPage).join("")}${wordsPage}</div>
+        </div>
+        <div class="cards-edges">
+          <button class="cards-edge prev" data-story-step="-1" aria-label="The part before">${ICON.back}</button>
+          <button class="cards-edge next" data-story-step="1" aria-label="The next part">${ICON.back}</button>
+        </div>
       </div>
     </section>`;
   }
@@ -1736,14 +1796,10 @@ $("#main").addEventListener("click", (ev) => {
   if (ev.target.closest("#loopsClose")) { state.loops = false; state.loopOpen = null; render(); }
   if (ev.target.closest("#storiesClose")) { state.stories = false; state.storyOpen = null; render(); return; }
   if (ev.target.closest("#storyBack")) { state.storyOpen = null; state.storyAt = 0; render(); return; }
-  if (ev.target.closest("#storyPrev")) { state.storyAt = Math.max(0, state.storyAt - 1); render(); return; }
-  if (ev.target.closest("#storyNext")) { state.storyAt += 1; render(); return; }
-  if (ev.target.closest("#storyReveal")) {
-    const part = partsOf(state.storyOpen)[state.storyAt];
-    if (part) state.storyShown[part.id] = true;
-    render();
-    return;
-  }
+  const storyStep = ev.target.closest("[data-story-step]");
+  if (storyStep) { goStory(state.storyAt + Number(storyStep.dataset.storyStep)); return; }
+  const reveal = ev.target.closest("[data-reveal]");
+  if (reveal) { state.storyShown[reveal.dataset.reveal] = true; render(); return; }
   const storyRowEl = ev.target.closest("[data-story]");
   if (storyRowEl) {
     if (partsOf(storyRowEl.dataset.story).length) {
@@ -1793,14 +1849,14 @@ function render() {
 
   // A composer owns the height and scrolls itself, so the region around it must not also scroll.
   // The loops surface is one of those: its controls are a footer that must not drift.
-  const composing = state.add || state.loops || Boolean(x && state.mode === "edit");
+  const composing = state.add || state.loops || state.stories || Boolean(x && state.mode === "edit");
   $("#main").classList.toggle("composing", composing);
   /* The loops bar is a row of `.app`, so `.app` is what carries whether it is wanted: over the list
      and nowhere else. `.main` keeps its own `composing` because it is the thing that stops scrolling. */
   $(".app").classList.toggle("composing", composing);
   // Not `&& !composing`: the loops surface *is* a composing surface — it owns its height so its
   // controls cannot drift — and excluding it here left the rail on screen behind the player.
-  $(".app").classList.toggle("loops-open", state.loops);
+  $(".app").classList.toggle("loops-open", state.loops || state.stories);
   $(".app").classList.toggle("article-open", Boolean((state.openId || state.openExt) && !state.add));
   $("#loopbar").innerHTML = renderLoopBar();
   $("#loopChip").innerHTML = renderLoopChip();
@@ -1810,6 +1866,7 @@ function render() {
   if (state.stories) {
     // Its own surface for the reason the loops one is: a thing you go to, needing the whole column.
     $("#composer").innerHTML = renderStories();
+    wireStories();
     document.title = "Stories — Acervo";
     return;
   }
@@ -2064,6 +2121,11 @@ document.addEventListener("keydown", (ev) => {
     getSelection().addRange(range);
     return;
   }
+  if ((ev.key === "ArrowLeft" || ev.key === "ArrowRight") && state.stories && state.storyOpen && !typing) {
+    ev.preventDefault();
+    goStory(state.storyAt + (ev.key === "ArrowRight" ? 1 : -1));
+    return;
+  }
   if ((ev.key === "ArrowLeft" || ev.key === "ArrowRight") && reading && !typing && currentView() === "cards") {
     ev.preventDefault();
     goCard(state.card + (ev.key === "ArrowRight" ? 1 : -1));
@@ -2178,6 +2240,18 @@ if (params.get("topic")) state.topic = params.get("topic");
 if (params.get("view") === "page" || params.get("view") === "cards") state.view = params.get("view");
 if (params.get("card")) state.card = Number(params.get("card")) || 0;
 if (params.get("tr") === "on") state.sayTranslations = true;
+/* `stories=1` opens the surface, `story=` opens one of the written ones (counting from 1), `part=` is
+   the page it opens on (from 0, the last being the words), and `reveal=1` turns every translation over. */
+if (params.get("stories") === "1" || params.get("story")) {
+  state.stories = true;
+  const written = storiesIn(state.lang).filter((one) => partsOf(one.id).length);
+  const picked = params.get("story") ? written[Number(params.get("story")) - 1] : null;
+  if (picked) {
+    state.storyOpen = picked.id;
+    state.storyAt = Number(params.get("part")) || 0;
+    if (params.get("reveal") === "1") partsOf(picked.id).forEach((one) => { state.storyShown[one.id] = true; });
+  }
+}
 if (params.get("capture") === "off") {
   captureBlocked = { provider: "vertex", model: "gemini-3.7-flash", reason: "VERTEX_API_KEY is not set" };
 }

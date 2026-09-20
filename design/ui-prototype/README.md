@@ -39,6 +39,10 @@ away again.
 Deep links keep screenshots reproducible: `?open=la obra&frame=phone&view=cards&card=1`,
 plus `tr=on`, `theme=dark`, and `size=375x667` to resize the frame.
 
+Stories open the same way: `?story=1&part=0` reads the first written story from its first page
+(the last page is the words), `stories=1` alone opens the list, and `reveal=1` turns every
+translation over.
+
 For loops: `?loops=1&t=12` is the moment the whole design is for — `picar` is
 being said and its translation is still a bar. `t=20` is a few seconds later,
 with the answer given and the mark moved to it. `loop=` picks one by id,

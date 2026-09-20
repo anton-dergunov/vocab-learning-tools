@@ -19,7 +19,13 @@ import { stripOf } from "./ProgressStrip";
 import type { VocabularyGraph } from "./domain";
 import { BackIcon, HourglassIcon, PlusIcon } from "./icons";
 import StoryReader from "./StoryReader";
-import { storiesIn, storyIsWritten, storyPartsOf, storyPictures, storyTitle, storyWordsOf } from "./selectors";
+import {
+  storiesIn, storyIsWritten, storyPartsOf, storyPictures, storyTitle, storyWordEntries, storyWordsOf
+} from "./selectors";
+
+function count(amount: number, noun: string): string {
+  return `${amount} ${noun}${amount === 1 ? "" : "s"}`;
+}
 
 export default function StoryView({ graph, language, onMake, onClose, onDelete }: {
   graph: VocabularyGraph;
@@ -55,16 +61,16 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
   }, [menuId]);
 
   if (open) {
-    return <section className="loops stories">
-      <div className="loops-back">
-        <button className="icon-btn" onClick={() => setOpenId(null)} aria-label="Back to the stories"><BackIcon /></button>
-        <span className="label">Stories</span>
-        <span className="spacer" />
-      </div>
+    /* `reading` widens the column: a story is read beside its picture where there is room, and that
+       is wider than the list's measure. The reader owns its own header, where the counter lives. */
+    return <section className="loops stories reading">
       <StoryReader
         story={open}
+        title={storyTitle(graph, open)}
         parts={storyPartsOf(graph, open.id)}
         words={storyWordsOf(graph, open.id)}
+        entries={storyWordEntries(graph, open.id)}
+        onBack={() => setOpenId(null)}
       />
     </section>;
   }
@@ -91,6 +97,7 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
       {stories.map((story) => {
         const written = storyIsWritten(graph, story.id);
         const pictures = storyPictures(graph, story.id);
+        const words = storyWordsOf(graph, story.id);
         const job = jobFor(live, "story", story.id);
         const making = jobIsOpen(job);
         const failure = job?.state === "failed"
@@ -117,10 +124,9 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
                 <span className="loop-title">{storyTitle(graph, story)}</span>
                 <span className="loop-sub">
                   {written
-                    ? `${pictures.total} parts · ${
-                      pictures.drawn === pictures.total
-                        ? "illustrated"
-                        : `${pictures.drawn} of ${pictures.total} drawn`}`
+                    /* The words it was made from, on one line: what a story *is about* is what tells
+                       two of them apart, and the ones that do not fit are simply cut off. */
+                    ? <span className="story-words">{words.map((word) => word.sourceText).join(" · ")}</span>
                     : making
                       /* What it is *doing*, in the job's own words — this takes a minute, and
                          "being made" says nothing you could not already see. */
@@ -129,6 +135,11 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
                       : <span className="warn">{failure ? `Never written · ${failure}` : "Never written"}</span>}
                 </span>
               </span>
+              {written && <span className="story-meta">
+                <span>{count(pictures.total, "part")} · {count(words.length, "word")}</span>
+                {pictures.drawn < pictures.total
+                  && <span className="warn">{pictures.drawn} of {pictures.total} drawn</span>}
+              </span>}
             </button>
             <div className="loop-swipe">
               <button className="loop-delete" onClick={remove}>Delete</button>

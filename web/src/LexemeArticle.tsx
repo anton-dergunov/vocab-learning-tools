@@ -11,7 +11,7 @@
  * keeps one quiet tag, and what else is worth keeping is in Details.
  */
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ClipDialog } from "./ClipDialog";
 import { storedClipOf, type StoredClip } from "./clips";
 import type { Attestation, Example, Gloss, ImagePrompt, Lexeme, Sense } from "./domain";
@@ -20,12 +20,13 @@ import { formatDay } from "./format";
 import { DictionaryEntries } from "./ExternalArticle";
 import type { ExternalEntry } from "./externalEntries";
 import type { Change, Mark } from "./articleEdit";
-import { AskIcon, BackIcon, BookIcon, CaretIcon, FilmIcon, HederaIcon, InfoIcon, OpenIcon, PictureIcon, PlayIcon } from "./icons";
+import { AskIcon, BookIcon, CaretIcon, FilmIcon, HederaIcon, InfoIcon, OpenIcon, PictureIcon, PlayIcon } from "./icons";
 import type { DiffPart } from "./wordDiff";
 import type { Article, ArticleSense } from "./selectors";
 import { CardPicture, EmptySenseImage, SenseImage, imageStateOf } from "./SenseImage";
 import { keyOf, play, playRuns, useSpeechState, type SayTarget } from "./pronunciation";
 import { runsOf } from "./selectionSpeech";
+import { DeckEdges, Hedera, isTyping, useDeck } from "./deck";
 
 /* Plain words rather than a grammarian's abbreviations: "noun, feminine", not "n. · f.". */
 const POS_WORD: Record<string, string> = {
@@ -499,11 +500,6 @@ function Details({ article }: { article: Article }) {
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
 
-/** An ivy leaf, pointing away from the sentence it marks: ☙ above it, ❧ below it. */
-function Hedera({ side }: { side: "above" | "below" }) {
-  return <span className={`card-ornament ${side}`} aria-hidden="true"><HederaIcon /></span>;
-}
-
 interface Card {
   group: string;
   chip: string;
@@ -526,9 +522,9 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
   onReference?(entry: ExternalEntry | null): void;
 }) {
   const { lexeme } = article;
-  const track = useRef<HTMLDivElement | null>(null);
   const nav = useRef<HTMLElement | null>(null);
-  const [at, setAt] = useState(0);
+  // A different word starts at its first card.
+  const { root, track, at, go, beside, onScroll } = useDeck(lexeme.id);
 
   const cards: Card[] = [];
   article.senses.forEach(({ sense, examples, images }, index) => {
@@ -632,55 +628,11 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
     .filter((card, index, all) => all.findIndex((other) => other.group === card.group) === index);
   const current = cards[Math.min(at, cards.length - 1)]?.group;
 
-  /* Beside the column only where the margin really has room for them, measured against `.main`,
-     which clips: a window-width rule put them where the space it assumed was not always there. */
-  const root = useRef<HTMLDivElement | null>(null);
-  const [beside, setBeside] = useState(false);
-  useEffect(() => {
-    const element = root.current;
-    const clipper = element?.closest(".main");
-    if (!element || !clipper || typeof ResizeObserver === "undefined") return;
-    const measure = () => {
-      const inner = element.getBoundingClientRect();
-      const outer = clipper.getBoundingClientRect();
-      setBeside(inner.left - outer.left >= 100 && outer.right - inner.right >= 100);
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    observer.observe(clipper);
-    measure();
-    return () => observer.disconnect();
-  }, []);
-
-  const go = useCallback((index: number) => {
-    const element = track.current;
-    if (!element) return;
-    const to = Math.max(0, Math.min(index, element.children.length - 1));
-    element.scrollTo({ left: to * element.clientWidth, behavior: "smooth" });
-  }, []);
-
-  // A different word starts at its first card.
-  useLayoutEffect(() => {
-    setAt(0);
-    if (track.current) track.current.scrollLeft = 0;
-  }, [lexeme.id]);
-
   useEffect(() => {
     const chip = nav.current?.querySelector<HTMLElement>(".cards-chip.on");
     if (!chip || !nav.current || typeof nav.current.scrollTo !== "function") return;
     nav.current.scrollTo({ left: chip.offsetLeft - (nav.current.clientWidth - chip.offsetWidth) / 2, behavior: "smooth" });
   }, [current]);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      if (isTyping(event.target)) return;
-      event.preventDefault();
-      go(at + (event.key === "ArrowRight" ? 1 : -1));
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [at, go]);
 
   return <div className={`cards${beside ? " edges-beside" : ""}`} ref={root}>
     <header className="cards-head">
@@ -710,13 +662,7 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
       </nav>
     </header>
     <div className="cards-stage">
-      <div
-        className="cards-track" ref={track}
-        onScroll={(event) => {
-          const element = event.currentTarget;
-          setAt(Math.round(element.scrollLeft / Math.max(element.clientWidth, 1)));
-        }}
-      >
+      <div className="cards-track" ref={track} onScroll={onScroll}>
         {cards.map((card, index) => <article
           key={`${card.group}:${index}`} className="card" aria-label={`Card ${index + 1} of ${cards.length}`}
           data-card={index}
@@ -724,18 +670,11 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
       </div>
     </div>
     {/* Beside the column when there is margin for them, else a pair at the foot of the card. */}
-    <div className="cards-edges">
-      <button type="button" className="cards-edge prev" aria-label="Previous card" disabled={at === 0} onClick={() => go(at - 1)}><BackIcon /></button>
-      <button type="button" className="cards-edge next" aria-label="Next card" disabled={at >= cards.length - 1} onClick={() => go(at + 1)}><BackIcon /></button>
-    </div>
+    <DeckEdges at={at} count={cards.length} go={go} previous="Previous card" next="Next card" />
   </div>;
 }
 
 /* ── reading helpers shared by both views ───────────────────────────────── */
-
-function isTyping(target: EventTarget | null): boolean {
-  return target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable], .cm-editor"));
-}
 
 /**
  * Select all selects the word, not the application around it.

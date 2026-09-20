@@ -95,6 +95,8 @@ def fake_docker_path(
         '[ -z "${ACERVO_TEST_DOCKER_LOG:-}" ] || echo "$*" >>"$ACERVO_TEST_DOCKER_LOG"\n'
         'case " $* " in\n'
         '  *" ps --format json "*) echo \'{"Health":"healthy"}\'; exit 0 ;;\n'
+        # A one-shot `compose run` that fails, which is how a converter that refuses looks from here.
+        '  *" run "*) [ -z "${ACERVO_TEST_DOCKER_FAIL_RUN:-}" ] || exit 7 ;;\n'
         '  *" port "*) ' + ('echo 127.0.0.1:27702' if published else ':') + '; exit 0 ;;\n'
         "esac\n"
         'if [ "$1" = inspect ]; then\n'
@@ -679,16 +681,133 @@ def test_installer_strips_the_retired_superuser_pair_and_mints_a_signing_secret(
     assert minted.group(1) in again
 
 
-def run_installer(root: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def run_installer(
+    root: Path, env: dict[str, str], *extra: str
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             str(REPO_ROOT / "deploy/acervo/install.sh"),
             "--root", str(root),
             "--bind-address", "127.0.0.1", "--port", "27701",
             "--app-bind-address", "127.0.0.1", "--app-port", "27702",
+            *extra,
         ],
         cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
     )
+
+
+def _commands(log: Path) -> list[str]:
+    return log.read_text(encoding="utf-8").splitlines()
+
+
+def _index(commands: list[str], *needles: str) -> int:
+    return next(i for i, command in enumerate(commands) if all(n in command for n in needles))
+
+
+def test_a_transition_backs_up_the_database_then_converts_it_before_the_new_server_starts(
+    tmp_path: Path,
+) -> None:
+    """The order is the whole safety of it: the server is stopped so the copy and the conversion see
+    a database nothing is writing to, the backup exists before anything changes it, and the converter
+    has run before the new server is asked to open a schema it would otherwise refuse."""
+    env, root = deployment_env(tmp_path)
+    log = tmp_path / "docker.log"
+    env["ACERVO_TEST_DOCKER_LOG"] = str(log)
+    server = root / "data" / "server"
+    server.mkdir(parents=True)
+    (server / "acervo.db").write_bytes(b"vocabulary-v1")
+    (server / "acervo.db-wal").write_bytes(b"wal-v1")
+    (server / "takes").mkdir()
+    (server / "takes" / "big.flac").write_bytes(b"not a database")
+
+    result = run_installer(root, env, "--transition")
+
+    assert result.returncode == 0, result.stderr
+    backups = list((root / "backups").glob("*/server"))
+    assert len(backups) == 1, "one dated directory holds it"
+    assert (backups[0] / "acervo.db").read_bytes() == b"vocabulary-v1"
+    assert (backups[0] / "acervo.db-wal").read_bytes() == b"wal-v1"
+    assert not (backups[0] / "takes").exists(), "only the database is copied, not what sits beside it"
+    assert (server / "acervo.db").read_bytes() == b"vocabulary-v1", "and the live one is untouched"
+
+    commands = _commands(log)
+    build = _index(commands, "build server")
+    stop = _index(commands, "stop server")
+    convert = _index(commands, " run ", "--no-deps", "transition.py")
+    up = _index(commands, " up -d")
+    assert build < stop < convert < up
+    assert "/scripts:/opt/release-scripts:ro" in commands[convert], "the release carries its converters"
+    assert "--rm" in commands[convert]
+    # Said where the owner will see it, and said again at the end, past the build output.
+    assert result.stdout.count(f"{backups[0]}") >= 2
+
+
+def test_a_refused_transition_starts_the_old_server_again_and_deploys_nothing(tmp_path: Path) -> None:
+    env, root = deployment_env(tmp_path)
+    log = tmp_path / "docker.log"
+    env["ACERVO_TEST_DOCKER_LOG"] = str(log)
+    env["ACERVO_TEST_DOCKER_FAIL_RUN"] = "1"
+    server = root / "data" / "server"
+    server.mkdir(parents=True)
+    (server / "acervo.db").write_bytes(b"vocabulary-v1")
+
+    result = run_installer(root, env, "--transition")
+
+    assert result.returncode == 7, "the converter's own status, not a generic failure"
+    assert "not converted" in result.stderr
+    commands = _commands(log)
+    assert _index(commands, "start server") > _index(commands, "transition.py")
+    assert not any(" up -d" in command for command in commands), "the new server was never started"
+    assert not (root / "current-release").exists(), "and the deployment did not move"
+    assert next((root / "backups").glob("*/server/acervo.db")).read_bytes() == b"vocabulary-v1"
+
+
+def test_an_ordinary_deploy_neither_copies_the_database_nor_runs_a_converter(tmp_path: Path) -> None:
+    env, root = deployment_env(tmp_path)
+    log = tmp_path / "docker.log"
+    env["ACERVO_TEST_DOCKER_LOG"] = str(log)
+    server = root / "data" / "server"
+    server.mkdir(parents=True)
+    (server / "acervo.db").write_bytes(b"vocabulary-v1")
+
+    result = run_installer(root, env)
+
+    assert result.returncode == 0, result.stderr
+    assert not list((root / "backups").glob("*/server"))
+    assert "transition.py" not in log.read_text(encoding="utf-8")
+
+
+def test_a_transition_and_a_reset_are_opposite_answers_and_cannot_be_asked_together(
+    tmp_path: Path,
+) -> None:
+    env, root = deployment_env(tmp_path)
+
+    installer = run_installer(root, env, "--transition", "--reset-database")
+    deployer = subprocess.run(
+        [str(REPO_ROOT / "deploy.sh"), "--local", "--transition", "--reset-database"],
+        cwd=REPO_ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+
+    assert installer.returncode == 2
+    assert deployer.returncode == 2
+
+
+def test_the_deployer_forwards_a_transition_through_the_launcher(tmp_path: Path) -> None:
+    env, ssh_log = _jobs_ssh(tmp_path, '{"open": 0, "byKind": {}}')
+    result = _deploy_remotely(env, "--transition")
+    assert result.returncode == 0, result.stderr
+    assert "deploy-acervo deploy" in ssh_log.read_text(encoding="utf-8")
+    assert " --transition" in ssh_log.read_text(encoding="utf-8")
+
+
+def test_a_transition_still_refuses_while_jobs_are_open(tmp_path: Path) -> None:
+    """Unlike a reset, it keeps the jobs table, so a job would survive into the new schema — and a
+    deploy never carries a job across a version."""
+    env, ssh_log = _jobs_ssh(tmp_path, '{"open": 2, "byKind": {"enrich": 2}}')
+    result = _deploy_remotely(env, "--transition")
+    assert result.returncode == 1
+    assert "Refusing to deploy" in result.stderr
+    assert "deploy-acervo deploy" not in ssh_log.read_text(encoding="utf-8")
 
 
 def test_installer_retires_the_container_that_was_holding_the_app_port(tmp_path: Path) -> None:

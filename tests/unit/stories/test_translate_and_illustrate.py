@@ -46,6 +46,77 @@ def test_an_empty_translated_part_is_refused():
         ]}, PARTS)
 
 
+TRANSLATED = {
+    "title": "The amazing dog",
+    "parts": [
+        {"heading": "The bakery", "text": "Marcos saw an amazing dog."},
+        {"heading": "The bread", "text": "The dog started to bark."},
+        {"heading": "The bill", "text": "It paid with a coin."},
+    ],
+}
+
+
+def _with_words(*entries):
+    return {**TRANSLATED, "words": list(entries)}
+
+
+def test_the_words_a_translation_says_render_a_word_are_kept_when_they_are_in_it():
+    done = parse_translation(_with_words(
+        {"lexemeId": "wordasombroso01", "forms": ["amazing"]},
+        {"lexemeId": "wordladrar00001", "forms": ["bark"]},
+    ), PARTS, ("wordasombroso01", "wordladrar00001"))
+    assert done.forms == {"wordasombroso01": ("amazing",), "wordladrar00001": ("bark",)}
+
+
+def test_a_form_that_is_not_in_the_translation_is_dropped_because_it_would_mark_nothing():
+    """The reader searches the text for this string. One that was never written is a mark that
+    silently never appears, so it is not stored."""
+    done = parse_translation(_with_words(
+        {"lexemeId": "wordasombroso01", "forms": ["amazing", "astonishing", "  ", "amazing"]},
+    ), PARTS, ("wordasombroso01",))
+    assert done.forms == {"wordasombroso01": ("amazing",)}
+
+
+def test_a_word_nobody_asked_about_is_dropped_rather_than_refusing_the_translation():
+    done = parse_translation(_with_words(
+        {"lexemeId": "somebodyelse0001", "forms": ["amazing"]},
+    ), PARTS, ("wordasombroso01",))
+    assert done.forms == {}
+    assert done.parts[0].text == "Marcos saw an amazing dog."
+
+
+@pytest.mark.parametrize("words", [None, "amazing", {"lexemeId": "x"}, [None, 3, "text"],
+                                   [{"lexemeId": "wordasombroso01", "forms": "amazing"}]])
+def test_an_optional_field_the_model_got_wrong_never_costs_the_translation(words):
+    """A translation that is otherwise good must not be thrown away — and the next model in the
+    chain paid for — over a highlight."""
+    payload = {**TRANSLATED} if words is None else {**TRANSLATED, "words": words}
+    done = parse_translation(payload, PARTS, ("wordasombroso01",))
+    assert done.forms == {}
+    assert len(done.parts) == 3
+
+
+def test_no_words_are_read_when_none_were_asked_for():
+    done = parse_translation(_with_words({"lexemeId": "wordasombroso01", "forms": ["amazing"]}), PARTS)
+    assert done.forms == {}
+
+
+def test_the_request_carries_the_words_and_what_the_story_used_them_as():
+    from acervo.stories.translate import build_request
+
+    request = build_request(
+        title="El perro", parts=PARTS, source_name="Spanish", target_name="English", target_code="en",
+        words=[{"id": "wordasombroso01", "headword": "asombroso", "forms": ["asombroso"]}],
+    )
+    assert request["words"] == [
+        {"lexemeId": "wordasombroso01", "headword": "asombroso", "usedAs": ["asombroso"]}
+    ]
+    plain = build_request(
+        title="El perro", parts=PARTS, source_name="Spanish", target_name="English", target_code="en",
+    )
+    assert "words" not in plain, "a story that used none of its words has nothing to ask"
+
+
 def test_briefs_are_read_one_per_part():
     briefed = illustrate.parse_reply({
         "cast": "MARCOS: a thin man in a green jacket.",

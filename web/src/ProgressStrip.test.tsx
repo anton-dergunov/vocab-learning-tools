@@ -122,3 +122,54 @@ describe("a loop being made", () => {
     expect(line?.failure).toContain("No samples cached for 'salamander'.");
   });
 });
+
+describe("a story being made", () => {
+  const story = (steps: JobStep[], overrides: Partial<Job> = {}) => stripOf(job("running", steps, {
+    kind: "story", subject: { kind: "story", id: "storypicada0001" }, ...overrides
+  }));
+  const steps = (states: JobStep["state"][], draw: Partial<JobStep> = {}): JobStep[] => [
+    { name: "story.write", state: states[0] },
+    { name: "story.translate", state: states[1] },
+    { name: "story.brief", state: states[2] },
+    { name: "story.draw", state: states[3], ...draw }
+  ];
+
+  it("is one line, with the overall percentage before the step it is on", () => {
+    const line = story(steps(["running", "pending", "pending", "pending"]));
+    expect(line?.phases).toEqual([{ text: "0% · Writing the story", current: true }]);
+  });
+
+  it("counts a finished step as its share of the whole", () => {
+    // Write 30 + translate 15 of 100.
+    expect(story(steps(["done", "done", "running", "pending"]))?.phases[0].text)
+      .toBe("45% · Planning the pictures");
+  });
+
+  it("says which picture it is on, and counts the pictures already drawn towards the total", () => {
+    // 55 for the first three steps + 45 * 2/4 for the drawing = 77.5, shown rounded down.
+    expect(story(steps(["done", "done", "done", "running"], { done: 2, total: 4 }))?.phases[0].text)
+      .toBe("77% · Drawing picture 3 of 4");
+  });
+
+  it("never says 100% while it is still working", () => {
+    expect(story(steps(["done", "done", "done", "running"], { done: 4, total: 4 }))?.phases[0].text)
+      .toMatch(/^99% · /);
+  });
+
+  it("says when the provider is busy without losing the number", () => {
+    expect(story(steps(["done", "waiting", "pending", "pending"]))?.phases[0].text)
+      .toBe("30% · Translating it (the provider is busy)");
+  });
+
+  it("says it is waiting to start before anything has begun", () => {
+    expect(story(steps(["pending", "pending", "pending", "pending"]))?.phases[0].text)
+      .toBe("0% · Waiting to start");
+  });
+
+  it("keeps the reason a step failed", () => {
+    const line = stripOf(job("failed", [
+      { name: "story.write", state: "failed", message: "that word is a slur" }
+    ], { kind: "story" }));
+    expect(line?.failure).toBe("The story could not be written — that word is a slur");
+  });
+});

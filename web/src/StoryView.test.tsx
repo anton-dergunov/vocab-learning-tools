@@ -32,18 +32,25 @@ describe("the stories surface", () => {
   it("names a story that has no title by the words it was asked to teach", () => {
     view();
     // The queued story has no title, so its words stand in for one.
-    expect(screen.getByRole("button", { name: /picar/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^picar/ })).toBeInTheDocument();
   });
 
-  it("says how many of a story's pictures have been drawn", () => {
+  it("lists the words a written story was made from, in the order they were asked for", () => {
     view();
-    expect(screen.getByText(/1 of 2 drawn/)).toBeInTheDocument();
+    expect(screen.getByText("la balsa · picar")).toBeInTheDocument();
+  });
+
+  it("counts a story's parts and words, and says how many pictures have been drawn", () => {
+    view();
+    expect(screen.getByText("2 parts · 2 words")).toBeInTheDocument();
+    expect(screen.getByText("1 of 2 drawn")).toBeInTheDocument();
   });
 
   it("opens a written story and comes back out of it", () => {
     view();
     fireEvent.click(screen.getByRole("button", { name: /La balsa que picaba/ }));
-    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    // Two parts, and the page of words after them.
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to the stories" }));
     expect(screen.getByRole("heading", { name: "Stories" })).toBeInTheDocument();
@@ -51,7 +58,7 @@ describe("the stories surface", () => {
 
   it("does not open a story that was never written", () => {
     view();
-    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^picar/ }));
     expect(screen.getByRole("heading", { name: "Stories" })).toBeInTheDocument();
   });
 

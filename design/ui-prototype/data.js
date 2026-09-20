@@ -793,8 +793,8 @@ const STORY_PARTS = [
    to use it**, which is a fact worth showing rather than hiding — and the forms are what the reader
    searches the text for, so a mark is found rather than stored. */
 const STORY_WORDS = [
-  { id: "sw01", storyId: "st4m19pqb7wzx2c", lexemeId: "wd1", position: 0, sourceText: "la panadería", forms: ["panadería"] },
-  { id: "sw02", storyId: "st4m19pqb7wzx2c", lexemeId: "wd2", position: 1, sourceText: "ladrar", forms: ["ladrar"] },
-  { id: "sw03", storyId: "st4m19pqb7wzx2c", lexemeId: "wd3", position: 2, sourceText: "el mostrador", forms: ["mostrador"] },
-  { id: "sw04", storyId: "st2v77hjs9blm4k", lexemeId: "wd2", position: 0, sourceText: "ladrar", forms: [] }
+  { id: "sw01", storyId: "st4m19pqb7wzx2c", lexemeId: "wd1", position: 0, sourceText: "la panadería", forms: ["panadería"], translationForms: ["bakery"], emoji: "\u{1F35E}", gloss: "bakery" },
+  { id: "sw02", storyId: "st4m19pqb7wzx2c", lexemeId: "wd2", position: 1, sourceText: "ladrar", forms: ["ladrar"], translationForms: ["barking"], emoji: "\u{1F415}", gloss: "to bark" },
+  { id: "sw03", storyId: "st4m19pqb7wzx2c", lexemeId: "wd3", position: 2, sourceText: "el mostrador", forms: ["mostrador"], translationForms: ["counter"], emoji: "\u{1F6D2}", gloss: "counter" },
+  { id: "sw04", storyId: "st2v77hjs9blm4k", lexemeId: "wd2", position: 0, sourceText: "ladrar", forms: [], translationForms: [], emoji: "\u{1F415}", gloss: "to bark" }
 ];

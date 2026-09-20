@@ -12,12 +12,14 @@ from __future__ import annotations
 import base64
 import json
 from types import SimpleNamespace
+from unittest import mock
 
 import litellm
 import pytest
 from graph_records import lexeme, sense, vocabulary
 
 from acervo.repository import graph, jobs
+from acervo.services import stories
 from acervo.work import kinds
 from acervo.work.runner import Runner
 
@@ -174,6 +176,89 @@ def test_a_whole_story_is_written_translated_briefed_and_drawn(server, models, r
     refreshed = graph.story_words(server.owner, story["id"])
     assert refreshed[0]["forms"] == ["asombroso"]
     assert refreshed[1]["forms"] == []
+
+
+def _draw_step(server) -> dict:
+    job = [one for one in jobs.recent(server.owner) if one["kind"] == "story"][0]
+    return next(step for step in job["steps"] if step["name"] == "story.draw")
+
+
+def test_the_draw_step_says_how_many_pictures_it_has_done(server, models, runner):
+    """The interface turns this into "picture 2 of 4" and a single percentage. Nothing else in the
+    job says how far through the pictures it is: the step used to note only what it had finished,
+    once, at the end."""
+    a_story(server, 1)
+    models.texts = [story_reply(4), translation_reply(4), brief_reply(4)]
+
+    runner.run_until_idle()
+
+    draw = _draw_step(server)
+    assert (draw["done"], draw["total"]) == (4, 4)
+
+
+def test_trying_again_counts_from_the_pictures_already_drawn(server, models, runner):
+    """Counted over every briefed part, so a retry that has one picture left starts at three of
+    four rather than at nought of one — a percentage must not run backwards."""
+    story = a_story(server, 1)
+    models.texts = [story_reply(4), translation_reply(4), brief_reply(4)]
+    models.image_fails_after = 3
+    runner.run_until_idle()
+    assert models.image_calls == 4
+
+    models.image_fails_after = None
+    seen: list[tuple[int, int]] = []
+    real = stories.draw_pictures
+
+    def spying(*args, progress=None, **kwargs):
+        def record(done: int, total: int) -> None:
+            seen.append((done, total))
+            progress(done, total)
+
+        return real(*args, progress=record, **kwargs)
+
+    with mock.patch.object(stories, "draw_pictures", spying):
+        jobs.enqueue(server.owner, "story", trigger="manual", subject_kind="story",
+                     subject_id=story["id"])
+        runner.run_until_idle()
+
+    assert seen[0] == (3, 4), "starts from what is already on the page"
+    assert seen[-1] == (4, 4)
+
+
+def test_the_translation_says_which_of_its_words_render_each_word_the_story_used(server, models, runner):
+    """Only what really appears in the translation is stored, and only words the story used were
+    asked about: a word it could not work in has no form to find the counterpart of."""
+    story = a_story(server, 2)
+    words = graph.story_words(server.owner, story["id"])
+    reply = story_reply(4)
+    reply["words"] = [{"lexemeId": words[0]["lexemeId"], "forms": ["asombroso"]}]
+    translation = translation_reply(4)
+    translation["words"] = [
+        {"lexemeId": words[0]["lexemeId"], "forms": ["amazing", "not anywhere in it"]},
+        {"lexemeId": words[1]["lexemeId"], "forms": ["amazing"]},
+    ]
+    models.texts = [reply, translation, brief_reply(4)]
+
+    runner.run_until_idle()
+
+    refreshed = graph.story_words(server.owner, story["id"])
+    assert refreshed[0]["translationForms"] == ["amazing"]
+    assert refreshed[1]["translationForms"] == [], "an id it was never asked about is dropped"
+
+    asked = models.prompts[1]
+    assert '"usedAs"' in asked and words[0]["lexemeId"] in asked
+    assert words[1]["lexemeId"] not in asked, "the word the story could not use was not asked about"
+
+
+def test_a_translation_that_says_nothing_about_its_words_still_lands(server, models, runner):
+    story = a_story(server, 1)
+    models.texts = [story_reply(4), translation_reply(4), brief_reply(4)]
+
+    runner.run_until_idle()
+
+    parts = graph.story_parts(server.owner, story["id"])
+    assert all(part["translation"] for part in parts)
+    assert all(word["translationForms"] == [] for word in graph.story_words(server.owner, story["id"]))
 
 
 def test_the_briefs_are_asked_for_in_one_call_covering_every_part(server, models, runner):

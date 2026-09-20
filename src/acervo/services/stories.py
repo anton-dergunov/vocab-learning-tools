@@ -295,6 +295,14 @@ def translate_story(settings: Settings, owner: str, device: str, story_id: str) 
     story = _story(owner, story_id)
     rows = _parts(owner, story_id)
     into = _gloss_language(owner, story["language"])
+    # The words the story really used, with the forms it used them in: the translator is asked what
+    # became of each so the reader can mark it. A word the writer could not work in has nothing to
+    # find a counterpart of, so it is not asked about.
+    word_rows = [row for row in graph.story_words(owner, story_id) if not row.get("deleted")]
+    asked = [
+        {"id": row["lexemeId"], "headword": row["sourceText"], "forms": row["forms"]}
+        for row in word_rows if row.get("forms")
+    ]
 
     candidates = _candidates(settings, owner, "text")
     _require(candidates, settings, owner, "text")
@@ -307,7 +315,7 @@ def translate_story(settings: Settings, owner: str, device: str, story_id: str) 
             translate.build_request(
                 title=story.get("title") or "", parts=parts,
                 source_name=language_name(story["language"]),
-                target_name=language_name(into), target_code=into,
+                target_name=language_name(into), target_code=into, words=asked,
             ),
             parts,
         )
@@ -323,6 +331,13 @@ def translate_story(settings: Settings, owner: str, device: str, story_id: str) 
             {**row, "translation": done.parts[index].text,
              "headingTranslation": done.parts[index].heading, "editedAt": at, "editedBy": device}
             for index, row in enumerate(rows)
+        ],
+        # Every word, not only the ones asked about: a translation run again must not leave the marks
+        # of the one before it standing against text that is no longer there.
+        "storyWords": [
+            {**row, "translationForms": list(done.forms.get(row["lexemeId"], ())),
+             "editedAt": at, "editedBy": device}
+            for row in word_rows
         ],
     }, enqueue=None)
     return {"parts": len(rows), "into": into, **usage}
@@ -361,11 +376,15 @@ def brief_story(settings: Settings, owner: str, device: str, story_id: str) -> d
 
 
 def draw_pictures(settings: Settings, owner: str, device: str, story_id: str,
-                  gate: Any = None) -> dict[str, Any]:
+                  gate: Any = None, progress: Any = None) -> dict[str, Any]:
     """Draw the parts that have no picture yet, every one in the story's own style.
 
     **What is missing is re-derived here rather than passed in**, which is what makes a retry cost
     only what it has to: a run that lost its last picture redraws one and not four.
+
+    `progress(done, total)` is called before the first picture and after each attempt, drawn or
+    refused, so a caller can say "picture 2 of 4". It is a plain callable and not a job's step: this
+    layer does not know jobs exist, and `gate` is handed in the same way.
     """
     story = _story(owner, story_id)
     styles = load_styles()
@@ -380,11 +399,19 @@ def draw_pictures(settings: Settings, owner: str, device: str, story_id: str,
     drawn = 0
     failed: list[str] = []
 
-    for row in _parts(owner, story_id):
-        if row.get("imageRef") or not (row.get("imagePrompt") or "").strip():
-            continue
-        if int(row.get("attempts") or 0) >= MAX_ATTEMPTS:
-            continue
+    # Progress is counted over every part that has a brief, not only the ones this run will draw. A
+    # run resumed after a rest, or a Try again, then carries on from what is already there instead
+    # of restarting from zero over a shorter list — which is how a percentage runs backwards.
+    briefed = [row for row in _parts(owner, story_id) if (row.get("imagePrompt") or "").strip()]
+    pending = [
+        row for row in briefed
+        if not row.get("imageRef") and int(row.get("attempts") or 0) < MAX_ATTEMPTS
+    ]
+    attempted = len(briefed) - len(pending)
+    if progress is not None:
+        progress(attempted, len(briefed))
+
+    for row in pending:
         if gate is not None:
             gate()
         try:
@@ -410,6 +437,9 @@ def draw_pictures(settings: Settings, owner: str, device: str, story_id: str,
                 "editedAt": at, "editedBy": device,
             }]}, enqueue=None)
             failed.append(row["id"])
+            attempted += 1
+            if progress is not None:
+                progress(attempted, len(briefed))
             continue
 
         reference = _picture_reference(story_id, row["id"], rendered.data)
@@ -427,6 +457,9 @@ def draw_pictures(settings: Settings, owner: str, device: str, story_id: str,
             raise
         _discard(media, previous, keep=reference)
         drawn += 1
+        attempted += 1
+        if progress is not None:
+            progress(attempted, len(briefed))
 
     return {"drawn": drawn, "failed": failed}
 

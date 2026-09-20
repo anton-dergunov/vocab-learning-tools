@@ -422,6 +422,11 @@ def validate(name: str, row: Mapping[str, Any], lookup: Lookup) -> None:
             refuse("A story word's forms must be a list of strings.")
         elif any(len(one) > 240 for one in forms):
             refuse("A story word's form is too long.")
+        translation_forms = row.get("translation_forms")
+        if not isinstance(translation_forms, list) or any(not isinstance(one, str) for one in translation_forms):
+            refuse("A story word's translated forms must be a list of strings.")
+        elif any(len(one) > 240 for one in translation_forms):
+            refuse("A story word's translated form is too long.")
         return
 
     if name == "study_states":

@@ -52,9 +52,11 @@ def _brief(context: JobContext, step: Step, story_id: str) -> str | None:
 
 def _draw(context: JobContext, step: Step, story_id: str) -> str | None:
     # `gate` is handed down rather than called once here, so a story of six pictures can be
-    # cancelled between them instead of only before the first.
+    # cancelled between them instead of only before the first. `progress` goes the same way, and is
+    # what lets the row say "picture 2 of 4" while the step is still inside its loop.
     drawn = stories.draw_pictures(
-        context.settings, context.owner, DEVICE, story_id, gate=step.gate
+        context.settings, context.owner, DEVICE, story_id,
+        gate=step.gate, progress=step.progress,
     )
     step.note(drawn=drawn["drawn"], failed=len(drawn["failed"]))
     # A picture that could not be drawn is recorded on its own part and does not fail the job: the

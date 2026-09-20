@@ -223,16 +223,18 @@ export function testGraph(): VocabularyGraph {
     storyWords: [
       {
         id: "storyword000001", storyId: "storypicada0001", lexemeId: "lexemebalsa0001",
-        position: 0, sourceText: "la balsa", forms: ["balsa"], ...sync("09-03")
+        position: 0, sourceText: "la balsa", forms: ["balsa"], translationForms: ["raft"],
+        ...sync("09-03")
       },
       {
         id: "storyword000002", storyId: "storypicada0001", lexemeId: "lexemepicar0001",
-        position: 1, sourceText: "picar", forms: ["picar"], ...sync("09-03")
+        position: 1, sourceText: "picar", forms: ["picar"], translationForms: ["sting"],
+        ...sync("09-03")
       },
       {
         // Asked for and never used, which is a fact worth showing rather than hiding.
         id: "storyword000003", storyId: "storyqueued0001", lexemeId: "lexemepicar0001",
-        position: 0, sourceText: "picar", forms: [], ...sync("09-04")
+        position: 0, sourceText: "picar", forms: [], translationForms: [], ...sync("09-04")
       }
     ]
   };

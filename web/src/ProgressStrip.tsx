@@ -55,18 +55,6 @@ function phase(step: JobStep): string | null {
     }
     case "loop.store":
       return "Storing the track";
-    case "story.write": {
-      const parts = typeof step.detail?.parts === "number" ? step.detail.parts : 0;
-      return `Writing the story${parts ? ` · ${parts} parts` : ""}${waiting}`;
-    }
-    case "story.translate":
-      return `Translating it${waiting}`;
-    case "story.brief":
-      return `Planning the pictures${waiting}`;
-    case "story.draw": {
-      const drawn = typeof step.detail?.drawn === "number" ? step.detail.drawn : 0;
-      return `Drawing the pictures${drawn ? ` · ${drawn} done` : ""}${waiting}`;
-    }
     case "capture": {
       const words = Array.isArray(step.detail?.words) ? step.detail.words.length : 0;
       return `Reading the text${words ? ` · ${words} so far` : ""}${waiting}`;
@@ -113,9 +101,59 @@ function failureOf(step: JobStep): string {
   }
 }
 
+/**
+ * What each of a story's steps takes of the whole, by how long it tends to take. Drawing is the long
+ * one, and the only one that can say how far through itself it is.
+ */
+const STORY_WEIGHTS: Record<string, number> = {
+  "story.write": 30, "story.translate": 15, "story.brief": 10, "story.draw": 45
+};
+
+function storyLabel(step: JobStep): string {
+  const waiting = step.state === "waiting" ? " (the provider is busy)" : "";
+  switch (step.name) {
+    case "story.write":
+      return `Writing the story${waiting}`;
+    case "story.translate":
+      return `Translating it${waiting}`;
+    case "story.brief":
+      return `Planning the pictures${waiting}`;
+    default:
+      if (step.total) {
+        return `Drawing picture ${Math.min((step.done ?? 0) + 1, step.total)} of ${step.total}${waiting}`;
+      }
+      return `Drawing the pictures${waiting}`;
+  }
+}
+
+/**
+ * A story is made in four steps, but to the person waiting it is one piece of work: so this says how
+ * far through the whole it is, first, and only then which part of it is going on. The loop line puts
+ * its phrase first because the render's own words are the news there; here the number is, and it is
+ * a fraction of everything rather than of the step.
+ */
+function storyLine(job: Job): StripLine {
+  const steps = job.steps.filter((step) => step.name in STORY_WEIGHTS);
+  const whole = steps.reduce((sum, step) => sum + STORY_WEIGHTS[step.name], 0);
+  const finished = steps.reduce((sum, step) => {
+    const weight = STORY_WEIGHTS[step.name];
+    if (step.state === "done" || step.state === "skipped") return sum + weight;
+    // Only the drawing reports a count, so only it counts for part of its weight.
+    if (step.name === "story.draw" && step.total) return sum + weight * Math.min((step.done ?? 0) / step.total, 1);
+    return sum;
+  }, 0);
+  // Rounded down and held under 100, because this only runs while the job is open: a line that says
+  // 100% and is still going is a small lie, and the last picture's step is when it would tell it.
+  const percent = whole ? Math.min(Math.floor((finished / whole) * 100), 99) : 0;
+  const current = steps.find((step) => step.state === "running" || step.state === "waiting");
+  const text = current ? storyLabel(current) : "Waiting to start";
+  return { phases: [{ text: `${percent}% · ${text}`, current: true }], failure: null };
+}
+
 /** What the strip says for a job, or null when it should not be there at all. */
 export function stripOf(job: Job | undefined): StripLine | null {
   if (!job || job.state === "cancelled" || job.state === "done") return null;
+  if (isOpen(job) && job.kind === "story") return storyLine(job);
   if (isOpen(job)) {
     const phases = job.steps
       .filter((step) => PENDING.has(step.state))

@@ -363,6 +363,13 @@ export interface StoryWord extends SyncFields, OwnedFields {
   position: number;
   sourceText: string;
   forms: string[];
+  /**
+   * The words of the *translation* that render this one, reported by the translator and kept only
+   * where they really appear in what it wrote. The reader searches the translation for them the way
+   * it searches the story for `forms`. Empty is ordinary — the translation did not say, or the story
+   * predates it — and marks nothing.
+   */
+  translationForms: string[];
 }
 
 export interface VocabularyGraph {
@@ -743,6 +750,10 @@ export function validateGraph(graph: VocabularyGraph): void {
     invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Story word position is invalid.");
     invariant(record.sourceText.length > 0, "A story word records the word it was asked to teach.");
     invariant(Array.isArray(record.forms) && record.forms.every((one) => typeof one === "string"), "Story word forms are invalid.");
+    invariant(
+      Array.isArray(record.translationForms) && record.translationForms.every((one) => typeof one === "string"),
+      "Story word translated forms are invalid."
+    );
   });
 }
 

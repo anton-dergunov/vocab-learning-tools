@@ -189,7 +189,10 @@ input, textarea { font: inherit; color: inherit; }
   scrollbar-width: none;
 }
 .rail::-webkit-scrollbar { display: none; }
-.rail-sep { height: 1px; background: var(--rule-soft); margin: 8px 16px; }
+/* `flex: none`, because an empty 1px box has a minimum height of nothing: in a rail too short for its
+   tabs it shrank to zero and left only the margins, so the rules vanished exactly when the window
+   was small. */
+.rail-sep { height: 1px; flex: none; background: var(--rule-soft); margin: 8px 16px; }
 .tab {
   position: relative;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -2287,31 +2290,71 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 .story-go { background: none; font-size: 20px; line-height: 1; }
 .loop-row.on .story-go { background: none; }
 
-/* ── reading one ──
-   A deck, not a scroller: a part is a picture and two to four sentences, which is about one
-   screen, so a column of them is a page you scroll to see what a swipe shows whole. The column
-   owns its height and the controls are its footer, so Next is always where you left it. */
-.story-read { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-
-.story-dots { display: flex; justify-content: center; gap: 6px; padding: 10px 0 2px; flex: none; }
-.story-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--rule); transition: background .15s; }
-.story-dot.on { background: var(--core); }
-
-/* The one part on screen. It scrolls only if a part overruns what the prompt asks for — which is
-   a failure of the prompt rather than a layout to design around, so the scroll is a safety net and
-   not the way this is meant to be read. */
-.story-part {
-  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  padding: 8px 20px 20px; max-width: 680px; width: 100%; margin: 0 auto;
+/* The words a story was made from, cut off rather than wrapped: a row that changes height with how
+   many words it holds is a list that does not scan. They are words, not a label, so they keep their
+   case and the reading face instead of the sub-line's small mono capitals. */
+.story-words {
+  display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-family: var(--sans); font-size: 13px; letter-spacing: 0; text-transform: none;
 }
+/* What is in it, on the right: counts read as a property of the row rather than as its subject. */
+.story-meta {
+  flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); white-space: nowrap;
+}
+.story-meta .warn { color: var(--warn); }
+
+/* ── reading one ──
+   A deck, like a word's cards (`.cards`, `.cards-track`, `.card` and the arrows are all theirs): a
+   part is a picture and two to four sentences, which is about one screen, so a row of them that
+   snaps is a page you swipe rather than scroll. What is written here is only what differs — the
+   header that carries the counter, and how a page is laid out.
+
+   Two layouts, chosen by the deck's own width rather than the window's, because the window is not
+   what the page has to fit in: with the rail open the same window leaves a page less room.
+   Wide puts the picture beside the words; narrow puts it above them. */
+
+/* Wider than the list: beside its picture a story wants more than the list's 780px. */
+.loops.stories.reading { max-width: 1080px; }
+.story-read { flex: 1; min-height: 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+
+/* Where you are and what it is, in the line the back arrow already owns. The title is the part that
+   gives way, cut short before the counter is. */
+.story-bar { gap: 10px; margin-bottom: 4px; min-width: 0; }
+.story-bar .label { flex: none; }
+.story-bar-title {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font: 600 15px/1.3 var(--serif); color: var(--ink);
+}
+.story-bar-count {
+  flex: none; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--ink-3);
+}
+
+.story-read .cards-stage { container-type: inline-size; container-name: deck; }
+/* Narrow first: a picture over the words. The card scrolls only if a part outgrows it, which is a
+   failure of the prompt rather than a layout to design around. */
+.story-card { padding: 8px 2px 10px; gap: 0; }
+.story-body {
+  flex: 1 0 auto; width: 100%; max-width: 680px; margin: 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+}
+/* The free space around the content is split by the golden ratio — less above, more below — for
+   the reason a word's cards do it (`.card-main:not(.top)`): a tablet or phone is propped at the
+   bottom, so an equal split reads as low. The spacers only grow, so a page that fills its card gives
+   them up. The negative margin cancels the flex gap each one would otherwise add. */
+.story-body::before, .story-body::after { content: ""; flex: 0 1 0; margin-block: -9px; }
+.story-body::before { flex-grow: 1; }
+.story-body::after { flex-grow: 1.618; }
 
 /* The frame is drawn whether or not the picture has arrived, so a picture landing does not move
    the words under it — `SenseImage`'s rule, which matters more here because the reader is
-   mid-sentence when the last of them lands. */
+   mid-sentence when the last of them lands. Capped by height so the words are on the same screen. */
 .story-pic {
-  position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden;
+  position: relative; flex: none; width: min(100%, 44vh); width: min(100%, 44dvh); aspect-ratio: 1 / 1;
+  border-radius: 10px; overflow: hidden;
   background: var(--surface-2); border: 1px solid var(--rule);
-  display: grid; place-items: center; margin-bottom: 16px;
+  display: grid; place-items: center;
 }
 .story-pic.is-ready { border-color: transparent; }
 .story-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -2320,9 +2363,16 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   color: var(--ink-3); padding: 0 16px; text-align: center;
 }
 
+.story-copy { width: 100%; min-width: 0; display: flex; flex-direction: column; padding: 0 6px; }
+/* The leaf before the words is for the wide layout only: narrow, the picture already opens the page. */
+.story-copy .card-ornament { align-self: center; }
+.story-copy .card-ornament.above { display: none; }
+.story-copy .card-ornament.below { margin-top: 14px; }
+
 .story-head {
   margin: 0 0 8px; font-family: var(--serif); font-weight: 700; font-size: 17px; color: var(--ink-2);
 }
+.story-no { font-family: var(--mono); font-weight: 400; font-size: .85em; color: var(--ink-3); }
 
 /* The flashcard measure rather than the article's: a story is read at arm's length, in one pass,
    and `.ex .t`'s 16.5px is a size for studying a sentence rather than reading a page of them. */
@@ -2350,21 +2400,31 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 .story-reveal:hover:not(:disabled) { border-color: var(--core); color: var(--core); }
 .story-reveal:disabled { cursor: default; opacity: .6; }
 
-/* A footer of the column, never a sticky element inside the scroller: the part scrolls, these do
-   not, and Next stays where the thumb left it. */
-.story-controls {
-  flex: none; display: flex; align-items: center; justify-content: center; gap: 20px;
-  padding: 12px 20px; padding-bottom: calc(12px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--rule); background: var(--surface);
+/* The last page borrows the word list's rows. They are not buttons here, so they neither reach past
+   the column the way a list row does nor light up under the pointer; a word the story could not use
+   is dimmed rather than dropped. */
+.story-words-page .rows { width: 100%; }
+.story-words-page .row { margin: 0; width: 100%; padding: 11px 8px; }
+.story-words-page .row:hover { background: none; }
+.story-words-page .row.unused { opacity: .5; }
+.story-words-page .row .word { color: var(--ink); }
+
+/* Wide: the picture beside the words, both centred in the height the page has, with a leaf before
+   and after the words. The deck's own width decides, not the window's. */
+@container deck (min-width: 860px) {
+  .story-body {
+    max-width: none; flex-direction: row; align-items: center; justify-content: center;
+    gap: clamp(28px, 4vw, 56px);
+  }
+  .story-body::before, .story-body::after { display: none; }
+  .story-pic { width: min(48%, 62vh); width: min(48%, 62dvh); }
+  .story-copy { flex: 1 1 0; max-width: 34em; }
+  .story-copy .card-ornament.above { display: inline-flex; margin-bottom: 14px; }
+  .story-words-page .story-copy { flex: 0 1 34em; }
 }
-.story-count {
-  font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--ink-3);
-  min-width: 68px; text-align: center;
-}
-.story-controls .icon-btn:disabled { opacity: .3; cursor: default; }
 
 @container vp (max-width: 720px) {
-  .story-part { padding: 8px 16px 16px; }
+  .loops.stories.reading { padding-inline: 16px; }
   .story-text { font-size: 18.5px; }
   .story-tr { font-size: 15px; }
 }

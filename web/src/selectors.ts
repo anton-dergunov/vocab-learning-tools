@@ -615,6 +615,40 @@ export function storyTitle(graph: VocabularyGraph, story: Story, limit = 3): str
   return rest > 0 ? `${named.join(", ")} +${rest}` : named.join(", ");
 }
 
+/** One line of the story's closing page: a word it was asked to teach. */
+export interface StoryWordEntry {
+  lexemeId: string;
+  /** As it was asked for — the same text the story's row in the list shows. */
+  headword: string;
+  emoji: string;
+  /** The word's own list line, in the language the story is translated into. Empty if it has none. */
+  gloss: string;
+  /** False for a word the writer could not work in: asked for and honestly not used. */
+  used: boolean;
+}
+
+/**
+ * The words a story was made from, for the page at its end.
+ *
+ * Each is looked up among **all** lexemes, tombstones included, for the reason `domain.ts` states for
+ * the reference itself: a word deleted since the story was written is still a word the story taught,
+ * and the page should say so rather than lose a line. Its emoji and gloss then come from the record
+ * that is left, and a lexeme that is gone altogether leaves the words the story kept on its own.
+ */
+export function storyWordEntries(graph: VocabularyGraph, storyId: string): StoryWordEntry[] {
+  const held = new Map(graph.lexemes.map((lexeme) => [lexeme.id, lexeme]));
+  return storyWordsOf(graph, storyId).map((word) => {
+    const lexeme = held.get(word.lexemeId);
+    return {
+      lexemeId: word.lexemeId,
+      headword: word.sourceText,
+      emoji: lexeme?.emoji || "📄",
+      gloss: lexeme ? shortGlossOf(graph, lexeme) : "",
+      used: word.forms.length > 0
+    };
+  });
+}
+
 /**
  * Words a story could be built from, sampled out of what is on screen.
  *
@@ -650,10 +684,16 @@ export interface StorySpan {
  * A form that cannot be found simply is not marked — degraded, never broken. Longest forms are
  * matched first so `asombrosos` wins over `asombroso`, and matching is accent- and case-insensitive
  * because a word at the start of a sentence is capitalised and is still the word.
+ *
+ * `field` says which language is being searched: the forms the story was written with, or the words
+ * the translator reported for its translation. The same rules serve both, because they are the same
+ * problem — a string the server has already checked is in the text.
  */
-export function storySpans(text: string, words: StoryWord[]): StorySpan[] {
+export function storySpans(
+  text: string, words: StoryWord[], field: "forms" | "translationForms" = "forms"
+): StorySpan[] {
   const wanted: { form: string; lexemeId: string }[] = [];
-  words.forEach((word) => word.forms.forEach((form) => {
+  words.forEach((word) => word[field].forEach((form) => {
     const trimmed = form.trim();
     if (trimmed) wanted.push({ form: trimmed, lexemeId: word.lexemeId });
   }));

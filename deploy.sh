@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=10
+helper_protocol=11
 worker_arguments=
 
 mode=
@@ -19,6 +19,7 @@ llm_api_key_stdin=false
 google_credentials=
 reset_data=false
 reset_database=false
+transition=false
 cancel_jobs=false
 remember=false
 bind_address=
@@ -34,14 +35,15 @@ usage() {
 usage:
   ./deploy.sh --local [--root PATH] [--bind-address ADDRESS] [--port PORT]
               [--app-bind-address ADDRESS] [--app-port PORT]
-              [--configure-credentials] [--reset-data] [--reset-database] [--cancel-jobs]
+              [--configure-credentials] [--reset-data] [--reset-database | --transition]
+              [--cancel-jobs]
               [--configure-llm [--llm-chain IDS] [--llm-set NAME=VALUE]...
                [--llm-key NAME --llm-api-key-stdin]]
   ./deploy.sh [--target USER@HOST] [--root PATH] [--configure-credentials]
               [--bind-address ADDRESS] [--port PORT] [--remember-target]
               [--app-bind-address ADDRESS] [--app-port PORT]
-              [--https-port PORT] [--service NAME] [--reset-data] [--reset-database]
-              [--cancel-jobs]
+              [--https-port PORT] [--service NAME] [--reset-data]
+              [--reset-database | --transition] [--cancel-jobs]
               [--configure-llm [--llm-chain IDS] [--llm-set NAME=VALUE]...
                [--llm-key NAME --llm-api-key-stdin]]
   ./deploy.sh [--target USER@HOST] [--remember-target] --install-helper
@@ -57,6 +59,13 @@ usage:
   --reset-data        replace the Anki sync server and robot collections
   --reset-database    replace the vocabulary database from scratch; accounts go with
                       it and are recreated with --create-account. Anki data is untouched
+  --transition        carry the vocabulary database across a schema change instead of
+                      rebuilding it. Takes no argument: it reads the revision the database
+                      is stamped with and runs the converter this release ships for that
+                      revision, after a dry run and a backup. A database already current is
+                      left alone; one no converter fits is refused and nothing is deployed.
+                      The backup goes in the dated directory under the deployment's
+                      backups/, and its path is printed
   --cancel-jobs       cancel the server's open jobs instead of refusing to deploy
                       while they run. A deploy never carries a job across versions
   --create-account    create one account on the running server, reading the address
@@ -136,6 +145,7 @@ while [ "$#" -gt 0 ]; do
     --install-samples) choose_action install-samples; shift ;;
     --reset-data) reset_data=true; shift ;;
     --reset-database) reset_database=true; shift ;;
+    --transition) transition=true; shift ;;
     --cancel-jobs) cancel_jobs=true; shift ;;
     *) usage ;;
   esac
@@ -253,6 +263,9 @@ if [ "$configure" = true ] && [ "$action" != deploy ]; then usage; fi
 if [ "$configure_llm" = true ] && [ "$action" != deploy ]; then usage; fi
 if [ "$reset_data" = true ] && [ "$action" != deploy ]; then usage; fi
 if [ "$reset_database" = true ] && [ "$action" != deploy ]; then usage; fi
+if [ "$transition" = true ] && [ "$action" != deploy ]; then usage; fi
+# Opposite answers to the same schema change: rebuild it, or carry it across.
+if [ "$transition" = true ] && [ "$reset_database" = true ]; then usage; fi
 
 if [ "$configure_llm" = false ]; then
   [ -z "$llm_chain$llm_settings$llm_key_name$google_credentials" ] \
@@ -527,6 +540,7 @@ if [ "$mode" = local ]; then
   [ -z "$google_credentials" ] || set -- "$@" --google-credentials-file "$google_credentials"
   [ "$reset_data" = false ] || set -- "$@" --reset-data
   [ "$reset_database" = false ] || set -- "$@" --reset-database
+  [ "$transition" = false ] || set -- "$@" --transition
   if [ -n "$credential_args" ]; then
     printf '%s\n%s\n' "$sync_username" "$sync_password" | "$repo_root/deploy/acervo/install.sh" "$@"
   else
@@ -710,6 +724,7 @@ installer_arguments="$installer_arguments --bind-address $effective_bind_address
 installer_arguments="$installer_arguments --app-bind-address $effective_app_bind_address --app-port $effective_app_port"
 [ "$reset_data" = false ] || installer_arguments="$installer_arguments --reset-data"
 [ "$reset_database" = false ] || installer_arguments="$installer_arguments --reset-database"
+[ "$transition" = false ] || installer_arguments="$installer_arguments --transition"
 
 if [ "$remote_mode" = helper ]; then
   echo "Streaming and installing with the passwordless Acervo launcher..."

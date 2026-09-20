@@ -498,11 +498,13 @@ def _project_story_word(row: Mapping[str, Any]) -> dict[str, Any]:
         # An empty list is a real answer — the story did not manage to use this word — so it is
         # projected as `[]` and never as `None`.
         "forms": [str(one) for one in (row["forms"] or []) if str(one).strip()],
+        "translationForms": [str(one) for one in (row["translation_forms"] or []) if str(one).strip()],
     }
 
 
 def _assign_story_word(value: Mapping[str, Any]) -> dict[str, Any]:
     forms = value.get("forms")
+    translation_forms = value.get("translationForms")
     return {
         "story": trimmed(value.get("storyId")),
         "lexeme": trimmed(value.get("lexemeId")),
@@ -511,6 +513,8 @@ def _assign_story_word(value: Mapping[str, Any]) -> dict[str, Any]:
         # teach, and editing the lexeme afterwards must not rewrite what was asked.
         "source_text": "" if value.get("sourceText") is None else str(value.get("sourceText")),
         "forms": [str(one) for one in forms if str(one).strip()] if isinstance(forms, list) else [],
+        "translation_forms": [str(one) for one in translation_forms if str(one).strip()]
+        if isinstance(translation_forms, list) else [],
     }
 
 

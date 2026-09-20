@@ -7,7 +7,7 @@ PATH="$PATH:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/pa
 export PATH
 
 usage() {
-  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--llm-credentials-file FILE] [--google-credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data] [--reset-database]" >&2
+  echo "usage: install.sh [--root PATH] [--archive FILE] [--credentials-stdin | --credentials-file FILE] [--llm-credentials-file FILE] [--google-credentials-file FILE] [--bind-address ADDRESS] [--port PORT] [--app-bind-address ADDRESS] [--app-port PORT] [--reset-data] [--reset-database | --transition]" >&2
   exit 2
 }
 
@@ -38,6 +38,7 @@ llm_credentials_file=
 google_credentials_file=
 reset_data=false
 reset_database=false
+transition=false
 requested_bind_address=
 requested_anki_port=
 requested_app_bind_address=
@@ -56,10 +57,13 @@ while [ "$#" -gt 0 ]; do
     --app-port) [ "$#" -ge 2 ] || usage; requested_app_port=$2; shift 2 ;;
     --reset-data) reset_data=true; shift ;;
     --reset-database) reset_database=true; shift ;;
+    --transition) transition=true; shift ;;
     *) usage ;;
   esac
 done
 [ "$credentials_stdin" = false ] || [ -z "$credentials_file" ] || usage
+# Rebuilding the database and converting it are opposite answers to the same schema change.
+[ "$reset_database" = false ] || [ "$transition" = false ] || usage
 case "$requested_bind_address" in *[!A-Za-z0-9:._-]*) usage ;; esac
 case "$requested_app_bind_address" in *[!A-Za-z0-9:._-]*) usage ;; esac
 case "$requested_anki_port" in ""|*[!0-9]*) [ -z "$requested_anki_port" ] || usage ;; esac
@@ -404,6 +408,59 @@ if [ "$reset_database" = true ]; then
   echo "Vocabulary database replaced; the previous one is in $backup_dir/server"
 fi
 
+# **A schema change carried across instead of rebuilt around.** The release ships a converter for the
+# change under `scripts/throwaway/`, and `scripts/transition.py` finds it by the revision the database
+# is stamped with — nothing here knows what any converter does, so deleting one leaves nothing behind.
+#
+# It runs in the *new* server image, because the converter compares the database with the schema that
+# image carries, and as the user the server runs as, because a root-owned write would leave the file
+# unreadable to the server. The server has to be stopped first: the copy below and the conversion
+# both need a database nothing is writing to.
+#
+# On a refusal the previous server is started again and this exits, so a database no converter fits
+# leaves the service up and the backup untouched. `current-release` has not moved yet either.
+if [ "$transition" = true ]; then
+  run_quietly "Building the server image" compose -p "$compose_project" \
+    --env-file "$acervo_root/deployment.env" \
+    --env-file "$acervo_root/secrets.env" \
+    --env-file "$acervo_root/llm.env" \
+    -f "$compose_file" build server
+  echo "Stopping the server to convert its database..."
+  compose -p "$compose_project" \
+    --env-file "$acervo_root/deployment.env" \
+    --env-file "$acervo_root/secrets.env" \
+    --env-file "$acervo_root/llm.env" \
+    -f "$compose_file" stop server >/dev/null 2>&1 || true
+  # The database and its write-ahead files, and only those: this changes nothing but the schema, so
+  # the media beside it is not copied into every dated backup. Copied once the container has stopped,
+  # for the reason the reset above states.
+  mkdir -p "$backup_dir/server"
+  for database_file in "$acervo_root/data/server"/acervo.db*; do
+    [ -f "$database_file" ] || continue
+    cp -p "$database_file" "$backup_dir/server/"
+  done
+  echo "Database backup: $backup_dir/server"
+  echo "  (safe to delete once the new server has been working for a while; the ten newest backups are kept)"
+  transition_status=0
+  compose -p "$compose_project" \
+    --env-file "$acervo_root/deployment.env" \
+    --env-file "$acervo_root/secrets.env" \
+    --env-file "$acervo_root/llm.env" \
+    -f "$compose_file" run --rm --no-deps \
+    -v "$release_dir/scripts:/opt/release-scripts:ro" \
+    server python /opt/release-scripts/transition.py || transition_status=$?
+  if [ "$transition_status" -ne 0 ]; then
+    echo "The database was not converted. Starting the previous server again." >&2
+    compose -p "$compose_project" \
+      --env-file "$acervo_root/deployment.env" \
+      --env-file "$acervo_root/secrets.env" \
+      --env-file "$acervo_root/llm.env" \
+      -f "$compose_file" start server >/dev/null 2>&1 || true
+    echo "Nothing was deployed. The backup is at $backup_dir/server" >&2
+    exit "$transition_status"
+  fi
+fi
+
 # Replacing PocketBase renamed the compose service, so an already-deployed server still carries the
 # old container — and it still holds the app port, which makes the new one fail to bind with "port is
 # already allocated". Compose calls it an orphan and warns rather than removing it, and the warning
@@ -539,4 +596,9 @@ if [ -d "$acervo_root/releases" ]; then
 fi
 echo "Acervo Anki sync server is healthy at $bind_address:$anki_port"
 echo "Acervo internal HTTP backend is healthy at http://$app_bind_address:$app_port"
+# Said again here because the line above it scrolled past in the build output: this is the copy to
+# delete, by hand, once the converted database has proved itself.
+if [ "$transition" = true ]; then
+  echo "The database was converted. Its backup, from before the conversion, is at $backup_dir/server"
+fi
 echo "Open the separately configured HTTPS reverse-proxy or Tailscale Serve address; this deployment does not claim the host's default HTTPS endpoint."
