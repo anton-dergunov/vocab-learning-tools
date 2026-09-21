@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Sequence
 
 from acervo.models import ChainExhausted, TextResult, call, chain, journal
@@ -156,11 +155,12 @@ class BriefWriter:
     """
 
     def __init__(self, catalogue: Catalogue, candidates: Sequence[chain.Candidate],
-                 template_path: str | Path, styles: StyleTable,
+                 template: str, styles: StyleTable,
                  weights: dict[str, float] | None = None, boost_variety: bool = True) -> None:
         self.catalogue = catalogue
         self.candidates = tuple(candidates)
-        self.template = Path(template_path).read_text(encoding="utf-8")
+        # The prompt's text, not its file: the server appends the owner's rules to it first.
+        self.template = template
         self.styles = styles
         self.weights = weights
         self.boost_variety = boost_variety

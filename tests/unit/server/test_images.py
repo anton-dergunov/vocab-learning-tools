@@ -355,6 +355,22 @@ def test_a_suppressed_sense_is_not_re_briefed(server):
     assert chop["id"] in again
 
 
+def test_asking_from_a_ruled_out_sense_briefs_it_again_and_lifts_the_ruling(server):
+    """Write a new brief, pressed in that sense's own picture dialog, takes the ruling back the way
+    Draw does. Before, the job skipped the sense and finished "done" having changed nothing there."""
+    entry, itch, chop, sentence = word(server)
+    written = rows(brief(server, entry, (itch, sentence["id"]), (chop, None)))
+    for row in written.values():
+        assert server.delete(f"/images/prompts/{row['id']}").status_code == 200
+
+    server.model.brief = a_brief_for((itch, sentence["id"]), (chop, None), style="ukiyo-e")
+    again = rows(called(brief_lexeme, server.settings, server.owner, DEVICE, entry["id"],
+                        revive=chop["id"]))
+    assert set(again) == {chop["id"]}, "only the sense that asked; the other ruling stands"
+    assert again[chop["id"]]["suppressed"] is False
+    assert again[chop["id"]]["styleId"] == "ukiyo-e"
+
+
 def test_deleting_a_picture_removes_the_file_and_rules_the_sense_out(server):
     """Deliberately not a tombstone: the id is derived from the sense, so a tombstoned row would be
     invisible to the sweep, re-briefed, and re-minted at the same id."""

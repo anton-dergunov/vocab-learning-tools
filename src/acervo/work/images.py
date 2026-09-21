@@ -29,7 +29,9 @@ def draw(context: JobContext, step: Step) -> None:
 
 def rebrief(context: JobContext, step: Step) -> None:
     step.gate()
-    images.brief_lexeme(context.settings, context.owner, DEVICE, context.subject_id)
+    # Asked from one sense's picture dialog, that sense is briefed even if it was ruled out.
+    images.brief_lexeme(context.settings, context.owner, DEVICE, context.subject_id,
+                        revive=context.input.get("senseId") or None)
 
 
 register(Kind("image.redraw", ("draw",),

@@ -28,6 +28,7 @@ from acervo.models import ChainExhausted, ProviderError, chain, load_catalogue
 from acervo.repository import clip_settings, graph
 from acervo.services.models import chain_for, refusal
 from acervo.services.prompts import prompt_text
+from acervo.services.rules import with_rules
 from acervo.settings import Settings
 
 # What a chosen clip is written as: an ordinary example whose origin says it was spoken.
@@ -165,7 +166,7 @@ def find_clips(settings: Settings, owner: str, device: str, lexeme_id: str) -> d
         settings.prompts_path, "acervo_clip_select",
         {"selfContainedOnly": chosen.self_contained_only},
     )
-    selector = ClipSelector(load_catalogue(), resolved, template)
+    selector = ClipSelector(load_catalogue(), resolved, with_rules(template, owner))
     gloss_lang = (article.gloss_langs or ["en"])[0]
     try:
         # Nothing is stamped on any path that raises, so a word refused here stays unconsulted and

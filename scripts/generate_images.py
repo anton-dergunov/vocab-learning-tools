@@ -198,7 +198,7 @@ def command_run(args: argparse.Namespace) -> int:
     catalogue = load_catalogue()
     runner = Runner(
         store=store,
-        writer=BriefWriter(catalogue, brief_chain, args.template, styles),
+        writer=BriefWriter(catalogue, brief_chain, Path(args.template).read_text(encoding="utf-8"), styles),
         renderer=Renderer(size=(args.size, args.size)),
         styles=styles,
         template_path=args.template,

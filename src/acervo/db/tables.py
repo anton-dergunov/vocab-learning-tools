@@ -1,4 +1,4 @@
-"""The fifteen owner-scoped tables, plus `users`.
+"""The twenty-two owner-scoped tables, plus `users`.
 
 Ported column for column and index for index from the PocketBase bootstrap migration this replaces.
 Two of those indexes carry reasoning that must survive the move, and both comments are below.
@@ -191,6 +191,19 @@ clip_settings = Table(
     Column("self_contained_only", Boolean, nullable=False, default=False),
     Column("edited_at", String(24), nullable=False),
     Index("idx_clip_settings_owner", "owner", unique=True),
+)
+
+# The owner's standing rules for everything a text model writes for them — "I am vegan", "I read
+# Spanish at B2" — appended to those prompts by `services/prompts.with_rules`. Free text, one per
+# owner, and like the other settings tables **no row means none**.
+prompt_rules = Table(
+    "prompt_rules",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    Column("rules", String(4000), nullable=False, default=""),
+    Column("edited_at", String(24), nullable=False),
+    Index("idx_prompt_rules_owner", "owner", unique=True),
 )
 
 # When this owner's nightly run happens, and which of its steps are on. Server state for

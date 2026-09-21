@@ -1444,7 +1444,9 @@ export default function App() {
       prompt={article.senses.find((entry) => entry.sense.id === editingImage.senseId)?.images[0]
         ?? editingImage.prompt}
       briefing={isOpen(jobFor(jobsStatus, "image.rebrief", article.lexeme.id))}
-      onRebrief={() => askForPicture("image.rebrief", { kind: "lexeme", id: article.lexeme.id })}
+      // Asked from this sense's dialog, so a sense ruled out here is briefed again rather than skipped.
+      onRebrief={() => askForPicture("image.rebrief", { kind: "lexeme", id: article.lexeme.id },
+        { senseId: editingImage.senseId })}
       headword={article.lexeme.headword}
       styles={imageStyles}
       onClose={() => setEditingImage(null)}

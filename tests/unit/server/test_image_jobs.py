@@ -112,6 +112,19 @@ def test_a_new_brief_rewrites_every_sense_of_the_word(server, drawn, runner):
     assert prompt(server, chop["id"])["styleId"] == "ukiyo-e"
 
 
+def test_a_new_brief_asked_from_a_ruled_out_sense_briefs_that_sense(server, drawn, runner):
+    entry, itch, chop = drawn
+    for one in (itch, chop):
+        assert server.delete(f"/images/prompts/{image_prompt_id(one['id'])}").status_code == 200
+    server.model.brief = a_brief_for((itch, None), (chop, None), style="ukiyo-e")
+    job = ask(server, "image.rebrief", "lexeme", entry["id"], input={"senseId": chop["id"]}).json()["data"]
+    runner.run_until_idle()
+    assert jobs.get(server.owner, job["id"])["state"] == "done"
+    assert prompt(server, chop["id"])["suppressed"] is False
+    assert prompt(server, chop["id"])["styleId"] == "ukiyo-e"
+    assert prompt(server, itch["id"])["suppressed"] is True, "the sense that did not ask stays ruled out"
+
+
 def test_somebody_elses_picture_cannot_be_redrawn(server, other, drawn):
     _, itch, _ = drawn
     assert ask(other, "image.redraw", "imagePrompt", image_prompt_id(itch["id"])).status_code == 404

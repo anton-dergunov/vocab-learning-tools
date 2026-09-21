@@ -41,6 +41,8 @@ FIXED_SUBJECTS: dict[str, str] = {"corpus.update": "corpus"}
 # What a request may carry into its job, per kind. Edit-and-draw is a redraw with its own wording.
 INPUTS: dict[str, tuple[str, ...]] = {
     "image.redraw": ("prompt", "styleId"),
+    # The sense whose picture dialog asked, so a sense ruled out there is briefed again.
+    "image.rebrief": ("senseId",),
     # Try again on a loop keeps the music that was asked for, which the interface re-sends from the
     # job it is retrying. Without it here the field would be dropped and the retry would differ from
     # the original in a way nobody asked for.

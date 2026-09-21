@@ -39,6 +39,7 @@ from acervo.images.styles import StyleTable, load_styles
 from acervo.models import ChainExhausted, ProviderError, ProviderRefused, chain, load_catalogue
 from acervo.repository import graph, image_settings
 from acervo.services.models import chain_for, refusal
+from acervo.services.rules import with_rules
 from acervo.settings import Settings
 
 # How many times a sense is drawn before the sweep leaves it alone. In code rather than in the
@@ -154,7 +155,8 @@ def _flag(value: Any, field: str) -> bool:
 # ── the two calls ───────────────────────────────────────────────────────────
 
 
-def brief_lexeme(settings: Settings, owner: str, device: str, lexeme_id: str) -> dict[str, Any]:
+def brief_lexeme(settings: Settings, owner: str, device: str, lexeme_id: str,
+                 revive: str | None = None) -> dict[str, Any]:
     """One text call for every sense of one word, and the rows it produces.
 
     Batched per lexeme because §03's batching is load-bearing: a writer that sees both senses of
@@ -164,6 +166,10 @@ def brief_lexeme(settings: Settings, owner: str, device: str, lexeme_id: str) ->
     A sense the writer **refuses** gets a row too, with no brief, the reason it gave, and
     `suppressed`. That refusal is a finished outcome, and a row is the only place it can be recorded
     where the sweep will see it; leaving the sense bare would have it re-briefed every night forever.
+
+    `revive` names the one sense whose picture dialog asked, and that sense is briefed even though
+    the owner ruled it out — asking for a new brief from its own dialog is taking the ruling back,
+    exactly as drawing there is. Every other ruled-out sense stays ruled out.
     """
     chosen = image_settings.settings(owner)
     candidates = _candidates(settings, owner, "text")
@@ -172,7 +178,8 @@ def brief_lexeme(settings: Settings, owner: str, device: str, lexeme_id: str) ->
     view, stored = _article(owner, lexeme_id)
     table = _styles()
     writer = BriefWriter(
-        load_catalogue(), candidates, _template(settings), table,
+        load_catalogue(), candidates,
+        with_rules(_template(settings).read_text(encoding="utf-8"), owner), table,
         weights=chosen.weights(style.id for style in table.styles),
         boost_variety=chosen.boost_variety,
     )
@@ -209,7 +216,8 @@ def brief_lexeme(settings: Settings, owner: str, device: str, lexeme_id: str) ->
         for brief in briefs
         # A sense the owner has ruled on is not re-briefed, and this is the check that makes
         # `suppressed` mean something rather than being a field nothing reads.
-        if not (held.get(image_prompt_id(brief.sense_id)) or {}).get("suppressed")
+        if brief.sense_id == revive
+        or not (held.get(image_prompt_id(brief.sense_id)) or {}).get("suppressed")
     ]
     if written:
         graph.merge_graph(owner, device, {"imagePrompts": written}, enqueue=None)

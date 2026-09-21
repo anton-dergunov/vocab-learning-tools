@@ -31,6 +31,7 @@ from acervo.services.capture.coerce import (
 )
 from acervo.services.models import llm_json
 from acervo.services.prompts import prompt_text
+from acervo.services.rules import with_rules
 from acervo.settings import Settings
 
 DOCUMENT_LIMIT = 32000
@@ -84,7 +85,7 @@ def run_chat(settings: Settings, owner: str, body: dict[str, Any]) -> dict[str, 
     name = "acervo_chat" if subject["kind"] == "article" else "acervo_chat_reference"
     try:
         answer, call = llm_json(
-            settings, owner, prompt_text(settings.prompts_path, name),
+            settings, owner, with_rules(prompt_text(settings.prompts_path, name), owner),
             _user_turn(subject, body), caller="chat", hedge_after=HEDGE_SECONDS,
         )
     except ApiError as refused:

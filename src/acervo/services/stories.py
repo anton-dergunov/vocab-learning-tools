@@ -37,6 +37,7 @@ from acervo.repository import graph
 from acervo.repository.graph import article_records
 from acervo.services.models import chain_for, refusal
 from acervo.services.prompts import prompt_text
+from acervo.services.rules import with_rules
 from acervo.settings import Settings
 from acervo.stories import illustrate, translate, write
 from acervo.stories.types import story_types
@@ -265,7 +266,9 @@ def write_story(settings: Settings, owner: str, device: str, story_id: str) -> d
     table = story_types()
     story_type = table.get(story["typeId"] or "") or table.surprise(story_id)
 
-    writer = write.StoryWriter(load_catalogue(), candidates, _template(settings, WRITE_TEMPLATE))
+    writer = write.StoryWriter(
+        load_catalogue(), candidates, with_rules(_template(settings, WRITE_TEMPLATE), owner)
+    )
     request = write.build_request(
         language=story["language"], language_name=language_name(story["language"]),
         words=words, story_type_brief=story_type.brief, story_type_label=story_type.label,
@@ -330,7 +333,7 @@ def translate_story(settings: Settings, owner: str, device: str, story_id: str) 
     candidates = _candidates(settings, owner, "text")
     _require(candidates, settings, owner, "text")
     translator = translate.Translator(
-        load_catalogue(), candidates, _template(settings, TRANSLATE_TEMPLATE)
+        load_catalogue(), candidates, with_rules(_template(settings, TRANSLATE_TEMPLATE), owner)
     )
     parts = [write.Part(row["heading"] or "", row["text"] or "") for row in rows]
     try:
@@ -374,7 +377,7 @@ def brief_story(settings: Settings, owner: str, device: str, story_id: str) -> d
     candidates = _candidates(settings, owner, "text")
     _require(candidates, settings, owner, "text")
     briefer = illustrate.BriefWriter(
-        load_catalogue(), candidates, _template(settings, BRIEF_TEMPLATE)
+        load_catalogue(), candidates, with_rules(_template(settings, BRIEF_TEMPLATE), owner)
     )
     parts = [write.Part(row["heading"] or "", row["text"] or "") for row in rows]
     try:

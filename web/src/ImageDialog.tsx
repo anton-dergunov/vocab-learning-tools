@@ -140,7 +140,7 @@ export function ImageDialog({
 
         {prompt?.failureReason && <p className="config-help warn">{prompt.failureReason}</p>}
         {prompt?.suppressed && !prompt.imageRef && <p className="config-help">
-          This sense is set to have no picture. Drawing one turns that off.
+          This sense is set to have no picture. Drawing one, or writing a new brief, turns that off.
         </p>}
 
         <div className="image-actions">

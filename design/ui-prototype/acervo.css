@@ -2107,12 +2107,17 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 /* The dialog is a `.settings` dialog with a different body, so it inherits the bound, the scroll
    region and the full-screen-on-a-phone rule rather than restating any of them. */
 .image-dialog { width: min(620px, 100%); }
-.image-brief {
+.image-brief, .rules-text {
   padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px;
   background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; line-height: 1.5;
   resize: vertical; min-height: 96px;
 }
-.image-brief:focus { border-color: var(--core); outline: none; }
+.image-brief:focus, .rules-text:focus { border-color: var(--core); outline: none; }
+/* Settings ▸ Rules: the owner's standing rules, a few sentences to a few paragraphs. */
+.rules-text { width: 100%; min-height: 160px; }
+.rules-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rules-count { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.rules-count.warn { color: var(--warn); }
 /* The whole prompt that was sent: read to copy, so it wraps rather than scrolling sideways. */
 .image-composed {
   margin: 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px;

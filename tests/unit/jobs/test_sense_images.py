@@ -651,7 +651,7 @@ def _writer():
     from acervo.images.brief import BriefWriter
     from acervo.models.catalogue import load_catalogue
 
-    return BriefWriter(load_catalogue(), (), TEMPLATE, load_styles(STYLES))
+    return BriefWriter(load_catalogue(), (), TEMPLATE.read_text(encoding="utf-8"), load_styles(STYLES))
 
 
 def _exhausted(*reasons: str):

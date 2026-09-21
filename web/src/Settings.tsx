@@ -10,6 +10,7 @@ import StoryPanel from "./StoryPanel";
 import ImagePanel from "./ImagePanel";
 import ModelPanel from "./ModelPanel";
 import PronunciationPanel from "./PronunciationPanel";
+import RulesPanel from "./RulesPanel";
 import { fetchMacRelease, type MacRelease } from "./macRelease";
 import { installUpdate, isNativeHost, shouldOfferMacApplication, type UpdateStage } from "./pwa";
 import type { ReplicaSnapshot } from "./repository";
@@ -26,7 +27,7 @@ import {
 const CONFIRMATION = "DELETE";
 
 export type Page =
-  | "general" | "vocabularies" | "topics" | "models" | "images" | "pronunciation" | "loops" | "stories" | "clips" | "dictionaries" | "editor"
+  | "general" | "vocabularies" | "topics" | "models" | "rules" | "images" | "pronunciation" | "loops" | "stories" | "clips" | "dictionaries" | "editor"
   | "activity" | "schedule" | "sync" | "data";
 
 export default function Settings({ update, email, status, snapshot, language, captureHealth, page: opensOn, arm, onSignOut, onClose, onNotify, onChanged }: {
@@ -119,6 +120,7 @@ export default function Settings({ update, email, status, snapshot, language, ca
     { id: "vocabularies", label: "Vocabularies" },
     { id: "topics", label: "Topics" },
     { id: "models", label: "Providers" },
+    { id: "rules", label: "Rules" },
     { id: "images", label: "Pictures" },
     { id: "pronunciation", label: "Pronunciation" },
     { id: "loops", label: "Loops" },
@@ -227,6 +229,8 @@ export default function Settings({ update, email, status, snapshot, language, ca
         </section>}
 
         {page === "models" && <ModelPanel onNotify={onNotify} />}
+
+        {page === "rules" && <RulesPanel onNotify={onNotify} />}
 
         {page === "images" && <ImagePanel onNotify={onNotify} />}
 

@@ -465,6 +465,17 @@ export interface ClipSettings {
   corpus: CorpusReadout;
 }
 
+/**
+ * The owner's standing rules for everything a text model writes for them. Stored on the server, so
+ * every device reads the same text; empty means none.
+ */
+export interface PromptRules {
+  rules: string;
+  chosen: boolean;
+  /** The most characters the server will keep. */
+  limit: number;
+}
+
 /* ── jobs ─────────────────────────────────────────────────────────────────
    Work the server does on the owner's behalf. Server state, never replicated: the interface shows
    it and never does it. A job's results reach the replica the way every record does, on the pull
@@ -1065,6 +1076,13 @@ export const backendSession = {
     return client.call<ClipSettings>("/clips/settings", {
       method: "PUT", body: JSON.stringify(changes)
     });
+  },
+
+  promptRules(): Promise<PromptRules> {
+    return client.call<PromptRules>("/rules");
+  },
+  savePromptRules(rules: string): Promise<PromptRules> {
+    return client.call<PromptRules>("/rules", { method: "PUT", body: JSON.stringify({ rules }) });
   },
 
   resetGraph(deviceId: string): Promise<ResetResponse> {
