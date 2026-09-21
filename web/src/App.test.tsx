@@ -6,7 +6,8 @@ import { AcervoApiError, backendSession, SCHEMA_VERSION, type CaptureHealth, typ
 import { hydrateGlosses, lookup as lookupDictionaries, searchDictionaries } from "./dictionaries";
 import { jobStream } from "./jobs";
 import { INSTALLED_EVENT, UPDATE_EVENT } from "./pwa";
-import { repository } from "./repository";
+import { LocalAcervoRepository, repository } from "./repository";
+import type { LocalDatabase } from "./localDatabase";
 import { articleChanges } from "./testArticles";
 import { TEST_OWNER, testGraph } from "./testGraph";
 
@@ -304,6 +305,13 @@ describe("Acervo application", () => {
     // A cold start on a tablet reads the whole replica back before there is anything to show, and
     // the interface used to be drawn during that read saying "All 0 · Loops 0 · Stories 0".
     signedIn();
+    // A cold start: the words are already on this device from an earlier opening, and no place was
+    // remembered — the first opening after an update, or after signing out.
+    await openList();
+    cleanup();
+    localStorage.clear();
+    // A new process on the same device: the stored replica stays, nothing is in memory any more.
+    Object.assign(repository, new LocalAcervoRepository(Reflect.get(repository, "database") as LocalDatabase));
     const load = repository.load.bind(repository);
     let release!: () => void;
     const reading = new Promise<void>((resolve) => { release = resolve; });
@@ -315,8 +323,18 @@ describe("Acervo application", () => {
     expect(screen.queryByRole("heading", { name: /All words/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Loops/ })).not.toBeInTheDocument();
 
+    // Every state the DOM passes through, not only where it settles: the interface must never exist
+    // without its words. A first frame with no language chosen yet drew every count as 0, and the
+    // tablet showed it for as long as the real list then took to render.
+    let emptyShell = false;
+    const watch = new MutationObserver(() => {
+      if (document.querySelector(".viewport") && !screen.queryByRole("button", { name: /picar/ })) emptyShell = true;
+    });
+    watch.observe(document.body, { childList: true, subtree: true });
     release();
-    expect(await screen.findByRole("button", { name: /picar/ })).toBeInTheDocument();
+    await screen.findByRole("button", { name: /picar/ });
+    watch.disconnect();
+    expect(emptyShell).toBe(false);
     expect(screen.queryByText("Opening your vocabulary…")).not.toBeInTheDocument();
   });
 

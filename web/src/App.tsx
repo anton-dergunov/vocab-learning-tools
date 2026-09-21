@@ -330,10 +330,10 @@ export default function App() {
   }, []);
 
   /* The first frame with words in it, for the launch timing in Settings ▸ Sync. */
-  const hasSnapshot = snapshot !== null;
+  const showing = snapshot !== null && language !== "";
   useEffect(() => {
-    if (hasSnapshot) requestAnimationFrame(() => markStartup("shown"));
-  }, [hasSnapshot]);
+    if (showing) requestAnimationFrame(() => markStartup("shown"));
+  }, [showing]);
 
   /* A rejected token drops the sign-in but keeps the replica: the vocabulary is still the owner's,
      and signing back in puts the article they were reading straight back on screen. */
@@ -359,8 +359,10 @@ export default function App() {
       // In the same render as the words themselves, so a cold start opens on the page you left
       // rather than flashing the first vocabulary's list on the way there.
       const place = placeIn(loaded, lastPlace());
+      // The language is chosen here too, never by an effect a render later: a first frame with no
+      // language drew every count as 0, and the tablet then sat on it while the real list rendered.
+      setLanguage(place?.language ?? languageOptions(loaded)[0]?.code ?? "");
       if (place) {
-        setLanguage(place.language);
         setTopic(place.topic);
         setOpenId(place.openId);
       }
@@ -1125,9 +1127,10 @@ export default function App() {
   if (showInstall) return <InstallGate onContinue={dismissInstall} />;
   if (session === undefined) return <Launch />;
   if (session === null) return <SignIn onSignedIn={setSession} />;
-  /* The interface waits for the replica rather than being drawn empty: counts of zero and no
-     vocabulary are a statement about the owner's words, not a loading state. */
-  if (!snapshot) return <Launch />;
+  /* The interface waits for the replica **and a chosen language** rather than being drawn empty:
+     counts of zero and no vocabulary are a statement about the owner's words, not a loading state.
+     A replica with no vocabulary at all has no language to choose and opens as it is. */
+  if (!snapshot || (!language && languages.length > 0)) return <Launch />;
 
   const active = languageOf(language || "en");
   /** Both surfaces you compose in. The main region stops scrolling and hands that to the view. */
