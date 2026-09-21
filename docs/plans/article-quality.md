@@ -494,7 +494,7 @@ Wide on purpose. Nothing here is scheduled.
 | 8 | Does decontextualised verification beat in-context review? | CoVe-style independent questions versus "is this right?" | ~$2 | Tests the mechanism, not just the outcome. |
 | 9 | What does the grounding we shipped do? | §6, three arms, sense-count negative check | ~$3 | Evaluates a shipped, disliked, unmeasured feature. |
 | 10 | Is a judge measuring correctness or fluency? | Judge scores versus ground-truth field accuracy on the same articles | ~$2 | Tests [2410.21819](https://arxiv.org/abs/2410.21819)'s perplexity explanation where truth is known. |
-| 11 | Where should the `emotion: null` boundary sit? | A fixed list, rated for whether the direction is one a speaker would recognise | ~$1 | Settles register issue 2 before clips are recorded in bulk. |
+| 11 | ~~Where should the `emotion: null` boundary sit?~~ | [`primary-gloss-emotion-tuning`](../../experiments/primary-gloss-emotion-tuning/README.md), gemini-free, 44 words × 3 rounds | free | **Closed 21 Sep 2026.** See defect register §2. |
 | 12 | Does a per-field rubric agree with itself across raters? | The same articles scored twice, by a model and by hand | time | Establishes whether §0's rubric is usable before it is relied on. |
 
 ---
@@ -550,28 +550,39 @@ omitting** `ipa` for languages whose orthography determines it; validating again
 dictionary (§3); or the in-chain check that demotes the model (§2). The last two are the only ones
 that close it.
 
-### 2 · The `emotion: null` boundary is conservative, and may be too conservative for a loop
+### 2 · The `emotion: null` boundary was too conservative — closed, 21 Sep 2026
 
-Note that `primaryGloss` and a lexeme-level `emotion` are **specified but not yet shipped** — the
-decision is recorded in [`lexibeat-integration.md`](lexibeat-integration.md) §2.8; the prompt and
-schema do not carry them. Everything below is measured from the experiment's candidate prompt.
+`primaryGloss` and a lexeme-level `emotion` shipped on 18 September 2026
+([`compose-lesson-line`](../../experiments/compose-lesson-line/README.md): adding them doesn't thin
+the rest of the article). That experiment measured the boundary below from its own candidate prompt
+and flagged wording quality as separate, unfinished work — this is that work, done in
+[`primary-gloss-emotion-tuning`](../../experiments/primary-gloss-emotion-tuning/README.md).
 
-The rule works and the pattern is coherent. Nulls cluster where you would want them:
+The original rule was coherent but too timid. Nulls clustered exactly where the shipped wording's own
+carve-outs pointed — a weekday, a preposition, a piece of furniture — and measured coverage on
+ordinary words sat at 57–89%, against the owner's own target of roughly 90%: a loop repeats one word
+six times over a beat, and a flat reading defeats half the point of the feature even when nothing is
+technically wrong with it.
 
-| word | nulls | reads as |
-| --- | --- | --- |
-| `el miércoles`, `magazine` | 8 of 8 | right — a weekday and a periodical |
-| `la casa` | 7 of 8 | probably right |
-| `el atasco`, `hoax`, `ponerse malo` | 2–4 | arguable |
-| `picar`, `currar`, `desmayarse` | 1–3 | **probably wrong for a loop** |
+The fix was not one sentence added beside the old carve-outs — a pilot draft that tried that landed
+coverage around 100%, but **at the cost of firing on every null control too**: a number, a
+conjunction, a Chinese grammatical particle all got an invented feeling, some of them decorative
+near-nulls ("neutral and matter-of-fact, connecting ideas together smoothly" for the word *of*). The
+shipped wording instead removes the carve-outs, replaces them with "picture the single most ordinary
+situation this word comes up in," and adds the rule that a description of flatness — "neutral,"
+"matter-of-fact" — **is** `null` and must be written as `null`, not as a sentence. That combination
+measured 88.6–100% coverage on ordinary words with **0% false positives** on the null-control set,
+across both the tuning round and a holdout of words never used while iterating the wording. Full
+numbers, the over-correction failure and how it was found are in the experiment's README.
 
-Words with a real charge — `asco`, `dar bronca`, `тоска`, `加油`, `turmoil` — were never null.
+`primaryGloss`'s companion defect — too short for a multi-word headword (`encender la computadora` →
+`turn`) — closed in the same pass: auto-fail rate on a mechanical word-count check fell from 15.6% to
+4.4% on the tuning set and from 20% to 0% on the holdout.
 
-The open question is not whether the rule fires but **where the line should sit**. A loop repeats one
-word six times over a beat, and *irritated, scratching at it* would serve `picar` better than a flat
-reading; a direction invented for `la casa` would be worse than none. This is a tuning pass on one
-paragraph, and it should happen **before** the field records clips in bulk, because a clip carries the
-words that were spoken and re-recording is the only fix.
+**Still open:** the experiment's real-database extraction was blocked (see its README's "Data
+access" section), so the numbers above are measured on the owner's five reported failures plus an
+authored synthetic set, not a random sample of the actual 1,700-word vocabulary. The true current
+`emotion` null rate on real data remains unmeasured.
 
 ### 3 · A pinyin tone error, not reproducibly
 

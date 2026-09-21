@@ -61,33 +61,21 @@ Field rules:
 - `shortGloss` — the one-line meaning for the list view, written in the FIRST language you are
   asked to gloss into. Short, and separated with `; ` when there are several distinct meanings:
   `to listen to him; to pay attention to him`.
-- `primaryGloss` — the translation a loop speaks aloud on one beat: ONE meaning, chosen, never a
-  list joined with `;`, `,` or `/`. Written in the FIRST language you are asked to gloss into — read
-  that instruction rather than assuming English. Its length follows the headword, not a word-count
-  rule: `el disfraz` → `costume` is one word for one word, but a multi-word headword gets a
-  multi-word gloss that actually means it — `tocar la guitarra` → `play the guitar`, `dar un paseo`
-  → `take a walk`, `quedarse dormido` → `fall asleep`. A phrase-length headword — an idiom, a
-  proverb — gets the whole phrase translated, not shrunk to fit a rule that was never about counting
-  words. This is NOT `shortGloss`: that line may carry several distinct meanings, and this one must
-  choose between them. It is normally the first term of the first sense's glosses, and it must be a
-  term a reader of that sense would accept.
+- `primaryGloss` — ONE term: the single most common translation, the one you would give if you were
+  allowed only one word. Written in the FIRST language you are asked to gloss into — read that
+  instruction rather than assuming English. It is spoken aloud on a beat, so keep it close to the
+  headword in length, and never use `;` or `,` to fit a second meaning in. This is NOT `shortGloss`:
+  that line may carry several distinct meanings, and this one must choose between them. It is
+  normally the first term of the first sense's glosses, and it must be a term a reader of that sense
+  would accept.
 - `emotion` — how a native speaker would SOUND saying THE WORD ITSELF, as a short English direction.
   The same rules as an example's `emotion` below: in English, about 3 to 12 words, the feeling and
-  how it colours the voice, no accent, no speed, no `[bracketed]` tags, no emoji. **Find one first.**
-  Picture the single most ordinary situation this word comes up in — not a stretch, not an edge
-  case, just the everyday moment a speaker actually reaches for it — and say how that moment sounds:
-  `el domingo` is a lazy, sunlit morning with nothing to do, warm and unhurried; `el lunes` is
-  someone who would rather still be asleep, flat and reluctant; a chair is somewhere you sink into
-  after a long day, settled and comfortable. Any word that names a thing, a place, an action or a
-  day has a scene like this, and the scene decides the feeling — not whether the word sounds, on its
-  own, like an emotional one, and not whether the scene is dramatic: reluctant, unhurried and settled
-  are all real answers, not settling for less than one.
-  `null` is not "no scene occurred to you" — it is the honest answer for a word that has **no scene
-  at all**: a number, a conjunction, a preposition, a grammatical particle, anything whose "everyday
-  moment" is every moment equally and so is not a moment. If the only thing you can say is that it
-  would be said "neutrally" or "matter-of-factly", that IS `null` — write `null` itself, never a
-  sentence that describes having nothing to say. The one hard constraint on a real answer is that it
-  must fit what the word actually means — do not read a frightening word in a cheerful voice.
+  how it colours the voice, no accent, no speed, no `[bracketed]` tags, no emoji. It belongs to the
+  word rather than to any one sentence, so write the feeling the word carries wherever it is used —
+  `playful and theatrical, enjoying the dressing-up` for the entry above. The default is the
+  OPPOSITE of an example's: most sentences a person would actually say carry a feeling, and most
+  words do not. Use `null` for a weekday, a preposition, a piece of furniture. A forced feeling is
+  worse than none.
 - `notes` — a few short lines on HOW the word is used, and how it differs from the neighbouring
   word the learner will confuse it with. This is the part no dictionary gives them, so it is worth
   real effort — but only when there is something to say. An empty list is better than filler.

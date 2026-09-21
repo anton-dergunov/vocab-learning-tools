@@ -75,5 +75,8 @@ Caddyfile
 # made. `ratings.json` and `review-key.json` go with them: the key would reveal the blind.
 /experiments/compose-lesson-line/runs/
 
+# The primary-gloss-emotion-tuning runs: raw replies per round, same call as the two above.
+/experiments/primary-gloss-emotion-tuning/runs/
+
 /spoken_plans/
 

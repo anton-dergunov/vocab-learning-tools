@@ -1,0 +1,531 @@
+# The word list this experiment runs both arms against.
+#
+# `source: real` rows are the owner's own reported failures, copied verbatim from
+# `spoken_plans/loops-glosses.txt` — headword and current (bad) `primaryGloss`, as he found them
+# while listening to generated loops. `source: synthetic` rows are authored for this experiment,
+# because the owner's actual database (per his own count) likely holds only a handful of multi-word
+# collocations with a too-short gloss, and real Chinese data is a single, unrepresentative word.
+#
+# Real production headwords beyond the five already reported still need pulling from the live
+# database to (a) find more real multi-word-collocation candidates and (b) measure today's actual
+# `emotion` null rate on a genuinely random sample, rather than guessing at "5% or maybe 10%". That
+# extraction is blocked for now — see the experiment README's "Data access" section — so `category:
+# emotion_random` below is a synthetic stand-in for the real random sample the plan calls for, not a
+# replacement for it.
+#
+# No synthetic collocation below reuses a word from `arms/after.md`'s own worked examples
+# (`el disfraz`, `tocar la guitarra`, `dar un paseo`, `quedarse dormido`, `el domingo`, `el lunes`,
+# a chair, `de`, `and`) — compose-lesson-line's own pilot got contaminated exactly this way and had
+# to fix it before spending money.
+
+vocabularies:
+  es: {language: es, definitionLang: es, glossLangs: [en], notesLang: en}
+  en: {language: en, definitionLang: en, glossLangs: [ru], notesLang: ru}
+  zh-Hans: {language: zh-Hans, definitionLang: en, glossLangs: [ru, en], notesLang: ru}
+
+topics: [Emotions, Actions, Nature, Culture, Food, Health, Appearance, Technology, Travel, Slang, Social, Places, Misc]
+
+words:
+  # --- real: the owner's own reported failures (spoken_plans/loops-glosses.txt) ---
+  - id: real-encender-la-computadora
+    language: es
+    headword: encender la computadora
+    lemma: encender
+    pos: verb
+    category: primary_multiword
+    source: real
+    why: "reported primaryGloss: `turn` — a 3-content-word headword collapsed to one word"
+
+  - id: real-en-misa
+    language: es
+    headword: en misa
+    lemma: misa
+    pos: phrase
+    category: primary_multiword
+    source: real
+    why: "reported primaryGloss: `mass` — dropped the preposition that carries the actual meaning (at mass)"
+
+  - id: real-pasar-musica
+    language: es
+    headword: pasar musica
+    lemma: pasar
+    pos: verb
+    category: primary_multiword
+    source: real
+    why: "reported primaryGloss: `DJ` — not even a translation of the headword, a role inferred from context"
+
+  - id: real-la-obra-de-teatro
+    language: es
+    headword: la obra de teatro
+    lemma: obra
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: "reported primaryGloss: `play` — arguably fine (a genuinely one-word English equivalent); kept as a review case, not an auto-fail"
+
+  - id: real-hacer-murales
+    language: es
+    headword: hacer murales
+    lemma: hacer
+    pos: verb
+    category: primary_multiword
+    source: real
+    why: "reported primaryGloss: `play` — wrong, not just short; unrelated to murals at all"
+
+  # --- synthetic: Spanish multi-word collocations, glossing into English (the reported bug's shape) ---
+  - id: syn-montar-en-bicicleta
+    language: es
+    headword: montar en bicicleta
+    lemma: montar
+    pos: verb
+    category: primary_multiword
+    source: synthetic
+
+  - id: syn-hacer-la-cama
+    language: es
+    headword: hacer la cama
+    lemma: hacer
+    pos: verb
+    category: primary_multiword
+    source: synthetic
+
+  - id: syn-pedir-disculpas
+    language: es
+    headword: pedir disculpas
+    lemma: pedir
+    pos: verb
+    category: primary_multiword
+    source: synthetic
+
+  - id: syn-ponerse-de-acuerdo
+    language: es
+    headword: ponerse de acuerdo
+    lemma: ponerse
+    pos: verb
+    category: primary_multiword
+    source: synthetic
+
+  - id: syn-dar-la-vuelta
+    language: es
+    headword: dar la vuelta
+    lemma: dar
+    pos: verb
+    category: primary_multiword
+    source: synthetic
+
+  - id: syn-tomar-el-pelo
+    language: es
+    headword: tomar el pelo
+    lemma: tomar
+    pos: idiom
+    category: primary_multiword
+    source: synthetic
+    why: an idiom (pull someone's leg) - tests whether the whole idiom translates rather than collapsing to one literal word
+
+  - id: syn-meter-la-pata
+    language: es
+    headword: meter la pata
+    lemma: meter
+    pos: idiom
+    category: primary_multiword
+    source: synthetic
+    why: another idiom (put your foot in it / mess up)
+
+  - id: syn-hacerse-cargo
+    language: es
+    headword: hacerse cargo
+    lemma: hacerse
+    pos: verb
+    category: primary_multiword
+    source: synthetic
+
+  - id: syn-echar-de-menos
+    language: es
+    headword: echar de menos
+    lemma: echar
+    pos: verb
+    category: primary_multiword
+    source: synthetic
+    why: idiomatic "to miss (someone)" - single-word English equivalent exists (miss), a legitimate short answer
+
+  - id: syn-quedarse-sin-palabras
+    language: es
+    headword: quedarse sin palabras
+    lemma: quedarse
+    pos: phrase
+    category: primary_multiword
+    source: synthetic
+    why: phrase-length (be left speechless) - no natural one-word English equivalent
+
+  # --- synthetic: single-word Spanish headwords, regression control ---
+  - id: syn-el-cuchillo
+    language: es
+    headword: el cuchillo
+    lemma: cuchillo
+    pos: noun
+    category: primary_singleword
+    source: synthetic
+
+  - id: syn-correr
+    language: es
+    headword: correr
+    lemma: correr
+    pos: verb
+    category: primary_singleword
+    source: synthetic
+
+  - id: syn-feliz
+    language: es
+    headword: feliz
+    lemma: feliz
+    pos: adj
+    category: primary_singleword
+    source: synthetic
+
+  - id: syn-picar
+    language: es
+    headword: picar
+    lemma: picar
+    pos: verb
+    category: primary_singleword
+    source: synthetic
+    why: heavily overloaded (itch, sting, chop, nibble) - which one term is "most common" is a judgement call independent of length
+
+  # --- synthetic: cross-language multi-word cases (English->Russian, Chinese->Russian/English) ---
+  # `primaryShape`'s word-count heuristic is noisier here: Russian legitimately compresses an
+  # English phrasal verb into one word, so these are read cases for the review pass, not auto-fail
+  # targets in the "done" bar.
+  - id: syn-give-up
+    language: en
+    headword: give up
+    lemma: give up
+    pos: verb
+    category: primary_multiword_crosslang
+    source: synthetic
+
+  - id: syn-look-forward-to
+    language: en
+    headword: look forward to
+    lemma: look forward to
+    pos: phrase
+    category: primary_multiword_crosslang
+    source: synthetic
+
+  - id: syn-run-out-of-time
+    language: en
+    headword: run out of time
+    lemma: run out of time
+    pos: phrase
+    category: primary_multiword_crosslang
+    source: synthetic
+
+  - id: syn-play-hooky
+    language: zh-Hans
+    headword: 逃学
+    lemma: 逃学
+    reading: taoxue
+    pos: verb
+    category: primary_multiword_crosslang
+    source: synthetic
+    why: two-character Chinese verb (skip school) - tests whether length-matching logic (whitespace-based) sensibly leaves Chinese to the review pass
+
+  - id: syn-make-a-mistake-zh
+    language: zh-Hans
+    headword: 犯错误
+    lemma: 犯错误
+    reading: fan cuowu
+    pos: verb
+    category: primary_multiword_crosslang
+    source: synthetic
+    why: three-character Chinese phrase (make a mistake)
+
+  # --- synthetic: a stand-in for a genuinely random sample, spanning ordinary words the OLD prompt's
+  # own carve-outs (weekday, preposition, furniture) would have nulled - exactly what the rewritten
+  # `emotion` bullet is meant to change. Deliberately NOT `el domingo`/`el lunes`/a chair, since those
+  # are the prompt's own worked examples now.
+  - id: syn-el-sabado
+    language: es
+    headword: el sábado
+    lemma: sábado
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: a weekday the OLD prompt's own example would have nulled - the NEW prompt should find a weekend feeling here
+
+  - id: syn-el-jueves
+    language: es
+    headword: el jueves
+    lemma: jueves
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: a weekday with a weaker, more ambiguous feeling than Saturday or Monday - a harder case
+
+  - id: syn-la-mesa
+    language: es
+    headword: la mesa
+    lemma: mesa
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: furniture, the old prompt's other named carve-out
+
+  - id: syn-el-paraguas
+    language: es
+    headword: el paraguas
+    lemma: paraguas
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: an ordinary object (umbrella) with a plausible everyday scene (a sudden downpour)
+
+  - id: syn-encima
+    language: es
+    headword: encima
+    lemma: encima
+    pos: adv
+    category: emotion_random
+    source: synthetic
+    why: a preposition/adverb of place - flat by the old rule, but has a colloquial "on top of everything" usage with real charge
+
+  - id: syn-madrugar
+    language: es
+    headword: madrugar
+    lemma: madrugar
+    pos: verb
+    category: emotion_random
+    source: synthetic
+    why: to get up very early - an everyday verb with an obvious reluctant/tired scene
+
+  - id: syn-el-semaforo
+    language: es
+    headword: el semáforo
+    lemma: semáforo
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: a mundane street object (traffic light) with a mild, real scene (impatience waiting at red)
+
+  - id: syn-la-factura
+    language: es
+    headword: la factura
+    lemma: factura
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: a bill/invoice - ordinary but has a real, mildly dreaded everyday scene
+
+  - id: syn-el-armario
+    language: es
+    headword: el armario
+    lemma: armario
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: another piece of furniture (wardrobe), different from the prompt's chair example
+
+  - id: syn-madrugada
+    language: es
+    headword: la madrugada
+    lemma: madrugada
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: the small hours of the night - a strong atmospheric scene, should clearly get a feeling
+
+  - id: syn-boring-en
+    language: en
+    headword: paperwork
+    lemma: paperwork
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: a famously tedious everyday noun - a good test of whether "flat" scenes still yield a feeling (weary, resigned) rather than null
+
+  - id: syn-weekday-en
+    language: en
+    headword: Tuesday
+    lemma: Tuesday
+    pos: noun
+    category: emotion_random
+    source: synthetic
+
+  - id: syn-furniture-en
+    language: en
+    headword: sofa
+    lemma: sofa
+    pos: noun
+    category: emotion_random
+    source: synthetic
+
+  - id: syn-zh-random-1
+    language: zh-Hans
+    headword: 加班
+    lemma: 加班
+    reading: jiaban
+    pos: verb
+    category: emotion_random
+    source: synthetic
+    why: to work overtime - a very ordinary but emotionally loaded everyday verb in Chinese office life
+
+  - id: syn-zh-random-2
+    language: zh-Hans
+    headword: 周末
+    lemma: 周末
+    reading: zhoumo
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: weekend - the Chinese counterpart to the Spanish weekday test
+
+  - id: syn-zh-random-3
+    language: zh-Hans
+    headword: 椅子
+    lemma: 椅子
+    reading: yizi
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    why: chair, in Chinese - deliberately the same object as the prompt's Spanish example, different language
+
+  # --- synthetic: null-plausibility check, genuine function words the rewritten bullet should still
+  # null on. Avoids `de` and `and`, which are the prompt's own worked null examples.
+  - id: syn-null-cuarenta
+    language: es
+    headword: cuarenta
+    lemma: cuarenta
+    pos: expression
+    category: emotion_null_control
+    source: synthetic
+    why: >-
+      the cardinal number forty - round1 found `cinco` gets misread as the idiom "dar cinco" (high
+      five) by BOTH arms, an unrelated pre-existing model quirk on small numbers; forty avoids it
+
+  - id: syn-null-y
+    language: es
+    headword: y
+    lemma: y
+    pos: phrase
+    category: emotion_null_control
+    source: synthetic
+    why: conjunction (and), in Spanish
+
+  - id: syn-null-of-en
+    language: en
+    headword: of
+    lemma: of
+    pos: phrase
+    category: emotion_null_control
+    source: synthetic
+
+  - id: syn-null-seven-en
+    language: en
+    headword: seven
+    lemma: seven
+    pos: expression
+    category: emotion_null_control
+    source: synthetic
+    why: another cardinal number, in English
+
+  - id: syn-null-zh-particle
+    language: zh-Hans
+    headword: 的
+    lemma: 的
+    reading: de
+    pos: phrase
+    category: emotion_null_control
+    source: synthetic
+    why: possessive/attributive particle - a pure grammatical function word in Chinese
+
+  # --- holdout: never used while tuning arms/after.md's wording, added only for the final check ---
+  - id: hold-dar-por-sentado
+    language: es
+    headword: dar por sentado
+    lemma: dar
+    pos: idiom
+    category: primary_multiword
+    source: synthetic
+    holdout: true
+
+  - id: hold-salir-adelante
+    language: es
+    headword: salir adelante
+    lemma: salir
+    pos: verb
+    category: primary_multiword
+    source: synthetic
+    holdout: true
+
+  - id: hold-ponerse-las-pilas
+    language: es
+    headword: ponerse las pilas
+    lemma: ponerse
+    pos: idiom
+    category: primary_multiword
+    source: synthetic
+    holdout: true
+
+  - id: hold-hacer-cola
+    language: es
+    headword: hacer cola
+    lemma: hacer
+    pos: verb
+    category: primary_multiword
+    source: synthetic
+    holdout: true
+
+  - id: hold-la-lluvia
+    language: es
+    headword: la lluvia
+    lemma: lluvia
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    holdout: true
+
+  - id: hold-el-despertador
+    language: es
+    headword: el despertador
+    lemma: despertador
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    holdout: true
+
+  - id: hold-cansado
+    language: es
+    headword: cansado
+    lemma: cansado
+    pos: adj
+    category: emotion_random
+    source: synthetic
+    holdout: true
+
+  - id: hold-deadline-en
+    language: en
+    headword: deadline
+    lemma: deadline
+    pos: noun
+    category: emotion_random
+    source: synthetic
+    holdout: true
+
+  - id: hold-zh-traffic
+    language: zh-Hans
+    headword: 堵车
+    lemma: 堵车
+    reading: duche
+    pos: verb
+    category: emotion_random
+    source: synthetic
+    holdout: true
+
+  - id: hold-null-sesenta
+    language: es
+    headword: sesenta
+    lemma: sesenta
+    pos: expression
+    category: emotion_null_control
+    source: synthetic
+    holdout: true
+    why: another cardinal number (sixty), held out from tuning
