@@ -9,6 +9,7 @@ server, no build step, no network calls (web fonts aside).
 - `data.js` — fixtures shaped like `web/src/domain.ts`
 - `app.js` — view logic only; every write, TTS call and capture action is a stub
 - `install.html` — the mobile installation gate, with iOS and Android preview links
+- `launch.html` — what a cold start shows while the replica is read back from the device
 - `img/` — sample generated illustrations, reused from the image benchmark
 
 The floating control in the bottom-right previews phone and tablet widths inside

@@ -45,6 +45,9 @@ import {
   topicOptions, visibleRows, type SortKey, type TopicSelection
 , loopsIn, storiesIn } from "./selectors";
 import Settings, { type Page as SettingsPage } from "./Settings";
+import { Launch } from "./Launch";
+import { forgetPlace, lastPlace, placeIn, rememberPlace } from "./lastPlace";
+import { markSession, markStartup } from "./startup";
 import SignIn from "./SignIn";
 import { setSearchScope, useSearchScope, type SearchScope } from "./searchScope";
 import type { StoredSession } from "./session";
@@ -319,7 +322,18 @@ export default function App() {
     if (syncStatus.lastPulledAt) void fill();
   }, [syncStatus.lastPulledAt]);
 
-  useEffect(() => { void backendSession.restore().then(setSession); }, []);
+  useEffect(() => {
+    void backendSession.restore().then((restored) => {
+      markSession(Boolean(restored));
+      setSession(restored);
+    });
+  }, []);
+
+  /* The first frame with words in it, for the launch timing in Settings ▸ Sync. */
+  const hasSnapshot = snapshot !== null;
+  useEffect(() => {
+    if (hasSnapshot) requestAnimationFrame(() => markStartup("shown"));
+  }, [hasSnapshot]);
 
   /* A rejected token drops the sign-in but keeps the replica: the vocabulary is still the owner's,
      and signing back in puts the article they were reading straight back on screen. */
@@ -340,7 +354,16 @@ export default function App() {
     void (async () => {
       await repository.load(session.userId);
       if (cancelled) return;
-      setSnapshot(repository.snapshot());
+      const loaded = repository.snapshot();
+      setSnapshot(loaded);
+      // In the same render as the words themselves, so a cold start opens on the page you left
+      // rather than flashing the first vocabulary's list on the way there.
+      const place = placeIn(loaded, lastPlace());
+      if (place) {
+        setLanguage(place.language);
+        setTopic(place.topic);
+        setOpenId(place.openId);
+      }
       syncEngine.start();
       // The server does the work; this only listens, so a word saved elsewhere fills in here too.
       jobStream.start();
@@ -357,6 +380,13 @@ export default function App() {
   }, [session, syncStatus]);
 
   const languages = useMemo(() => (snapshot ? languageOptions(snapshot) : []), [snapshot]);
+
+  /* Only once there are words: before that, the empty defaults would overwrite the place a cold
+     start is about to reopen. */
+  const loaded = snapshot !== null;
+  useEffect(() => {
+    if (loaded && language) rememberPlace({ language, topic, openId });
+  }, [loaded, language, topic, openId]);
 
   useEffect(() => {
     if (!languages.length) return;
@@ -1081,6 +1111,7 @@ export default function App() {
     await forgetPronunciations();
     await backendSession.logout();
     await repository.clear();
+    forgetPlace();
     setSnapshot(null);
     setSettings(null);
     setSession(null);
@@ -1092,8 +1123,11 @@ export default function App() {
   }, []);
 
   if (showInstall) return <InstallGate onContinue={dismissInstall} />;
-  if (session === undefined) return <div className="signin-page" />;
+  if (session === undefined) return <Launch />;
   if (session === null) return <SignIn onSignedIn={setSession} />;
+  /* The interface waits for the replica rather than being drawn empty: counts of zero and no
+     vocabulary are a statement about the owner's words, not a loading state. */
+  if (!snapshot) return <Launch />;
 
   const active = languageOf(language || "en");
   /** Both surfaces you compose in. The main region stops scrolling and hands that to the view. */
@@ -1353,10 +1387,9 @@ export default function App() {
               onDismiss={() => dismissEnrichment(article.lexeme.id)}
             />}
 
-            {!snapshot ? <p className="empty">Opening your vocabulary…</p>
-              // An external entry replaces the list the way one of your own does, and reads in the
-              // same column: a word being looked up is the work, wherever it came from.
-              : external ? <ExternalArticle entry={external} busy={saving} onAdd={addFromDictionary} />
+            {/* An external entry replaces the list the way one of your own does, and reads in the
+                same column: a word being looked up is the work, wherever it came from. */}
+            {external ? <ExternalArticle entry={external} busy={saving} onAdd={addFromDictionary} />
               : !article ? <LexemeList
                   rows={rows} languageName={active.name} topic={topic}
                   topicLabel={topicLabel} topicIcon={topicIcon} query={query} sort={sort}

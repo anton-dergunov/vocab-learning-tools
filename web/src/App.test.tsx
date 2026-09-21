@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 import App from "./App";
@@ -298,6 +298,44 @@ describe("Acervo application", () => {
     render(<App />);
     expect((await screen.findAllByRole("button", { name: /Offline/ })).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /picar/ }).length).toBeGreaterThan(0);
+  });
+
+  it("shows the wordmark, not an empty vocabulary, until the stored replica has been read", async () => {
+    // A cold start on a tablet reads the whole replica back before there is anything to show, and
+    // the interface used to be drawn during that read saying "All 0 · Loops 0 · Stories 0".
+    signedIn();
+    const load = repository.load.bind(repository);
+    let release!: () => void;
+    const reading = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(repository, "load").mockImplementation(async (ownerId) => { await reading; return load(ownerId); });
+    render(<App />);
+
+    expect(await screen.findByText("Acervo")).toBeInTheDocument();
+    expect(screen.getByText("Opening your vocabulary…")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /All words/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Loops/ })).not.toBeInTheDocument();
+
+    release();
+    expect(await screen.findByRole("button", { name: /picar/ })).toBeInTheDocument();
+    expect(screen.queryByText("Opening your vocabulary…")).not.toBeInTheDocument();
+  });
+
+  it("reopens the word you were reading after a cold start", async () => {
+    signedIn();
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    expect(await screen.findByRole("heading", { name: "picar" })).toBeInTheDocument();
+    cleanup();
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "picar" })).toBeInTheDocument();
+  });
+
+  it("opens on the list when the word you were reading has gone", async () => {
+    signedIn();
+    localStorage.setItem("acervo-last-place", JSON.stringify({ language: "es", topic: "all", openId: "lexeme000000999" }));
+    await openList();
+    expect(screen.queryByRole("heading", { name: "picar" })).not.toBeInTheDocument();
   });
 
   it("narrows the list by topic and by search", async () => {

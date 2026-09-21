@@ -1821,6 +1821,26 @@ details.fold .fold-body { padding: 4px 0 18px; }
            max(28px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
   background: var(--paper);
 }
+/* Opening, before the replica has been read (`Launch.tsx`, and the same markup in `index.html`).
+   The paper is the manifest's background and the theme colour, so the system's own launch screen
+   hands over to this one without a change of colour. The note waits, so a quick open shows only
+   the wordmark. */
+.launch {
+  height: 100%;
+  display: grid; place-content: center; justify-items: center; gap: 10px;
+  background: var(--paper);
+}
+.launch-mark {
+  font-family: var(--serif); font-weight: 700; font-size: 44px;
+  letter-spacing: -.03em; color: var(--core); margin: 0;
+}
+.launch-note {
+  margin: 0; font-size: 13px; color: var(--ink-3);
+  opacity: 0; animation: launch-note 300ms ease 400ms forwards;
+}
+@keyframes launch-note { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .launch-note { animation-duration: 1ms; } }
+
 .signin {
   width: min(430px, 100%);
   background: var(--surface); border: 1px solid var(--rule); border-radius: 12px;
@@ -1932,6 +1952,8 @@ details.fold .fold-body { padding: 4px 0 18px; }
 }
 .sync-warning { color: var(--warn); background: var(--warn-soft); }
 .sync-message { color: var(--ink-3); background: var(--surface-2); }
+/* How long this launch took to put words on screen, measured on the device (`startup.ts`). */
+.sync-launch { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
 .sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .sync-actions .tb-btn { flex: 1 1 auto; justify-content: center; }
 

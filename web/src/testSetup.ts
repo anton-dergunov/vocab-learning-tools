@@ -1,4 +1,15 @@
 import "@testing-library/jest-dom/vitest";
+import { beforeEach } from "vitest";
+
+/**
+ * Every test starts on a device that remembers nothing. Local storage holds per-device conveniences
+ * — the editor's wrapping, the view an article opens in, the place a cold start reopens — and one
+ * left behind by the test before changes where the next one lands: a word opened in one test was
+ * reopened at the start of the next file's first test.
+ */
+beforeEach(() => {
+  try { localStorage.clear(); } catch { /* an environment without storage has nothing to clear */ }
+});
 
 /**
  * jsdom's `Blob` predates `Blob.prototype.arrayBuffer` and `Blob.prototype.text`, both of which

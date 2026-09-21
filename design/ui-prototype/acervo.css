@@ -1528,6 +1528,26 @@ body.framed .viewport {
 body.phone  .viewport { width: 402px; height: 874px; }
 body.tablet .viewport { width: 834px; height: 1000px; }
 
+/* ══════════════════════════ launch ══════════════════════════ */
+/* Opening, before the replica has been read. The paper is the manifest's background, so the
+   system's own launch screen hands over without a change of colour; the note waits, so a quick
+   open shows only the wordmark. */
+.launch {
+  height: 100%;
+  display: grid; place-content: center; justify-items: center; gap: 10px;
+  background: var(--paper);
+}
+.launch-mark {
+  font-family: var(--serif); font-weight: 700; font-size: 44px;
+  letter-spacing: -.03em; color: var(--core); margin: 0;
+}
+.launch-note {
+  margin: 0; font-size: 13px; color: var(--ink-3);
+  opacity: 0; animation: launch-note 300ms ease 400ms forwards;
+}
+@keyframes launch-note { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .launch-note { animation-duration: 1ms; } }
+
 /* ══════════════════════════ install ══════════════════════════ */
 .install-page {
   min-height: 100%; overflow-y: auto;

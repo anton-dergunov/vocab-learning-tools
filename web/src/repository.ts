@@ -10,6 +10,7 @@ import {
 } from "./domain";
 import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase, type ReplicaMeta } from "./localDatabase";
 import { newDeviceId, newId, nowInstant } from "./ids";
+import { markReplicaRead, markStartup } from "./startup";
 import type { ArticleDraft } from "./yaml";
 
 export const LOCAL_SCHEMA_VERSION = 15;
@@ -149,7 +150,9 @@ export class LocalAcervoRepository implements AcervoRepository {
   }
 
   private async open(ownerId: string) {
+    markStartup("readStart");
     const contents = await this.database.read();
+    markReplicaRead(RECORD_STORES.reduce((count, store) => count + (contents[store]?.length ?? 0), 0));
     const deviceId = contents.meta.deviceId || newDeviceId();
     const stale = contents.meta.ownerId !== ownerId || contents.meta.schemaVersion !== LOCAL_SCHEMA_VERSION;
     if (stale) {
@@ -192,6 +195,7 @@ export class LocalAcervoRepository implements AcervoRepository {
         lastWroteAt: contents.meta.lastWroteAt ?? null
       };
     }
+    markStartup("checked");
     this.ready = true;
     this.cached = null;
   }

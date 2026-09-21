@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AlertIcon, CloudIcon, CloudOffIcon, SyncIcon } from "./icons";
 import { relativeTime } from "./format";
+import { describeStartup, startupTimings } from "./startup";
 import type { SyncStatus } from "./sync";
 
 /** Typed, not clicked, when the copy being discarded may be the only complete one left. */
@@ -42,6 +43,7 @@ export function SyncPanel({ status, lexemeCount, onSyncNow, onDownloadAgain }: {
 }) {
   const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState("");
+  const timings = startupTimings();
   const stopped = status.state === "blocked" || status.state === "datasetChanged";
   // Normally this discards a cache the server can rebuild. After the server database changed
   // identity it may instead discard the most complete surviving copy, so the gate is raised.
@@ -62,6 +64,7 @@ export function SyncPanel({ status, lexemeCount, onSyncNow, onDownloadAgain }: {
         {status.cursor > 0 ? ` · revision ${status.cursor}` : ""}
       </span>
     </div>
+    {timings && <p className="sync-launch">{describeStartup(timings)}</p>}
     {!status.persistent && <p className="sync-warning" role="status">
       This device could not open its local storage, so the vocabulary is held in memory for this
       session only and will not be here after a reload.

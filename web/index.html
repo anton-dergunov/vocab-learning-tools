@@ -18,7 +18,9 @@
     <title>Acervo</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- `Launch.tsx`, drawn before any script runs so the first frame is already the wordmark on
+         Acervo's paper rather than a blank page. React replaces it on its first render. -->
+    <div id="root"><div class="launch" role="status"><p class="launch-mark">Acervo</p><p class="launch-note">Opening your vocabulary…</p></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
