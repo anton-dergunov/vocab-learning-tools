@@ -154,6 +154,8 @@ export default function App() {
     && sessionStorage.getItem("acervo-install-dismissed") !== "true");
   const [session, setSession] = useState<StoredSession | null | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<ReplicaSnapshot | null>(null);
+  /** Whether the first sync after opening has finished, however it ended. */
+  const [settled, setSettled] = useState(false);
 
   const [language, setLanguage] = useState("");
   const [topic, setTopic] = useState<TopicSelection>("all");
@@ -351,6 +353,7 @@ export default function App() {
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
+    setSettled(false);
     void (async () => {
       await repository.load(session.userId);
       if (cancelled) return;
@@ -370,6 +373,7 @@ export default function App() {
       // The server does the work; this only listens, so a word saved elsewhere fills in here too.
       jobStream.start();
       await syncEngine.syncNow();
+      if (!cancelled) setSettled(true);
       // Extending the token happens once the vocabulary is already on screen, and signs the owner
       // out only if the server answers and rejects it.
       await backendSession.refresh();
@@ -1129,8 +1133,9 @@ export default function App() {
   if (session === null) return <SignIn onSignedIn={setSession} />;
   /* The interface waits for the replica **and a chosen language** rather than being drawn empty:
      counts of zero and no vocabulary are a statement about the owner's words, not a loading state.
-     A replica with no vocabulary at all has no language to choose and opens as it is. */
-  if (!snapshot || (!language && languages.length > 0)) return <Launch />;
+     A replica with nothing in it waits for the first sync too — a first sign-in, or a stored copy
+     being downloaded again — and opens as it is once that has ended, whether it worked or not. */
+  if (!snapshot || (!language && (languages.length > 0 || !settled))) return <Launch />;
 
   const active = languageOf(language || "en");
   /** Both surfaces you compose in. The main region stops scrolling and hands that to the view. */

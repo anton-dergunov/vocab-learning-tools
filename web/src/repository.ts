@@ -10,10 +10,16 @@ import {
 } from "./domain";
 import { createLocalDatabase, MemoryDatabase, RECORD_STORES, type LocalDatabase, type ReplicaMeta } from "./localDatabase";
 import { newDeviceId, newId, nowInstant } from "./ids";
-import { markReplicaRead, markStartup } from "./startup";
+import { markReplicaRead, markReplicaSetAside, markStartup } from "./startup";
 import type { ArticleDraft } from "./yaml";
 
-export const LOCAL_SCHEMA_VERSION = 15;
+/**
+ * The shape of the records this device stores. **Any change to a replicated record's shape bumps
+ * it**, so a copy stored under the old shape is wiped and pulled again rather than refused at every
+ * open. 16: a story part's passages became one recording each (`audioRef`, `audioMime`,
+ * `durationSeconds`) instead of times into one joined file, and nothing bumped this.
+ */
+export const LOCAL_SCHEMA_VERSION = 16;
 
 export const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],
@@ -105,6 +111,17 @@ const EMPTY_META = (): ReplicaMeta => ({
   datasetId: "", cursor: 0, lastPulledAt: null, lastWroteAt: null
 });
 
+/** Why a stored replica cannot be trusted as it is, or null when it can. */
+function refusalOf(graph: VocabularyGraph, ownerId: string): string | null {
+  try {
+    validateGraph(graph);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  const foreign = RECORD_STORES.some((kind) => (graph[kind] as Entity[]).some((record) => record.ownerId !== ownerId));
+  return foreign ? "Replica records do not belong to the authenticated owner." : null;
+}
+
 /** Frozen where a mutation can be caught by a test; production skips the walk. */
 const FREEZE = import.meta.env.DEV || import.meta.env.MODE === "test";
 
@@ -143,6 +160,8 @@ export class LocalAcervoRepository implements AcervoRepository {
     try {
       await this.open(ownerId);
     } catch {
+      // Only for a device whose storage cannot be opened, read or written at all — a private
+      // window, a refused quota. A stored copy that is merely out of date is wiped in `open`.
       this.database = new MemoryDatabase();
       this.persistent = false;
       await this.open(ownerId);
@@ -154,36 +173,38 @@ export class LocalAcervoRepository implements AcervoRepository {
     const contents = await this.database.read();
     markReplicaRead(RECORD_STORES.reduce((count, store) => count + (contents[store]?.length ?? 0), 0));
     const deviceId = contents.meta.deviceId || newDeviceId();
-    const stale = contents.meta.ownerId !== ownerId || contents.meta.schemaVersion !== LOCAL_SCHEMA_VERSION;
-    if (stale) {
+    const current = contents.meta.ownerId === ownerId && contents.meta.schemaVersion === LOCAL_SCHEMA_VERSION;
+    const graph: VocabularyGraph | null = current ? {
+      vocabularies: contents.vocabularies,
+      topics: contents.topics,
+      lexemes: contents.lexemes,
+      senses: contents.senses,
+      attestations: contents.attestations,
+      examples: contents.examples,
+      imagePrompts: contents.imagePrompts,
+      pronunciations: contents.pronunciations,
+      studyStates: contents.studyStates,
+      loops: contents.loops,
+      loopItems: contents.loopItems,
+      stories: contents.stories,
+      storyParts: contents.storyParts,
+      storyWords: contents.storyWords
+    } : null;
+    const refusal = graph ? refusalOf(graph, ownerId) : null;
+    if (!graph || refusal) {
+      // A stored copy the checks refuse is one written under a record shape the code has since
+      // moved on from — a change that should have bumped `LOCAL_SCHEMA_VERSION` and did not. It is
+      // wiped and pulled again into storage, like one written under another schema. It used to
+      // throw here, and `load` then kept the vocabulary in memory instead: the copy on the device
+      // was never repaired, so every cold start re-downloaded everything and showed no words
+      // while it did.
+      if (refusal) markReplicaSetAside(refusal);
       await this.database.wipe();
       this.install(EMPTY_GRAPH());
       this.meta = { ...EMPTY_META(), ownerId, deviceId };
       await this.database.write({ meta: this.meta });
     } else {
-      const graph: VocabularyGraph = {
-        vocabularies: contents.vocabularies,
-        topics: contents.topics,
-        lexemes: contents.lexemes,
-        senses: contents.senses,
-        attestations: contents.attestations,
-        examples: contents.examples,
-        imagePrompts: contents.imagePrompts,
-        pronunciations: contents.pronunciations,
-        studyStates: contents.studyStates,
-        loops: contents.loops,
-        loopItems: contents.loopItems,
-        stories: contents.stories,
-        storyParts: contents.storyParts,
-        storyWords: contents.storyWords
-      };
-      validateGraph(graph);
       frozenGraph(graph);
-      const allRecords: Entity[][] = [
-        graph.vocabularies, graph.topics, graph.lexemes, graph.senses, graph.attestations, graph.examples, graph.imagePrompts, graph.pronunciations, graph.studyStates
-      ];
-      const hasForeignRecord = allRecords.some((records) => records.some((record) => record.ownerId !== ownerId));
-      if (hasForeignRecord) throw new Error("Replica records do not belong to the authenticated owner.");
       this.install(graph);
       this.meta = {
         ...EMPTY_META(),

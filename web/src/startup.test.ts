@@ -14,8 +14,14 @@ describe("the launch timing", () => {
     expect(timings.records).toBe(10812);
     expect(timings.check).toBeGreaterThanOrEqual(59);
     expect(timings.show).toBeGreaterThanOrEqual(140);
-    expect(describeStartup({ session: 40, read: 820, records: 10812, check: 60, show: 150, total: 1100 }))
+    expect(describeStartup({ session: 40, read: 820, records: 10812, check: 60, show: 150, total: 1100, setAside: null }))
       .toBe("Opened in 1.1 s — reading 10,812 records 820 ms · checking 60 ms · first list 150 ms");
+  });
+
+  it("says when this device's copy could not be used and was downloaded again", () => {
+    expect(describeStartup({ session: 40, read: 70, records: 10698, check: 30, show: 1600, total: 1900, setAside: "Story part passages are invalid." }))
+      .toBe("Opened in 1.9 s — reading 10,698 records 70 ms · checking 30 ms · first list 1.6 s. "
+        + "This device's copy could not be used (Story part passages are invalid.) and was downloaded again.");
   });
 
   it("keeps the first launch rather than a later load", () => {

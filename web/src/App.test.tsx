@@ -338,6 +338,29 @@ describe("Acervo application", () => {
     expect(screen.queryByText("Opening your vocabulary…")).not.toBeInTheDocument();
   });
 
+  it("waits for the first sync rather than showing zero words when nothing is stored yet", async () => {
+    // A first sign-in, or a stored copy being downloaded again: the words come from the pull.
+    signedIn();
+    const answer = await backendSession.pullGraph(0);
+    let release!: () => void;
+    const answering = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(backendSession, "pullGraph").mockImplementation(async () => { await answering; return answer; });
+    render(<App />);
+    expect(await screen.findByText("Opening your vocabulary…")).toBeInTheDocument();
+
+    let emptyShell = false;
+    const watch = new MutationObserver(() => {
+      if (document.querySelector(".viewport") && !screen.queryByRole("button", { name: /picar/ })) emptyShell = true;
+    });
+    watch.observe(document.body, { childList: true, subtree: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(document.querySelector(".viewport")).toBeNull();
+    release();
+    await screen.findByRole("button", { name: /picar/ });
+    watch.disconnect();
+    expect(emptyShell).toBe(false);
+  });
+
   it("reopens the word you were reading after a cold start", async () => {
     signedIn();
     await openList();

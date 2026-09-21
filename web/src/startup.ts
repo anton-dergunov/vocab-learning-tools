@@ -22,12 +22,16 @@ export interface StartupTimings {
   show: number;
   /** From the page starting to the first frame with words in it. */
   total: number;
+  /** Why the stored copy was downloaded again instead of read, or null when it was read. */
+  setAside: string | null;
 }
 
 const marks = new Map<Mark, number>();
 let records = 0;
 /** Whether the launch opened a stored sign-in; a launch that asked for a password has no timing. */
 let restored = false;
+/** Why this device's stored copy could not be used and was downloaded again, if it could not. */
+let setAside: string | null = null;
 
 export function markStartup(name: Mark, at: number = performance.now()): void {
   if (!marks.has(name)) marks.set(name, at);
@@ -45,6 +49,11 @@ export function markReplicaRead(count: number): void {
   markStartup("readEnd");
 }
 
+/** The stored copy was refused and is being downloaded again, for this reason. */
+export function markReplicaSetAside(reason: string): void {
+  setAside ??= reason;
+}
+
 export function startupTimings(): StartupTimings | null {
   const at = (name: Mark) => marks.get(name);
   const [session, readStart, readEnd, checked, shown] =
@@ -52,7 +61,8 @@ export function startupTimings(): StartupTimings | null {
   if (!restored || session === undefined || readStart === undefined || readEnd === undefined
     || checked === undefined || shown === undefined) return null;
   return {
-    session, read: readEnd - readStart, records, check: checked - readEnd, show: shown - checked, total: shown
+    session, read: readEnd - readStart, records, check: checked - readEnd, show: shown - checked, total: shown,
+    setAside
   };
 }
 
@@ -61,6 +71,7 @@ export function resetStartup(): void {
   marks.clear();
   records = 0;
   restored = false;
+  setAside = null;
 }
 
 const ms = (value: number) => value >= 1000 ? `${(value / 1000).toFixed(1)} s` : `${Math.round(value)} ms`;
@@ -68,5 +79,6 @@ const ms = (value: number) => value >= 1000 ? `${(value / 1000).toFixed(1)} s` :
 /** One line for Settings: `Opened in 1.1 s — reading 10,812 records 820 ms · checking 60 ms · …`. */
 export function describeStartup(timings: StartupTimings): string {
   return `Opened in ${ms(timings.total)} — reading ${timings.records.toLocaleString("en")} records `
-    + `${ms(timings.read)} · checking ${ms(timings.check)} · first list ${ms(timings.show)}`;
+    + `${ms(timings.read)} · checking ${ms(timings.check)} · first list ${ms(timings.show)}`
+    + (timings.setAside ? `. This device's copy could not be used (${timings.setAside}) and was downloaded again.` : "");
 }

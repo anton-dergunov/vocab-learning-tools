@@ -193,6 +193,34 @@ describe("the Acervo repository", () => {
     expect(second.snapshot().ownerId).toBe("owner0000000002");
   });
 
+  it("wipes a stored copy the checks refuse and keeps storing, rather than living in memory", async () => {
+    // A copy written under a record shape the code has moved on from. It used to make `load` fall
+    // back to memory: the stored copy was never repaired, and every cold start downloaded the whole
+    // vocabulary again while the interface showed none of it.
+    const database = new MemoryDatabase();
+    const first = new LocalAcervoRepository(database);
+    await first.load("owner0000000001");
+    first.attachRemote(fakeRemote());
+    await first.saveLexeme(lexemeInput, "lexeme000000001");
+    const stored = await database.read();
+    await database.write({ senses: [{
+      id: "sense0000000009", lexemeId: "lexeme000000999", definition: "Refers to nothing.", definitionLang: "es",
+      glosses: [{ lang: "en", terms: ["nothing"] }], domain: null, emoji: null, order: 0,
+      ownerId: "owner0000000001", deleted: false, createdAt: stored.lexemes[0].createdAt,
+      editedAt: stored.lexemes[0].editedAt, editedBy: "device000000001", revision: 3
+    }] });
+
+    const reopened = new LocalAcervoRepository(database);
+    await reopened.load("owner0000000001");
+    expect(reopened.snapshot().lexemes).toEqual([]);
+    expect(reopened.state()).toMatchObject({ persistent: true, cursor: 0, deviceId: first.state().deviceId });
+    // Wiped in storage too, so the pull that follows lands where the next open will read it.
+    const after = await database.read();
+    expect(after.lexemes).toEqual([]);
+    expect(after.senses).toEqual([]);
+    expect(after.meta.schemaVersion).toBe(LOCAL_SCHEMA_VERSION);
+  });
+
   it("wipes a mismatched local schema instead of transforming it", async () => {
     const database = new MemoryDatabase();
     await database.write({ meta: {
