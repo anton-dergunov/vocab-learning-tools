@@ -21,7 +21,7 @@ import type { Lexeme, PronunciationTarget, TopicInput, VocabularyGraph, Vocabula
 import { newId } from "./ids";
 import { markdownFor } from "./markdown";
 import type { AcervoRepository } from "./repository";
-import { articleFor, lexemesIn, languageOptions, sensesOf, vocabularies } from "./selectors";
+import { articleReader, lexemesIn, languageOptions, sensesOf, vocabularies } from "./selectors";
 import { draftFor, parseArticle, yamlForDraft, YamlProblems, type ArticleDraft } from "./yaml";
 
 /**
@@ -222,6 +222,7 @@ export interface BundlePicture {
  */
 export function picturesIn(graph: VocabularyGraph, options: ExportOptions): BundlePicture[] {
   const present = languageOptions(graph).map((option) => option.code);
+  const articleOf = articleReader(graph);
   const languages = options.language === "all"
     ? present
     : present.filter((code) => code === options.language);
@@ -233,7 +234,7 @@ export function picturesIn(graph: VocabularyGraph, options: ExportOptions): Bund
       .sort((left, right) => left.lemma.localeCompare(right.lemma) || left.id.localeCompare(right.id));
     const names = uniqueNames(words);
     words.forEach((lexeme) => {
-      const article = articleFor(graph, lexeme.id);
+      const article = articleOf(lexeme.id);
       if (!article) return;
       article.senses.forEach((entry, index) => {
         entry.images.forEach((image) => {
@@ -282,6 +283,7 @@ const extensionOf = (reference: string) => reference.split(".").pop() || "mp3";
  */
 export function pronunciationsIn(graph: VocabularyGraph, options: ExportOptions): { files: BundleFile[]; clips: BundleClip[] } {
   const present = languageOptions(graph).map((option) => option.code);
+  const articleOf = articleReader(graph);
   const languages = options.language === "all" ? present : present.filter((code) => code === options.language);
   const files: BundleFile[] = [];
   const clips: BundleClip[] = [];
@@ -293,7 +295,7 @@ export function pronunciationsIn(graph: VocabularyGraph, options: ExportOptions)
       .sort((left, right) => left.lemma.localeCompare(right.lemma) || left.id.localeCompare(right.id));
     const names = uniqueNames(words);
     words.forEach((lexeme) => {
-      const article = articleFor(graph, lexeme.id);
+      const article = articleOf(lexeme.id);
       if (!article) return;
       const directory = `${AUDIO_DIRECTORY}/${language}/${names.get(lexeme.id)}`;
       const entries: ClipEntry[] = [];
@@ -322,6 +324,7 @@ export function pronunciationsIn(graph: VocabularyGraph, options: ExportOptions)
 
 export function exportBundle(graph: VocabularyGraph, options: ExportOptions, exportedAt: string): BundleFile[] {
   const present = languageOptions(graph).map((option) => option.code);
+  const articleOf = articleReader(graph);
   const languages = options.language === "all"
     ? present
     : present.filter((code) => code === options.language);
@@ -337,7 +340,7 @@ export function exportBundle(graph: VocabularyGraph, options: ExportOptions, exp
       .sort((left, right) => left.lemma.localeCompare(right.lemma) || left.id.localeCompare(right.id));
     const names = uniqueNames(words);
     words.forEach((lexeme) => {
-      const article = articleFor(graph, lexeme.id);
+      const article = articleOf(lexeme.id);
       if (!article) return;
       lexemes += 1;
       files.push({

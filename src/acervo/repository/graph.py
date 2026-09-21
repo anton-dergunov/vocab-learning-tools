@@ -238,7 +238,15 @@ def merge_record(
     if stored is None:
         connection.execute(table.insert().values(**row))
     else:
-        connection.execute(table.update().where(table.c.id == identifier).values(**row))
+        # Never the key itself. With foreign keys on, SQLite treats `SET id = <the same id>` as a key
+        # change and scans every child index for rows pointing at the old one — seven for a lexeme,
+        # and the whole `image_prompts` table for an example.
+        unchanged = {"id", "owner"}
+        connection.execute(
+            table.update()
+            .where(table.c.id == identifier)
+            .values(**{key: value for key, value in row.items() if key not in unchanged})
+        )
     arrived = (stored is None or bool(stored["deleted"])) and not row["deleted"]
     return projected(collection, row), arrived
 

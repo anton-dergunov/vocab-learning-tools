@@ -367,6 +367,12 @@ export default function App() {
     () => (snapshot && language ? visibleRows(snapshot, { language, topic, query, sort }) : []),
     [snapshot, language, topic, query, sort]
   );
+  /* The rail's "All" count. Memoized like `rows`: it walks every word, and the rail repaints on every
+     job the server reports. */
+  const allCount = useMemo(
+    () => (snapshot && language ? visibleRows(snapshot, { language, topic: "all", query: "", sort: "recent" }).length : 0),
+    [snapshot, language]
+  );
   const topics = useMemo(
     () => (snapshot && language ? topicOptions(snapshot, language) : []),
     [snapshot, language]
@@ -804,7 +810,7 @@ export default function App() {
    * understood; a server-side serialiser would be a second implementation of it (§06 REVISED).
    */
   const askAbout = useCallback((turns: ChatTurn[]) => {
-    const deviceId = repository.snapshot().deviceId;
+    const deviceId = repository.state().deviceId;
     let subject: ChatSubject;
     let neighbours: ChatNeighbour[] = [];
     if (article) {
@@ -938,7 +944,7 @@ export default function App() {
    * chosen yet, and guessing at them would be conditioning on nothing.
    */
   const askAboutDraft = useCallback((document: string, turns: ChatTurn[]) => {
-    const deviceId = repository.snapshot().deviceId;
+    const deviceId = repository.state().deviceId;
     return backendSession.chat(deviceId, {
       subject: { kind: "article", lexemeId: "", document, focus: null },
       turns
@@ -968,7 +974,7 @@ export default function App() {
    * still goes through `createFromYaml`, so a generated entry and a typed one are the same write.
    */
   const captureText = useCallback((request: CaptureRequest) => {
-    const deviceId = repository.snapshot().deviceId;
+    const deviceId = repository.state().deviceId;
     return backendSession.captureText(deviceId, request);
   }, []);
 
@@ -1191,7 +1197,7 @@ export default function App() {
         <nav className="rail" aria-label="Topics">
           <button className={`tab ${topic === "all" ? "on" : ""}`} title="All words" onClick={() => chooseTopic("all")}>
             <span className="ic">📖</span><span className="nm">All</span>
-            <span className="cnt">{snapshot && language ? visibleRows(snapshot, { language, topic: "all", query: "", sort }).length : 0}</span>
+            <span className="cnt">{allCount}</span>
           </button>
           {inbox > 0 && <button className={`tab ${topic === "inbox" ? "on" : ""}`} title="Inbox" onClick={() => chooseTopic("inbox")}>
             <span className="ic">📥</span><span className="nm">Inbox</span><span className="cnt">{inbox}</span>

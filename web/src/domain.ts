@@ -474,19 +474,25 @@ function syncFields(record: SyncFields & OwnedFields & { id: string }) {
   invariant(Number.isSafeInteger(record.revision) && record.revision >= 0, "Revision is invalid.");
 }
 
-export function validateGraph(graph: VocabularyGraph): void {
-  const ids = new Set<string>();
-  let ownerId: string | null = null;
-  const remember = (record: SyncFields & OwnedFields & { id: string }) => {
-    syncFields(record);
-    ownerId ??= record.ownerId;
-    invariant(record.ownerId === ownerId, "A vocabulary graph must contain records for one owner only.");
-    invariant(!ids.has(record.id), `Duplicate record id ${record.id}.`);
-    ids.add(record.id);
-  };
-  const vocabularyLanguages = new Set<string>();
-  graph.vocabularies.forEach((record) => {
-    remember(record);
+/**
+ * The records a check may look up: each kind refers only to kinds checked before it, so a lookup over
+ * the whole graph is exactly what the old in-order maps held.
+ */
+type AnyRecord = VocabularyGraph[EntityKind][number];
+
+interface Find {
+  topics(id: string): Topic | undefined;
+  lexemes(id: string): Lexeme | undefined;
+  senses(id: string): Sense | undefined;
+  attestations(id: string): Attestation | undefined;
+  examples(id: string): Example | undefined;
+  loops(id: string): Loop | undefined;
+  stories(id: string): Story | undefined;
+}
+
+/** What one record must satisfy on its own and against the records it names, per kind. */
+const CHECKS: { [K in EntityKind]: (record: VocabularyGraph[K][number], find: Find) => void } = {
+  vocabularies(record: Vocabulary): void {
     language(record.language, "Vocabulary language");
     language(record.definitionLang, "Vocabulary definition language");
     stringArray(record.glossLangs, "Vocabulary gloss languages", false);
@@ -495,25 +501,13 @@ export function validateGraph(graph: VocabularyGraph): void {
     optionalString(record.displayName, "Vocabulary name");
     optionalString(record.flag, "Vocabulary flag");
     invariant(Number.isSafeInteger(record.order) && record.order >= 0, "Vocabulary order is invalid.");
-    // Not a storage constraint (§04 forbids those on replicated collections) — a graph-level one,
-    // so two devices that each added the same language offline cannot both be believed at once.
-    if (!record.deleted) {
-      invariant(!vocabularyLanguages.has(record.language), `Two vocabularies claim ${record.language}.`);
-      vocabularyLanguages.add(record.language);
-    }
-  });
-
-  const topics = new Map<string, Topic>();
-  graph.topics.forEach((record) => {
-    remember(record);
+  },
+  topics(record: Topic): void {
     invariant(record.name.trim().length > 0, "Topic name is required.");
     optionalString(record.icon, "Topic icon");
     invariant(Number.isSafeInteger(record.order) && record.order >= 0, "Topic order is invalid.");
-    topics.set(record.id, record);
-  });
-  const lexemes = new Map<string, Lexeme>();
-  graph.lexemes.forEach((record) => {
-    remember(record);
+  },
+  lexemes(record: Lexeme, find: Find): void {
     language(record.language, "Lexeme language");
     invariant(record.headword.trim().length > 0 && record.lemma.trim().length > 0, "Lexeme headword and lemma are required.");
     optionalString(record.reading, "Reading");
@@ -527,7 +521,7 @@ export function validateGraph(graph: VocabularyGraph): void {
     stringArray(record.topicIds, "Topic ids");
     record.topicIds.forEach((topicId) => {
       validateRecordId(topicId);
-      const topic = topics.get(topicId);
+      const topic = find.topics(topicId);
       invariant(topic, "Lexeme references a missing topic.");
       invariant(topic.ownerId === record.ownerId, "Lexeme and topic must have the same owner.");
     });
@@ -537,13 +531,9 @@ export function validateGraph(graph: VocabularyGraph): void {
     optionalString(record.emotion, "Lexeme emotion");
     stringArray(record.notes, "Notes");
     if (record.clipsSearchedAt !== null) validateInstant(record.clipsSearchedAt, "Clip search time");
-    lexemes.set(record.id, record);
-  });
-
-  const senses = new Map<string, Sense>();
-  graph.senses.forEach((record) => {
-    remember(record);
-    const lexeme = lexemes.get(record.lexemeId);
+  },
+  senses(record: Sense, find: Find): void {
+    const lexeme = find.lexemes(record.lexemeId);
     invariant(lexeme, "Sense references a missing lexeme.");
     invariant(record.ownerId === lexeme.ownerId, "Sense and lexeme must have the same owner.");
     invariant(record.definition.trim().length > 0, "Sense definition is required.");
@@ -559,13 +549,9 @@ export function validateGraph(graph: VocabularyGraph): void {
       glossLanguages.add(gloss.lang);
       stringArray(gloss.terms, "Gloss terms", false);
     });
-    senses.set(record.id, record);
-  });
-
-  const attestations = new Map<string, Attestation>();
-  graph.attestations.forEach((record) => {
-    remember(record);
-    const lexeme = lexemes.get(record.lexemeId);
+  },
+  attestations(record: Attestation, find: Find): void {
+    const lexeme = find.lexemes(record.lexemeId);
     invariant(lexeme, "Attestation references a missing lexeme.");
     invariant(record.ownerId === lexeme.ownerId, "Attestation and lexeme must have the same owner.");
     invariant(record.text.trim().length > 0, "Attestation text is required.");
@@ -574,13 +560,9 @@ export function validateGraph(graph: VocabularyGraph): void {
     optionalString(record.sourceTitle, "Source title");
     oneOf(record.sourceKind, SOURCE_KINDS, "Source kind");
     validateInstant(record.capturedAt, "Capture time");
-    attestations.set(record.id, record);
-  });
-
-  const examples = new Map<string, Example>();
-  graph.examples.forEach((record) => {
-    remember(record);
-    const sense = senses.get(record.senseId);
+  },
+  examples(record: Example, find: Find): void {
+    const sense = find.senses(record.senseId);
     invariant(sense, "Example references a missing sense.");
     invariant(record.ownerId === sense.ownerId, "Example and sense must have the same owner.");
     invariant(record.text.trim().length > 0, "Example text is required.");
@@ -593,18 +575,18 @@ export function validateGraph(graph: VocabularyGraph): void {
     optionalString(record.sourceAttestationId, "Source attestation id");
     if (record.origin === "attestation") invariant(record.sourceAttestationId, "Attestation examples require a source attestation.");
     if (record.sourceAttestationId) {
-      const attestation = attestations.get(record.sourceAttestationId);
+      const attestation = find.attestations(record.sourceAttestationId);
       invariant(attestation, "Example references a missing attestation.");
       invariant(record.ownerId === attestation.ownerId, "Example and attestation must have the same owner.");
       invariant(attestation.lexemeId === sense.lexemeId, "Example sense and attestation must belong to one lexeme.");
-    }
+  }
     [record.modelId, record.videoRef, record.videoTitle, record.videoChannel, record.clipRef, record.imageRef, record.emotion, record.note].forEach((value) => optionalString(value, "Example optional field"));
     [record.videoStart, record.videoEnd].forEach((value) => invariant(value === null || (Number.isSafeInteger(value) && value >= 0), "Example video timing is invalid."));
     // `videoRef` is what every clip field hangs on: a title, a channel, a timing or the corpus's
     // own segment id without one describes a clip that names no video.
     if (record.videoTitle || record.videoChannel || record.clipRef || record.videoStart !== null || record.videoEnd !== null) {
       invariant(record.videoRef, "An example clip title, channel, segment or timing requires a video reference.");
-    }
+  }
     // Zero reads as "no end", matching the server: the projection emits the stored integer and a
     // clip example without an end carries 0, exactly as one without a start does.
     if (record.videoEnd) invariant(record.videoEnd > (record.videoStart ?? 0), "An example clip must end after it starts.");
@@ -614,32 +596,29 @@ export function validateGraph(graph: VocabularyGraph): void {
     if (record.matchedTranslationForm) {
       invariant(record.translation, "A matched translation form requires a translation.");
       invariant(record.translation.includes(record.matchedTranslationForm), "The matched translation form must occur in the translation.");
-    }
-    examples.set(record.id, record);
-  });
-
-  graph.imagePrompts.forEach((record) => {
-    remember(record);
-    const lexeme = lexemes.get(record.lexemeId);
+  }
+  },
+  imagePrompts(record: ImagePrompt, find: Find): void {
+    const lexeme = find.lexemes(record.lexemeId);
     invariant(lexeme, "Image prompt references a missing lexeme.");
     invariant(record.ownerId === lexeme.ownerId, "Image prompt and lexeme must have the same owner.");
     optionalString(record.senseId, "Image prompt sense id");
     if (record.senseId) {
-      const sense = senses.get(record.senseId);
+      const sense = find.senses(record.senseId);
       invariant(sense?.lexemeId === record.lexemeId, "Image prompt sense belongs to another lexeme.");
       invariant(sense.ownerId === record.ownerId, "Image prompt and sense must have the same owner.");
-    }
+  }
     optionalString(record.exampleId, "Image prompt example id");
     if (record.exampleId) {
-      const example = examples.get(record.exampleId);
+      const example = find.examples(record.exampleId);
       invariant(example?.senseId === record.senseId, "Image prompt example belongs to another sense.");
       invariant(example.ownerId === record.ownerId, "Image prompt and example must have the same owner.");
-    }
+  }
     // A brief is three fields or none of them: without the style and the version there is no way to
     // rebuild the prompt that was actually sent, so half a brief reproduces nothing.
     if (record.prompt.trim()) {
       invariant(record.styleId.trim() && record.promptVersion.trim(), "An image brief must name its style and prompt version.");
-    }
+  }
     invariant(Number.isSafeInteger(record.seed) && record.seed >= 0 && record.seed <= 2147483647, "Image prompt seed is invalid.");
     invariant(Number.isSafeInteger(record.attempts) && record.attempts >= 0, "Image prompt attempt count is invalid.");
     invariant(typeof record.suppressed === "boolean", "Image prompt suppression is invalid.");
@@ -649,18 +628,16 @@ export function validateGraph(graph: VocabularyGraph): void {
     // One direction only. A rendering model with nothing rendered is nonsense; a rendered image
     // with no model is a picture the owner attached themselves.
     invariant(!record.imageModelId || Boolean(record.imageRef), "A rendering model without a rendered image is not a record of anything.");
-  });
-
-  graph.pronunciations.forEach((record) => {
-    remember(record);
-    const lexeme = lexemes.get(record.lexemeId);
+  },
+  pronunciations(record: Pronunciation, find: Find): void {
+    const lexeme = find.lexemes(record.lexemeId);
     invariant(lexeme, "Pronunciation references a missing lexeme.");
     invariant(record.ownerId === lexeme.ownerId, "Pronunciation and lexeme must have the same owner.");
     oneOf(record.targetKind, PRONUNCIATION_TARGETS, "Pronunciation target kind");
-    const word = record.targetKind === "lexeme" ? lexemes.get(record.targetId)?.id
-      : record.targetKind === "sense" ? senses.get(record.targetId)?.lexemeId
-      : record.targetKind === "attestation" ? attestations.get(record.targetId)?.lexemeId
-      : senses.get(examples.get(record.targetId)?.senseId ?? "")?.lexemeId;
+    const word = record.targetKind === "lexeme" ? find.lexemes(record.targetId)?.id
+      : record.targetKind === "sense" ? find.senses(record.targetId)?.lexemeId
+      : record.targetKind === "attestation" ? find.attestations(record.targetId)?.lexemeId
+      : find.senses(find.examples(record.targetId)?.senseId ?? "")?.lexemeId;
     invariant(word === record.lexemeId, "A pronounced record must belong to the pronunciation's lexeme.");
     invariant(record.text.length > 0, "Pronunciation text is required.");
     language(record.lang, "Pronunciation language");
@@ -668,11 +645,9 @@ export function validateGraph(graph: VocabularyGraph): void {
     [record.audioRef, record.audioMime, record.providerId, record.modelId].forEach((value) =>
       invariant(typeof value === "string" && value.trim().length > 0, "A pronunciation names its file and who recorded it."));
     optionalString(record.voice, "Pronunciation voice");
-  });
-
-  graph.studyStates.forEach((record) => {
-    remember(record);
-    const lexeme = lexemes.get(record.lexemeId);
+  },
+  studyStates(record: StudyState, find: Find): void {
+    const lexeme = find.lexemes(record.lexemeId);
     invariant(lexeme, "Study state references a missing lexeme.");
     invariant(record.ownerId === lexeme.ownerId, "Study state and lexeme must have the same owner.");
     invariant(record.system.trim().length > 0, "Study system is required.");
@@ -683,11 +658,8 @@ export function validateGraph(graph: VocabularyGraph): void {
     invariant(Number.isFinite(record.retrievability) && record.retrievability >= 0 && record.retrievability <= 1, "Retrievability is invalid.");
     if (record.lastReview) validateInstant(record.lastReview, "Last review");
     if (record.syncedAt) validateInstant(record.syncedAt, "Study sync time");
-  });
-
-  const loops = new Map<string, Loop>();
-  graph.loops.forEach((record) => {
-    remember(record);
+  },
+  loops(record: Loop): void {
     language(record.language, "Loop language");
     [record.styleId, record.engineVersion, record.bedFingerprint, record.pattern]
       .forEach((value) => optionalString(value, "Loop bed field"));
@@ -703,18 +675,15 @@ export function validateGraph(graph: VocabularyGraph): void {
     invariant(Boolean(record.audioRef) === Boolean(record.audioMime), "A loop's audio reference and type must be supplied together.");
     invariant(record.durationSeconds === null || (Number.isFinite(record.durationSeconds) && record.durationSeconds >= 0), "Loop duration is invalid.");
     invariant(Boolean(record.audioRef) || record.durationSeconds === null, "A loop that has not been rendered has no duration.");
-    loops.set(record.id, record);
-  });
-
-  graph.loopItems.forEach((record) => {
-    remember(record);
-    const loop = loops.get(record.loopId);
+  },
+  loopItems(record: LoopItem, find: Find): void {
+    const loop = find.loops(record.loopId);
     invariant(loop, "Loop item references a missing loop.");
     invariant(record.ownerId === loop.ownerId, "Loop item and loop must have the same owner.");
     // Looked up among *all* lexemes, tombstones included. A loop is a recording: deleting the word
     // leaves it playing, captioned with what was actually said, and this reference then points at a
     // tombstone — which is the honest state rather than a dangling one.
-    const lexeme = lexemes.get(record.lexemeId);
+    const lexeme = find.lexemes(record.lexemeId);
     invariant(lexeme, "Loop item references a missing lexeme.");
     invariant(record.ownerId === lexeme.ownerId, "Loop item and lexeme must have the same owner.");
     invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Loop item position is invalid.");
@@ -727,11 +696,8 @@ export function validateGraph(graph: VocabularyGraph): void {
     invariant(times.every((value, index) => index === 0 || value >= times[index - 1]), "A loop item's times must not run backwards.");
     invariant(Number.isSafeInteger(record.repeats) && record.repeats >= 0, "Loop item repeat count is invalid.");
     invariant(Number.isFinite(record.repeatSeconds) && record.repeatSeconds >= 0, "Loop item repeat interval is invalid.");
-  });
-
-  const stories = new Map<string, Story>();
-  graph.stories.forEach((record) => {
-    remember(record);
+  },
+  stories(record: Story): void {
     language(record.language, "Story language");
     optionalString(record.typeId, "Story kind");
     optionalString(record.styleId, "Story style");
@@ -740,12 +706,9 @@ export function validateGraph(graph: VocabularyGraph): void {
     optionalString(record.emoji, "Story emoji");
     optionalString(record.modelId, "Story model");
     invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Story position is invalid.");
-    stories.set(record.id, record);
-  });
-
-  graph.storyParts.forEach((record) => {
-    remember(record);
-    const story = stories.get(record.storyId);
+  },
+  storyParts(record: StoryPart, find: Find): void {
+    const story = find.stories(record.storyId);
     invariant(story, "Story part references a missing story.");
     invariant(record.ownerId === story.ownerId, "Story part and story must have the same owner.");
     invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Story part position is invalid.");
@@ -778,16 +741,14 @@ export function validateGraph(graph: VocabularyGraph): void {
         || (!record.audioProviderId && !record.audioModelId && !record.audioVoice),
       "A story part that has not been read aloud cannot say who spoke it."
     );
-  });
-
-  graph.storyWords.forEach((record) => {
-    remember(record);
-    const story = stories.get(record.storyId);
+  },
+  storyWords(record: StoryWord, find: Find): void {
+    const story = find.stories(record.storyId);
     invariant(story, "Story word references a missing story.");
     invariant(record.ownerId === story.ownerId, "Story word and story must have the same owner.");
     // Looked up among *all* lexemes, tombstones included, for a loop item's reason: a story that
     // has been written stays readable and still truthfully says which word it was built around.
-    const lexeme = lexemes.get(record.lexemeId);
+    const lexeme = find.lexemes(record.lexemeId);
     invariant(lexeme, "Story word references a missing lexeme.");
     invariant(record.ownerId === lexeme.ownerId, "Story word and lexeme must have the same owner.");
     invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Story word position is invalid.");
@@ -797,7 +758,141 @@ export function validateGraph(graph: VocabularyGraph): void {
       Array.isArray(record.translationForms) && record.translationForms.every((one) => typeof one === "string"),
       "Story word translated forms are invalid."
     );
+  }
+};
+
+/** Checked in this order, which is the order the old single pass built its maps in. */
+const CHECKED_KINDS = Object.keys(CHECKS) as EntityKind[];
+
+type Indexed = { [K in EntityKind]?: ReadonlyMap<string, VocabularyGraph[K][number]> };
+
+/** Records of one graph by id, per kind — built by a caller that keeps it, or on demand. */
+export type GraphIndex = { get<K extends EntityKind>(kind: K, id: string): VocabularyGraph[K][number] | undefined };
+
+function findIn(index: GraphIndex): Find {
+  return {
+    topics: (id) => index.get("topics", id),
+    lexemes: (id) => index.get("lexemes", id),
+    senses: (id) => index.get("senses", id),
+    attestations: (id) => index.get("attestations", id),
+    examples: (id) => index.get("examples", id),
+    loops: (id) => index.get("loops", id),
+    stories: (id) => index.get("stories", id)
+  };
+}
+
+function indexOf(graph: VocabularyGraph): GraphIndex {
+  const maps: Indexed = {};
+  return {
+    get<K extends EntityKind>(kind: K, id: string) {
+      let map = maps[kind] as Map<string, VocabularyGraph[K][number]> | undefined;
+      if (!map) {
+        map = new Map((graph[kind] as VocabularyGraph[K][number][]).map((record) => [record.id, record]));
+        (maps as Record<string, unknown>)[kind] = map;
+      }
+      return map.get(id);
+    }
+  };
+}
+
+function checkVocabularyLanguages(vocabularies: readonly Vocabulary[]): void {
+  // Not a storage constraint (§04 forbids those on replicated collections) — a graph-level one,
+  // so two devices that each added the same language offline cannot both be believed at once.
+  const claimed = new Set<string>();
+  vocabularies.forEach((record) => {
+    if (record.deleted) return;
+    invariant(!claimed.has(record.language), `Two vocabularies claim ${record.language}.`);
+    claimed.add(record.language);
   });
+}
+
+export function validateGraph(graph: VocabularyGraph): void {
+  const ids = new Set<string>();
+  let ownerId: string | null = null;
+  const find = findIn(indexOf(graph));
+  CHECKED_KINDS.forEach((kind) => {
+    (graph[kind] as AnyRecord[]).forEach((record) => {
+      syncFields(record);
+      ownerId ??= record.ownerId;
+      invariant(record.ownerId === ownerId, "A vocabulary graph must contain records for one owner only.");
+      invariant(!ids.has(record.id), `Duplicate record id ${record.id}.`);
+      ids.add(record.id);
+      (CHECKS[kind] as (record: AnyRecord, find: Find) => void)(record, find);
+    });
+  });
+  checkVocabularyLanguages(graph.vocabularies);
+}
+
+/**
+ * The fields other records' checks read from a record, per kind. Changing one of these on a record
+ * already held can invalidate records that are *not* in the change set, so `validateChanges` then
+ * falls back to the whole graph — re-parenting is rare, and a replica that no longer loads is not.
+ */
+const REREAD: { [K in EntityKind]?: readonly (keyof VocabularyGraph[K][number])[] } = {
+  senses: ["lexemeId"],
+  attestations: ["lexemeId"],
+  examples: ["senseId"]
+};
+
+/**
+ * `validateGraph` for a graph already known to be valid and the records about to replace or join
+ * it: the same checks, run on the incoming records alone, resolving every reference through the
+ * incoming records first and then the graph. Equivalent to validating the merged graph, at the
+ * cost of the change rather than the replica — which is what every save and pull used to pay.
+ */
+export function validateChanges(
+  graph: VocabularyGraph, changes: Partial<VocabularyGraph>, index: GraphIndex = indexOf(graph)
+): void {
+  const incoming = indexOf({ ...EMPTY_KINDS(), ...changes } as VocabularyGraph);
+  const merged: GraphIndex = { get: (kind, id) => incoming.get(kind, id) ?? index.get(kind, id) };
+  let owner: string | null = graph.vocabularies[0]?.ownerId ?? graph.topics[0]?.ownerId ?? graph.lexemes[0]?.ownerId ?? null;
+  for (const kind of CHECKED_KINDS) {
+    const records = (changes[kind] ?? []) as AnyRecord[];
+    for (const record of records) {
+      const held = index.get(kind, record.id) as AnyRecord | undefined;
+      const fields = (REREAD[kind] ?? []) as string[];
+      if (held && fields.some((field) => (held as unknown as Record<string, unknown>)[field] !== (record as unknown as Record<string, unknown>)[field])) {
+        validateGraph(mergedGraph(graph, changes));
+        return;
+      }
+    }
+  }
+  const find = findIn(merged);
+  CHECKED_KINDS.forEach((kind) => {
+    ((changes[kind] ?? []) as AnyRecord[]).forEach((record) => {
+      syncFields(record);
+      owner ??= record.ownerId;
+      invariant(record.ownerId === owner, "A vocabulary graph must contain records for one owner only.");
+      CHECKED_KINDS.forEach((other) => {
+        if (other === kind) return;
+        invariant(!merged.get(other, record.id), `Duplicate record id ${record.id}.`);
+      });
+      (CHECKS[kind] as (record: AnyRecord, find: Find) => void)(record, find);
+    });
+  });
+  if (changes.vocabularies?.length) checkVocabularyLanguages(mergedGraph(graph, { vocabularies: changes.vocabularies }).vocabularies);
+}
+
+const EMPTY_KINDS = (): VocabularyGraph => ({
+  vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],
+  pronunciations: [], studyStates: [], loops: [], loopItems: [], stories: [], storyParts: [], storyWords: []
+});
+
+/** The graph with the change set laid over it, a replaced record keeping its place. */
+function mergedGraph(graph: VocabularyGraph, changes: Partial<VocabularyGraph>): VocabularyGraph {
+  const next = { ...graph };
+  (Object.keys(changes) as EntityKind[]).forEach((kind) => {
+    const records = (changes[kind] ?? []) as AnyRecord[];
+    if (!records.length) return;
+    const list = (graph[kind] as AnyRecord[]).slice();
+    const at = new Map(list.map((record, position) => [record.id, position]));
+    records.forEach((record) => {
+      const position = at.get(record.id);
+      if (position === undefined) { at.set(record.id, list.length); list.push(record); } else list[position] = record;
+    });
+    (next as Record<string, unknown>)[kind] = list;
+  });
+  return next;
 }
 
 export function effectiveShortGloss(graph: VocabularyGraph, lexemeId: string): string | null {

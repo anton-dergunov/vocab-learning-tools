@@ -72,3 +72,19 @@ def encode_master(data: bytes, master: tuple[int, int] = MASTER) -> bytes:
         buffer = io.BytesIO()
         picture.save(buffer, format="WEBP", quality=WEBP_QUALITY, method=6)
     return buffer.getvalue()
+
+
+def as_master(data: bytes, master: tuple[int, int] = MASTER) -> bytes:
+    """A file that already *is* a master, kept byte for byte; anything else, encoded into one.
+
+    For a picture put back from a bundle, which is a master Acervo wrote: re-encoding it cost half a
+    second of the server's CPU per picture — about twenty-five minutes for one vocabulary's import —
+    and bought only a second generation of WebP artifacts. The rule `pronunciation/encode.py` follows
+    for audio that arrives already compressed. A file that does not decode is still refused, because
+    it is decoded here in full before it is believed.
+    """
+    with Image.open(io.BytesIO(data)) as image:
+        fits = image.format == "WEBP" and image.size[0] <= master[0] and image.size[1] <= master[1]
+        if fits:
+            image.load()
+    return data if fits else encode_master(data, master)

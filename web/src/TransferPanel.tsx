@@ -6,7 +6,7 @@
  * `transfer.ts`, so a second transport would add a surface here and nothing else.
  */
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { languageOf } from "./languages";
 import { repository, type ReplicaSnapshot } from "./repository";
@@ -74,8 +74,16 @@ export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState("");
   const languages = languageOptions(snapshot);
-  const pictures = picturesIn(snapshot, { language, markdown, images: true, pronunciations });
-  const clips = pronunciationsIn(snapshot, { language, markdown, images, pronunciations: true }).clips;
+  /* Only the language changes what these find, and they walk every word: memoized, because this
+     panel repaints with everything else while an import beside it is running. */
+  const pictures = useMemo(
+    () => picturesIn(snapshot, { language, markdown: false, images: true, pronunciations: false }),
+    [snapshot, language]
+  );
+  const clips = useMemo(
+    () => pronunciationsIn(snapshot, { language, markdown: false, images: false, pronunciations: true }).clips,
+    [snapshot, language]
+  );
 
   async function run() {
     setBusy("Writing…");
@@ -211,7 +219,7 @@ export function ImportPanel({ onChanged }: { onChanged(): void }) {
   async function run(plan: BundlePlan, pictures: Map<string, Uint8Array>, recordings: Map<string, Uint8Array>) {
     cancel.current = { cancelled: false };
     setStage({ at: "running", done: 0, total: 0 });
-    const deviceId = repository.snapshot().deviceId;
+    const deviceId = repository.state().deviceId;
     let restored = 0;
 
     const report = await importBundle(

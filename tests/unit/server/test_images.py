@@ -487,6 +487,40 @@ def test_a_restored_picture_keeps_the_model_that_drew_it_and_stays_replaceable(s
     assert not server.painter.calls, "restoring draws nothing"
 
 
+def webp(size):
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", size, (200, 120, 40)).save(buffer, format="WEBP", quality=80)
+    return buffer.getvalue()
+
+
+def test_a_picture_that_already_is_a_master_is_stored_byte_for_byte(server):
+    """What every picture an import puts back is. Re-encoding it cost the server half a second a
+    picture — most of an import's half hour — and a second generation of artifacts."""
+    entry, itch, chop, sentence = word(server)
+    master = webp((1024, 1024))
+    row = server.send(f"/images/senses/{itch['id']}/picture", master,
+                      drawn_by="vertex/imagen-4").json()["data"]
+    assert (server.media / row["imageRef"]).read_bytes() == master
+
+
+def test_a_webp_larger_than_the_master_is_still_brought_down_to_it(server):
+    import io
+
+    from PIL import Image
+
+    entry, itch, chop, sentence = word(server)
+    large = webp((2048, 2048))
+    row = server.send(f"/images/senses/{itch['id']}/picture", large).json()["data"]
+    stored = (server.media / row["imageRef"]).read_bytes()
+    assert stored != large
+    with Image.open(io.BytesIO(stored)) as image:
+        assert image.format == "WEBP" and image.size == (1024, 1024)
+
+
 def test_a_picture_the_owner_chose_is_told_apart_by_having_no_model(server):
     from conftest import PNG
 

@@ -1,5 +1,5 @@
 import {
-  validateGraph,
+  validateChanges, validateGraph, type GraphIndex,
   type Attestation, type AttestationInput, type EntityKind, type Example, type ExampleInput,
   type ImagePrompt, type ImagePromptInput, type Lexeme, type LexemeInput, type Loop, type LoopInput,
   type LoopItem, type LoopItemInput, type Pronunciation, type Sense, type SenseInput,
@@ -66,10 +66,21 @@ export interface ReplicaSnapshot extends VocabularyGraph {
   persistent: boolean;
 }
 
+/** The replica's bookkeeping without its records: what a caller reads when it needs no graph. */
+export type ReplicaState = Omit<ReplicaSnapshot, keyof VocabularyGraph>;
+
 export interface AcervoRepository {
   load(ownerId: string): Promise<void>;
   clear(): Promise<void>;
+  /**
+   * The replica as it stands, **shared rather than copied**: the same object until something
+   * changes, so a repaint with nothing new costs nothing and every memo keyed on it survives. It
+   * must never be mutated — records are replaced, never edited in place (frozen outside production,
+   * so a test catches a caller that tries).
+   */
   snapshot(): ReplicaSnapshot;
+  /** `snapshot()` without the records, for a caller that wants the cursor or the device id. */
+  state(): ReplicaState;
   attachRemote(remote: RemoteGraph | null): void;
   applyRemote(changes: Partial<VocabularyGraph>, cursor: number, datasetId: string): Promise<number>;
   writeGraph(changes: Partial<VocabularyGraph>): Promise<void>;
@@ -93,8 +104,31 @@ const EMPTY_META = (): ReplicaMeta => ({
   datasetId: "", cursor: 0, lastPulledAt: null, lastWroteAt: null
 });
 
+/** Frozen where a mutation can be caught by a test; production skips the walk. */
+const FREEZE = import.meta.env.DEV || import.meta.env.MODE === "test";
+
+function frozen<T>(value: T): T {
+  if (!FREEZE || value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  Object.values(value as object).forEach((inner) => frozen(inner));
+  return Object.freeze(value);
+}
+
+function frozenGraph(graph: VocabularyGraph): VocabularyGraph {
+  if (FREEZE) RECORD_STORES.forEach((kind) => { (graph[kind] as Entity[]).forEach(frozen); Object.freeze(graph[kind]); });
+  return graph;
+}
+
 export class LocalAcervoRepository implements AcervoRepository {
+  /**
+   * Replaced, never edited: a merge builds new arrays for the collections it touches and shares the
+   * rest. That is what lets `snapshot()` hand the graph out without copying it — a whole-replica
+   * `structuredClone` cost 29 ms on a laptop for ten thousand records, and a save or a pull used to
+   * take six of them.
+   */
   private graph = EMPTY_GRAPH();
+  /** Where each record sits in its collection, per kind; built on first use and kept in step. */
+  private positions = new Map<EntityKind, Map<string, number>>();
+  private cached: ReplicaSnapshot | null = null;
   private meta: ReplicaMeta = EMPTY_META();
   private ready = false;
   private persistent = true;
@@ -120,7 +154,7 @@ export class LocalAcervoRepository implements AcervoRepository {
     const stale = contents.meta.ownerId !== ownerId || contents.meta.schemaVersion !== LOCAL_SCHEMA_VERSION;
     if (stale) {
       await this.database.wipe();
-      this.graph = EMPTY_GRAPH();
+      this.install(EMPTY_GRAPH());
       this.meta = { ...EMPTY_META(), ownerId, deviceId };
       await this.database.write({ meta: this.meta });
     } else {
@@ -141,12 +175,13 @@ export class LocalAcervoRepository implements AcervoRepository {
         storyWords: contents.storyWords
       };
       validateGraph(graph);
+      frozenGraph(graph);
       const allRecords: Entity[][] = [
         graph.vocabularies, graph.topics, graph.lexemes, graph.senses, graph.attestations, graph.examples, graph.imagePrompts, graph.pronunciations, graph.studyStates
       ];
       const hasForeignRecord = allRecords.some((records) => records.some((record) => record.ownerId !== ownerId));
       if (hasForeignRecord) throw new Error("Replica records do not belong to the authenticated owner.");
-      this.graph = graph;
+      this.install(graph);
       this.meta = {
         ...EMPTY_META(),
         ownerId,
@@ -158,22 +193,54 @@ export class LocalAcervoRepository implements AcervoRepository {
       };
     }
     this.ready = true;
+    this.cached = null;
   }
 
   async clear(): Promise<void> {
     await this.database.wipe();
-    this.graph = EMPTY_GRAPH();
+    this.install(EMPTY_GRAPH());
     this.meta = EMPTY_META();
     this.ready = false;
+    this.cached = null;
+  }
+
+  private install(graph: VocabularyGraph): void {
+    this.graph = graph;
+    this.positions = new Map();
+    this.cached = null;
   }
 
   snapshot(): ReplicaSnapshot {
+    this.cached ??= { ...this.graph, ...this.state() };
+    return this.cached;
+  }
+
+  state(): ReplicaState {
     return {
-      ...structuredClone(this.graph), ready: this.ready, ownerId: this.meta.ownerId,
+      ready: this.ready, ownerId: this.meta.ownerId,
       deviceId: this.meta.deviceId, datasetId: this.meta.datasetId, cursor: this.meta.cursor,
       lastPulledAt: this.meta.lastPulledAt, lastWroteAt: this.meta.lastWroteAt,
       persistent: this.persistent
     };
+  }
+
+  private positionsOf(kind: EntityKind): Map<string, number> {
+    let found = this.positions.get(kind);
+    if (!found) {
+      found = new Map((this.graph[kind] as Entity[]).map((record, at) => [record.id, at]));
+      this.positions.set(kind, found);
+    }
+    return found;
+  }
+
+  private held(kind: EntityKind, id: string): Entity | undefined {
+    const at = this.positionsOf(kind).get(id);
+    return at === undefined ? undefined : (this.graph[kind] as Entity[])[at];
+  }
+
+  /** The graph as `validateChanges` looks things up in it, through the positions already kept. */
+  private get index(): GraphIndex {
+    return { get: (kind, id) => this.held(kind, id) as never };
   }
 
   attachRemote(remote: RemoteGraph | null): void {
@@ -204,35 +271,48 @@ export class LocalAcervoRepository implements AcervoRepository {
     changes: Partial<VocabularyGraph>, cursor: number, datasetId: string, wroteAt?: string
   ): Promise<number> {
     if (!this.ready) throw new Error("Load the Acervo repository before applying remote records.");
-    const next = structuredClone(this.graph);
     const write: Partial<VocabularyGraph> = {};
     let applied = 0;
     RECORD_STORES.forEach((kind) => {
       const incoming = changes[kind] as Entity[] | undefined;
       if (!incoming?.length) return;
-      const target = next[kind] as Entity[];
-      const accepted: Entity[] = [];
+      const accepted = new Map<string, Entity>();
       incoming.forEach((record) => {
         if (record.ownerId !== this.meta.ownerId) throw new Error("Cannot apply a record owned by another account.");
-        const index = target.findIndex((candidate) => candidate.id === record.id);
+        const current = accepted.get(record.id) ?? this.held(kind, record.id);
         // A reply that lost a race with a newer version of the same record must not undo it.
-        if (index >= 0 && record.revision <= target[index].revision) return;
-        if (index < 0) target.push(structuredClone(record)); else target[index] = structuredClone(record);
-        accepted.push(record);
+        if (current && record.revision <= current.revision) return;
+        accepted.set(record.id, frozen(structuredClone(record)));
       });
-      if (!accepted.length) return;
-      write[kind] = structuredClone(accepted) as never;
-      applied += accepted.length;
+      if (!accepted.size) return;
+      write[kind] = [...accepted.values()] as never;
+      applied += accepted.size;
     });
-    validateGraph(next);
+    validateChanges(this.graph, write, this.index);
     // A push is not a pull: only a pull moves the "last received" stamp.
     const meta: Partial<ReplicaMeta> = wroteAt
       ? { cursor, datasetId, lastWroteAt: wroteAt }
       : { cursor, datasetId, lastPulledAt: this.instant() };
     await this.database.write({ ...write, meta });
-    this.graph = next;
+    this.lay(write);
     this.meta = { ...this.meta, ...meta } as ReplicaMeta;
+    this.cached = null;
     return applied;
+  }
+
+  /** Replace or append each record, copying only the collections that change. */
+  private lay(records: Partial<VocabularyGraph>): void {
+    const next = { ...this.graph };
+    (Object.keys(records) as EntityKind[]).forEach((kind) => {
+      const list = (this.graph[kind] as Entity[]).slice();
+      const positions = this.positionsOf(kind);
+      (records[kind] as Entity[]).forEach((record) => {
+        const at = positions.get(record.id);
+        if (at === undefined) { positions.set(record.id, list.length); list.push(record); } else list[at] = record;
+      });
+      (next as Record<string, unknown>)[kind] = FREEZE ? Object.freeze(list) : list;
+    });
+    this.graph = next;
   }
 
   private instant(): string {
@@ -266,16 +346,10 @@ export class LocalAcervoRepository implements AcervoRepository {
 
   private async send(changes: Partial<VocabularyGraph>, options?: WriteOptions): Promise<void> {
     if (!this.ready) throw new Error("Load the Acervo repository before writing.");
-    const proposed = structuredClone(this.graph);
-    (Object.entries(changes) as [EntityKind, Entity[]][]).forEach(([kind, records]) => {
-      records?.forEach((record) => {
-        if (record.ownerId !== this.meta.ownerId) throw new Error("Cannot write a record owned by another account.");
-        const target = proposed[kind] as Entity[];
-        const index = target.findIndex((candidate) => candidate.id === record.id);
-        if (index < 0) target.push(record); else target[index] = record;
-      });
-    });
-    validateGraph(proposed);
+    (Object.values(changes) as Entity[][]).forEach((records) => records?.forEach((record) => {
+      if (record.ownerId !== this.meta.ownerId) throw new Error("Cannot write a record owned by another account.");
+    }));
+    validateChanges(this.graph, changes, this.index);
     if (!this.remote) {
       throw new Error("Acervo is not connected to the server, so this change was not saved.");
     }
@@ -290,11 +364,10 @@ export class LocalAcervoRepository implements AcervoRepository {
 
   private async save(kind: EntityKind, input: EntityInput, requestedId?: string): Promise<Entity> {
     if (!this.ready) throw new Error("Load the Acervo repository before writing.");
-    const records = this.graph[kind] as Entity[];
-    const existing = requestedId ? records.find((record) => record.id === requestedId) : undefined;
+    const existing = requestedId ? this.held(kind, requestedId) : undefined;
     const record = { ...input, id: existing?.id ?? requestedId ?? newId(), ...this.stamp(existing) } as Entity;
     await this.commit({ [kind]: [record] });
-    return (this.graph[kind] as Entity[]).find((candidate) => candidate.id === record.id) ?? record;
+    return this.held(kind, record.id) ?? record;
   }
 
   saveVocabulary(input: VocabularyInput, id?: string) { return this.save("vocabularies", input, id) as Promise<Vocabulary>; }
@@ -392,7 +465,7 @@ export class LocalAcervoRepository implements AcervoRepository {
     const tombstone = <T extends Entity>(store: EntityKind, record: T) => {
       change(store, { ...record, ...this.stamp(record), deleted: true } as T);
     };
-    const target = (this.graph[kind] as Entity[]).find((record) => record.id === id);
+    const target = this.held(kind, id);
     if (!target || target.deleted) return;
     tombstone(kind, target);
     if (kind === "topics") {

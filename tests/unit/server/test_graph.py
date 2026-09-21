@@ -516,3 +516,35 @@ def test_the_reset_needs_its_confirmation_token(server):
         )
         assert answer.status_code == 400
         assert answer.json()["error"]["code"] == "confirmation_required"
+
+
+def test_an_edit_never_rewrites_a_records_key(server):
+    """With foreign keys on, SQLite reads `SET id = <the same id>` as a key change and scans every
+    child index for rows that pointed at the old one — seven for a lexeme, the whole of
+    `image_prompts` for an example — so an edit's cost grew with the database rather than the edit."""
+    from sqlalchemy import event
+
+    from acervo.repository.session import engine
+
+    changes, word, meaning, source, drawn = article()
+    server.push(changes)
+    updates: list[str] = []
+
+    def capture(_conn, _cursor, statement, *_rest):
+        if statement.lstrip().upper().startswith("UPDATE") and "sync_state" not in statement:
+            updates.append(statement)
+
+    event.listen(engine(), "before_cursor_execute", capture)
+    try:
+        held = server.pull().json()["data"]["changes"]
+        answer = server.push({
+            key: [{**held[key][0], "editedAt": now_instant()}]
+            for key in ("lexemes", "senses", "attestations", "examples")
+        })
+    finally:
+        event.remove(engine(), "before_cursor_execute", capture)
+    assert answer.status_code == 200, answer.json()
+    assert len(updates) == 4
+    for statement in updates:
+        assigned = statement.split(" SET ", 1)[1].split(" WHERE ", 1)[0]
+        assert not re.search(r"\b(id|owner)\s*=", assigned), statement

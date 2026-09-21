@@ -43,6 +43,8 @@ class SyncEngine implements RemoteGraph {
   private timer: number | undefined;
   private announce: number | undefined;
   private running: Promise<SyncStatus> | null = null;
+  /** Asked for again while a pull was running, whose request may have left before the change. */
+  private again = false;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -91,10 +93,24 @@ class SyncEngine implements RemoteGraph {
    * timers and listeners with nowhere to put a rejection. It has to resolve with *something*: a
    * bare promise meant "Sync now" could not tell success from failure and silently did nothing
    * visible, which is exactly how a broken server looked like a broken button.
+   *
+   * A call that arrives while a pull is running does not simply join it: that pull's request may
+   * have left before the change the caller heard about, and joining it dropped a `revision` until
+   * the minute timer came round. It asks for **one** more pull after the current one instead, so a
+   * burst of revisions — an import sends several a word — costs two pulls rather than one each.
    */
   syncNow(immediate = false): Promise<SyncStatus> {
-    if (this.running) return this.running;
-    this.running = this.exchange(immediate).then(() => this.status).finally(() => {
+    if (this.running) {
+      this.again = true;
+      return this.running;
+    }
+    this.running = (async () => {
+      do {
+        this.again = false;
+        await this.exchange(immediate);
+      } while (this.again && this.status.state === "idle");
+      return this.status;
+    })().finally(() => {
       window.clearTimeout(this.announce);
       this.announce = undefined;
       this.running = null;
@@ -116,7 +132,7 @@ class SyncEngine implements RemoteGraph {
   }
 
   private async pull(): Promise<void> {
-    const before = repository.snapshot();
+    const before = repository.state();
     const response = await backendSession.pullGraph(before.cursor);
     this.guardDataset(before.datasetId, response.datasetId);
     // A delta is not a whole graph and cannot be validated as one — half its relations point at
@@ -136,7 +152,7 @@ class SyncEngine implements RemoteGraph {
 
   /** `RemoteGraph.push` — the repository's only route to the server. */
   async push(changes: Partial<VocabularyGraph>, options?: WriteOptions): Promise<RemoteWrite> {
-    const snapshot = repository.snapshot();
+    const snapshot = repository.state();
     try {
       const response = await backendSession.pushGraph(snapshot.deviceId, changes, options);
       this.guardDataset(snapshot.datasetId, response.datasetId);
@@ -153,7 +169,7 @@ class SyncEngine implements RemoteGraph {
   async saveArticle(
     draft: ArticleDraft, minted: ReadonlySet<string>, base: Record<string, number>, options?: WriteOptions
   ): Promise<ArticleWrite> {
-    const snapshot = repository.snapshot();
+    const snapshot = repository.state();
     try {
       const response = await backendSession.saveArticle(snapshot.deviceId, draft, [...minted], base, options);
       this.guardDataset(snapshot.datasetId, response.datasetId);
@@ -169,7 +185,7 @@ class SyncEngine implements RemoteGraph {
 
   /** Tombstones every word and descendant, retaining languages and topics. */
   async resetWords(): Promise<void> {
-    const snapshot = repository.snapshot();
+    const snapshot = repository.state();
     try {
       const response = await backendSession.resetGraph(snapshot.deviceId);
       this.guardDataset(snapshot.datasetId, response.datasetId);
@@ -185,7 +201,7 @@ class SyncEngine implements RemoteGraph {
    * `datasetChanged`, which is why it clears the terminal state before syncing.
    */
   async downloadAgain(): Promise<void> {
-    const ownerId = repository.snapshot().ownerId;
+    const ownerId = repository.state().ownerId;
     await repository.clear();
     await repository.load(ownerId);
     this.update({ state: "idle", message: null });
@@ -216,8 +232,8 @@ class SyncEngine implements RemoteGraph {
   }
 
   private update(changes: Partial<SyncStatus>) {
-    const snapshot = repository.snapshot();
-    this.status = {
+    const snapshot = repository.state();
+    const next: SyncStatus = {
       ...this.status,
       cursor: snapshot.cursor,
       lastPulledAt: snapshot.lastPulledAt,
@@ -225,6 +241,9 @@ class SyncEngine implements RemoteGraph {
       persistent: snapshot.persistent,
       ...changes
     };
+    // Every listener repaints the whole interface, so a status that says nothing new is not sent.
+    if ((Object.keys(next) as (keyof SyncStatus)[]).every((key) => next[key] === this.status[key])) return;
+    this.status = next;
     this.listeners.forEach((listener) => listener());
   }
 }

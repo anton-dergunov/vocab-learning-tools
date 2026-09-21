@@ -176,7 +176,7 @@ async function start(part: StoryPart, from: number, last: number): Promise<void>
   try {
     let passages = part.audioSegments;
     if (!passages.length) {
-      const row = await backendSession.recordStoryPart(part.storyId, part.id, repository.snapshot().deviceId);
+      const row = await backendSession.recordStoryPart(part.storyId, part.id, repository.state().deviceId);
       if (mine !== run) return;
       // The row reaches the replica the way every server-written row does; it plays meanwhile.
       void syncEngine.syncNow();

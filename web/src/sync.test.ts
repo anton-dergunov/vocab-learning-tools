@@ -104,10 +104,55 @@ describe("the cursor pull", () => {
     expect(repository.snapshot().lexemes).toHaveLength(0);
   });
 
-  it("runs one request when three callers ask at once", async () => {
+  it("runs at most one more request however many callers ask while one is running", async () => {
     const pull = vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(EMPTY(), 0));
-    await Promise.all([syncEngine.syncNow(), syncEngine.syncNow(), syncEngine.syncNow()]);
-    expect(pull).toHaveBeenCalledTimes(1);
+    await Promise.all([syncEngine.syncNow(), syncEngine.syncNow(), syncEngine.syncNow(), syncEngine.syncNow()]);
+    expect(pull).toHaveBeenCalledTimes(2);
+    await syncEngine.syncNow();
+    expect(pull).toHaveBeenCalledTimes(3);
+  });
+
+  it("fetches a change announced while a pull that left before it was still running", async () => {
+    // The lost revision: the first request was answered from before the change, and a caller that
+    // heard about the change used to be handed that same answer.
+    const { graph, cursor } = numbered();
+    const pull = vi.spyOn(backendSession, "pullGraph")
+      .mockResolvedValueOnce(pullResponse(EMPTY(), 0))
+      .mockResolvedValueOnce(pullResponse(graph, cursor));
+    const first = syncEngine.syncNow();
+    const announced = syncEngine.syncNow();
+    await Promise.all([first, announced]);
+    expect(pull).toHaveBeenCalledTimes(2);
+    expect(repository.snapshot().lexemes).toHaveLength(graph.lexemes.length);
+  });
+
+  it("hands out the same snapshot until something changes", async () => {
+    const { graph, cursor } = numbered();
+    vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
+    const before = repository.snapshot();
+    vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(EMPTY(), cursor));
+    await syncEngine.syncNow(true);
+    expect(repository.snapshot().lexemes).toBe(before.lexemes);
+    expect(repository.snapshot().senses).toBe(before.senses);
+  });
+
+  it("shares collections a pull did not touch and refuses to be edited in place", async () => {
+    const { graph, cursor } = numbered();
+    vi.spyOn(backendSession, "pullGraph").mockResolvedValue(pullResponse(graph, cursor));
+    await syncEngine.syncNow(true);
+    const before = repository.snapshot();
+    const renamed = { ...graph.lexemes[0], headword: "renamed", revision: cursor + 1 };
+    vi.spyOn(backendSession, "pullGraph")
+      .mockResolvedValue(pullResponse({ ...EMPTY(), lexemes: [renamed] }, cursor + 1));
+    await syncEngine.syncNow(true);
+    const after = repository.snapshot();
+    expect(after).not.toBe(before);
+    expect(after.senses).toBe(before.senses);
+    expect(after.lexemes.find((lexeme) => lexeme.id === renamed.id)?.headword).toBe("renamed");
+    expect(before.lexemes.find((lexeme) => lexeme.id === renamed.id)?.headword).not.toBe("renamed");
+    expect(() => { (after.lexemes as unknown[]).push({}); }).toThrow();
+    expect(() => { (after.lexemes[0] as { headword: string }).headword = "edited"; }).toThrow();
   });
 });
 

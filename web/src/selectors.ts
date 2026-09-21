@@ -139,10 +139,12 @@ export function topicOptions(graph: VocabularyGraph, language: string): TopicOpt
     }));
 }
 
+const bySenseOrder = (left: Sense, right: Sense) => left.order - right.order || left.id.localeCompare(right.id);
+
 export function sensesOf(graph: VocabularyGraph, lexemeId: string): Sense[] {
   return live(graph.senses)
     .filter((sense) => sense.lexemeId === lexemeId)
-    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+    .sort(bySenseOrder);
 }
 
 /**
@@ -248,26 +250,55 @@ function onePicture(images: ImagePrompt[]): ImagePrompt[] {
 }
 
 export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | null {
-  const lexeme = live(graph.lexemes).find((candidate) => candidate.id === lexemeId);
-  if (!lexeme) return null;
-  const examples = live(graph.examples);
-  const images = live(graph.imagePrompts).filter((image) => image.lexemeId === lexemeId);
-  return {
-    lexeme,
-    topics: lexeme.topicIds
-      .map((id) => live(graph.topics).find((topic) => topic.id === id))
-      .filter((topic): topic is Topic => Boolean(topic)),
-    senses: sensesOf(graph, lexemeId).map((sense) => ({
-      sense,
-      examples: byAge(examples.filter((example) => example.senseId === sense.id)),
-      images: onePicture(byAge(images.filter((image) => image.senseId === sense.id)))
-    })),
-    attestations: byAge(live(graph.attestations).filter((attestation) => attestation.lexemeId === lexemeId)),
-    // Without these the card image is invisible in the projection, so saving would orphan it.
-    images: byAge(images.filter((image) => image.senseId === null)),
-    study: studyStateOf(graph, lexemeId),
-    glossLangs: glossLanguagesFor(lexeme.language, graph.vocabularies),
-    notesLang: notesLanguageFor(lexeme.language, graph.vocabularies)
+  return articleReader(graph)(lexemeId);
+}
+
+/** Records grouped by one field, each group in graph order. */
+function groupBy<T, K>(records: T[], keyOf: (record: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>();
+  records.forEach((record) => {
+    const key = keyOf(record);
+    const group = groups.get(key);
+    if (group) group.push(record); else groups.set(key, [record]);
+  });
+  return groups;
+}
+
+/**
+ * `articleFor` for many words of one graph: every collection is grouped once, so each article then
+ * costs its own records rather than a pass over the replica. An export assembles every word, and
+ * doing that with `articleFor` was a pass over the replica per word — a second of work for a
+ * vocabulary of 1,700, repeated on every repaint of the panel that counts its pictures.
+ */
+export function articleReader(graph: VocabularyGraph): (lexemeId: string) => Article | null {
+  const lexemes = new Map(live(graph.lexemes).map((lexeme) => [lexeme.id, lexeme]));
+  const topics = new Map(live(graph.topics).map((topic) => [topic.id, topic]));
+  const senses = groupBy(live(graph.senses), (sense) => sense.lexemeId);
+  const examples = groupBy(live(graph.examples), (example) => example.senseId);
+  const images = groupBy(live(graph.imagePrompts), (image) => image.lexemeId);
+  const attestations = groupBy(live(graph.attestations), (attestation) => attestation.lexemeId);
+  const study = groupBy(live(graph.studyStates), (state) => state.lexemeId);
+  return (lexemeId) => {
+    const lexeme = lexemes.get(lexemeId);
+    if (!lexeme) return null;
+    const own = images.get(lexemeId) ?? [];
+    return {
+      lexeme,
+      topics: lexeme.topicIds
+        .map((id) => topics.get(id))
+        .filter((topic): topic is Topic => Boolean(topic)),
+      senses: (senses.get(lexemeId) ?? []).slice().sort(bySenseOrder).map((sense) => ({
+        sense,
+        examples: byAge(examples.get(sense.id) ?? []),
+        images: onePicture(byAge(own.filter((image) => image.senseId === sense.id)))
+      })),
+      attestations: byAge(attestations.get(lexemeId) ?? []),
+      // Without these the card image is invisible in the projection, so saving would orphan it.
+      images: byAge(own.filter((image) => image.senseId === null)),
+      study: study.get(lexemeId)?.[0] ?? null,
+      glossLangs: glossLanguagesFor(lexeme.language, graph.vocabularies),
+      notesLang: notesLanguageFor(lexeme.language, graph.vocabularies)
+    };
   };
 }
 

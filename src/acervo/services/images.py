@@ -34,7 +34,7 @@ from acervo.errors import ApiError
 from acervo.images.brief import BriefWriter, SenseBrief
 from acervo.images.compose import compose, prompt_version
 from acervo.images.ids import image_prompt_id, image_reference, seed_for
-from acervo.images.render import Renderer, encode_master
+from acervo.images.render import Renderer, as_master
 from acervo.images.styles import StyleTable, load_styles
 from acervo.models import ChainExhausted, ProviderError, ProviderRefused, chain, load_catalogue
 from acervo.repository import graph, image_settings
@@ -435,12 +435,13 @@ def attach_picture(settings: Settings, owner: str, device: str, sense_id: str,
     the row is either found or minted at the id it was always going to have.
 
     Re-encoded to the same 1024² WebP master rather than stored as handed over, so every picture in
-    the article is one kind of thing and a 12 MB phone photograph does not become a 12 MB download.
+    the article is one kind of thing and a 12 MB phone photograph does not become a 12 MB download —
+    unless it already is one, which is what every picture an import puts back is (`as_master`).
     """
     prompt_id = image_prompt_id(sense_id)
     lexeme_id, existing = _sense_row(owner, sense_id, prompt_id)
     try:
-        master = encode_master(data)
+        master = as_master(data)
     except Exception as unreadable:  # noqa: BLE001 — every decoder failure means the same thing here
         raise ApiError(400, "unreadable_image", "That file could not be read as an image.") from unreadable
 

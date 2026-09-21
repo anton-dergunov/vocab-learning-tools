@@ -22,7 +22,7 @@
 
 import type { Example, Lexeme, VocabularyGraph } from "./domain";
 import { languageOf } from "./languages";
-import { articleFor, lexemesIn, shortGlossOf, type Article } from "./selectors";
+import { articleReader, lexemesIn, shortGlossOf, type Article } from "./selectors";
 
 /** Words waiting to be filed, which the rail also keeps out of every topic. */
 const INBOX_FILE = "Inbox";
@@ -107,9 +107,10 @@ export interface MarkdownFile { path: string; text: string }
 export function markdownFor(graph: VocabularyGraph, language: string, exportedAt: string): MarkdownFile[] {
   const collator = new Intl.Collator(language);
   const sections = new Map<string, Article[]>();
+  const articleOf = articleReader(graph);
 
   lexemesIn(graph, language).forEach((lexeme) => {
-    const article = articleFor(graph, lexeme.id);
+    const article = articleOf(lexeme.id);
     if (!article) return;
     sectionsFor(graph, lexeme).forEach((section) => {
       const bucket = sections.get(section) ?? [];
