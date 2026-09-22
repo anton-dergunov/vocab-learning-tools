@@ -30,7 +30,7 @@ words:
   - id: real-encender-la-computadora
     language: es
     headword: encender la computadora
-    lemma: encender
+    lemma: encender la computadora
     pos: verb
     category: primary_multiword
     source: real
@@ -39,7 +39,7 @@ words:
   - id: real-en-misa
     language: es
     headword: en misa
-    lemma: misa
+    lemma: en misa
     pos: phrase
     category: primary_multiword
     source: real
@@ -48,7 +48,7 @@ words:
   - id: real-pasar-musica
     language: es
     headword: pasar musica
-    lemma: pasar
+    lemma: pasar musica
     pos: verb
     category: primary_multiword
     source: real
@@ -57,7 +57,7 @@ words:
   - id: real-la-obra-de-teatro
     language: es
     headword: la obra de teatro
-    lemma: obra
+    lemma: obra de teatro
     pos: noun
     category: primary_multiword
     source: real
@@ -66,7 +66,7 @@ words:
   - id: real-hacer-murales
     language: es
     headword: hacer murales
-    lemma: hacer
+    lemma: hacer murales
     pos: verb
     category: primary_multiword
     source: real
@@ -76,7 +76,7 @@ words:
   - id: syn-montar-en-bicicleta
     language: es
     headword: montar en bicicleta
-    lemma: montar
+    lemma: montar en bicicleta
     pos: verb
     category: primary_multiword
     source: synthetic
@@ -84,7 +84,7 @@ words:
   - id: syn-hacer-la-cama
     language: es
     headword: hacer la cama
-    lemma: hacer
+    lemma: hacer la cama
     pos: verb
     category: primary_multiword
     source: synthetic
@@ -92,7 +92,7 @@ words:
   - id: syn-pedir-disculpas
     language: es
     headword: pedir disculpas
-    lemma: pedir
+    lemma: pedir disculpas
     pos: verb
     category: primary_multiword
     source: synthetic
@@ -100,7 +100,7 @@ words:
   - id: syn-ponerse-de-acuerdo
     language: es
     headword: ponerse de acuerdo
-    lemma: ponerse
+    lemma: ponerse de acuerdo
     pos: verb
     category: primary_multiword
     source: synthetic
@@ -108,7 +108,7 @@ words:
   - id: syn-dar-la-vuelta
     language: es
     headword: dar la vuelta
-    lemma: dar
+    lemma: dar la vuelta
     pos: verb
     category: primary_multiword
     source: synthetic
@@ -116,7 +116,7 @@ words:
   - id: syn-tomar-el-pelo
     language: es
     headword: tomar el pelo
-    lemma: tomar
+    lemma: tomar el pelo
     pos: idiom
     category: primary_multiword
     source: synthetic
@@ -125,7 +125,7 @@ words:
   - id: syn-meter-la-pata
     language: es
     headword: meter la pata
-    lemma: meter
+    lemma: meter la pata
     pos: idiom
     category: primary_multiword
     source: synthetic
@@ -134,7 +134,7 @@ words:
   - id: syn-hacerse-cargo
     language: es
     headword: hacerse cargo
-    lemma: hacerse
+    lemma: hacerse cargo
     pos: verb
     category: primary_multiword
     source: synthetic
@@ -142,7 +142,7 @@ words:
   - id: syn-echar-de-menos
     language: es
     headword: echar de menos
-    lemma: echar
+    lemma: echar de menos
     pos: verb
     category: primary_multiword
     source: synthetic
@@ -151,7 +151,7 @@ words:
   - id: syn-quedarse-sin-palabras
     language: es
     headword: quedarse sin palabras
-    lemma: quedarse
+    lemma: quedarse sin palabras
     pos: phrase
     category: primary_multiword
     source: synthetic
@@ -441,7 +441,7 @@ words:
   - id: hold-dar-por-sentado
     language: es
     headword: dar por sentado
-    lemma: dar
+    lemma: dar por sentado
     pos: idiom
     category: primary_multiword
     source: synthetic
@@ -450,7 +450,7 @@ words:
   - id: hold-salir-adelante
     language: es
     headword: salir adelante
-    lemma: salir
+    lemma: salir adelante
     pos: verb
     category: primary_multiword
     source: synthetic
@@ -459,7 +459,7 @@ words:
   - id: hold-ponerse-las-pilas
     language: es
     headword: ponerse las pilas
-    lemma: ponerse
+    lemma: ponerse las pilas
     pos: idiom
     category: primary_multiword
     source: synthetic
@@ -468,7 +468,7 @@ words:
   - id: hold-hacer-cola
     language: es
     headword: hacer cola
-    lemma: hacer
+    lemma: hacer cola
     pos: verb
     category: primary_multiword
     source: synthetic
@@ -529,3 +529,863 @@ words:
     source: synthetic
     holdout: true
     why: another cardinal number (sixty), held out from tuning
+
+  # --- real: production auto-fail candidates and a random sample, pulled from the owner's
+  # live database 2026-09-22 via extract_remote.py. Tests whether the shipped fix holds on real
+  # headwords, not just the authored synthetic set above.
+  - id: prod-fail-a-shiver-runs-down-someone-s-spine
+    language: en
+    headword: a shiver runs down someone's spine
+    lemma: a shiver runs down someone's spine
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'мурашки'
+  - id: prod-fail-dip-one-s-wick
+    language: en
+    headword: dip one's wick
+    lemma: dip one's wick
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'перепихнуться'
+  - id: prod-fail-dip-one-s-wick-2
+    language: en
+    headword: dip one's wick
+    lemma: dip one's wick
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'перепихнуться'
+  - id: prod-fail-dodge-a-bullet
+    language: en
+    headword: dodge a bullet
+    lemma: dodge a bullet
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'чудом'
+  - id: prod-fail-dodge-the-question
+    language: en
+    headword: dodge the question
+    lemma: dodge the question
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'уклоняться'
+  - id: prod-fail-dodge-a-bullet-2
+    language: en
+    headword: dodge a bullet
+    lemma: dodge a bullet
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'чудом'
+  - id: prod-fail-dodge-the-question-2
+    language: en
+    headword: dodge the question
+    lemma: dodge the question
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'уклоняться'
+  - id: prod-fail-drive-a-wedge-between
+    language: en
+    headword: drive a wedge between
+    lemma: drive a wedge between
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'ссорить'
+  - id: prod-fail-drive-a-wedge-between-2
+    language: en
+    headword: drive a wedge between
+    lemma: drive a wedge between
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'ссорить'
+  - id: prod-fail-a-trav-s-de
+    language: es
+    headword: a través de
+    lemma: a través de
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'through'
+  - id: prod-fail-afeitarse-la-cabeza
+    language: es
+    headword: afeitarse la cabeza
+    lemma: afeitarse la cabeza
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'shave'
+  - id: prod-fail-amigos-con-derechos
+    language: es
+    headword: amigos con derechos
+    lemma: amigos con derechos
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'friends'
+  - id: prod-fail-ndate-por-dios
+    language: es
+    headword: ándate por Dios
+    lemma: ándate por Dios
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'go'
+  - id: prod-fail-animarse-al-riesgo
+    language: es
+    headword: animarse al riesgo
+    lemma: animarse al riesgo
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'risk'
+  - id: prod-fail-apagar-la-computadora
+    language: es
+    headword: apagar la computadora
+    lemma: apagar la computadora
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'shutdown'
+  - id: prod-fail-apagar-la-luz
+    language: es
+    headword: apagar la luz
+    lemma: apagar la luz
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'turn'
+  - id: prod-fail-aprovechar-el-d-a
+    language: es
+    headword: aprovechar el día
+    lemma: aprovechar el día
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'seize'
+  - id: prod-fail-el-aumento-de-ingresos
+    language: es
+    headword: el aumento de ingresos
+    lemma: aumento de ingresos
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'increase'
+  - id: prod-fail-cagarse-a-pi-as
+    language: es
+    headword: cagarse a piñas
+    lemma: cagarse a piñas
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'beat'
+  - id: prod-fail-cambiar-de-idea
+    language: es
+    headword: cambiar de idea
+    lemma: cambiar de idea
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'mind'
+  - id: prod-fail-la-campera-de-lana-tejida
+    language: es
+    headword: la campera de lana tejida
+    lemma: campera de lana tejida
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'cardigan'
+  - id: prod-fail-la-carrera-de-ratas
+    language: es
+    headword: la carrera de ratas
+    lemma: carrera de ratas
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'rat'
+  - id: prod-fail-ceder-a-las-demandas
+    language: es
+    headword: ceder a las demandas
+    lemma: ceder a las demandas
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'yield'
+  - id: prod-fail-el-cepillo-de-dientes
+    language: es
+    headword: el cepillo de dientes
+    lemma: cepillo de dientes
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'toothbrush'
+  - id: prod-fail-con-lo-listo-que-es
+    language: es
+    headword: ¡con lo listo que es!
+    lemma: con lo listo que es
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'considering'
+  - id: prod-fail-con-menos-prisa
+    language: es
+    headword: con menos prisa
+    lemma: con menos prisa
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'leisurely'
+  - id: prod-fail-de-ida-y-vuelta
+    language: es
+    headword: de ida y vuelta
+    lemma: de ida y vuelta
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'round-trip'
+  - id: prod-fail-del-d-a-a-d-a
+    language: es
+    headword: del día a día
+    lemma: del día a día
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'day-to-day'
+  - id: prod-fail-descorchar-una-botella
+    language: es
+    headword: descorchar una botella
+    lemma: descorchar una botella
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'uncork'
+  - id: prod-fail-el-desenfoque-de-fondo
+    language: es
+    headword: el desenfoque de fondo
+    lemma: desenfoque de fondo
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'blur'
+  - id: prod-fail-en-tu-lugar
+    language: es
+    headword: en tu lugar
+    lemma: en tu lugar
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'position'
+  - id: prod-fail-encender-el-fuego
+    language: es
+    headword: encender el fuego
+    lemma: encender el fuego
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'light'
+  - id: prod-fail-encender-la-computadora
+    language: es
+    headword: encender la computadora
+    lemma: encender la computadora
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'turn'
+  - id: prod-fail-encender-la-televisi-n
+    language: es
+    headword: encender la televisión
+    lemma: encender la televisión
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'turn'
+  - id: prod-fail-estar-con-el-agua-al-cuello
+    language: es
+    headword: estar con el agua al cuello
+    lemma: estar con el agua al cuello
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'drowning'
+  - id: prod-fail-estar-de-pie
+    language: es
+    headword: estar de pie
+    lemma: estar de pie
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'standing'
+  - id: prod-fail-estar-de-visita
+    language: es
+    headword: estar de visita
+    lemma: estar de visita
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'visiting'
+  - id: prod-fail-estar-en-la-misma-sinton-a
+    language: es
+    headword: estar en la misma sintonía
+    lemma: estar en la misma sintonía
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'aligned'
+  - id: prod-fail-estar-envuelto-en-sus-pensamientos
+    language: es
+    headword: estar envuelto en sus pensamientos
+    lemma: estar envuelto en sus pensamientos
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'pensive'
+  - id: prod-fail-estar-hasta-las-narices
+    language: es
+    headword: estar hasta las narices
+    lemma: estar hasta las narices
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'fed'
+  - id: prod-fail-estrenar-una-pel-cula
+    language: es
+    headword: estrenar una película
+    lemma: estrenar una película
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'premiere'
+  - id: prod-fail-estudiar-a-las-corridas
+    language: es
+    headword: estudiar a las corridas
+    lemma: estudiar a las corridas
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'cram'
+  - id: prod-fail-ganarse-la-vida
+    language: es
+    headword: ganarse la vida
+    lemma: ganarse la vida
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'earn'
+  - id: prod-fail-gastar-una-broma
+    language: es
+    headword: gastar una broma
+    lemma: gastar una broma
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'prank'
+  - id: prod-fail-hacer-una-dieta
+    language: es
+    headword: hacer una dieta
+    lemma: hacer una dieta
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'diet'
+  - id: prod-fail-ir-de-cabeza
+    language: es
+    headword: ir de cabeza
+    lemma: ir de cabeza
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'swamped'
+  - id: prod-fail-la-basura-al-tacho
+    language: es
+    headword: la basura al tacho
+    lemma: la basura al tacho
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'trash'
+  - id: prod-fail-la-concha-de-la-lora
+    language: es
+    headword: la concha de la lora
+    lemma: la concha de la lora
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'goddammit'
+  - id: prod-fail-la-sart-n-en-el-fuego
+    language: es
+    headword: la sartén en el fuego
+    lemma: la sartén en el fuego
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'pan'
+  - id: prod-fail-la-lista-de-actualizaciones
+    language: es
+    headword: la lista de actualizaciones
+    lemma: lista de actualizaciones
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'changelog'
+  - id: prod-fail-llevar-la-contra
+    language: es
+    headword: llevar la contra
+    lemma: llevar la contra
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'contradict'
+  - id: prod-fail-ma-ana-por-la-ma-ana
+    language: es
+    headword: mañana por la mañana
+    lemma: mañana por la mañana
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'tomorrow'
+  - id: prod-fail-mandarse-una-cagada
+    language: es
+    headword: mandarse una cagada
+    lemma: mandarse una cagada
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'screw'
+  - id: prod-fail-manos-de-manteca
+    language: es
+    headword: manos de manteca
+    lemma: manos de manteca
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'butterfingers'
+  - id: prod-fail-m-s-que-nada
+    language: es
+    headword: más que nada
+    lemma: más que nada
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'mostly'
+  - id: prod-fail-la-obra-de-teatro
+    language: es
+    headword: la obra de teatro
+    lemma: obra de teatro
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'play'
+  - id: prod-fail-pedir-el-puesto
+    language: es
+    headword: pedir el puesto
+    lemma: pedir el puesto
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'apply'
+  - id: prod-fail-qu-talla-necesitas
+    language: es
+    headword: ¿Qué talla necesitas?
+    lemma: ¿Qué talla necesitas?
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'size'
+  - id: prod-fail-qu-talla-usas
+    language: es
+    headword: ¿qué talla usas?
+    lemma: ¿qué talla usas?
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'size'
+  - id: prod-fail-qu-te-pareci
+    language: es
+    headword: ¿Qué te pareció?
+    lemma: ¿qué te pareció?
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'opinion'
+  - id: prod-fail-quemarse-por-el-sol
+    language: es
+    headword: quemarse por el sol
+    lemma: quemarse por el sol
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'sunburned'
+  - id: prod-fail-quitarse-las-gafas
+    language: es
+    headword: quitarse las gafas
+    lemma: quitarse las gafas
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'take'
+  - id: prod-fail-regar-las-plantas
+    language: es
+    headword: regar las plantas
+    lemma: regar las plantas
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'water'
+  - id: prod-fail-las-teclas-del-piano
+    language: es
+    headword: las teclas del piano
+    lemma: tecla del piano
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'piano'
+  - id: prod-fail-rellenar-el-formulario
+    language: es
+    headword: rellenar el formulario
+    lemma: rellenar el formulario
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'fill'
+  - id: prod-fail-tener-que-irse
+    language: es
+    headword: tener que irse
+    lemma: tener que irse
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'go'
+  - id: prod-fail-qu-tiene-que-ver
+    language: es
+    headword: ¿qué tiene que ver?
+    lemma: tener que ver
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'relevance'
+  - id: prod-fail-te-ir-los-dientes
+    language: es
+    headword: teñir los dientes
+    lemma: teñir los dientes
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'stain'
+  - id: prod-fail-el-timbre-de-la-puerta
+    language: es
+    headword: el timbre de la puerta
+    lemma: timbre de la puerta
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'doorbell'
+  - id: prod-fail-tirarse-panza-arriba
+    language: es
+    headword: tirarse panza arriba
+    lemma: tirarse panza arriba
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'lie'
+  - id: prod-fail-tocar-a-alguien
+    language: es
+    headword: tocar a alguien
+    lemma: tocar a alguien
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'turn'
+  - id: prod-fail-tocar-la-loter-a
+    language: es
+    headword: tocar la lotería
+    lemma: tocar la lotería
+    pos: noun
+    category: primary_multiword
+    source: real
+    why: real production primaryGloss was 'win'
+  - id: prod-rand-joder
+    language: es
+    headword: joder
+    lemma: joder
+    pos: verb
+    category: emotion_random
+    source: real
+  - id: prod-rand-dismal
+    language: en
+    headword: dismal
+    lemma: dismal
+    pos: adj
+    category: emotion_random
+    source: real
+  - id: prod-rand-blissful
+    language: en
+    headword: blissful
+    lemma: blissful
+    pos: adj
+    category: emotion_random
+    source: real
+  - id: prod-rand-la-quemadura
+    language: es
+    headword: la quemadura
+    lemma: quemadura
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-mutter
+    language: en
+    headword: mutter
+    lemma: mutter
+    pos: verb
+    category: emotion_random
+    source: real
+  - id: prod-rand-jab
+    language: en
+    headword: jab
+    lemma: jab
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-hypocrite
+    language: en
+    headword: hypocrite
+    lemma: hypocrite
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-ergo
+    language: en
+    headword: ergo
+    lemma: ergo
+    pos: adv
+    category: emotion_random
+    source: real
+  - id: prod-rand-qu-talla-necesitas
+    language: es
+    headword: ¿Qué talla necesitas?
+    lemma: ¿Qué talla necesitas?
+    pos: phrase
+    category: emotion_random
+    source: real
+  - id: prod-rand-dexterity
+    language: en
+    headword: dexterity
+    lemma: dexterity
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-ni-pensarlo
+    language: es
+    headword: ni pensarlo
+    lemma: ni pensarlo
+    pos: expression
+    category: emotion_random
+    source: real
+  - id: prod-rand-quejarse
+    language: es
+    headword: quejarse
+    lemma: quejarse
+    pos: verb
+    category: emotion_random
+    source: real
+  - id: prod-rand-la-despensa
+    language: es
+    headword: la despensa
+    lemma: despensa
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-custody
+    language: en
+    headword: custody
+    lemma: custody
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-flaco
+    language: es
+    headword: flaco
+    lemma: flaco
+    pos: adj
+    category: emotion_random
+    source: real
+  - id: prod-rand-amigos-con-derechos
+    language: es
+    headword: amigos con derechos
+    lemma: amigos con derechos
+    pos: phrase
+    category: emotion_random
+    source: real
+  - id: prod-rand-burgeoning
+    language: en
+    headword: burgeoning
+    lemma: burgeoning
+    pos: adj
+    category: emotion_random
+    source: real
+  - id: prod-rand-breadwinner
+    language: en
+    headword: breadwinner
+    lemma: breadwinner
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-deft
+    language: en
+    headword: deft
+    lemma: deft
+    pos: adj
+    category: emotion_random
+    source: real
+  - id: prod-rand-humility
+    language: en
+    headword: humility
+    lemma: humility
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-indulgent
+    language: en
+    headword: indulgent
+    lemma: indulgent
+    pos: adj
+    category: emotion_random
+    source: real
+  - id: prod-rand-con-ah-nco
+    language: es
+    headword: con ahínco
+    lemma: con ahínco
+    pos: adv
+    category: emotion_random
+    source: real
+  - id: prod-rand-gestionar
+    language: es
+    headword: gestionar
+    lemma: gestionar
+    pos: verb
+    category: emotion_random
+    source: real
+  - id: prod-rand-blunt
+    language: en
+    headword: blunt
+    lemma: blunt
+    pos: adj
+    category: emotion_random
+    source: real
+  - id: prod-rand-en-seguida
+    language: es
+    headword: en seguida
+    lemma: en seguida
+    pos: adv
+    category: emotion_random
+    source: real
+  - id: prod-rand-hamper
+    language: en
+    headword: hamper
+    lemma: hamper
+    pos: verb
+    category: emotion_random
+    source: real
+  - id: prod-rand-por-algo
+    language: es
+    headword: por algo
+    lemma: por algo
+    pos: idiom
+    category: emotion_random
+    source: real
+  - id: prod-rand-el-locutor
+    language: es
+    headword: el locutor
+    lemma: locutor
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-el-payaso
+    language: es
+    headword: el payaso
+    lemma: payaso
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-alquilar
+    language: es
+    headword: alquilar
+    lemma: alquilar
+    pos: verb
+    category: emotion_random
+    source: real
+  - id: prod-rand-hurdle
+    language: en
+    headword: hurdle
+    lemma: hurdle
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-atravesar
+    language: es
+    headword: atravesar
+    lemma: atravesar
+    pos: verb
+    category: emotion_random
+    source: real
+  - id: prod-rand-f-jese-que
+    language: es
+    headword: fíjese que
+    lemma: fijarse que
+    pos: expression
+    category: emotion_random
+    source: real
+  - id: prod-rand-notion
+    language: en
+    headword: notion
+    lemma: notion
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-sin-cesar
+    language: es
+    headword: sin cesar
+    lemma: sin cesar
+    pos: phrase
+    category: emotion_random
+    source: real
+  - id: prod-rand-agape
+    language: en
+    headword: agape
+    lemma: agape
+    pos: adj
+    category: emotion_random
+    source: real
+  - id: prod-rand-la-rendici-n
+    language: es
+    headword: la rendición
+    lemma: rendición
+    pos: noun
+    category: emotion_random
+    source: real
+  - id: prod-rand-se-ores-apreciados
+    language: es
+    headword: señores apreciados
+    lemma: señor apreciado
+    pos: phrase
+    category: emotion_random
+    source: real
+  - id: prod-rand-fickle
+    language: en
+    headword: fickle
+    lemma: fickle
+    pos: adj
+    category: emotion_random
+    source: real
+  - id: prod-rand-pasar-m-sica
+    language: es
+    headword: pasar música
+    lemma: pasar música
+    pos: phrase
+    category: emotion_random
+    source: real

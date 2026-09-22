@@ -159,6 +159,7 @@ def main() -> int:
     parser.add_argument("--model", help="a specific gemini-free model id; default the first listed")
     parser.add_argument("--word", action="append", dest="only_words", help="word id; repeatable")
     parser.add_argument("--category", help="only words in this words.yaml category")
+    parser.add_argument("--id-prefix", help="only word ids starting with this prefix")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--run", help="an existing run id, to resume or extend")
     parser.add_argument("--dry-run", action="store_true", help="print the matrix, spend nothing")
@@ -166,6 +167,8 @@ def main() -> int:
 
     arms = args.arms or list(ARMS)
     words = dataset.words(args.only_words, category=args.category)
+    if args.id_prefix:
+        words = [w for w in words if w["id"].startswith(args.id_prefix)]
     live = [p for p in chosen_pairs(args.model) if p["available"]]
     skipped = [p for p in chosen_pairs(args.model) if not p["available"]]
     jobs = matrix(words, arms, args.repeats)

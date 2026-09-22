@@ -6,7 +6,8 @@ compose-lesson-line/` shipped these two fields on 18 September 2026 after measur
 the rest of the article, and explicitly flagged wording quality as a separate, later pass — this is
 that pass.
 
-**Run:** 21 September 2026 · gemini-free only · 44 real+synthetic words, three rounds, 161 calls.
+**Run:** 21–22 September 2026 · gemini-free only · 385 calls across six rounds — an authored
+synthetic set, then the owner's real production vocabulary once the data-access gap was closed.
 
 ## The question
 
@@ -23,28 +24,28 @@ The owner listened to generated loops and found two real defects, reported in
    Saturday read warm and unhurried, a Monday read tired and reluctant, a chair read cozy — none of
    which the old wording's own carve-outs (weekday, preposition, furniture) would have allowed.
 
-## Data access — a gap, not a substitute
+## Data access — closed, by the owner's own hand
 
-The plan called for pulling real candidates from the production database over `ssh nas`. That path
-turned out to be blocked: the NAS's Docker socket is root-owned with no docker group (confirmed
+The plan called for pulling real candidates from the production database over `ssh nas`. My own
+session couldn't do it: the NAS's Docker socket is root-owned with no docker group (confirmed
 live — `docker exec` and even `docker ps` refuse with "permission denied," and the reviewed
-`deploy-acervo` launcher's fixed operation list has no generic query command, only `check`,
-`create-account`, `deploy`, `install-samples`, `jobs`, `status`, `worker`, `configure-https`). A
-fallback — signing in through the ordinary `/session` + `/graph` API, exactly what any client does to
-sync — was then blocked by this environment's own tool-use policy around handling login credentials
-programmatically.
+`deploy-acervo` launcher's fixed operation list has no generic query command), and a fallback —
+signing in through the ordinary `/session` + `/graph` API — was blocked by this environment's own
+tool-use policy around handling login credentials programmatically.
 
-So this run uses: the five headwords the owner already reported by hand (`source: real` in
-`words.yaml`, copied verbatim from his note), plus authored synthetic collocations across Spanish,
-English and Chinese (`source: synthetic`) standing in for the random production sample the plan
-asked for. **This is a real gap.** The synthetic set is a reasonable proxy — it deliberately includes
-the exact shapes the old prompt's own carve-outs named (a weekday, a piece of furniture, a
-preposition) — but it is not a random sample of the owner's actual 1,700-word vocabulary, and the
-true current `emotion` null rate on that vocabulary is still unmeasured. Re-running `run.py` against
-a real random sample, once the database is reachable read-only by some sanctioned path, would sharpen
-this further; it is not expected to change the wording decision below, since the mechanism the
-rewrite targets (an over-broad default to `null`) is a property of the prompt, not of which words it
-is tested on.
+So the first four rounds below (161 calls) ran on the five headwords the owner reported by hand plus
+an authored synthetic set standing in for a real random sample. **The owner then ran the extraction
+himself**, interactively, over `ssh nas` → `docker cp` + `docker exec` into `acervo-server-1`
+(`extract_remote.py`, read-only, `PRAGMA query_only`), and handed back a full export of his 1,720
+non-deleted lexemes. Two further rounds (224 calls) ran against that real data, below.
+
+**The export's first pass mislabeled every field from `pos` onward** — a bug in `extract_remote.py`,
+not the data: it built column names from a separate `SELECT * FROM lexemes LIMIT 0` (the table's
+declared column order) and zipped them onto a differently-ordered explicit-column query, so `emotion`
+came back labeled `gender`, `primary_gloss` labeled `pos`, and so on. Recovered by re-deriving the
+fixed offset (the two queries' orders are both known, so the mislabeling is deterministic) rather
+than asking for a second export; the script itself now reads column names from the executed query's
+own cursor, which cannot drift out of sync with its own values.
 
 ## The two arms
 
@@ -143,34 +144,103 @@ your act together`. On the emotion side, `el despertador` (alarm clock) went fro
 *"annoyed and tired, dreading the start of a busy morning"* — exactly the kind of coverage gain the
 rewrite targets — while the held-out number `sesenta` stayed `null` in both arms.
 
+## Real production data — the strongest evidence, run last
+
+Two more rounds, once the owner's export was decoded (see "Data access" above).
+
+**`primaryGloss`, on the 72 real headwords that actually auto-fail today** — every currently-stored
+lexeme whose `primaryGloss` mechanically collapses a ≥3-content-word headword to one word, pulled
+straight from the live database rather than authored. Both arms, one repeat, 144 calls:
+
+| | `primaryAutoFail` (n=72) |
+| --- | ---: |
+| before | 43.1% |
+| after | **8.3%** |
+
+A fresh call under the *old* wording reproduces the stored failure on only 43% of its own worst
+cases — real generation is noisier than a single stored sample suggests, which is exactly why this
+run mattered more than trusting the stored values. Of the 6 that still trip the mechanical check
+under the new wording, **every one is a correct one-word English translation** on inspection:
+`el cepillo de dientes` → `toothbrush`, `el timbre de la puerta` → `doorbell`, `manos de manteca`
+(idiom, "butter hands") → `butterfingers`, `estudiar a las corridas` → `cram`, `a través de` →
+`through`, and the same `la obra de teatro` → `play` from round 1. The measured real auto-fail rate
+after the fix, once these are read rather than mechanically counted, is effectively 0 of 72.
+
+**`emotion`, on a genuinely random sample of 40 real headwords** (`ergo`, `hypocrite`, `mutter`,
+`la quemadura`, `jab`, …) — plain everyday words, not curated for charge. Both arms, one repeat,
+80 calls:
+
+| | `emotionOnExpectFeeling` (n≈40) |
+| --- | ---: |
+| before | 82.5% |
+| after | **100%** |
+
+This number matters more than the synthetic 57.1% from round 1: it's the real prompt, called fresh,
+on real vocabulary structure. (The *stored* `emotion` field across the whole 1,720-word export is
+only 36.8% non-null — but that number conflates "the model said null" with "this word predates the
+field or was never re-saved," so it is reported here for completeness and not trusted as a baseline;
+the fresh-call number above is the one that isolates what the prompt itself does.)
+
 ## Verdict
 
 **The reworded `primaryGloss` and `emotion` field rules ship**, replacing the corresponding bullets
 in `prompts/acervo_compose.md`.
 
-`primaryGloss`: auto-fail rate fell from 15.6% to 4.4% on the tuning set and from 20% to 0% on the
-untouched holdout, and every remaining flagged case on inspection was a legitimately correct
-one-word answer, not a real failure. `emotion`: after one corrective round, coverage on
-ordinary/meaningful words landed at 88.6–100% across the tuning and holdout sets (up from a
-measured 57.1–88.9% under the shipped prompt), with the null-control set — numbers, a conjunction, a
-preposition, a Chinese particle — staying at 0% false positives in both the fix round and the
-holdout. Nothing in either arm's `usable` rate moved (100% throughout), and no run
-produced a wrong-script `primaryGloss` at a rate distinguishable from the other.
+`primaryGloss`: auto-fail rate fell from 15.6% to 4.4% on the synthetic tuning set, from 20% to 0% on
+the untouched holdout, and — the number that carries the most weight — **from 43.1% to an
+effectively-zero-on-inspection rate on the 72 real headwords the live database currently gets
+wrong.** `emotion`: after one corrective round, coverage on ordinary/meaningful words landed at
+88.6–100% on synthetic words and **82.5% → 100% on a genuinely random sample of real ones**, with
+the null-control set — numbers, a conjunction, a preposition, a Chinese particle — staying at 0%
+false positives throughout. Nothing in either arm's `usable` rate moved (100% throughout, on both
+synthetic and real data), and no run produced a wrong-script `primaryGloss` at a rate distinguishable
+from the other.
 
 ## What this does not settle
 
-- **The real production null rate is still unmeasured.** See "Data access" above — this is the one
-  open item, and it needs either a sanctioned read-only path onto the live database or the owner
-  running the pull himself.
-- **Whether 88.6% is the right number**, as opposed to 80% or 95%. The owner's ~90% was explicitly a
-  starting target, not a specification; nothing here optimizes past "clearly fixed, and not
-  over-fired."
+- **Whether 100% is stable, or an artifact of this particular 40-word sample.** A larger or repeated
+  random draw could still find a real word the rewrite over-fires on; none turned up here, and the
+  null-control set (tested separately, not part of this sample) held at 0% false positives.
 - **Anything about the other prompts** or the other fields in `acervo_compose.md`. Only the
   `primaryGloss` and `emotion` bullets were varied.
 - **Existing production rows are unaffected.** `compose` runs once, at capture; there is no backfill
   path (AGENTS.md's no-backward-compatibility rule forbids one regardless). A word captured before
   this ships keeps whatever `primaryGloss`/`emotion` it already has. Revisiting an old word means
   re-capturing it by hand — there is no admin command that regenerates these two fields in place.
+
+## A `lemma` question that turned out not to be one
+
+While reviewing round-1 output, the owner noticed `lemma` collapsing on multi-word headwords too —
+`encender la computadora` → `encender`, `hacer murales` → `hacer` — and asked for the same
+measure-then-fix treatment. The measurement changed the question:
+
+**Every one of those examples was this experiment's own authoring mistake, not a live defect.**
+`words.yaml`'s `source: real`/`synthetic` multi-word entries were typed with `lemma` set to just the
+head verb (a shortcut carried over, unexamined, from `compose-lesson-line/words.yaml`, which has the
+identical inconsistency — `resulta que` → `resultar`). `dataset.resolution_for` sends that `lemma`
+to the model verbatim as part of the request (`build_user_message`'s "Lemma: …" line), and the model
+mostly just returned it unchanged — a reasonable thing for it to do, since nothing tells it
+otherwise. Checking every `after`-arm reply already collected: **29 of 112 multi-word test replies
+(25.9%) echoed a collapsed lemma — and every single one was a word this experiment itself fed a bad
+lemma into.** None of the 72 real `prod-fail-*` headwords, whose `lemma` came straight from the
+database, showed the same pattern.
+
+The real database says something much smaller is going on. Of 268 real multi-word headwords, only 4
+(1.5%) have a `lemma` narrower than the headword, and on inspection three are defensible: `to shrug`
+→ `shrug` and `to stammer` → `stammer` drop the English infinitive marker, the same convention as
+Spanish article-stripping; `me muero` → `morirse` is a correct finite-to-infinitive dictionary-form
+normalization. Only `negarse a` → `negarse` (dropping the preposition a reader would search the
+spoken-usage corpus for, per `services/clips.py`'s use of `lemma` as a multi-token-tolerant query) is
+a genuine, if minor, miss.
+
+**Conclusion: no prompt change shipped for `lemma`.** `words.yaml`'s 19 mis-authored entries were
+corrected (data hygiene, not a product fix) once the real rate came back at 1.5% with three of four
+cases defensible. `prompts/acervo_compose.md` has no field-rule bullet for `lemma` at all — a real
+documentation gap, and `prompts/acervo_resolve.md`'s wording ("usually identical to headword; differs
+when the headword keeps an article or a fixed inflection") is the more natural place to add a phrase
+carve-out, since resolve is the step that sets `lemma` from scratch and compose typically only
+carries it through. Left as a note rather than a change: at 1.5% real prevalence, mostly benign, it
+doesn't clear the bar the other two fields did.
 
 ## Reproducing
 

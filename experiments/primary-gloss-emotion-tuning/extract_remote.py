@@ -21,17 +21,23 @@ DB_PATH = os.environ["ACERVO_DB_PATH"]
 conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
 conn.execute("PRAGMA query_only = ON")
 
-lexemes = conn.execute(
+lexeme_query = conn.execute(
     "SELECT id, owner, language, headword, lemma, pos, short_gloss, primary_gloss, emotion, topics "
     "FROM lexemes WHERE deleted = 0"
-).fetchall()
-lexeme_cols = [d[0] for d in conn.execute("SELECT * FROM lexemes LIMIT 0").description]
+)
+# Column names come from THIS query's own cursor, never a separate `SELECT * LIMIT 0` — the two
+# statements list columns in different orders (the table's declaration order versus this query's
+# own), and zipping one query's names onto another query's values silently mislabels every field
+# from the first divergence onward. A first run of this script did exactly that.
+lexeme_cols = [d[0] for d in lexeme_query.description]
+lexemes = lexeme_query.fetchall()
 
-vocabularies = conn.execute(
+vocabulary_query = conn.execute(
     "SELECT owner, language, definition_lang, gloss_langs, notes_lang "
     "FROM vocabularies WHERE deleted = 0"
-).fetchall()
-vocabulary_cols = [d[0] for d in conn.execute("SELECT * FROM vocabularies LIMIT 0").description]
+)
+vocabulary_cols = [d[0] for d in vocabulary_query.description]
+vocabularies = vocabulary_query.fetchall()
 
 payload = {
     "lexemes": [dict(zip(lexeme_cols, row)) for row in lexemes],

@@ -577,12 +577,18 @@ numbers, the over-correction failure and how it was found are in the experiment'
 
 `primaryGloss`'s companion defect — too short for a multi-word headword (`encender la computadora` →
 `turn`) — closed in the same pass: auto-fail rate on a mechanical word-count check fell from 15.6% to
-4.4% on the tuning set and from 20% to 0% on the holdout.
+4.4% on the synthetic tuning set and from 20% to 0% on the holdout.
 
-**Still open:** the experiment's real-database extraction was blocked (see its README's "Data
-access" section), so the numbers above are measured on the owner's five reported failures plus an
-authored synthetic set, not a random sample of the actual 1,700-word vocabulary. The true current
-`emotion` null rate on real data remains unmeasured.
+**Confirmed on the real vocabulary, 22 Sep 2026.** The owner ran the database extraction himself once
+the direct path proved blocked (see the experiment README's "Data access" section). Against the 72
+headwords the live database currently gets wrong, a fresh call under the *old* wording reproduces the
+failure only 43.1% of the time (real generation is noisier than a single stored sample), and the new
+wording brings that to an effectively-zero-on-inspection rate — every one of the 6 mechanically
+flagged replies that remained was a genuinely correct one-word translation (`el cepillo de dientes` →
+`toothbrush`, `manos de manteca` → `butterfingers`). On a genuinely random sample of 40 real
+headwords, fresh `emotion` coverage went 82.5% → 100%. The *stored* `emotion` field across the whole
+1,720-word export reads only 36.8% non-null, but that conflates "the model said null" with "this
+record predates the field," so it is not the number to trust — the fresh-call figure above is.
 
 ### 3 · A pinyin tone error, not reproducibly
 
