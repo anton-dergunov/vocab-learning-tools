@@ -1,6 +1,7 @@
 """The meaning map of one language (docs/plans/meaning-space.md).
 
-A plain `def`, so the drawing — seconds of CPU when the vocabulary changed, nothing when it did not —
+`?have=` is the `version` the device already holds — the fingerprint and whether the regions are
+named — and a map still current answers `{"current": true}` alone. A plain `def`, so the drawing — seconds of CPU when the vocabulary changed, nothing when it did not —
 runs in the threadpool and never on the event loop. Naming the regions is a model call, so it is not
 done here: a freshly drawn map with regions queues `map.name`, and the job's completion on `/events`
 is how a device knows to ask again.

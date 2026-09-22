@@ -20,6 +20,14 @@
   --code-bg:    #E6EDEB;
   --on-core:    #FBFCFC;
   --shadow:     0 1px 2px rgba(19,34,32,.06), 0 8px 24px -16px rgba(19,34,32,.28);
+  /* The meaning map's own four: the paper around the vocabulary (sea), where words are (land), its
+     edge (coast), and the rings inside it. Read by `meaningMap/core.ts` from the canvas's computed
+     style, so the map changes theme with everything else. */
+  --map-sea:     #E7EDEB;
+  --map-land:    #F7F9F8;
+  --map-coast:   #AFC1BC;
+  --map-contour: #D5DFDC;
+  --map-halo:    #F7F9F8;
 
   /* The CJK faces sit *after* `system-ui`, which is not cosmetic ordering. A stack is consulted
      per character, so any glyph the first family lacks is drawn by the next family that has it —
@@ -44,6 +52,8 @@
     --warn: #E38268; --warn-soft: #351B14;
     --code-bg: #1B2625; --on-core: #08201D;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+
+    --map-sea: #0A1110; --map-land: #131C1B; --map-coast: #34504B; --map-contour: #1E2B29; --map-halo: #131C1B;
   }
 }
 :root[data-theme="dark"] {
@@ -55,6 +65,8 @@
   --warn: #E38268; --warn-soft: #351B14;
   --code-bg: #1B2625; --on-core: #08201D;
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+
+  --map-sea: #0A1110; --map-land: #131C1B; --map-coast: #34504B; --map-contour: #1E2B29; --map-halo: #131C1B;
 }
 
 * { box-sizing: border-box; }
@@ -2699,3 +2711,163 @@ details.fold .fold-body { padding: 4px 0 18px; }
   .story-text { font-size: 18.5px; }
   .story-tr { font-size: 15px; }
 }
+
+/* ══════════════════════════ the meaning map ══════════════════════════
+   One language's senses laid out by meaning (docs/plans/meaning-space.md). The canvas is the whole
+   surface and everything else floats over it: a map that gives up a band of itself to a header is a
+   smaller map, and on a tablet in portrait there is not much to give. Every floating piece keeps to
+   an edge, so the middle — where the camera centres what you asked for — is never covered. */
+.map { position: relative; height: 100%; overflow: hidden; background: var(--map-sea); }
+.map-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  /* The canvas does its own panning and pinching; the browser must not scroll or zoom the page. */
+  touch-action: none; outline: none;
+}
+.map-canvas:focus-visible { outline: 2px solid var(--core); outline-offset: -2px; }
+
+/* Floating pieces share one skin: a surface a little transparent, so the land shows through the
+   edges of the header without the words under it becoming legible and competing with it. */
+.map-top, .map-tools, .map-peek, .map-note {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border: 1px solid var(--rule-soft); box-shadow: var(--shadow);
+}
+.map-top {
+  position: absolute; top: 12px; left: 12px; right: 12px; z-index: 3;
+  display: flex; align-items: center; gap: 10px;
+  max-width: 640px; padding: 6px 8px 6px 6px; border-radius: 11px;
+}
+.map-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: none; }
+.map-title h2 { margin: 0; font: 700 19px/1 var(--serif); letter-spacing: -.01em; }
+.map-count { white-space: nowrap; }
+.map-find {
+  position: relative; flex: 1; min-width: 0; margin-left: auto; max-width: 300px;
+  display: flex; align-items: center; height: 34px;
+  background: var(--paper); border: 1px solid var(--rule-soft); border-radius: 7px;
+}
+.map-find:focus-within { border-color: var(--core); background: var(--surface); }
+.map-find svg { position: absolute; left: 9px; width: 15px; height: 15px; color: var(--ink-3); pointer-events: none; }
+.map-find input { flex: 1; min-width: 0; height: 100%; padding: 0 8px 0 30px; border: 0; background: transparent; font-size: 14px; outline: none; }
+.map-hits {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 4;
+  margin: 0; padding: 4px; list-style: none; border-radius: 9px;
+  background: var(--surface); border: 1px solid var(--rule-soft); box-shadow: var(--shadow);
+}
+.map-hits[hidden], .map-tools[hidden], .map-find[hidden] { display: none; }
+.map-hits button {
+  width: 100%; display: flex; align-items: baseline; gap: 8px; text-align: left;
+  padding: 7px 9px; border-radius: 6px; font-size: 14px;
+}
+.map-hits button:hover, .map-hits button.on { background: var(--core-soft); }
+.map-hits .hit-gloss { color: var(--ink-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-hits .hit-none { padding: 7px 9px; color: var(--ink-3); font-size: 13.5px; }
+
+/* Bottom right, clear of the peek, which takes the bottom left. +/− only where there is no pinch. */
+.map-tools {
+  position: absolute; right: 12px; bottom: 12px; z-index: 3;
+  display: flex; flex-direction: column; padding: 3px; border-radius: 10px;
+}
+.map-tool { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; color: var(--ink-2); }
+.map-tool:hover { background: var(--surface-2); color: var(--ink); }
+.map-tool svg { width: 18px; height: 18px; }
+@media (hover: none) { .map-tool.pointer-only { display: none; } }
+
+/* ── the peek ──
+   What a tap on a sense shows before the article: enough to recognise it, and the way on. A card at
+   the bottom left of a wide surface, a sheet across the bottom of a phone. It never covers the
+   middle, which is where the map puts the sense you tapped. */
+.map-peek {
+  position: absolute; left: 12px; bottom: 12px; z-index: 3;
+  width: 360px; max-height: calc(100% - 90px); overflow-y: auto; overscroll-behavior: contain;
+  padding: 14px 16px 16px; border-radius: 13px;
+}
+.map-peek[hidden] { display: none; }
+.peek-head { display: flex; align-items: flex-start; gap: 12px; }
+.peek-plate {
+  flex: none; width: 44px; height: 44px; display: grid; place-items: center;
+  border-radius: 10px; background: var(--paper); font-size: 24px;
+}
+.peek-id { flex: 1; min-width: 0; padding-top: 1px; }
+.peek-word { font: 600 21px/1.2 var(--serif); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.peek-meta { margin-top: 5px; }
+.peek-pic { flex: none; width: 64px; height: 64px; border-radius: 9px; object-fit: cover; background: var(--surface-2); }
+.peek-close { flex: none; width: 30px; height: 30px; margin: -2px -4px 0 0; border: 0; background: none; }
+.peek-close svg { width: 15px; height: 15px; }
+.peek-senses { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.peek-sib {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px;
+  border-radius: 999px; border: 1px solid var(--rule-soft); font-size: 12.5px; color: var(--ink-2);
+}
+.peek-sib.on { border-color: var(--core); color: var(--core); background: var(--core-soft); }
+.peek-def { margin: 12px 0 0; font: 400 15.5px/1.5 var(--serif); color: var(--ink); }
+.peek-gloss { margin: 6px 0 0; font-size: 14px; color: var(--ink-2); }
+.peek-gloss::before { content: "→ "; color: var(--ink-3); }
+.peek-near { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+.peek-near .label { margin-right: 2px; }
+.peek-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 28px; padding: 0 10px;
+  border-radius: 999px; background: var(--paper); border: 1px solid var(--rule-soft);
+  font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.peek-chip:hover { border-color: var(--core); }
+.peek-open { width: 100%; justify-content: center; margin-top: 16px; height: 40px; }
+
+/* ── notes: first draw, nothing to show, a young language, words arriving ── */
+.map-note {
+  position: absolute; left: 50%; top: 68px; transform: translateX(-50%); z-index: 2;
+  max-width: min(420px, calc(100% - 24px)); padding: 9px 16px; border-radius: 999px;
+  font-size: 13.5px; color: var(--ink-2); text-align: center;
+}
+.map-note[hidden] { display: none; }
+.map-note.arrived { color: var(--core); border-color: color-mix(in srgb, var(--core) 35%, transparent); }
+.map-note.center {
+  top: 50%; transform: translate(-50%, -50%); border-radius: 14px; padding: 22px 26px;
+  max-width: min(380px, calc(100% - 32px)); box-shadow: none; background: none; border: 0;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.map-note.center h3 { margin: 0 0 8px; font: 600 21px/1.2 var(--serif); color: var(--ink); }
+.map-note.center p { margin: 0; line-height: 1.55; }
+/* The first draw: three islands pulsing into being, the map's own motif, rather than a spinner. */
+.map-drawing { display: flex; justify-content: center; gap: 7px; margin-bottom: 16px; }
+.map-drawing span {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--core);
+  animation: map-drawing 1.4s ease-in-out infinite;
+}
+.map-drawing span:nth-child(2) { animation-delay: .18s; }
+.map-drawing span:nth-child(3) { animation-delay: .36s; }
+@keyframes map-drawing { 0%, 100% { opacity: .25; transform: scale(.7); } 50% { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .map-drawing span { animation: none; opacity: .7; } }
+
+/* A phone: the header spans the width, the title gives way to the find field, and the peek is a sheet
+   across the bottom. The tools move up out of its way while it is open. */
+@container vp (max-width: 720px) {
+  .map-top { top: 8px; left: 8px; right: 8px; max-width: none; }
+  .map-count { display: none; }
+  .map-find { max-width: none; }
+  .map-peek {
+    left: 0; right: 0; bottom: 0; width: auto; max-height: 52%;
+    border-radius: 16px 16px 0 0; border-bottom: 0;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .map.peeking .map-tools { display: none; }
+  .map-note { top: 58px; }
+}
+
+/* ── the map's row is the top row ──
+   On the map the global bar goes: search, Add and sync are one Back away, and height is what a map
+   is short of on every screen. The rail stays wherever it already shows, which is everywhere but a
+   phone. The map's own row carries only what the map needs — Back, its name, Find, and which
+   language it is of. */
+.app.map-open { grid-template-rows: 0 minmax(0, 1fr) auto; }
+.app.map-open .topbar, .app.map-open .brand { display: none; }
+@container vp (max-width: 720px) {
+  .app.map-open { grid-template-rows: 0 0 minmax(0, 1fr) auto; }
+  .app.map-open .topbar { display: none; }
+}
+.map-lang { position: relative; flex: none; }
+.map-lang .lang-btn { height: 34px; }
+.map-lang-menu { right: 0; top: calc(100% + 8px); }
+/* The counts are for a desk. A tablet in landscape is as wide as a small laptop, so this asks about
+   the pointer rather than the width. */
+.map-count { display: none; }
+@media (hover: hover) and (pointer: fine) { .map-count { display: inline; } }

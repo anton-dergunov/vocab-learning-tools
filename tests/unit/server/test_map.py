@@ -76,9 +76,20 @@ def test_a_map_is_drawn_once_and_then_read(server, encoder):
 
 def test_a_device_holding_the_current_map_is_told_so_and_sent_nothing(server, encoder):
     words(server, 4)
-    fingerprint = server.get("/map/es").json()["data"]["fingerprint"]
-    assert server.get(f"/map/es?have={fingerprint}").json()["data"] == {"current": True, "fingerprint": fingerprint}
+    held = server.get("/map/es").json()["data"]["version"]
+    assert server.get(f"/map/es?have={held}").json()["data"] == {"current": True, "version": held}
     assert "points" in server.get("/map/es?have=something-older").json()["data"]
+
+
+def test_a_map_whose_regions_were_named_since_is_not_current(server, encoder):
+    """Naming changes the map and not its layout, so a device holding the unnamed map must be sent
+    the named one — asking by fingerprint alone, it never was."""
+    words(server, 80, senses_each=2)
+    unnamed = server.get("/map/es").json()["data"]
+    assert unnamed["version"].endswith(".pending")
+    meaning.give_up_naming(server.settings, server.owner, "es", unnamed["fingerprint"])
+    again = server.get(f"/map/es?have={unnamed['version']}").json()["data"]
+    assert "points" in again and again["names"] == "none" and again["version"] != unnamed["version"]
 
 
 def test_the_map_carries_positions_and_ids_but_no_vectors_and_no_sense_text(server, encoder):

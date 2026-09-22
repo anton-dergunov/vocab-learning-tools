@@ -71,4 +71,8 @@ export const RepeatIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth
 export const ContinueIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.9} strokeLinejoin="round" aria-hidden="true"><path d="M4 7h11M4 12h8M4 17h8" /><path d="M16 11.5v7l5.5-3.5z" fill="currentColor" strokeWidth={1} /></svg>;
 /* A loop's own mark: a beamed pair, which says music without saying "audio file". */
 export const NoteIcon = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 4.2L9.2 6.4v9.05a2.9 2.9 0 1 0 1.5 2.55V9.1l6.8-1.5v5.6a2.9 2.9 0 1 0 1.5 2.55z" /></svg>;
+/* The map: a folded sheet; and the four corners of "show all of it". */
+export const MapIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} strokeLinejoin="round" aria-hidden="true"><path d="M9 4.5L3.5 6.5v13L9 17.5l6 2 5.5-2v-13L15 6.5z" /><path d="M9 4.5v13M15 6.5v13" /></svg>;
+export const FitIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.9} strokeLinejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>;
+export const MinusIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2} aria-hidden="true"><path d="M5 12h14" /></svg>;
 export const HourglassIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.7} strokeLinejoin="round" aria-hidden="true"><path d="M7 4h10M7 20h10" /><path d="M8 4c0 4 4 5 4 8s-4 4-4 8" /><path d="M16 4c0 4-4 5-4 8s4 4 4 8" /></svg>;

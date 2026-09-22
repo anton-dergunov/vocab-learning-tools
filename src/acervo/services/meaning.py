@@ -122,17 +122,24 @@ def _embed(settings: Settings, model: Encoder, senses: list[MapSense], keys: lis
     return matrix / np.maximum(np.linalg.norm(matrix, axis=1, keepdims=True), 1e-12)
 
 
+def version(body: dict[str, Any]) -> str:
+    """What a device holds, as far as currency goes: the layout's fingerprint **and** whether its
+    regions are named. Naming changes the map without changing the layout, so a device asking about
+    the fingerprint alone would be told its unnamed map was current and never see the names."""
+    return f"{body['fingerprint']}.{body.get('names', 'none')}"
+
+
 def _answer(body: dict[str, Any], have: str | None) -> dict[str, Any]:
-    if have and have == body.get("fingerprint"):
-        return {"current": True, "fingerprint": body["fingerprint"]}
-    return body
+    if have and have == version(body):
+        return {"current": True, "version": version(body)}
+    return {**body, "version": version(body)}
 
 
 def current_map(settings: Settings, owner: str, language: str, *,
                 have: str | None = None) -> tuple[dict[str, Any], bool]:
     """This language's map as it stands now, and whether it was drawn by this call.
 
-    `have` is the fingerprint a device already holds; when it is still current the answer says so and
+    `have` is the `version` a device already holds; when it is still current the answer says so and
     carries nothing else.
     """
     vocabulary = _vocabulary(owner, language)

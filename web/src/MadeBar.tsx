@@ -5,7 +5,7 @@
  * Was `LoopBar.tsx`, and renamed when Stories arrived: it carries both now, and a file called
  * LoopBar that also owns the way in to stories would be a name that lies.
  *
- * **On a phone it is a bar at the foot of the window**, split in two — Loops and Stories — which is
+ * **On a phone it is a bar at the foot of the window**, split in three — Loops, Stories and the Map — which is
  * where these belong on a device held in one hand. It is drawn over the list and nowhere else: the
  * article column already carries the view segments, the delete control, the progress strip and the
  * ask dock, and a second dock there is prohibited (design §2.13). There is deliberately no
@@ -22,22 +22,24 @@
  */
 
 import type { VocabularyGraph } from "./domain";
-import { NoteIcon, PauseIcon, PlayIcon } from "./icons";
+import { MapIcon, NoteIcon, PauseIcon, PlayIcon } from "./icons";
 import * as player from "./loops";
-import { loopItemsOf, loopMomentAt, loopsIn, loopTitle, storiesIn } from "./selectors";
+import { lexemesIn, loopItemsOf, loopMomentAt, loopsIn, loopTitle, storiesIn } from "./selectors";
 
 function clock(seconds: number): string {
   const whole = Math.max(0, Math.floor(seconds || 0));
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-export default function MadeBar({ graph, language, chip, onLoops, onStories }: {
+export default function MadeBar({ graph, language, chip, onLoops, onStories, onMap }: {
   graph: VocabularyGraph;
   language: string;
   /** True in the top bar, false at the foot of the window. */
   chip: boolean;
   onLoops(): void;
   onStories(): void;
+  /* The foot bar's third way in. The chip in the top bar has no use for it: the rail is beside it. */
+  onMap?(): void;
 }) {
   const playback = player.usePlayback();
   const loops = loopsIn(graph, language);
@@ -78,6 +80,11 @@ export default function MadeBar({ graph, language, chip, onLoops, onStories }: {
       <span className="loopbar-title">Stories</span>
       <span className="loopbar-sub">{storiesIn(graph, language).length}</span>
     </button>
+    {onMap && <button className="madebar-half" onClick={onMap}>
+      <span className="madebar-ic"><MapIcon /></span>
+      <span className="loopbar-title">Map</span>
+      <span className="loopbar-sub">{lexemesIn(graph, language).length}</span>
+    </button>}
   </div>;
 
   return <div className="loopbar">

@@ -213,6 +213,9 @@ const SPEECH_PATH = "/speech";
 const DICTIONARY_PATH = "/api/acervo/dictionaries";
 const MEDIA_PATH = "/api/acervo/media";
 const REQUEST_TIMEOUT = 15_000;
+/* The first map of a language embeds every sense on the server — a minute or more on a small machine,
+   once. A device that already holds a map is not waiting on this: it draws what it has. */
+const MAP_TIMEOUT = 240_000;
 /** Capture is two model calls deep, so the sync timeout would abort a request that is working. */
 const CAPTURE_TIMEOUT = 300_000;
 // A picture or a clip sent up from this device: a phone photograph over a slow connection.
@@ -538,6 +541,50 @@ export interface ScheduleSettings {
    What the generator can be asked for, as `GET /loops/schema` reports it. Its catalogues are its
    own and are never copied here: a family or a second pattern added in a later version of it
    appears in the dialog with nothing changing on this side. */
+/* The meaning map of one language, as the server draws it (docs/plans/meaning-space.md). Positions,
+   ids and region labels — never vectors and never a sense's text, which the device joins from its
+   own replica. */
+export interface ServerMapPoint {
+  sense: string;
+  lexeme: string;
+  x: number;
+  y: number;
+  r: number;
+  h: number;
+  rank: number;
+  nb: number[];
+}
+
+export interface ServerMapRegion {
+  id: string;
+  level: "region" | "hood";
+  index: number;
+  x: number;
+  y: number;
+  count: number;
+  region?: number;
+  labels: { words: string[]; terms: string[]; name?: string };
+}
+
+export interface ServerMap {
+  language: string;
+  fingerprint: string;
+  /* What `have` is compared with: the fingerprint and whether the regions are named, since naming
+     changes the map without changing its layout. */
+  version: string;
+  model: string;
+  side: number;
+  words: number;
+  senses: number;
+  /* `pending` until the job that names the regions lands; `none` when there is nothing to name. */
+  names: "pending" | "ready" | "none";
+  points: ServerMapPoint[];
+  regions: ServerMapRegion[];
+  contours: [number, number[]][];
+}
+
+export type MapAnswer = ServerMap | { current: true; version: string };
+
 export interface LoopSchema {
   apiVersion: string;
   engineVersion: string;
@@ -767,6 +814,11 @@ export const backendSession = {
   },
   /** Try again, and an import's request for enrichment. A save never needs this. */
   loopSchema(): Promise<LoopSchema> { return client.call<LoopSchema>("/loops/schema"); },
+  /* `have` is the version this device already holds; a map still current answers `current`. */
+  readMap(language: string, have?: string | null): Promise<MapAnswer> {
+    const query = have ? `?have=${encodeURIComponent(have)}` : "";
+    return client.call<MapAnswer>(`/map/${encodeURIComponent(language)}${query}`, {}, false, MAP_TIMEOUT);
+  },
   /* Answers 202 with the row and the job that will render it. The row exists either way: a loop
      that was asked for and not made is one with no `audioRef`, which is all "not ready" means. */
   makeLoop(request: LoopRequest): Promise<{ loop: Loop; job: Job }> {

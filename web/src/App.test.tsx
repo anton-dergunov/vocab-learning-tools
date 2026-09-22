@@ -12,6 +12,20 @@ import { articleChanges } from "./testArticles";
 import { TEST_OWNER, testGraph } from "./testGraph";
 
 vi.mock("virtual:pwa-register", () => ({ registerSW: vi.fn() }));
+/* jsdom has no canvas: the map's drawing is stood in for by its points as buttons. */
+vi.mock("./meaningMap", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    MeaningMap: forwardRef(function Stub(props: {
+      data: { points: { id: string; headword: string; emoji: string }[] };
+      onSelect?: (point: unknown, index: number) => void;
+    }, ref) {
+      useImperativeHandle(ref, () => ({ select: vi.fn(), reveal: vi.fn(), setInsets: vi.fn(), fit: vi.fn(), zoomBy: vi.fn() }), []);
+      return <div>{props.data.points.map((p, i) => <button key={p.id} onClick={() => props.onSelect?.(p, i)}>
+        point {p.headword} {p.emoji}</button>)}</div>;
+    })
+  };
+});
 
 /* The dictionary transports are the network and the device store; the tests below are about what
    the interface does with their answers, so they are spied rather than reimplemented. Everything
@@ -936,6 +950,62 @@ describe("Acervo application", () => {
      two accidental exits — the Add button, which starts a composition you did not want, and changing
      language — and every obvious one was a dead end: the search box updated a list that was not
      drawn, and Escape did nothing. These are the three that should work. */
+  describe("the map", () => {
+    const spanishMap = {
+      language: "es", fingerprint: "fp", version: "fp.none", model: "m", side: 1000, words: 2, senses: 2,
+      names: "none" as const, regions: [], contours: [],
+      points: [
+        { sense: "sensepicarchop0", lexeme: "lexemepicar0001", x: 1, y: 1, r: -1, h: -1, rank: 1, nb: [1] },
+        { sense: "sensebalsaraft0", lexeme: "lexemebalsa0001", x: 9, y: 9, r: -1, h: -1, rank: 0.5, nb: [0] }
+      ]
+    };
+    const openMap = async () => {
+      vi.spyOn(backendSession, "readMap").mockResolvedValue(spanishMap);
+      fireEvent.click(screen.getByRole("button", { name: "Map" }));
+      await screen.findByRole("heading", { name: "Map" });
+    };
+
+    it("replaces the list, and its own row replaces the top bar", async () => {
+      signedIn();
+      await openList();
+      await openMap();
+      expect(screen.queryByRole("heading", { name: /All words/ })).not.toBeInTheDocument();
+      // `styles.css` hides the top bar on `map-open`; jsdom applies no stylesheet, so this asserts the
+      // class the rule keys on.
+      expect(document.querySelector(".app.map-open")).not.toBeNull();
+    });
+
+    it("comes back from an article opened on it, with the peek still open", async () => {
+      signedIn();
+      await openList();
+      await openMap();
+      fireEvent.click(await screen.findByRole("button", { name: /point picar/ }));
+      fireEvent.click(await screen.findByRole("button", { name: /Open the article/ }));
+      expect(await screen.findByRole("button", { name: "Back to the list" })).toBeInTheDocument();
+      expect(document.querySelector(".app.map-open")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Back to the list" }));
+      expect(await screen.findByRole("heading", { name: "Map" })).toBeInTheDocument();
+      expect(await screen.findByText("Cortar en trozos pequeños.")).toBeInTheDocument();
+    });
+
+    it("leaves for search on ⌘K, the search box being in the bar it hides", async () => {
+      signedIn();
+      await openList();
+      await openMap();
+      fireEvent.keyDown(document, { key: "k", metaKey: true });
+      expect(await screen.findByRole("heading", { name: /All words/ })).toBeInTheDocument();
+      expect(document.activeElement).toBe(screen.getByPlaceholderText("Search your words…"));
+    });
+
+    it("leaves on Escape when nothing is peeked at", async () => {
+      signedIn();
+      await openList();
+      await openMap();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(await screen.findByRole("heading", { name: /All words/ })).toBeInTheDocument();
+    });
+  });
+
   describe("getting back out of Loops", () => {
     const openLoops = async () => {
       fireEvent.click(screen.getByRole("button", { name: "Loops" }));

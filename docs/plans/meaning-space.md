@@ -154,8 +154,11 @@ contours}`:
   regions, or a naming that failed for good.
 
 The fingerprint is a digest of every `(senseId, text digest)` pair, the model and the layout's
-parameters. A device that holds a map sends it as `?have=`, and a map still current answers
-`{"current": true}` and nothing else. An unknown language is a 404 `unknown_language`.
+parameters. The **version** is the fingerprint and the state of the names together, because naming
+changes the map without changing its layout. A device that holds a map sends its version as
+`?have=`, and a map still current answers `{"current": true}` and nothing else. Asking by
+fingerprint alone, a device holding the unnamed map would be told it was current and never see the
+names. An unknown language is a 404 `unknown_language`.
 
 ### When the artifact is computed
 
@@ -344,9 +347,11 @@ Ghosts are not built now. They are named here so the first version does not bloc
      whole vocabulary.
 3. **Server:** `src/acervo/meaning/`, the cache, the route, the naming job and the admin commands
    (`map show`, `map export`). Built.
-4. **Web and deploy:** the component, the adapter and the surface. The image gains the encoder and
-   its dependencies and grows accordingly, but the schema does not change, so a plain
-   `./deploy.sh` ships it with no converter.
+4. **Web and deploy:** the component (`web/src/meaningMap/`, importing nothing of Acervo's), the
+   adapter (`mapDataFor` and `mapPeekFor` in `selectors.ts`), the device's store of the last map
+   per language (`mapStore.ts`) and the surface (`MapView.tsx`), entered from the rail and the foot
+   bar. Built. The image gains the encoder and its dependencies and grows accordingly, but the
+   schema does not change, so a plain `./deploy.sh` ships it with no converter.
 
 ## What counts as success
 

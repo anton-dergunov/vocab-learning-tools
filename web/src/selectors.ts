@@ -16,6 +16,8 @@ import { glossLanguagesFor, languageOf, notesLanguageFor, presentationOf, type L
 // Type-only, so it is erased at build time and the cycle with `yaml.ts` — which imports `Article`
 // from here — never exists at runtime.
 import type { ArticleDraft, AttestationDraft, ExampleDraft, SenseDraft } from "./yaml";
+import type { ServerMap } from "./api";
+import type { MapData, MapPoint } from "./meaningMap";
 
 export type SortKey = "recent" | "alpha" | "hard";
 /** A topic record id, or one of the two synthetic collections the rail offers. */
@@ -247,6 +249,69 @@ function onePicture(images: ImagePrompt[]): ImagePrompt[] {
     || right.editedAt.localeCompare(left.editedAt)
   );
   return [ranked[0]];
+}
+
+/**
+ * The server's map joined to the replica, as the map component draws it.
+ *
+ * The server sends positions and ids and never a sense's text, so an edited headword shows at once
+ * and a map already drawn reads offline. A sense deleted since the map was drawn is dropped here —
+ * and every other point's neighbours are re-indexed around it — rather than drawn as a ghost; the
+ * next map from the server will not have it either.
+ */
+export function mapDataFor(graph: VocabularyGraph, map: ServerMap): MapData {
+  const lexemes = new Map(live(graph.lexemes).map((lexeme) => [lexeme.id, lexeme]));
+  const senses = new Map(live(graph.senses).map((sense) => [sense.id, sense]));
+  const glossLang = glossLanguagesFor(map.language, graph.vocabularies)[0];
+  const kept = new Map<number, number>();
+  map.points.forEach((point, index) => {
+    const sense = senses.get(point.sense);
+    if (sense && sense.lexemeId === point.lexeme && lexemes.has(point.lexeme)) kept.set(index, kept.size);
+  });
+  const points: MapPoint[] = [];
+  kept.forEach((_, index) => {
+    const point = map.points[index];
+    const sense = senses.get(point.sense) as Sense;
+    const lexeme = lexemes.get(point.lexeme) as Lexeme;
+    const gloss = sense.glosses.find((entry) => entry.lang === glossLang) ?? sense.glosses[0];
+    points.push({
+      id: sense.id, word: lexeme.id, headword: lexeme.headword,
+      emoji: sense.emoji || lexeme.emoji || "", gloss: gloss?.terms[0] ?? "",
+      x: point.x, y: point.y, region: point.r, hood: point.h, rank: point.rank,
+      near: point.nb.flatMap((near) => {
+        const at = kept.get(near);
+        return at === undefined ? [] : [at];
+      })
+    });
+  });
+  return { side: map.side, points, regions: map.regions, contours: map.contours };
+}
+
+/** What a tap on the map shows of one sense: enough to recognise it, and the way to its article. */
+export interface MapPeek {
+  sense: Sense;
+  lexeme: Lexeme;
+  /* Every sense of the word, in order, this one among them. */
+  senses: Sense[];
+  terms: string[];
+  glossLang: string | null;
+  picture: ImagePrompt | null;
+}
+
+export function mapPeekFor(graph: VocabularyGraph, senseId: string): MapPeek | null {
+  const sense = live(graph.senses).find((entry) => entry.id === senseId);
+  const lexeme = sense && live(graph.lexemes).find((entry) => entry.id === sense.lexemeId);
+  if (!sense || !lexeme) return null;
+  const glossLang = glossLanguagesFor(lexeme.language, graph.vocabularies)[0] ?? null;
+  const gloss = sense.glosses.find((entry) => entry.lang === glossLang) ?? sense.glosses[0];
+  return {
+    sense,
+    lexeme,
+    senses: sensesOf(graph, lexeme.id),
+    terms: gloss?.terms ?? [],
+    glossLang: gloss?.lang ?? glossLang,
+    picture: onePicture(byAge(live(graph.imagePrompts).filter((image) => image.senseId === sense.id)))[0] ?? null
+  };
 }
 
 export function articleFor(graph: VocabularyGraph, lexemeId: string): Article | null {

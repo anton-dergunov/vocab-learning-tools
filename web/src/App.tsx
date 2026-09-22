@@ -8,6 +8,8 @@ import LoopDialog from "./LoopDialog";
 import LoopView from "./LoopView";
 import StoryDialog from "./StoryDialog";
 import StoryView from "./StoryView";
+import { MapView } from "./MapView";
+import type { MapCamera } from "./meaningMap";
 import * as loopPlayer from "./loops";
 import {
   applyOps, diffDrafts, EditRefused, type DraftDiff, type EditOp
@@ -216,6 +218,7 @@ export default function App() {
     setProblems([]);
     setLoops(false);
     setStories(false);
+    setMap(false);
     setAddSeed(seed);
     setAddTab("capture");
     setComposition((count) => count + 1);
@@ -253,11 +256,19 @@ export default function App() {
   const [makingLoop, setMakingLoop] = useState(false);
   const [stories, setStories] = useState(false);
   const [makingStory, setMakingStory] = useState(false);
+  /* The map: whether it is open, the sense it is peeking at, and where it was left in each language.
+     All three outlive a trip to an article opened from the map, which is what makes Back from that
+     article put the map back exactly as it was. */
+  const [map, setMap] = useState(false);
+  const [mapSense, setMapSense] = useState<string | null>(null);
+  const mapReturn = useRef(false);
+  const mapCameras = useRef(new Map<string, MapCamera>());
   /* One door in, so everything that opens it also closes whatever it replaces — the same shape
      `openCapture` has. */
   const openLoops = useCallback(() => {
     setLoops(true);
     setStories(false);
+    setMap(false);
     setOpenId(null);
     setExternal(null);
     setAddTab(null);
@@ -265,9 +276,25 @@ export default function App() {
   const openStories = useCallback(() => {
     setStories(true);
     setLoops(false);
+    setMap(false);
     setOpenId(null);
     setExternal(null);
     setAddTab(null);
+  }, []);
+  const openMap = useCallback(() => {
+    setMap(true);
+    setLoops(false);
+    setStories(false);
+    setOpenId(null);
+    setExternal(null);
+    setAddTab(null);
+    mapReturn.current = false;
+  }, []);
+  /* Leaving an article: back to the map when that is where it was opened from. */
+  const closeArticle = useCallback(() => {
+    setOpenId(null);
+    setProposal(null);
+    if (mapReturn.current) { mapReturn.current = false; setMap(true); }
   }, []);
   const [settings, setSettings] = useState<SettingsPage | null>(null);
   const [armed, setArmed] = useState<"delete" | null>(null);
@@ -740,6 +767,7 @@ export default function App() {
     setTopic(next);
     setLoops(false);
     setStories(false);
+    setMap(false);
     setOpenId(null);
     setProposal(null);
     setExternal(null);
@@ -754,6 +782,7 @@ export default function App() {
         // surface owns the pane. The loop itself plays on; the bar is what it plays behind.
         setLoops(false);
         setStories(false);
+        setMap(false);
         search.current?.focus();
         search.current?.select();
       }
@@ -762,14 +791,15 @@ export default function App() {
         if (addTab) closeCapture();
         else if (mode === "edit") { setProblems([]); setMode("read"); }
         else if (external) setExternal(null);
-        else if (openId) setOpenId(null);
+        else if (openId) closeArticle();
         else if (loops) setLoops(false);
         else if (stories) setStories(false);
+        // The map puts its own peek away before leaving, so it handles Escape itself.
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [addTab, closeCapture, external, loops, mode, openId]);
+  }, [addTab, closeArticle, closeCapture, external, loops, mode, openId, stories]);
 
   /**
    * The one path a YAML document takes, whether it came from the article editor or the add sheet.
@@ -1141,7 +1171,7 @@ export default function App() {
   /** Both surfaces you compose in. The main region stops scrolling and hands that to the view. */
   /* `asking` joins this for the same reason the other two are here: a surface that owns the height
      and scrolls itself must not sit inside a region that also scrolls. */
-  const composing = Boolean(addTab) || Boolean(article && mode === "edit") || asking || loops || stories;
+  const composing = Boolean(addTab) || Boolean(article && mode === "edit") || asking || loops || stories || map;
   const inbox = snapshot && language ? inboxCount(snapshot, language) : 0;
   const currentTopic = topics.find((option) => option.id === topic);
   const topicLabel = topic === "all" ? "All words" : topic === "inbox" ? "Inbox" : currentTopic?.name ?? "Topic";
@@ -1153,7 +1183,8 @@ export default function App() {
       {/* Reading a word on a phone or a tablet does not need the topic rail beside it. The loops
           surface is *not* given `article-open`: it keeps the rail wherever there is room for it,
           and drops it only on a phone, where an article drops it too. */}
-      <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops || stories ? " loops-open" : ""}`}>
+      {/* On the map the top bar goes and the map's own row is the top one (`map-open`). */}
+      <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops || stories || map ? " loops-open" : ""}${map ? " map-open" : ""}`}>
         <div className="brand"><span className="mark">A.</span></div>
 
         <header className="topbar">
@@ -1164,10 +1195,10 @@ export default function App() {
               value={query}
               // Typing is asking for the list, so it leaves the loops surface. Whatever is playing
               // keeps playing — that is what the bar and the chip are for.
-              onChange={(event) => { setQuery(event.target.value); setOpenId(null); setExternal(null); setLoops(false); setStories(false); }}
+              onChange={(event) => { setQuery(event.target.value); setOpenId(null); setExternal(null); setLoops(false); setStories(false); setMap(false); }}
               // ⏎ is the only thing that ever reaches an online dictionary. Everything else here
               // answers off this device or off your own server.
-              onKeyDown={(event) => { if (event.key === "Enter") { setLoops(false); setStories(false); searchOnline(); } }}
+              onKeyDown={(event) => { if (event.key === "Enter") { setLoops(false); setStories(false); setMap(false); searchOnline(); } }}
             />
             <span className="kbd">⌘K</span>
             <button
@@ -1244,6 +1275,10 @@ export default function App() {
           {inbox > 0 && <button className={`tab ${topic === "inbox" ? "on" : ""}`} title="Inbox" onClick={() => chooseTopic("inbox")}>
             <span className="ic">📥</span><span className="nm">Inbox</span><span className="cnt">{inbox}</span>
           </button>}
+          {/* A view of every word rather than a topic, so it sits with All and not among the topics. */}
+          <button className={`tab ${map ? "on" : ""}`} title="Map" aria-label="Map" onClick={openMap}>
+            <span className="ic">🗺️</span><span className="nm">Map</span>
+          </button>
           <div className="rail-sep" />
           {topics.map((option) => <button
             key={option.id} className={`tab ${topic === option.id ? "on" : ""}`} title={option.name}
@@ -1279,7 +1314,15 @@ export default function App() {
             work, the list behind it is not, and a bounded column is the only shape that keeps a
             title and a save button on screen at every window size. */}
         <main className={`main ${composing ? "composing" : ""}${carding && !composing ? " cards-on" : ""}`} ref={main}>
-          {stories && snapshot && language ? <StoryView
+          {map && snapshot && language ? <MapView
+          graph={snapshot} owner={snapshot.ownerId} language={language} languages={languages}
+          camera={mapCameras.current.get(language) ?? null}
+          onCamera={(camera) => mapCameras.current.set(language, camera)}
+          selected={mapSense} onSelect={setMapSense}
+          onLanguage={(code) => { setMapSense(null); setLanguage(code); }}
+          onOpen={(lexemeId) => { mapReturn.current = true; setMap(false); openLexeme(lexemeId); }}
+          onClose={() => { setMap(false); setMapSense(null); }}
+        /> : stories && snapshot && language ? <StoryView
           graph={snapshot} language={language} onMake={() => setMakingStory(true)}
           onClose={() => setStories(false)}
           onDelete={removeStory}
@@ -1330,7 +1373,7 @@ export default function App() {
               onSave={() => void saveProposal()}
             />}
             {article && <div className={`art-bar${carding ? " carding" : ""}`}>
-              <button className="icon-btn" aria-label="Back to the list" onClick={() => { setOpenId(null); setProposal(null); }}><BackIcon /></button>
+              <button className="icon-btn" aria-label="Back to the list" onClick={closeArticle}><BackIcon /></button>
               <span className="label art-where">{topicLabel}</span>
               {/* On a phone in Cards the word is the toolbar's title, which is what gives the card below
                   its room; wider screens set it under the toolbar instead, and hide this. */}
@@ -1451,9 +1494,9 @@ export default function App() {
             carries the view segments, the delete control, the progress strip and the ask dock, and
             §2.13 forbids a second one there. Narrow windows only — a wide one has the chip in the
             top bar instead, and `styles.css` is what picks. */}
-        {snapshot && language && !article && !external && !addTab && !loops && !stories && <MadeBar
+        {snapshot && language && !article && !external && !addTab && !loops && !stories && !map && <MadeBar
           graph={snapshot} language={language} chip={false}
-          onLoops={openLoops} onStories={openStories}
+          onLoops={openLoops} onStories={openStories} onMap={openMap}
         />}
       </div>
     </div>
