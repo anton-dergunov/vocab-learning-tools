@@ -735,7 +735,11 @@
       const modified = e.ctrlKey || e.metaKey;
       const notch = e.deltaX === 0 && (e.deltaMode === 1 || (Math.abs(e.deltaY) >= 50 && Number.isInteger(e.deltaY)));
       if (modified || notch) {
-        const scale = e.deltaMode === 1 ? 0.05 : notch ? 0.0022 : 0.012;
+        /* A trackpad pinch (Ctrl, set by the browser) keeps its rate. A wheel — its notches, or ⌘ with a
+         smooth wheel — goes half as fast: at the rate the pinch uses, a quick spin shot the map from
+         the whole vocabulary to a single word, where the + and − buttons' steps felt right. */
+      const pinch = e.ctrlKey && !e.metaKey && !notch;
+      const scale = pinch ? 0.012 : e.deltaMode === 1 ? 0.025 : notch ? 0.0011 : 0.006;
         zoomAt(p.x, p.y, Math.exp(-e.deltaY * scale), false);
       } else {
         cam.tx -= e.deltaX; cam.ty -= e.deltaY;
