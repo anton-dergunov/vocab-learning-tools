@@ -233,14 +233,26 @@ normalization. Only `negarse a` → `negarse` (dropping the preposition a reader
 spoken-usage corpus for, per `services/clips.py`'s use of `lemma` as a multi-token-tolerant query) is
 a genuine, if minor, miss.
 
-**Conclusion: no prompt change shipped for `lemma`.** `words.yaml`'s 19 mis-authored entries were
-corrected (data hygiene, not a product fix) once the real rate came back at 1.5% with three of four
-cases defensible. `prompts/acervo_compose.md` has no field-rule bullet for `lemma` at all — a real
-documentation gap, and `prompts/acervo_resolve.md`'s wording ("usually identical to headword; differs
-when the headword keeps an article or a fixed inflection") is the more natural place to add a phrase
-carve-out, since resolve is the step that sets `lemma` from scratch and compose typically only
-carries it through. Left as a note rather than a change: at 1.5% real prevalence, mostly benign, it
-doesn't clear the bar the other two fields did.
+**`words.yaml`'s 19 mis-authored entries were corrected** (data hygiene, not a product fix) once the
+real rate came back at 1.5% with three of four cases defensible.
+
+**A small, separately-tested addition shipped to `prompts/acervo_resolve.md` anyway.** That prompt's
+own worked example already showed a phrase keeping its whole lemma (`dar pelota` → `dar pelota`), but
+its prose bullet never said so — it only covers articles and inflection. Added one clause plus a
+second worked example naming the owner's own reported case: `hacer murales` stays `hacer murales`,
+never `hacer`. Spot-checked directly (this experiment's harness deliberately skips resolve — see
+"The two arms" — so this ran as its own small side check, not through `run.py`): 8 realistic capture
+inputs for real multi-word collocations (`hacer murales`, `pasar música`, `dar la vuelta`, `tomar el
+pelo`, `ponerse de acuerdo`, `hacerse cargo`, `quedarse sin palabras`, `estrenar una película`),
+before and after, 16 calls total. **Result: 8/8 correct in both arms — zero measured difference.**
+Resolve already gets this right on every one of these without the sentence; the addition is a
+documentation closure for a rule that was silently true, not a fix for a reproduced defect, and ships
+on that basis — safe (no regression across 16 calls), not because it moved a number.
+
+**`prompts/acervo_compose.md` still has no field-rule bullet for `lemma` at all** (only the worked
+shape-block example). Left alone: compose typically only carries `lemma` through from resolve rather
+than re-deciding it, and the measured real prevalence (1.5%, mostly benign) doesn't clear the bar the
+other two fields did.
 
 ## Reproducing
 

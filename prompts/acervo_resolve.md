@@ -27,7 +27,9 @@ Return one JSON object and nothing else. No prose, no code fences.
   carry one (`el saco`, not `saco`); use the infinitive for a verb given conjugated, unless the
   conjugated form is itself the point.
 - `lemma` — the dictionary form. Usually identical to `headword`; differs when the headword keeps
-  an article or a fixed inflection.
+  an article or a fixed inflection. For a multi-word phrase or idiom, `lemma` is the WHOLE phrase,
+  not its head word alone: `dar pelota` stays `dar pelota`, and `hacer murales` stays
+  `hacer murales`, never `hacer`.
 - `pos` — exactly one of: noun, verb, adj, adv, phrase, idiom, expression.
 - `sentences` — ONLY sentences the input actually contains, cleaned up as described below. Never
   invent one here; inventing good examples is the next step's job. An empty list is a fine answer.
