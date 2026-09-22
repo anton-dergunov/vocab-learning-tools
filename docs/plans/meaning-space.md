@@ -36,8 +36,9 @@ be reacted to. It is built in few, large steps (see [Steps](#steps)).
 - model-written labels, unless the deterministic ones read poorly
 - a standalone macOS application
 
-The real vocabulary it is sized against has 1,443 Spanish senses (922 words), 1,194 English senses
-(795 words) and one Chinese word. About 45% of words have more than one sense.
+The real vocabulary it is sized against has 1,443 Spanish senses (922 words), 857 English senses
+(568 words) and one Chinese word. About 45% of words have more than one sense. The 19 Sep 2026
+export also carried 227 English words twice, with identical senses, which the map leaves out.
 
 ## Decisions
 
@@ -161,9 +162,17 @@ the NAS. It is paid once and shown as *Drawing your map*.
 Each time its input changes, the map is laid out again: plain UMAP, cosine metric, fixed seed.
 Nothing pins a point to where it was.
 
-Most vectors and the seed stay the same between layouts, so the picture moves less than a fresh
-map would. Seeding the layout from the previous coordinates is a cheap later improvement. It is not
-a requirement of this version, which is for finding out what the map is good for.
+A fixed seed alone does **not** keep the picture in place. On the real vocabulary, removing 2% of
+the English words and laying it out again returned the map mirrored: a median point moved half the
+map's width. So each new layout is **aligned onto the previous one** (a Procrustes fit: rotation,
+reflection, scale and shift, one SVD) before it is stored. After that, a median point moves 4–10% of
+the map's width, measured in
+[`experiments/meaning-space/`](../../experiments/meaning-space/README.md).
+
+The UMAP setting that gives the map islands rather than an even disc (`min_dist` 0.1) is also the one
+that moves more between layouts, most in Spanish. Seeding the layout from the previous coordinates
+is the lever if that movement bothers the owner. It is not a requirement of this version, which is
+for finding out what the map is good for.
 
 ### Opens straight away
 
@@ -203,6 +212,13 @@ labels on the Spanish map, English labels on the English map.
 
 The prototype shows these beside one model-written set, made once from the real vocabulary. A model
 call becomes part of the map only if the deterministic labels read poorly.
+
+**On the real vocabulary, they did.** The model's names read as places: *dinero y trabajo*,
+*pagos y deudas*, *aggression and hostility*. The nearest headwords read as a list, and the c-TF-IDF
+terms carry definition boilerplate such as *dicho* and *showing*. So the prototype defaults to
+model-written names. If they are adopted, the reason for going deterministic first still shapes how:
+the names are asked for once per new layout, after it is drawn, and never on the way to showing the
+map. A map whose names have not arrived yet shows the nearest headwords.
 
 ### The surface is called Map
 

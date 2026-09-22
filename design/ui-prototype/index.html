@@ -91,9 +91,20 @@
   <button id="layoutBtn" title="Open the loops surface">Loops</button>
   <button id="storyBtn" title="Open the stories surface">Stories</button>
   <button id="speedBtn" title="Wind the loop's clock on — a word really takes twenty-two seconds">1×</button>
+  <span style="width:1px;background:var(--rule-soft);margin:2px 3px"></span>
+  <button id="mapBtn" title="Open the map">Map</button>
+  <button id="mapStyleBtn" title="Which of the three looks">Style: atlas</button>
+  <button id="mapLabelsBtn" title="How regions are named: a model, the most central words, or distinctive terms">Labels: model</button>
+  <button id="mapUpdateBtn" title="Play a new layout arriving">Update</button>
+  <button id="mapSampleBtn" title="Use the committed sample instead of your own map">Sample</button>
 </div>
 
 <script src="data.js"></script>
+<!-- The map's data: the committed sample, then the owner's own map if it has been generated
+     (git-ignored; see README). A missing file only logs a 404, and the sample is used. -->
+<script src="map-data.js"></script>
+<script src="map-data.local.js"></script>
+<script src="map.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -1,0 +1,12 @@
+# The meaning-space experiment's own environment. Heavy on purpose, and kept out of requirements/:
+# the server adopts only what this experiment settles on, in step 3 of docs/plans/meaning-space.md.
+sentence-transformers>=3.0
+umap-learn>=0.5.6
+scikit-learn>=1.4
+scipy>=1.12
+contourpy>=1.2
+numpy>=1.26
+PyYAML>=6.0
+Pillow>=10.0
+# Screenshots of the prototype, for checking the map by eye.
+playwright>=1.45

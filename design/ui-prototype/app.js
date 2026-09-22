@@ -48,7 +48,18 @@ const state = {
   stories: false,
   storyOpen: null,
   storyAt: 0,
-  storyShown: {}
+  storyShown: {},
+  /* The map, the same shape again: whether it is open, which sense is peeked at (an index into the
+     map's points), and whether an article was opened from it, so Back returns there. `mapStyle` and
+     `mapLabels` are the choices being made by looking; `mapState` is a prototype-only stand-in for
+     the first draw and for a device that has never reached the server. */
+  map: false,
+  mapSel: -1,
+  mapReturn: false,
+  mapStyle: "atlas",
+  mapLabels: "model",
+  mapState: null,
+  mapSample: false
 };
 
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -100,6 +111,10 @@ const ICON = {
      label to be understood. */
   repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h11a3 3 0 0 1 3 3v1"/><path d="M18 17H7a3 3 0 0 1-3-3v-1"/><path d="M8.5 4.5L6 7l2.5 2.5"/><path d="M15.5 19.5L18 17l-2.5-2.5"/></svg>',
   continue:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11M4 12h8M4 17h8"/><path d="M16 11.5v7l5.5-3.5z" fill="currentColor" stroke-width="1"/></svg>',
+  /* The map: a folded sheet, and the four corners of "show all of it". */
+  map:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5L3.5 6.5v13L9 17.5l6 2 5.5-2v-13L15 6.5z"/><path d="M9 4.5v13M15 6.5v13"/></svg>',
+  fit:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+  minus:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
   hourglass:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10M7 20h10"/><path d="M8 4c0 4 4 5 4 8s-4 4-4 8"/><path d="M16 4c0 4-4 5-4 8s4 4 4 8"/></svg>'
 };
 
@@ -262,8 +277,11 @@ function renderRail() {
     </button>`;
   const all = inLanguage().filter((x) => x.status !== "inbox").length;
   rail.innerHTML =
-    tab("all", "\u{1F4D6}", "All", all, state.topic === "all") +
-    (inboxCount() ? tab("inbox", "\u{1F4E5}", "Inbox", inboxCount(), state.topic === "inbox") : "") +
+    tab("all", "\u{1F4D6}", "All", all, state.topic === "all" && !state.map) +
+    (inboxCount() ? tab("inbox", "\u{1F4E5}", "Inbox", inboxCount(), state.topic === "inbox" && !state.map) : "") +
+    /* A view of every word rather than a topic, so it sits with All and not among the topics. */
+    `<button class="tab ${state.map ? "on" : ""}" data-map-open title="Map">
+      <span class="ic">\u{1F5FA}\uFE0F</span><span class="nm">Map</span></button>` +
     '<div class="rail-sep"></div>' +
     TOPICS.map((t) => tab(t.key, t.icon, t.name, topicCount(t.key) || null, state.topic === t.key)).join("");
 }
@@ -1212,7 +1230,7 @@ function renderSheet() {
   wireSheet();
 }
 
-function openSheet(tab) { addTab = tab || "capture"; addDraft = null; state.loops = false; state.add = true; render(); }
+function openSheet(tab) { addTab = tab || "capture"; addDraft = null; state.loops = false; state.map = false; state.add = true; render(); }
 function closeSheet()   { state.add = false; $("#composer").innerHTML = ""; render(); }
 
 /* ── toast ───────────────────────────────────────────────────────────── */
@@ -1584,9 +1602,264 @@ function renderStories() {
 }
 
 function openStories() {
-  state.stories = true; state.loops = false;
+  state.stories = true; state.loops = false; state.map = false;
   state.openId = null; state.openExt = null; state.add = false;
   render();
+}
+
+/* ── the map ──────────────────────────────────────────────────────────────
+   One language's senses, laid out by meaning (docs/plans/meaning-space.md). `map.js` is the
+   component and knows nothing of this file; what is here is the host: which data, the header, the
+   peek, find, and the way back from an article. The data is the owner's real map when
+   `map-data.local.js` has been generated, and the committed sample otherwise (see README). */
+
+const MAP_STYLES = ["atlas", "constellation", "clouds"];
+const MAP_LABELS = ["model", "words", "terms"];
+let meaningMap = null;
+/* Where the map was left, per language: coming back from an article puts it back exactly there. */
+const mapCameras = {};
+/* Languages whose map has already grown into place this session. It grows once; after that it is
+   simply there, which is what "opens straight away" means for the second visit. */
+const mapGrown = new Set();
+
+const mapSource = () => (state.mapSample || !window.MAP_LOCAL ? "sample" : "local");
+const mapData = () => {
+  const all = mapSource() === "sample" ? window.MAP_SAMPLE : window.MAP_LOCAL;
+  return (all && all[state.lang]) || null;
+};
+const fold = (s) => String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const count = (n) => n.toLocaleString("en-GB");
+
+function openMap() {
+  state.map = true; state.loops = false; state.stories = false;
+  state.openId = null; state.openExt = null; state.add = false;
+  render();
+}
+function closeMap() {
+  state.map = false; state.mapSel = -1;
+  teardownMap();
+  render();
+}
+function teardownMap() {
+  if (!meaningMap) return;
+  meaningMap.destroy();
+  meaningMap = null;
+}
+
+function mapShell(d) {
+  const name = langOf(state.lang).name;
+  /* `data-map-lang`, not `data-lang`: the document's click handler reads any `[data-lang]` ancestor as
+     a pick from the language menu, and every tap on the map chose the language again. */
+  return `<section class="map" data-map-lang="${state.lang}" data-src="${mapSource()}" data-state="${state.mapState || ""}">
+    <canvas class="map-canvas" role="img" aria-label="A map of your ${esc(name)} words, arranged by meaning"></canvas>
+    <header class="map-top">
+      <button class="icon-btn" id="mapClose" aria-label="Back to your words">${ICON.back}</button>
+      <div class="map-title"><h2>Map</h2>${d ? `<span class="map-count label">${count(d.senses)} meaning${d.senses === 1 ? "" : "s"} · ${count(d.words)} word${d.words === 1 ? "" : "s"}</span>` : ""}</div>
+      <div class="map-find">${ICON.search}
+        <input id="mapFind" type="search" placeholder="Find a word on the map" autocomplete="off" spellcheck="false" aria-label="Find a word on the map">
+        <ol class="map-hits" id="mapHits" hidden></ol>
+      </div>
+    </header>
+    <div class="map-tools">
+      <button class="map-tool" id="mapFit" aria-label="Show the whole map" title="Show the whole map">${ICON.fit}</button>
+      <button class="map-tool pointer-only" id="mapIn" aria-label="Zoom in" title="Zoom in">${ICON.plus}</button>
+      <button class="map-tool pointer-only" id="mapOut" aria-label="Zoom out" title="Zoom out">${ICON.minus}</button>
+    </div>
+    <aside class="map-peek" id="mapPeek" hidden aria-live="polite"></aside>
+    <div class="map-note" id="mapNote" hidden></div>
+  </section>`;
+}
+
+/* The surface is built once and then kept: re-rendering it would throw away the camera in the middle
+   of a pinch. It is rebuilt only when what it shows changes — another language, the other fixture, or
+   one of the prototype's states. */
+function renderMap() {
+  const d = mapData();
+  let root = $("#composer .map");
+  const stale = !root || root.dataset.mapLang !== state.lang || root.dataset.src !== mapSource() ||
+    root.dataset.state !== (state.mapState || "");
+  if (stale) {
+    teardownMap();
+    $("#composer").innerHTML = mapShell(d);
+    root = $("#composer .map");
+    startMap(root, d);
+  }
+  paintPeek();
+}
+
+function startMap(root, d) {
+  const note = $("#mapNote", root);
+  // With no map there is nothing to fit, zoom or find in.
+  if (state.mapState || !d) { $(".map-tools", root).hidden = true; $(".map-find", root).hidden = true; }
+  if (state.mapState === "offline" || !d) {
+    note.hidden = false;
+    note.className = "map-note center";
+    note.innerHTML = `<h3>No map yet</h3><p>Your server draws the map, and this device has not reached it
+      since you added words in this language. It will appear here the first time it can.</p>`;
+    return;
+  }
+  if (state.mapState === "drawing") {
+    note.hidden = false;
+    note.className = "map-note center";
+    note.innerHTML = `<div class="map-drawing" aria-hidden="true"><span></span><span></span><span></span></div>
+      <h3>Drawing your map</h3><p>The first time takes about a minute, while every meaning is read.
+      After that the map opens at once.</p>`;
+    /* In the application this ends when the artifact arrives; here, after a moment, it grows. */
+    setTimeout(() => { if (state.map && state.mapState === "drawing") { state.mapState = null; mapGrown.delete(state.lang); render(); } }, 2600);
+    return;
+  }
+  meaningMap = MeaningMap($(".map-canvas", root), {
+    onSelect: (point, i) => { state.mapSel = i; paintPeek(); if (i >= 0) meaningMap.reveal(i); },
+    onCamera: (cam) => { mapCameras[state.lang] = cam; },
+    onRegion: () => {}
+  });
+  meaningMap.setStyle(state.mapStyle);
+  meaningMap.setLabels(state.mapLabels);
+  const returning = mapCameras[state.lang];
+  meaningMap.setData(d, returning ? { camera: returning } : { animate: mapGrown.has(state.lang) ? null : "grow" });
+  mapGrown.add(state.lang);
+  if (state.mapSel >= 0 && d.points[state.mapSel]) meaningMap.select(state.mapSel);
+  if (!d.regions.length) {
+    note.hidden = false;
+    note.className = "map-note";
+    note.textContent = `Regions appear once a language has about 150 meanings. ${langOf(state.lang).name} has ${count(d.senses)}.`;
+  }
+  wireMap(root, d);
+}
+
+function wireMap(root, d) {
+  const find = $("#mapFind", root);
+  const hits = $("#mapHits", root);
+  let matches = [];
+  const paintHits = () => {
+    const q = fold(find.value.trim());
+    if (!q) { matches = []; hits.hidden = true; meaningMap.highlight(null); return; }
+    const scored = [];
+    d.points.forEach((p, i) => {
+      const h = fold(p.headword);
+      const at = h.indexOf(q);
+      const g = fold(p.glossAll || "").indexOf(q);
+      if (at < 0 && g < 0) return;
+      scored.push({ i, score: (at === 0 ? 0 : at > 0 ? 1 : 2) - p.rank * 0.1 });
+    });
+    scored.sort((a, b) => a.score - b.score);
+    matches = scored.map((x) => x.i);
+    meaningMap.highlight(new Set(matches));
+    hits.hidden = false;
+    hits.innerHTML = matches.length
+      ? matches.slice(0, 8).map((i, k) => {
+          const p = d.points[i];
+          return `<li><button data-map-go="${i}" class="${k === 0 ? "on" : ""}"><span>${p.emoji}</span>
+            <span lang="${d.language}">${esc(p.headword)}${p.of > 1 ? ` <span class="label">${p.order + 1}/${p.of}</span>` : ""}</span>
+            <span class="hit-gloss">${esc(p.gloss || "")}</span></button></li>`;
+        }).join("")
+      : `<li class="hit-none">Nothing on this map matches “${esc(find.value.trim())}”.</li>`;
+  };
+  find.addEventListener("input", paintHits);
+  find.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && matches.length) { ev.preventDefault(); goTo(matches[0]); find.blur(); }
+    if (ev.key === "Escape") { ev.stopPropagation(); find.value = ""; paintHits(); find.blur(); }
+  });
+  root.addEventListener("click", (ev) => {
+    const go = ev.target.closest("[data-map-go]");
+    if (go) { goTo(Number(go.dataset.mapGo)); return; }
+    if (ev.target.closest("#mapClose")) { closeMap(); return; }
+    if (ev.target.closest("#mapFit")) { meaningMap && meaningMap.fit(true); return; }
+    if (ev.target.closest("#mapIn")) { meaningMap && meaningMap.zoomBy(1.8); return; }
+    if (ev.target.closest("#mapOut")) { meaningMap && meaningMap.zoomBy(1 / 1.8); return; }
+    if (ev.target.closest("#peekClose")) { state.mapSel = -1; meaningMap.select(-1); paintPeek(); return; }
+    if (ev.target.closest("#peekOpen")) { openFromMap(d.points[state.mapSel]); return; }
+    if (!ev.target.closest(".map-find")) hits.hidden = true;
+  });
+  find.addEventListener("focus", () => { if (find.value.trim()) hits.hidden = false; });
+}
+
+/* The peek is painted first, so the camera knows what it will cover before it decides where the sense
+   should land. */
+function goTo(i) {
+  state.mapSel = i;
+  $("#mapHits").hidden = true;
+  paintPeek();
+  meaningMap.select(i, { fly: true });
+}
+
+/* What a tap shows: enough to know the sense, and the way on. The same word's other senses are one
+   tap each, and the map flies there along the arc it has drawn, which is the whole reason a map of
+   senses beats a map of words. */
+function paintPeek() {
+  const peek = $("#mapPeek");
+  if (!peek) return;
+  const d = mapData();
+  const p = d && state.mapSel >= 0 ? d.points[state.mapSel] : null;
+  $("#composer .map").classList.toggle("peeking", Boolean(p));
+  if (!p) {
+    peek.hidden = true; peek.innerHTML = "";
+    if (meaningMap) meaningMap.setInsets({ left: 0, bottom: 0 });
+    return;
+  }
+  const siblings = d.points.map((q, i) => [q, i]).filter(([q]) => q.w === p.w);
+  const vocab = langOf(state.lang);
+  peek.hidden = false;
+  peek.innerHTML = `
+    <div class="peek-head">
+      <span class="peek-plate" aria-hidden="true">${p.emoji || "\u{1F4C4}"}</span>
+      <div class="peek-id">
+        <div class="peek-word" lang="${d.language}">${esc(p.headword)}</div>
+        <div class="peek-meta label">${esc(p.pos)}${p.domain ? ` · ${esc(p.domain)}` : ""}</div>
+      </div>
+      ${p.pic ? `<img class="peek-pic" src="${p.pic}" alt="">` : ""}
+      <button class="icon-btn peek-close" id="peekClose" aria-label="Close">${ICON.close}</button>
+    </div>
+    ${siblings.length > 1 ? `<div class="peek-senses"><span class="label">Meaning ${p.order + 1} of ${p.of}</span>
+      ${siblings.map(([q, i]) => `<button class="peek-sib${i === state.mapSel ? " on" : ""}" data-map-go="${i}"
+        aria-label="Meaning ${q.order + 1}">${q.emoji} ${q.order + 1}</button>`).join("")}</div>` : ""}
+    <p class="peek-def" lang="${d.definitionLang}">${esc(p.definition)}</p>
+    ${p.glossAll ? `<p class="peek-gloss" lang="${(vocab.glossLangs || [])[0] || ""}">${esc(p.glossAll)}</p>` : ""}
+    ${p.nb.length ? `<div class="peek-near"><span class="label">Near</span>${p.nb.map((j) => {
+      const q = d.points[j];
+      return `<button class="peek-chip" data-map-go="${j}" lang="${d.language}">${q.emoji} ${esc(q.headword)}</button>`;
+    }).join("")}</div>` : ""}
+    <button class="tb-btn primary peek-open" id="peekOpen">Open the article ${ICON.forward}</button>`;
+  /* Tell the camera what the peek covers, so a sense it flies to lands in the part still visible. */
+  if (meaningMap) {
+    const phone = $("#composer .map").clientWidth <= 720 && peek.offsetWidth >= $("#composer .map").clientWidth - 2;
+    meaningMap.setInsets(phone ? { left: 0, bottom: peek.offsetHeight } : { left: peek.offsetWidth + 12, bottom: 0 });
+  }
+}
+
+/* The article, when the prototype has one for this word; otherwise a note. The way back is remembered
+   either way, and the camera is already remembered per language. */
+function openFromMap(p) {
+  if (!p) return;
+  const want = fold(p.headword);
+  const hit = LEXEMES.find((x) => x.language === state.lang &&
+    (fold(x.headword) === want || fold(x.lemma) === want));
+  if (!hit) {
+    toast(`In the application this opens “${p.headword}”. The prototype has articles for only a few words.`);
+    return;
+  }
+  state.mapReturn = true;
+  state.map = false;
+  teardownMap();
+  state.openId = hit.id; state.mode = "read";
+  render();
+}
+
+/* The harness's Update: the layout the device had, then the one that arrived, as the application
+   will animate it — the words already on the map glide to where they now belong, and the new ones
+   appear after, with a ring. */
+function playMapUpdate() {
+  const d = mapData();
+  if (!meaningMap || !d || !d.before) { toast("This map has no earlier layout to update from"); return; }
+  const previous = new Map(d.before.points.map(([i, x, y]) => [d.points[i].id, [x, y]]));
+  state.mapSel = -1; paintPeek();
+  const arrived = meaningMap.setData(d, { animate: "update", previous, camera: meaningMap.getCamera() });
+  const note = $("#mapNote");
+  note.hidden = false;
+  note.className = "map-note arrived";
+  note.textContent = `${arrived} new meaning${arrived === 1 ? "" : "s"} since you last opened the map`;
+  clearTimeout(playMapUpdate.timer);
+  playMapUpdate.timer = setTimeout(() => { note.hidden = true; }, 4200);
 }
 
 function renderLoops() {
@@ -1629,6 +1902,11 @@ function renderLoopBar() {
         <span class="madebar-ic">\u{1F4D6}</span>
         <span class="loopbar-title">Stories</span>
         <span class="loopbar-sub">${storiesIn(state.lang).length}</span>
+      </button>
+      <button class="madebar-half" id="openMap">
+        <span class="madebar-ic">${ICON.map}</span>
+        <span class="loopbar-title">Map</span>
+        <span class="loopbar-sub">${(() => { const d = mapData(); return d ? count(d.senses) : "\u2014"; })()}</span>
       </button>`;
   }
   return `<span class="loopbar-line" style="width:0"></span>
@@ -1797,7 +2075,7 @@ function wireLoops() {
 }
 
 function openLoops() {
-  state.loops = true; state.openId = null; state.openExt = null; state.add = false;
+  state.loops = true; state.map = false; state.openId = null; state.openExt = null; state.add = false;
   render();
 }
 
@@ -1873,6 +2151,7 @@ function wireLoopControls(root) {
       return;
     }
     if (ev.target.closest("#openStories")) { openStories(); return; }
+    if (ev.target.closest("#openMap")) { openMap(); return; }
     if (ev.target.closest("#openLoops") || ev.target.closest("#chipOpen")) {
       state.loopOpen = player.loopId;
       openLoops();
@@ -1895,20 +2174,27 @@ function render() {
 
   // A composer owns the height and scrolls itself, so the region around it must not also scroll.
   // The loops surface is one of those: its controls are a footer that must not drift.
-  const composing = state.add || state.loops || state.stories || Boolean(x && state.mode === "edit");
+  const composing = state.add || state.loops || state.stories || state.map || Boolean(x && state.mode === "edit");
   $("#main").classList.toggle("composing", composing);
   /* The loops bar is a row of `.app`, so `.app` is what carries whether it is wanted: over the list
      and nowhere else. `.main` keeps its own `composing` because it is the thing that stops scrolling. */
   $(".app").classList.toggle("composing", composing);
   // Not `&& !composing`: the loops surface *is* a composing surface — it owns its height so its
   // controls cannot drift — and excluding it here left the rail on screen behind the player.
-  $(".app").classList.toggle("loops-open", state.loops || state.stories);
+  $(".app").classList.toggle("loops-open", state.loops || state.stories || state.map);
   $(".app").classList.toggle("article-open", Boolean((state.openId || state.openExt) && !state.add));
   $("#loopbar").innerHTML = renderLoopBar();
   $("#loopChip").innerHTML = renderLoopChip();
   paintLoops();
   $("#paneWrap").style.display = composing ? "none" : "";
   $("#composer").style.display = composing ? "" : "none";
+  if (!state.map) teardownMap();
+  if (state.map) {
+    // A surface of its own, as Loops and Stories are: it replaces the list and owns the height.
+    renderMap();
+    document.title = "Map — Acervo";
+    return;
+  }
   if (state.stories) {
     // Its own surface for the reason the loops one is: a thing you go to, needing the whole column.
     $("#composer").innerHTML = renderStories();
@@ -2057,8 +2343,9 @@ document.addEventListener("click", (ev) => {
   if (stepBtn) { goCard(state.card + Number(stepBtn.dataset.step)); return; }
   if (hit("[data-picture]")) { toast("The picture dialog is out of scope for this spike"); return; }
 
+  if (hit("[data-map-open]")) { openMap(); return; }
   const topicBtn = hit("[data-topic]");
-  if (topicBtn) { state.topic = topicBtn.dataset.topic; state.openId = null; state.query = ""; $("#q").value = ""; $("#search").classList.remove("searching"); render(); return; }
+  if (topicBtn) { state.map = false; state.mapReturn = false; state.topic = topicBtn.dataset.topic; state.openId = null; state.query = ""; $("#q").value = ""; $("#search").classList.remove("searching"); render(); return; }
 
   const sortBtn = hit("[data-sort]");
   if (sortBtn) { state.sort = sortBtn.dataset.sort; render(); return; }
@@ -2106,7 +2393,12 @@ document.addEventListener("click", (ev) => {
   }
   if (!hit("#scopeMenu")) $("#scopeMenu").classList.remove("open");
 
-  if (hit("#backBtn")) { state.openId = null; state.openExt = null; render(); return; }
+  if (hit("#backBtn")) {
+    state.openId = null; state.openExt = null;
+    // Opened from the map: Back goes back to it, where it was left, with the peek still open.
+    if (state.mapReturn) { state.mapReturn = false; state.map = true; }
+    render(); return;
+  }
 
   const modeBtn = hit("[data-mode]");
   if (modeBtn) { state.mode = modeBtn.dataset.mode; render(); return; }
@@ -2135,7 +2427,7 @@ document.addEventListener("click", (ev) => {
   if (hit("#langBtn")) { $("#langMenu").classList.toggle("open"); return; }
   const langItem = hit("[data-lang]");
   if (langItem) {
-    state.lang = langItem.dataset.lang; state.topic = "all"; state.openId = null;
+    state.lang = langItem.dataset.lang; state.topic = "all"; state.openId = null; state.mapSel = -1;
     $("#langMenu").classList.remove("open"); render(); return;
   }
   $("#langMenu").classList.remove("open");
@@ -2143,6 +2435,7 @@ document.addEventListener("click", (ev) => {
 
 $("#q").addEventListener("input", (ev) => {
   state.loops = false;
+  state.map = false;
   state.query = ev.target.value;
   state.openId = null;
   state.openExt = null;
@@ -2183,7 +2476,16 @@ document.addEventListener("keydown", (ev) => {
     if (state.add) closeSheet();
     else if (state.mode === "edit") { state.mode = "read"; render(); }
     else if (state.openExt) { state.openExt = null; render(); }
-    else if (state.openId) { state.openId = null; render(); }
+    else if (state.openId) {
+      state.openId = null;
+      if (state.mapReturn) { state.mapReturn = false; state.map = true; }
+      render();
+    }
+    /* Innermost first here too: put the peek away, then leave the map. */
+    else if (state.map && !typing) {
+      if (state.mapSel >= 0) { state.mapSel = -1; if (meaningMap) meaningMap.select(-1); paintPeek(); }
+      else closeMap();
+    }
   }
 });
 
@@ -2202,6 +2504,11 @@ function paintSwitches() {
   $("#layoutBtn").classList.toggle("on", state.loops);
   $("#storyBtn").classList.toggle("on", state.stories);
   $("#speedBtn").textContent = `${player.speed}×`;
+  $("#mapBtn").classList.toggle("on", state.map);
+  $("#mapStyleBtn").textContent = `Style: ${state.mapStyle}`;
+  $("#mapLabelsBtn").textContent = `Labels: ${state.mapLabels}`;
+  $("#mapSampleBtn").classList.toggle("on", mapSource() === "sample");
+  $("#mapSampleBtn").disabled = !window.MAP_LOCAL;
   $("#speedBtn").classList.toggle("on", player.speed !== 1);
 }
 
@@ -2219,6 +2526,22 @@ $("#harness").addEventListener("click", (ev) => {
   else if (b.id === "storyBtn") { if (state.stories) { state.stories = false; state.storyOpen = null; } else openStories(); }
   /* A word takes twenty-two seconds in a real loop. Watching the reveal at that rate is the right
      test of the *rhythm* and a poor test of everything else, so the clock can be wound on. */
+  /* The map's open questions, answered by looking: which of the three looks, and which of the three
+     ways of naming a region. Update replays a new layout arriving; Sample forces the committed
+     fixture when the owner's real one is present. */
+  else if (b.id === "mapBtn") { if (state.map) { closeMap(); paintSwitches(); return; } openMap(); }
+  else if (b.id === "mapStyleBtn") {
+    state.mapStyle = MAP_STYLES[(MAP_STYLES.indexOf(state.mapStyle) + 1) % MAP_STYLES.length];
+    if (meaningMap) meaningMap.setStyle(state.mapStyle);
+    paintSwitches(); return;
+  }
+  else if (b.id === "mapLabelsBtn") {
+    state.mapLabels = MAP_LABELS[(MAP_LABELS.indexOf(state.mapLabels) + 1) % MAP_LABELS.length];
+    if (meaningMap) meaningMap.setLabels(state.mapLabels);
+    paintSwitches(); return;
+  }
+  else if (b.id === "mapUpdateBtn") { if (!state.map) openMap(); playMapUpdate(); paintSwitches(); return; }
+  else if (b.id === "mapSampleBtn") { state.mapSample = !state.mapSample; state.mapSel = -1; delete mapCameras[state.lang]; mapGrown.delete(state.lang); }
   else if (b.id === "speedBtn") { player.speed = player.speed === 1 ? 4 : player.speed === 4 ? 12 : 1; }
   else if (b.dataset.frame) {
     document.body.className = b.dataset.frame === "desktop" ? "" : `framed ${b.dataset.frame}`;
@@ -2315,5 +2638,33 @@ if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
 const size = (params.get("size") || "").match(/^(\d+)x(\d+)$/);
 if (size) Object.assign($(".viewport").style, { width: `${size[1]}px`, height: `${size[2]}px` });
 
+/* The map: `map=1` opens it; `lang=` picks the language; `style=` and `labels=` the two choices;
+   `focus=<headword>` peeks at a word and flies to it; `z=` zooms in from the whole map; `sample=1`
+   uses the committed fixture; `mapstate=drawing|offline` shows the first draw or a device that has
+   never reached the server; `update=1` plays a new layout arriving. */
+if (params.get("lang") && langOf(params.get("lang"))) state.lang = params.get("lang");
+if (MAP_STYLES.includes(params.get("style"))) state.mapStyle = params.get("style");
+if (MAP_LABELS.includes(params.get("labels"))) state.mapLabels = params.get("labels");
+if (params.get("sample") === "1") state.mapSample = true;
+if (params.get("map") === "1" || params.get("focus") || params.get("mapstate")) {
+  state.map = true;
+  if (params.get("mapstate") === "drawing" || params.get("mapstate") === "offline") state.mapState = params.get("mapstate");
+  const d = mapData();
+  const want = params.get("focus") ? fold(params.get("focus")) : null;
+  if (d && want) {
+    state.mapSel = d.points.findIndex((p) => fold(p.headword) === want);
+    if (state.mapSel < 0) state.mapSel = d.points.findIndex((p) => fold(p.headword).startsWith(want));
+    mapGrown.add(state.lang);
+  }
+  if (params.get("z") || params.get("update") === "1") mapGrown.add(state.lang);
+}
+
 paintSwitches();
 render();
+
+if (state.map && meaningMap) {
+  const d = mapData();
+  if (state.mapSel >= 0) meaningMap.select(state.mapSel, { fly: true, zoom: Number(params.get("z")) || 5.5 });
+  else if (params.get("z")) meaningMap.zoomTo(Number(params.get("z")));
+  if (params.get("update") === "1" && d && d.before) setTimeout(playMapUpdate, 400);
+}

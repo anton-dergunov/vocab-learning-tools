@@ -7,6 +7,9 @@ server, no build step, no network calls (web fonts aside).
 - `acervo.css` — design language lifted from the Acervo design-document artifact
   (Literata / IBM Plex Sans / IBM Plex Mono, paper-and-teal palette, light and dark)
 - `data.js` — fixtures shaped like `web/src/domain.ts`
+- `map.js` — the meaning map as a component, reading nothing of `app.js`
+- `map-data.js` — a sparse sample of a real map, committed; `map-data.local.js` and `map-local/`
+  are the owner's whole map and its pictures, git-ignored and generated (below)
 - `app.js` — view logic only; every write, TTS call and capture action is a stub
 - `install.html` — the mobile installation gate, with iOS and Android preview links
 - `launch.html` — what a cold start shows while the replica is read back from the device
@@ -56,3 +59,42 @@ and the closed Cards switch. `fill=searching|none|failed|off` picks how its clip
 `espolvorear` is deliberately the one Spanish word with no `primaryGloss`, so it is the one that
 cannot be in a loop — a loop has to choose a single meaning, and nothing fills that in later.
 Of the four loops, one has never been rendered and one was made on a server with no sample pack.
+
+## The map
+
+`?map=1` opens the meaning map (`docs/plans/meaning-space.md`): one language's senses, laid out
+by meaning, with regions named at two levels. It is entered from the rail and, on a phone, from the
+third segment of the foot bar, and it follows the language menu.
+
+It draws the owner's real map when `map-data.local.js` exists, and the committed sample (about 85
+words per language) otherwise. To generate the real one from an export bundle:
+
+```bash
+cd experiments/meaning-space
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt
+.venv/bin/python build.py --bundle path/to/acervo-all.zip --pictures
+```
+
+`label_model.py` adds the model-written region names; see that directory's README.
+
+Pinch or scroll with two fingers to move, pinch (or ⌘-scroll, or a mouse wheel) to zoom, double-tap
+to zoom in. Tap a word for its peek; tap a region's name to fly to it. Far out the map names its
+regions, in the middle its neighbourhoods and their most central words, close in every word with its
+sense's emoji, and closest the first gloss under each. Selecting a sense joins it by dashed arcs to
+the same word's other senses and by fine lines to its five nearest.
+
+The harness switches are the questions this prototype exists to answer by looking:
+
+- **Style** — `atlas` (land, sea and contours), `constellation` (each sense joined to its nearest,
+  as Obsidian's graph is) or `clouds` (a soft tint per region).
+- **Labels** — how a region is named: `model` (one call, made once), `words` (the three most
+  central headwords) or `terms` (c-TF-IDF over the definitions).
+- **Update** — a new layout arriving: the words already there glide to where they now belong and
+  the new ones appear with a ring.
+- **Sample** — the committed sample, even when the real map is present.
+
+Deep links: `map=1`, `lang=en`, `style=clouds`, `labels=terms`, `focus=cobrar` (peek at a word and
+fly to it), `z=4` (zoom from the whole map), `update=1`, `sample=1`, and `mapstate=drawing` or
+`mapstate=offline` for the first draw and for a device that has never reached the server. Only the
+words that also exist in `data.js` open a real article from the peek; Back then returns to the map
+exactly where it was.
