@@ -317,6 +317,55 @@ def cancel_jobs(settings: Settings, job_id: str | None, wait: float) -> int:
     return 0
 
 
+def show_map(settings: Settings, email: str, language: str) -> int:
+    """A language's map as last drawn: its fingerprint, its size, and whether its regions are named.
+
+    Reading only. It never draws: that is the route's, which is the one place that knows when a map
+    is out of date.
+    """
+    from acervo.services import meaning
+
+    open_database(settings.database_path)
+    owner = accounts.by_email(email)
+    if owner is None:
+        print(f"No account for {email}.", file=sys.stderr)
+        return 2
+    stored = meaning.stored_map(settings, owner["id"], language)
+    if stored is None:
+        print(f"No {language} map has been drawn for {email} yet; opening the map draws it.")
+        return 0
+    regions = [r for r in stored["regions"] if r["level"] == "region"]
+    print(f"{language}  ·  {stored['senses']} senses  ·  {stored['words']} words  ·  "
+          f"{len(regions)} regions  ·  names {stored['names']}")
+    print(f"fingerprint {stored['fingerprint']}  ·  model {stored['model']}")
+    for region in stored["regions"]:
+        labels = region["labels"]
+        indent = "    " if region["level"] == "hood" else ""
+        print(f"{indent}{region['id']:>4}  {region['count']:>4}  {labels.get('name') or '-':<32}"
+              f"{' · '.join(labels.get('words') or [])}")
+    return 0
+
+
+def export_map(settings: Settings, email: str, language: str, output: str) -> int:
+    """Every sense of a language with the text and the vector the map was drawn from, one JSON line
+    each — for the discovery experiment, which then needs no encoder of its own."""
+    import json
+
+    from acervo.services import meaning
+
+    open_database(settings.database_path)
+    owner = accounts.by_email(email)
+    if owner is None:
+        print(f"No account for {email}.", file=sys.stderr)
+        return 2
+    rows = meaning.vectors(settings, owner["id"], language)
+    with open(output, "w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    print(f"Wrote {len(rows)} senses to {output}.")
+    return 0
+
+
 def enqueue_missing(settings: Settings, email: str, language: str, limit: int, dry_run: bool) -> int:
     """Queue ordinary `enrich` jobs for words that are missing something.
 
@@ -395,6 +444,15 @@ def main(argv: list[str] | None = None) -> int:
                               help="in days; a take a render used recently survives")
     prune_parser.add_argument("--dry-run", action="store_true", help="say what would go, delete nothing")
 
+    map_parser = commands.add_parser("map", help="the meaning map")
+    map_commands = map_parser.add_subparsers(dest="map_command", required=True)
+    show_map_parser = map_commands.add_parser("show", help="a language's map as last drawn")
+    export_map_parser = map_commands.add_parser("export", help="texts and vectors, for the discovery experiment")
+    for one in (show_map_parser, export_map_parser):
+        one.add_argument("--owner-email", required=True)
+        one.add_argument("--language", required=True)
+    export_map_parser.add_argument("--output", required=True, help="a JSON-lines file to write")
+
     serve_parser = commands.add_parser("serve", help="run the HTTP service")
     serve_parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 - the container's own port
     serve_parser.add_argument("--port", type=int, default=8000)
@@ -411,6 +469,10 @@ def main(argv: list[str] | None = None) -> int:
         return providers()
     if arguments.command == "stories":
         return show_story(settings, arguments.story_id, arguments.owner_email)
+    if arguments.command == "map":
+        if arguments.map_command == "show":
+            return show_map(settings, arguments.owner_email, arguments.language)
+        return export_map(settings, arguments.owner_email, arguments.language, arguments.output)
     if arguments.command == "takes":
         if arguments.take_command == "show":
             return show_takes(settings)

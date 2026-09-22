@@ -2709,3 +2709,23 @@ body.framed .map-tool.pointer-only { display: none; }
   .map.peeking .map-tools { display: none; }
   .map-note { top: 58px; }
 }
+
+/* ── the map's row is the top row ──
+   On the map the global bar goes: search, Add and sync are one Back away, and height is what a map
+   is short of on every screen. The rail stays wherever it already shows, which is everywhere but a
+   phone. The map's own row carries only what the map needs — Back, its name, Find, and which
+   language it is of. */
+.app.map-open { grid-template-rows: 0 minmax(0, 1fr) auto; }
+.app.map-open .topbar, .app.map-open .brand { display: none; }
+@container vp (max-width: 720px) {
+  .app.map-open { grid-template-rows: 0 0 minmax(0, 1fr) auto; }
+  .app.map-open .topbar { display: none; }
+}
+.map-lang { position: relative; flex: none; }
+.map-lang .lang-btn { height: 34px; }
+.map-lang-menu { right: 0; top: calc(100% + 8px); }
+/* The counts are for a desk. A tablet in landscape is as wide as a small laptop, so this asks about
+   the pointer rather than the width. */
+.map-count { display: none; }
+@media (hover: hover) and (pointer: fine) { .map-count { display: inline; } }
+body.framed .map-count { display: none; }

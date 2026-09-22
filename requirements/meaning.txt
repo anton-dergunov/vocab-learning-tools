@@ -1,0 +1,11 @@
+# The meaning map (src/acervo/meaning/): a local sentence encoder, a 2-D layout, regions on it, and
+# density contours. Measured on the owner's vocabulary in experiments/meaning-space/, whose versions
+# these floors are.
+#
+# sentence-transformers brings torch. The server image installs torch from PyTorch's CPU-only index
+# before this file, so what it gets is the CPU build rather than one carrying CUDA it cannot use.
+numpy>=2.0
+scipy>=1.12
+contourpy>=1.2
+umap-learn>=0.5.12
+sentence-transformers>=6.0

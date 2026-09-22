@@ -20,7 +20,8 @@ const KIND_LABELS: Record<string, string> = {
   nightly: "Nightly run",
   "corpus.update": "Updating recorded speech",
   loop: "Making a loop",
-  story: "Making a story"
+  story: "Making a story",
+  "map.name": "Naming the map's regions"
 };
 
 export function describeJob(job: Job, snapshot: ReplicaSnapshot | null): string {

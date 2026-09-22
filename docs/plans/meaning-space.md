@@ -141,7 +141,21 @@ No vector ever reaches the device. The artifact carries no text either: the devi
 the replica. That way an edited headword shows at once, and a map already drawn reads offline like
 everything else.
 
-It is served by one route, `GET /api/acervo/v1/map/{language}`.
+It is served by one route, `GET /api/acervo/v1/map/{language}`, and kept as a file beside the
+database (`maps/artifacts/<owner>/<language>.json`, next to the embedding cache in
+`maps/embeddings/`). Its body is `{fingerprint, model, side, words, senses, names, points, regions,
+contours}`:
+
+- a point is `{sense, lexeme, x, y, r, h, rank, nb}`: the sense and word ids, the position, the
+  region and neighbourhood indices, how central it is to its neighbourhood, and its five nearest
+  senses of other words as point indices;
+- a region is `{id, level, index, x, y, count, region?, labels: {words, terms, name?}}`;
+- `names` is `pending` until the naming job lands, then `ready` — or `none` for a map with no
+  regions, or a naming that failed for good.
+
+The fingerprint is a digest of every `(senseId, text digest)` pair, the model and the layout's
+parameters. A device that holds a map sends it as `?have=`, and a map still current answers
+`{"current": true}` and nothing else. An unknown language is a 404 `unknown_language`.
 
 ### When the artifact is computed
 
@@ -154,8 +168,10 @@ It is not a job, for two reasons:
 - The job runner does one job at a time. A map queued behind an import's enrich jobs would be an
   hour out of date.
 
-The one cold cost is the first embedding of every sense in a language, on the order of a minute on
-the NAS. It is paid once and shown as *Drawing your map*.
+The one cold cost is the first embedding of every sense in a language. On a laptop, all 1,443
+Spanish senses took 35 s cold (loading the model and embedding everything) and 3.4 s warm; the NAS
+is several times slower. It is paid once and shown as *Drawing your map*. After that, an edited
+sense is the only one embedded again, and the rest of the time is the layout.
 
 ### The map does not stay put, by design
 
@@ -170,9 +186,12 @@ the map's width, measured in
 [`experiments/meaning-space/`](../../experiments/meaning-space/README.md).
 
 The UMAP setting that gives the map islands rather than an even disc (`min_dist` 0.1) is also the one
-that moves more between layouts, most in Spanish. Seeding the layout from the previous coordinates
-is the lever if that movement bothers the owner. It is not a requirement of this version, which is
-for finding out what the map is good for.
+that moves more between layouts. Alignment alone was not enough on the server's own measurement:
+one edited Spanish sense moved the median point 140 of 1,000 units. So **a new layout also starts
+from the previous one**. Every sense the last map held begins where it was, and a new one begins
+beside its three nearest held senses. With that, one edited sense moved the median point 37 units,
+and 2% more words moved the rest 39 (against 179 from a cold start). Nothing is pinned: a sense
+still goes where its meaning now puts it.
 
 ### Opens straight away
 
@@ -215,10 +234,16 @@ call becomes part of the map only if the deterministic labels read poorly.
 
 **On the real vocabulary, they did.** The model's names read as places: *dinero y trabajo*,
 *pagos y deudas*, *aggression and hostility*. The nearest headwords read as a list, and the c-TF-IDF
-terms carry definition boilerplate such as *dicho* and *showing*. So the prototype defaults to
-model-written names. If they are adopted, the reason for going deterministic first still shapes how:
-the names are asked for once per new layout, after it is drawn, and never on the way to showing the
-map. A map whose names have not arrived yet shows the nearest headwords.
+terms carry definition boilerplate such as *dicho* and *showing*. So the map uses model-written
+names, and the reason for going deterministic first still shapes how:
+
+- A freshly drawn map with regions queues one `map.name` job. It names every region and
+  neighbourhood in one call on the owner's text chain, from `prompts/acervo_map_names.md`.
+- A second drawing before the first is named queues nothing new: the job's subject is the language.
+- A job whose map has since been redrawn finds its fingerprint stale and does nothing.
+- The map never waits for a name. Until the job lands, `names` is `pending` and each region shows
+  its nearest headwords; the job's completion on `/events` is how the device knows to ask again.
+- The owner's standing rules are not appended to the naming prompt: like resolve, it only labels.
 
 ### The surface is called Map
 
@@ -231,6 +256,11 @@ It is entered exactly as Loops and Stories are:
 It replaces the list. The topic rail stays wherever there is room for it, so the way back is always
 visible.
 
+On the map, the global bar (search, Add, sync) is hidden and **the map's own row is the top row**,
+at every width: Back, the name, Find, and the map's own language switcher. The counts of meanings
+and words show on a desktop only. Height is what a map is short of on every screen. ⌘K leaves the
+map for search, as it leaves Loops.
+
 ### Interaction, tablet first
 
 - **Movement:** pinch to zoom and drag to pan, or on the Mac application, trackpad pinch and scroll.
@@ -238,6 +268,12 @@ visible.
 - **Tapping:** a point opens its peek, and the peek's Open goes to the article. A region's label
   zooms to fit that region.
 - **Controls:** a fit-all button. Plus and minus buttons appear only where there is no touch.
+- **Keyboard and mouse:**
+  - ⌘ + scroll zooms about the pointer (Ctrl + scroll elsewhere), as in Figma and Maps. A mouse
+    wheel's notches zoom too; a trackpad's two-finger scroll pans.
+  - ⌘= / ⌘− / ⌘0 zoom in, out and fit while the map is open, taking over the browser's page zoom
+    the way any canvas application does. The Mac host binds no zoom item, so the keys reach the page.
+  - Bare `+ − 0` and the arrows work whenever nothing is being typed.
 - **Returning:** coming back from an article puts the map where it was left.
 
 What is labelled follows the zoom:
@@ -298,14 +334,16 @@ Ghosts are not built now. They are named here so the first version does not bloc
 
 1. **This document.**
 2. **Prototype** in `design/ui-prototype/`, opened by `?map=1` like `?loops=1`, with the real
-   vocabulary's real layout.
+   vocabulary's real layout. Built, and accepted as the design, with the map's row as the top row
+   and the keyboard and mouse zoom added after testing.
    - A script in `experiments/meaning-space/`, with its own virtualenv, builds the data from an
      export bundle. It is also where encoders and labels are compared before the server adopts
      the settled choice.
    - The full real layout goes to a git-ignored file that the prototype loads when it is present.
      A committed sample of about 150 senses keeps a clean checkout openable without publishing the
      whole vocabulary.
-3. **Server:** `src/acervo/meaning/`, the cache, the route and the admin export.
+3. **Server:** `src/acervo/meaning/`, the cache, the route, the naming job and the admin commands
+   (`map show`, `map export`). Built.
 4. **Web and deploy:** the component, the adapter and the surface. The image gains the encoder and
    its dependencies and grows accordingly, but the schema does not change, so a plain
    `./deploy.sh` ships it with no converter.

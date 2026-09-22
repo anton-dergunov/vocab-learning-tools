@@ -77,8 +77,13 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requi
 
 `label_model.py` adds the model-written region names; see that directory's README.
 
-Pinch or scroll with two fingers to move, pinch (or ⌘-scroll, or a mouse wheel) to zoom, double-tap
-to zoom in. Tap a word for its peek; tap a region's name to fly to it. Far out the map names its
+On the map the global bar is hidden and the map's own row is the top one: Back, Map, Find and its
+own language switcher (the counts show on a desktop only). ⌘K leaves the map for search.
+
+Pinch or scroll with two fingers to move; pinch, ⌘ + scroll or a mouse wheel to zoom; double-tap to
+zoom in. On a keyboard ⌘= / ⌘− / ⌘0 zoom in, out and fit (Ctrl elsewhere; the browser's page zoom is
+suppressed while the map is open), and bare `+ − 0` and the arrows work whenever nothing is being
+typed. Tap a word for its peek; tap a region's name to fly to it. Far out the map names its
 regions, in the middle its neighbourhoods and their most central words, close in every word with its
 sense's emoji, and closest the first gloss under each. Selecting a sense joins it by dashed arcs to
 the same word's other senses and by fine lines to its five nearest.

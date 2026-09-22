@@ -730,8 +730,11 @@
       e.preventDefault();
       flight = null; inertia = null;
       const p = at(e);
-      const notch = !e.ctrlKey && e.deltaX === 0 && (e.deltaMode === 1 || (Math.abs(e.deltaY) >= 50 && Number.isInteger(e.deltaY)));
-      if (e.ctrlKey || notch) {
+      /* ⌘ + scroll (Ctrl + scroll elsewhere) is the desktop convention for zooming a canvas, and it is
+         the one a mouse and a trackpad share. */
+      const modified = e.ctrlKey || e.metaKey;
+      const notch = e.deltaX === 0 && (e.deltaMode === 1 || (Math.abs(e.deltaY) >= 50 && Number.isInteger(e.deltaY)));
+      if (modified || notch) {
         const scale = e.deltaMode === 1 ? 0.05 : notch ? 0.0022 : 0.012;
         zoomAt(p.x, p.y, Math.exp(-e.deltaY * scale), false);
       } else {
@@ -741,7 +744,16 @@
       clearTimeout(wheel.timer);
       wheel.timer = setTimeout(() => onCamera(getCamera()), 200);
     }
+    /* On the document while the map exists, not on the canvas: zooming should not need a click on
+       the map first. ⌘= ⌘− ⌘0 (Ctrl elsewhere) are the browser's own page-zoom keys, taken over
+       while a map is open the way any canvas application takes them; the bare keys and the arrows
+       work whenever nothing is being typed. */
     function key(e) {
+      if (e.defaultPrevented || e.altKey) return;
+      const modified = e.metaKey || e.ctrlKey;
+      const typing = e.target.closest && e.target.closest("input, textarea, select, [contenteditable]");
+      if (typing && !modified) return;
+      if (modified && !["=", "+", "-", "_", "0"].includes(e.key)) return;
       const c = centre();
       if (e.key === "+" || e.key === "=") zoomAt(c.x, c.y, 1.6, true);
       else if (e.key === "-" || e.key === "_") zoomAt(c.x, c.y, 1 / 1.6, true);
@@ -763,7 +775,7 @@
     canvas.addEventListener("pointercancel", up);
     canvas.addEventListener("pointerleave", leave);
     canvas.addEventListener("wheel", wheel, { passive: false });
-    canvas.addEventListener("keydown", key);
+    document.addEventListener("keydown", key);
     /* Safari's own pinch gesture events would zoom the page under the map. */
     const stopGesture = (e) => e.preventDefault();
     canvas.addEventListener("gesturestart", stopGesture);
@@ -863,7 +875,7 @@
         canvas.removeEventListener("pointercancel", up);
         canvas.removeEventListener("pointerleave", leave);
         canvas.removeEventListener("wheel", wheel);
-        canvas.removeEventListener("keydown", key);
+        document.removeEventListener("keydown", key);
         canvas.removeEventListener("gesturestart", stopGesture);
       }
     };

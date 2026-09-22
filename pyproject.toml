@@ -34,6 +34,12 @@ server = [
     "soundfile>=0.13",
     "sqlalchemy>=2",
     "uvicorn[standard]>=0.34",
+    # requirements/meaning.txt
+    "numpy>=2.0",
+    "scipy>=1.12",
+    "contourpy>=1.2",
+    "umap-learn>=0.5.12",
+    "sentence-transformers>=6.0",
 ]
 
 [tool.setuptools.packages.find]

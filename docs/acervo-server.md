@@ -211,6 +211,23 @@ Two consequences follow, and both are design, not tuning:
   as today, and §01 says the core stays small enough for that to be fine — but it is the first
   thing to measure if that ever stops being true.
 
+### Derived stores beside the database
+
+Two stores live beside the database file and in no table: the loop take cache (`takes/`) and the
+meaning map's (`maps/`). Both are derived and server-local. Neither is replicated or served as a
+file, so neither needs a mount, an environment variable or a schema change.
+
+The meaning map ([`docs/plans/meaning-space.md`](plans/meaning-space.md)) keeps:
+- `maps/embeddings/<model>/`: one `.npy` per sense text, named by the digest of the model and the
+  text;
+- `maps/artifacts/<owner>/<language>.json`: the map as last drawn.
+
+A map is drawn by `GET /map/{language}` in the threadpool, when the fingerprint of its input has
+changed. It is not a job: it is seconds of local CPU with no model call, and the one-at-a-time runner
+would leave it behind an import's enrichment. Naming its regions *is* a model call, so that is the
+`map.name` job. The encoder is `models/encoder.json`'s pinned revision, downloaded into the image at
+build time and loaded offline on the first map anyone asks for.
+
 ### Migrations
 
 > **DECISION: Alembic defines and bootstraps the schema. It is not an upgrade path.**

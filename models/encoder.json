@@ -1,0 +1,17 @@
+{
+  "model": "intfloat/multilingual-e5-small",
+  "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+  "prefix": "query: ",
+  "files": [
+    "1_Pooling/config.json",
+    "README.md",
+    "config.json",
+    "model.safetensors",
+    "modules.json",
+    "sentence_bert_config.json",
+    "sentencepiece.bpe.model",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json"
+  ]
+}

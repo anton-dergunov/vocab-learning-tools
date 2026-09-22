@@ -64,6 +64,12 @@ class Settings(BaseSettings):
         """
         return self.database_path.parent / "takes"
 
+    @property
+    def maps_path(self) -> Path:
+        """The meaning map's embedding cache and its drawn maps, beside the database for the take
+        cache's reasons: derived, server-local, never served as a file, and needing no new mount."""
+        return self.database_path.parent / "maps"
+
     # Where the spoken-usage corpus answers, on the internal network. Empty means this deployment
     # runs without one: reads still work and the interface says the corpus is unavailable rather
     # than failing, exactly as it does for an unreachable external dictionary.

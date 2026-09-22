@@ -1629,6 +1629,8 @@ const mapData = () => {
 };
 const fold = (s) => String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 const count = (n) => n.toLocaleString("en-GB");
+/* What a shortcut is called on this machine, for the zoom buttons' titles. */
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "\u2318" : "Ctrl+";
 
 function openMap() {
   state.map = true; state.loops = false; state.stories = false;
@@ -1659,11 +1661,26 @@ function mapShell(d) {
         <input id="mapFind" type="search" placeholder="Find a word on the map" autocomplete="off" spellcheck="false" aria-label="Find a word on the map">
         <ol class="map-hits" id="mapHits" hidden></ol>
       </div>
+      <!-- The map's own language switcher: the top bar that holds the global one is hidden here, and
+           which language a map is of is the one thing that must never be in doubt. Its items are
+           ordinary [data-lang] buttons, so the document's handler does exactly what the global menu
+           does. -->
+      <div class="map-lang">
+        <button class="tb-btn lang-btn" id="mapLangBtn" aria-haspopup="menu" aria-label="Vocabulary language">
+          <span class="flag">${langOf(state.lang).flag}</span><span class="code">${state.lang.toUpperCase()}</span></button>
+        <div class="menu map-lang-menu" id="mapLangMenu">
+          <div class="label menu-label">Vocabulary language</div>
+          ${LANGUAGES.map((x) => `<button data-lang="${x.code}" class="${x.code === state.lang ? "on" : ""}">
+            <span>${x.flag}</span><span>${x.name}</span>
+            <span class="cnt">${count(((mapSource() === "sample" ? window.MAP_SAMPLE : window.MAP_LOCAL) || {})[x.code]?.words || 0)}</span>
+          </button>`).join("")}
+        </div>
+      </div>
     </header>
     <div class="map-tools">
-      <button class="map-tool" id="mapFit" aria-label="Show the whole map" title="Show the whole map">${ICON.fit}</button>
-      <button class="map-tool pointer-only" id="mapIn" aria-label="Zoom in" title="Zoom in">${ICON.plus}</button>
-      <button class="map-tool pointer-only" id="mapOut" aria-label="Zoom out" title="Zoom out">${ICON.minus}</button>
+      <button class="map-tool" id="mapFit" aria-label="Show the whole map" title="Show the whole map  ${MOD}0">${ICON.fit}</button>
+      <button class="map-tool pointer-only" id="mapIn" aria-label="Zoom in" title="Zoom in  ${MOD}+   \u00b7   ${MOD} + scroll">${ICON.plus}</button>
+      <button class="map-tool pointer-only" id="mapOut" aria-label="Zoom out" title="Zoom out  ${MOD}\u2212">${ICON.minus}</button>
     </div>
     <aside class="map-peek" id="mapPeek" hidden aria-live="polite"></aside>
     <div class="map-note" id="mapNote" hidden></div>
@@ -1764,6 +1781,8 @@ function wireMap(root, d) {
     const go = ev.target.closest("[data-map-go]");
     if (go) { goTo(Number(go.dataset.mapGo)); return; }
     if (ev.target.closest("#mapClose")) { closeMap(); return; }
+    if (ev.target.closest("#mapLangBtn")) { $("#mapLangMenu", root).classList.toggle("open"); return; }
+    if (!ev.target.closest(".map-lang")) $("#mapLangMenu", root).classList.remove("open");
     if (ev.target.closest("#mapFit")) { meaningMap && meaningMap.fit(true); return; }
     if (ev.target.closest("#mapIn")) { meaningMap && meaningMap.zoomBy(1.8); return; }
     if (ev.target.closest("#mapOut")) { meaningMap && meaningMap.zoomBy(1 / 1.8); return; }
@@ -2182,6 +2201,9 @@ function render() {
   // Not `&& !composing`: the loops surface *is* a composing surface — it owns its height so its
   // controls cannot drift — and excluding it here left the rail on screen behind the player.
   $(".app").classList.toggle("loops-open", state.loops || state.stories || state.map);
+  // The map's own row is the top one: search, Add and sync are one Back away, and on a map the height
+  // they took is worth more than they are.
+  $(".app").classList.toggle("map-open", state.map);
   $(".app").classList.toggle("article-open", Boolean((state.openId || state.openExt) && !state.add));
   $("#loopbar").innerHTML = renderLoopBar();
   $("#loopChip").innerHTML = renderLoopChip();
@@ -2447,7 +2469,12 @@ render();
 });
 
 document.addEventListener("keydown", (ev) => {
-  if ((ev.metaKey || ev.ctrlKey) && ev.key === "k") { ev.preventDefault(); $("#q").focus(); $("#q").select(); }
+  if ((ev.metaKey || ev.ctrlKey) && ev.key === "k") {
+    ev.preventDefault();
+    // Search lives in the bar the map hides, so ⌘K leaves the map for it, as it leaves Loops.
+    if (state.map) closeMap();
+    $("#q").focus(); $("#q").select();
+  }
   const typing = ev.target.closest && ev.target.closest("input, textarea, [contenteditable]");
   const reading = state.openId && !state.add && state.mode === "read";
   /* Select all selects the word, not the application around it: copying an article somewhere else

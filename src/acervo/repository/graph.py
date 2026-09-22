@@ -425,6 +425,45 @@ def duplicate_lexemes(owner: str, language: str, headword: str, lemma: str) -> l
         ]
 
 
+def map_senses(owner: str, language: str) -> list[dict[str, Any]]:
+    """Every live sense of every word this owner holds in one language, for the meaning map.
+
+    A suppressed word is one the owner said they do not want, so it is not on their map; every other
+    status is a word they hold. Senses carry no language of their own, so the word is joined in, and
+    the rows come back in a stable order so a map's input is the same list every time it is read.
+    """
+    lexemes, senses = tables.lexemes, tables.senses
+    with reading() as connection:
+        rows = connection.execute(
+            select(
+                senses.c.id, senses.c.lexeme, senses.c.definition, senses.c.glosses,
+                senses.c.sense_order, lexemes.c.headword, lexemes.c.pos,
+            )
+            .select_from(senses.join(lexemes, senses.c.lexeme == lexemes.c.id))
+            .where(
+                lexemes.c.owner == owner,
+                senses.c.owner == owner,
+                lexemes.c.language == language,
+                lexemes.c.deleted.is_(False),
+                senses.c.deleted.is_(False),
+                lexemes.c.status != "suppressed",
+            )
+            .order_by(lexemes.c.id, senses.c.sense_order, senses.c.id)
+        ).mappings()
+        return [
+            {
+                "sense": row["id"],
+                "lexeme": row["lexeme"],
+                "headword": row["headword"],
+                "pos": row["pos"],
+                "definition": row["definition"],
+                "glosses": list(row["glosses"] or []),
+                "order": row["sense_order"],
+            }
+            for row in rows
+        ]
+
+
 def article_records(owner: str, lexeme_id: str) -> dict[str, list[dict[str, Any]]]:
     """One word and everything hanging off it, in the wire shape `build_articles` reads.
 

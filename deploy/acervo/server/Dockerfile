@@ -10,8 +10,27 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# The meaning map's encoder runs on torch, and the default wheel carries CUDA libraries a NAS has no
+# use for; the CPU-only build is a fraction of the size, so it goes in first and the requirements
+# below find it already satisfied.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch
+
 COPY requirements /app/requirements
 RUN pip install --no-cache-dir -r requirements/server.txt
+
+# The encoder's weights, at the revision `models/encoder.json` pins, fetched once at build time and
+# before `src` is copied, so a code change never downloads them again. Only the files
+# sentence-transformers reads: the repository also carries ONNX and OpenVINO copies nobody here uses.
+# At run time the library is told it is offline, so drawing a map never reaches the network.
+ENV HF_HOME=/opt/huggingface
+COPY models/encoder.json /app/models/encoder.json
+RUN python -c "import json; from huggingface_hub import snapshot_download; \
+pin = json.load(open('/app/models/encoder.json')); \
+snapshot_download(pin['model'], revision=pin['revision'], allow_patterns=pin['files'])" \
+    && chmod -R a+rX /opt/huggingface
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    NUMBA_CACHE_DIR=/tmp/numba
 
 COPY pyproject.toml /app/pyproject.toml
 COPY README.md /app/README.md

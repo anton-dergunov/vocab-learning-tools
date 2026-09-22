@@ -239,6 +239,45 @@ def test_a_graph_round_trip_survives_a_restart_of_the_container(running):
     assert [row["name"] for row in pulled["data"]["changes"]["topics"]] == ["Food"]
 
 
+def test_a_map_is_drawn_inside_the_image_with_the_encoder_it_carries(running):
+    """The encoder's weights are baked in at build time and the library is told it is offline, so a
+    map drawn here proves both: nothing is downloaded, and the pinned model loads."""
+    _, session = request(
+        running.base, "POST", f"{API}/session", {"email": OWNER_EMAIL, "password": OWNER_PASSWORD}
+    )
+    token = session["data"]["token"]
+    at = "2026-01-01T00:00:00.000Z"
+    stamp = {"deleted": False, "createdAt": at, "editedAt": at, "editedBy": "device000000001",
+             "revision": 0}
+    words = [("cortar", "Dividir algo con un cuchillo."), ("pagar", "Dar dinero por algo."),
+             ("cobrar", "Recibir dinero por un trabajo."), ("picar", "Cortar en trozos pequeños.")]
+    lexemes, senses = [], []
+    for index, (headword, definition) in enumerate(words):
+        lexeme_id, sense_id = f"lexememap{index:06d}", f"sensemapx{index:06d}"
+        lexemes.append({"id": lexeme_id, "language": "es", "headword": headword, "lemma": headword,
+                        "reading": None, "ipa": None, "pos": "verb", "gender": None, "register": "neutral",
+                        "dialect": None, "emoji": None, "topicIds": [], "status": "active",
+                        "shortGloss": headword, "primaryGloss": None, "emotion": None, "notes": [],
+                        "clipsSearchedAt": None, **stamp})
+        senses.append({"id": sense_id, "lexemeId": lexeme_id, "definition": definition,
+                       "definitionLang": "es", "glosses": [{"lang": "en", "terms": [headword]}],
+                       "domain": None, "emoji": None, "order": 0, **stamp})
+    vocabulary = {"id": "vocabularymapes", "language": "es", "definitionLang": "es", "glossLangs": ["en"],
+                  "notesLang": "en", "displayName": "Spanish", "flag": None, "order": 0, **stamp}
+    status, written = request(running.base, "POST", f"{API}/graph", {
+        "schemaVersion": SCHEMA_VERSION, "deviceId": "device000000001",
+        "changes": {"vocabularies": [vocabulary], "lexemes": lexemes, "senses": senses},
+    }, token)
+    assert status == 200, written
+    # The first map loads the encoder, which takes a while on a small machine.
+    with AcervoClient(running.base, timeout=240.0) as client:
+        client.token = token
+        status, drawn = client.raw("GET", f"{API}/map/es")
+    assert status == 200, drawn
+    assert drawn["data"]["model"] == "intfloat/multilingual-e5-small"
+    assert {point["sense"] for point in drawn["data"]["points"]} == {s["id"] for s in senses}
+
+
 def test_a_download_answers_a_byte_range_with_no_credentials(running):
     """The macOS updater reads the archive in chunks, and with no token at all."""
     with AcervoClient(running.base, timeout=15.0) as client:

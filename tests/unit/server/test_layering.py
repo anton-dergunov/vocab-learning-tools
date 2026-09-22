@@ -104,6 +104,7 @@ def test_the_rules_below_are_not_vacuous():
     assert modules_under("loops"), "no loops/ modules: the stands-alone rule would be vacuous"
     assert modules_under("stories"), "no stories/ modules: the stands-alone rule would be vacuous"
     assert modules_under("pronunciation"), "no pronunciation/ modules: the stands-alone rule would be vacuous"
+    assert modules_under("meaning"), "no meaning/ modules: the stands-alone rule would be vacuous"
     assert (PACKAGE / "article.py").exists(), "no article.py: the shared-view rule would be vacuous"
     assert modules_under("speech"), "no speech/ modules: the stands-alone rule would be vacuous"
     assert modules_under("repository"), "no repository/ modules"
@@ -244,6 +245,18 @@ def test_the_pronunciation_pipeline_stands_on_the_provider_package_and_nothing_e
     """
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the pronunciation pipeline stands alone"
+
+
+@pytest.mark.parametrize("path", modules_under("meaning"), ids=identify)
+def test_the_meaning_map_stands_alone(path):
+    """Senses and vectors in, a map out — and no idea whose words they are or where the map is kept.
+
+    `services/meaning.py` is the binding layer that reads the graph, keeps the cache and the drawn
+    map beside the database, and names the regions through the owner's text chain. Standing alone is
+    what lets the map move to the discovery repository later without taking Acervo with it.
+    """
+    offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
+    assert not offenders, f"{path} imports {sorted(offenders)}; the meaning map stands alone"
 
 
 def test_the_article_view_imports_nothing_of_acervos():
