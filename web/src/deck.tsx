@@ -67,6 +67,16 @@ export function useDeck(resetKey: string) {
     if (track.current) track.current.scrollLeft = 0;
   }, [resetKey]);
 
+  /* Straight to a card, with no animation: for opening a deck where it should start, not for moving
+     through it. */
+  const jump = useCallback((index: number) => {
+    const element = track.current;
+    if (!element) return;
+    const to = Math.max(0, Math.min(index, element.children.length - 1));
+    element.scrollLeft = to * element.clientWidth;
+    setAt(to);
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -83,7 +93,7 @@ export function useDeck(resetKey: string) {
     setAt(Math.round(element.scrollLeft / Math.max(element.clientWidth, 1)));
   }, []);
 
-  return { root, track, at, go, beside, onScroll };
+  return { root, track, at, go, jump, beside, onScroll };
 }
 
 /**

@@ -12,6 +12,7 @@
    job naming the regions finishes. */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { AcervoApiError, backendSession, type ServerMap } from "./api";
 import type { VocabularyGraph } from "./domain";
 import { BackIcon, CloseIcon, FitIcon, ForwardIcon, MinusIcon, PlusIcon, SearchIcon } from "./icons";
@@ -38,6 +39,8 @@ export interface MapViewProps {
   owner: string;
   language: string;
   languages: LanguageOption[];
+  /* The top bar's slot, where the map's row goes: the bar is the top bar, not a card over the map. */
+  bar?: HTMLElement | null;
   /* Where the map was left in this language, so coming back from an article puts it back exactly. */
   camera: MapCamera | null;
   onCamera(camera: MapCamera): void;
@@ -45,7 +48,10 @@ export interface MapViewProps {
   selected: string | null;
   onSelect(senseId: string | null): void;
   onLanguage(code: string): void;
-  onOpen(lexemeId: string): void;
+  /* A sense to fly to and select once it is on the map — from its article's "show on the map". */
+  fly?: string | null;
+  onFlown?(): void;
+  onOpen(lexemeId: string, senseId: string): void;
   onClose(): void;
 }
 
@@ -147,6 +153,18 @@ export function MapView(props: MapViewProps) {
   }, [data, find]);
   const lit = useMemo(() => (find.trim() ? new Set(matches) : null), [find, matches]);
 
+  /* Asked to show one sense, the map flies to it as Find does, once it is drawn and holds it. */
+  useEffect(() => {
+    if (!props.fly || !data) return;
+    const i = data.points.findIndex((p) => p.id === props.fly);
+    if (i < 0) return;
+    onSelect(props.fly);
+    handle.current?.select(i, { fly: true });
+    props.onFlown?.();
+    // `data` and `fly` are what decide it; the callbacks are the host's and change every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, props.fly]);
+
   function goTo(i: number) {
     if (!data) return;
     onSelect(data.points[i].id);
@@ -203,7 +221,7 @@ export function MapView(props: MapViewProps) {
       onUpdate={(count) => { if (count > 0) setArrived(count); }}
     />}
 
-    <header className="map-top">
+    {props.bar && createPortal(<div className="map-top">
       <button className="icon-btn" aria-label="Back to your words" onClick={props.onClose}><BackIcon /></button>
       <div className="map-title">
         <h2>Map</h2>
@@ -246,7 +264,7 @@ export function MapView(props: MapViewProps) {
           </button>)}
         </div>
       </div>
-    </header>
+    </div>, props.bar)}
 
     {data && <div className="map-tools">
       <button className="map-tool" aria-label="Show the whole map" title={`Show the whole map  ${MOD}0`}
@@ -264,7 +282,7 @@ export function MapView(props: MapViewProps) {
           if (i >= 0) goTo(i);
         }}
         near={data.points[index].near.map((i) => data.points[i])}
-        onOpen={() => props.onOpen(view.lexeme.id)} />
+        onOpen={() => props.onOpen(view.lexeme.id, view.sense.id)} />
     </aside>}
 
     {phase === "drawing" && !data && <div className="map-note center">

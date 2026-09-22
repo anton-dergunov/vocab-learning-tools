@@ -988,6 +988,35 @@ describe("Acervo application", () => {
       expect(await screen.findByText("Cortar en trozos pequeños.")).toBeInTheDocument();
     });
 
+    it("lights only its own tab in the rail, not the topic behind it", async () => {
+      signedIn();
+      await openList();
+      await openMap();
+      expect(screen.getByRole("button", { name: "Map" })).toHaveClass("on");
+      expect(document.querySelectorAll(".rail .tab.on")).toHaveLength(1);
+    });
+
+    it("draws its row in the top bar itself, in place of search", async () => {
+      signedIn();
+      await openList();
+      await openMap();
+      expect(document.querySelector(".topbar .map-top")).not.toBeNull();
+      expect(screen.queryByPlaceholderText("Search your words…")).not.toBeInTheDocument();
+    });
+
+    it("shows a sense from its article, and Back returns to the article", async () => {
+      signedIn();
+      await openList();
+      vi.spyOn(backendSession, "readMap").mockResolvedValue(spanishMap);
+      fireEvent.click(await screen.findByRole("button", { name: /picar/ }));
+      const shows = await screen.findAllByRole("button", { name: "Show on the map" });
+      fireEvent.click(shows[shows.length > 1 ? 1 : 0]);
+      expect(await screen.findByRole("heading", { name: "Map" })).toBeInTheDocument();
+      expect(await screen.findByText("Cortar en trozos pequeños.")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Back to your words" }));
+      expect(await screen.findByRole("button", { name: "Back to the list" })).toBeInTheDocument();
+    });
+
     it("leaves for search on ⌘K, the search box being in the bar it hides", async () => {
       signedIn();
       await openList();

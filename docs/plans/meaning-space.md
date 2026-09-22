@@ -259,10 +259,23 @@ It is entered exactly as Loops and Stories are:
 It replaces the list. The topic rail stays wherever there is room for it, so the way back is always
 visible.
 
-On the map, the global bar (search, Add, sync) is hidden and **the map's own row is the top row**,
-at every width: Back, the name, Find, and the map's own language switcher. The counts of meanings
-and words show on a desktop only. Height is what a map is short of on every screen. ⌘K leaves the
-map for search, as it leaves Loops.
+On the map, **the top bar carries the map's own row** in place of search, Add and sync, at every
+width: Back, the name, the counts, Find, and the map's own language switcher. It is the top bar
+itself — the same box, surface and rule, the brand cell beside it — rather than a card floating over
+the map, which is what the first version drew. The counts of meanings and words show wherever there
+is room and go on a phone, where Find takes the width and nothing is kept for them. ⌘K leaves the
+map for search, as it leaves Loops. While a surface replaces the list, only its own tab in the rail
+is lit; the topic behind it is not.
+
+**From an article to the map and back.** Every sense of an article carries a small map button, beside
+the one that asks about it on the page and beside its definition on a card. It opens the map in the
+word's language flown to that sense with it selected, as Find would leave it, and Back from that map
+returns to the article on the same sense. The other way, *Open the article* from the peek lands on the
+peeked sense: its card in Cards, its section scrolled to the top in Page.
+
+**A sense is named by its emoji.** The article's sense chips and headings show a sense's emoji and its
+domain, whichever it has — `🔪 cooking`, or `😳 3` on a chip — as the map shows them. Most senses have
+an emoji and no domain, and showing the emoji only beside a domain left them as bare numbers.
 
 ### Interaction, tablet first
 

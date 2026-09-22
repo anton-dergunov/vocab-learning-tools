@@ -77,8 +77,9 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requi
 
 `label_model.py` adds the model-written region names; see that directory's README.
 
-On the map the global bar is hidden and the map's own row is the top one: Back, Map, Find and its
-own language switcher (the counts show on a desktop only). ⌘K leaves the map for search.
+On the map the top bar carries the map's own row in place of search, Add and sync: Back, Map, the
+counts (not on a phone), Find and its own language switcher. ⌘K leaves the map for search. Each
+sense of an article has a button that shows it on the map, for the words the map holds.
 
 Pinch or scroll with two fingers to move; pinch, ⌘ + scroll or a mouse wheel to zoom; double-tap to
 zoom in. On a keyboard ⌘= / ⌘− / ⌘0 zoom in, out and fit (Ctrl elsewhere; the browser's page zoom is

@@ -283,7 +283,7 @@ function renderRail() {
     `<button class="tab ${state.map ? "on" : ""}" data-map-open title="Map">
       <span class="ic">\u{1F5FA}\uFE0F</span><span class="nm">Map</span></button>` +
     '<div class="rail-sep"></div>' +
-    TOPICS.map((t) => tab(t.key, t.icon, t.name, topicCount(t.key) || null, state.topic === t.key)).join("");
+    TOPICS.map((t) => tab(t.key, t.icon, t.name, topicCount(t.key) || null, state.topic === t.key && !state.map)).join("");
 }
 
 function renderLangButton() {
@@ -433,7 +433,9 @@ function looseAttestations(x) {
   return x.attestations.filter((a) => !a.id || !used.has(a.id));
 }
 
-const senseName = (s) => (s.domain ? `${s.emoji ? `${s.emoji} ` : ""}${s.domain}` : "");
+/* A sense's own emoji and its domain, whichever it has: most real senses have an emoji and no domain,
+   and showing the emoji only beside a domain left them as bare numbers. */
+const senseName = (s) => [s.emoji, s.domain].filter(Boolean).join(" ");
 
 function clipLine(e) {
   /* Calm, but plainly a thing to press: an outlined pill with a film icon, in ink rather than teal.
@@ -581,6 +583,8 @@ function senseSection(s, i, x) {
     <div class="sense-head">
       <p class="sense-def${state.review && mark.includes("mark-change") ? " field-change" : ""}">${spoken(esc(s.definition), say(s.definition))}</p>
       ${s.images.length ? "" : `<button class="ask-anchor picture-anchor" data-add-picture aria-label="Add a picture" title="Add a picture">${ICON.picture}</button>`}
+      <button class="ask-anchor map-anchor" data-map-show="${esc(x.headword)}" data-map-order="${i}"
+        aria-label="Show on the map" title="Show on the map">${ICON.map}</button>
       <button class="ask-anchor" aria-label="Ask about this meaning">${ICON.ask}</button>
     </div>
     <div class="glosses">${s.glosses.map(glossLine).join("")}</div>
@@ -777,7 +781,8 @@ function cardsFor(x) {
       const bare = !visual && !item;
       cards.push({
         group: `s${i}`,
-        chip: senseName(s) ? esc(senseName(s)) : String(i + 1),
+        // A domain names a sense well enough alone; otherwise its emoji and its number, as the map shows it.
+      chip: s.domain ? esc(senseName(s)) : [s.emoji, String(i + 1)].filter(Boolean).join(" "),
         html: `
           <div class="card-sense">
             <p class="card-def">${spoken(esc(s.definition), say(s.definition))}</p>
@@ -1643,6 +1648,8 @@ function closeMap() {
   render();
 }
 function teardownMap() {
+  const bar = $(".topbar .map-bar");
+  if (bar) bar.remove();
   if (!meaningMap) return;
   meaningMap.destroy();
   meaningMap = null;
@@ -1654,7 +1661,7 @@ function mapShell(d) {
      a pick from the language menu, and every tap on the map chose the language again. */
   return `<section class="map" data-map-lang="${state.lang}" data-src="${mapSource()}" data-state="${state.mapState || ""}">
     <canvas class="map-canvas" role="img" aria-label="A map of your ${esc(name)} words, arranged by meaning"></canvas>
-    <header class="map-top">
+    <div class="map-top">
       <button class="icon-btn" id="mapClose" aria-label="Back to your words">${ICON.back}</button>
       <div class="map-title"><h2>Map</h2>${d ? `<span class="map-count label">${count(d.senses)} meaning${d.senses === 1 ? "" : "s"} · ${count(d.words)} word${d.words === 1 ? "" : "s"}</span>` : ""}</div>
       <div class="map-find">${ICON.search}
@@ -1676,7 +1683,7 @@ function mapShell(d) {
           </button>`).join("")}
         </div>
       </div>
-    </header>
+    </div>
     <div class="map-tools">
       <button class="map-tool" id="mapFit" aria-label="Show the whole map" title="Show the whole map  ${MOD}0">${ICON.fit}</button>
       <button class="map-tool pointer-only" id="mapIn" aria-label="Zoom in" title="Zoom in  ${MOD}+   \u00b7   ${MOD} + scroll">${ICON.plus}</button>
@@ -1699,15 +1706,30 @@ function renderMap() {
     teardownMap();
     $("#composer").innerHTML = mapShell(d);
     root = $("#composer .map");
+    mountMapBar(root);
     startMap(root, d);
   }
   paintPeek();
 }
 
+/* The map's row goes into the top bar itself, so the bar keeps its own box, surface and rule and the
+   row is its contents — search, Add and sync are hidden while it is there (`acervo.css`). Its Back and
+   language menu are wired here, for every state of the map, the first draw and "no map yet" included. */
+function mountMapBar(root) {
+  const bar = el('<div class="map-bar"></div>');
+  bar.appendChild($(".map-top", root));
+  $(".topbar").appendChild(bar);
+  bar.addEventListener("click", (ev) => {
+    if (ev.target.closest("#mapClose")) { closeMap(); return; }
+    if (ev.target.closest("#mapLangBtn")) { $("#mapLangMenu").classList.toggle("open"); return; }
+    if (!ev.target.closest(".map-lang")) $("#mapLangMenu").classList.remove("open");
+  });
+}
+
 function startMap(root, d) {
   const note = $("#mapNote", root);
   // With no map there is nothing to fit, zoom or find in.
-  if (state.mapState || !d) { $(".map-tools", root).hidden = true; $(".map-find", root).hidden = true; }
+  if (state.mapState || !d) { $(".map-tools", root).hidden = true; $(".topbar .map-find").hidden = true; }
   if (state.mapState === "offline" || !d) {
     note.hidden = false;
     note.className = "map-note center";
@@ -1745,8 +1767,8 @@ function startMap(root, d) {
 }
 
 function wireMap(root, d) {
-  const find = $("#mapFind", root);
-  const hits = $("#mapHits", root);
+  const find = $("#mapFind");
+  const hits = $("#mapHits");
   let matches = [];
   const paintHits = () => {
     const q = fold(find.value.trim());
@@ -1777,19 +1799,19 @@ function wireMap(root, d) {
     if (ev.key === "Enter" && matches.length) { ev.preventDefault(); goTo(matches[0]); find.blur(); }
     if (ev.key === "Escape") { ev.stopPropagation(); find.value = ""; paintHits(); find.blur(); }
   });
-  root.addEventListener("click", (ev) => {
+  const onClick = (ev) => {
     const go = ev.target.closest("[data-map-go]");
     if (go) { goTo(Number(go.dataset.mapGo)); return; }
-    if (ev.target.closest("#mapClose")) { closeMap(); return; }
-    if (ev.target.closest("#mapLangBtn")) { $("#mapLangMenu", root).classList.toggle("open"); return; }
-    if (!ev.target.closest(".map-lang")) $("#mapLangMenu", root).classList.remove("open");
     if (ev.target.closest("#mapFit")) { meaningMap && meaningMap.fit(true); return; }
     if (ev.target.closest("#mapIn")) { meaningMap && meaningMap.zoomBy(1.8); return; }
     if (ev.target.closest("#mapOut")) { meaningMap && meaningMap.zoomBy(1 / 1.8); return; }
     if (ev.target.closest("#peekClose")) { state.mapSel = -1; meaningMap.select(-1); paintPeek(); return; }
     if (ev.target.closest("#peekOpen")) { openFromMap(d.points[state.mapSel]); return; }
     if (!ev.target.closest(".map-find")) hits.hidden = true;
-  });
+  };
+  // The surface and the row in the top bar: Find's hits live in the bar, the peek in the surface.
+  root.addEventListener("click", onClick);
+  $(".topbar .map-bar").addEventListener("click", onClick);
   find.addEventListener("focus", () => { if (find.value.trim()) hits.hidden = false; });
 }
 
@@ -2389,6 +2411,22 @@ document.addEventListener("click", (ev) => {
   // The card's Review button is what puts the article into the marked state.
   if (hit(".ask-card .tb-btn")) { state.review = true; state.ask = "dock"; render(); $("#main").scrollTop = 0; return; }
   if (hit(".ask-chip")) { state.askFocus = null; render(); return; }
+  /* Show this meaning on the map: the map opens flown to it and with it selected, as Find would. The
+     prototype's articles and its map are separate fixtures, so a word the map does not hold says so. */
+  const showOnMap = hit("[data-map-show]");
+  if (showOnMap) {
+    const d = mapData();
+    const want = fold(showOnMap.dataset.mapShow);
+    const order = Number(showOnMap.dataset.mapOrder);
+    const found = d ? d.points.findIndex((p) => fold(p.headword) === want && p.order === order) : -1;
+    const i = found >= 0 ? found : d ? d.points.findIndex((p) => fold(p.headword) === want) : -1;
+    if (i < 0) { toast("This word is not on the prototype's map"); return; }
+    state.mapSel = i;
+    mapGrown.add(state.lang);
+    openMap();
+    meaningMap && meaningMap.select(i, { fly: true });
+    return;
+  }
   if (hit(".ask-anchor")) {
     const section = t.closest(".sec");
     const number = section ? section.querySelector(".num")?.textContent?.trim() : null;

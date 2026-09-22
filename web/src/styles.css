@@ -2725,24 +2725,24 @@ details.fold .fold-body { padding: 4px 0 18px; }
 }
 .map-canvas:focus-visible { outline: 2px solid var(--core); outline-offset: -2px; }
 
-/* Floating pieces share one skin: a surface a little transparent, so the land shows through the
-   edges of the header without the words under it becoming legible and competing with it. */
-.map-top, .map-tools, .map-peek, .map-note {
+/* Floating pieces share one skin: a surface a little transparent, so the land shows through their
+   edges without the words under them becoming legible and competing with them. */
+.map-tools, .map-peek, .map-note {
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   border: 1px solid var(--rule-soft); box-shadow: var(--shadow);
 }
-.map-top {
-  position: absolute; top: 12px; left: 12px; right: 12px; z-index: 3;
-  display: flex; align-items: center; gap: 10px;
-  max-width: 640px; padding: 6px 8px 6px 6px; border-radius: 11px;
-}
+/* The map's row is the top bar's contents, not a card over the map: the bar keeps its own box,
+   surface and rule, and this fills it the way search, Add and sync do on the list. */
+.map-bar { flex: 1; min-width: 0; height: 100%; display: flex; }
+.map-top { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
 .map-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: none; }
 .map-title h2 { margin: 0; font: 700 19px/1 var(--serif); letter-spacing: -.01em; }
 .map-count { white-space: nowrap; }
+/* The flexible middle, like the list's search: it grows to the same measure and no further. */
 .map-find {
-  position: relative; flex: 1; min-width: 0; margin-left: auto; max-width: 300px;
-  display: flex; align-items: center; height: 34px;
+  position: relative; flex: 1; min-width: 0; max-width: 760px; margin-right: auto;
+  display: flex; align-items: center; height: 36px;
   background: var(--paper); border: 1px solid var(--rule-soft); border-radius: 7px;
 }
 .map-find:focus-within { border-color: var(--core); background: var(--surface); }
@@ -2814,7 +2814,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
 
 /* ── notes: first draw, nothing to show, a young language, words arriving ── */
 .map-note {
-  position: absolute; left: 50%; top: 68px; transform: translateX(-50%); z-index: 2;
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 2;
   max-width: min(420px, calc(100% - 24px)); padding: 9px 16px; border-radius: 999px;
   font-size: 13.5px; color: var(--ink-2); text-align: center;
 }
@@ -2841,33 +2841,20 @@ details.fold .fold-body { padding: 4px 0 18px; }
 /* A phone: the header spans the width, the title gives way to the find field, and the peek is a sheet
    across the bottom. The tools move up out of its way while it is open. */
 @container vp (max-width: 720px) {
-  .map-top { top: 8px; left: 8px; right: 8px; max-width: none; }
   .map-count { display: none; }
-  .map-find { max-width: none; }
   .map-peek {
     left: 0; right: 0; bottom: 0; width: auto; max-height: 52%;
     border-radius: 16px 16px 0 0; border-bottom: 0;
     padding-bottom: max(16px, env(safe-area-inset-bottom));
   }
   .map.peeking .map-tools { display: none; }
-  .map-note { top: 58px; }
 }
 
-/* ── the map's row is the top row ──
-   On the map the global bar goes: search, Add and sync are one Back away, and height is what a map
-   is short of on every screen. The rail stays wherever it already shows, which is everywhere but a
-   phone. The map's own row carries only what the map needs — Back, its name, Find, and which
-   language it is of. */
-.app.map-open { grid-template-rows: 0 minmax(0, 1fr) auto; }
-.app.map-open .topbar, .app.map-open .brand { display: none; }
-@container vp (max-width: 720px) {
-  .app.map-open { grid-template-rows: 0 0 minmax(0, 1fr) auto; }
-  .app.map-open .topbar { display: none; }
-}
+/* ── the map's row in the top bar ──
+   The bar stays at every width, carrying the map's row instead of search, Add and sync; the rail
+   stays wherever it already shows, which is everywhere but a phone. */
 .map-lang { position: relative; flex: none; }
 .map-lang .lang-btn { height: 34px; }
 .map-lang-menu { right: 0; top: calc(100% + 8px); }
-/* The counts are for a desk. A tablet in landscape is as wide as a small laptop, so this asks about
-   the pointer rather than the width. */
-.map-count { display: none; }
-@media (hover: hover) and (pointer: fine) { .map-count { display: inline; } }
+/* The counts go only where there is no room for them — a phone — and nothing is kept for them there:
+   Find simply takes the width. */

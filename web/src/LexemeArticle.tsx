@@ -11,7 +11,7 @@
  * keeps one quiet tag, and what else is worth keeping is in Details.
  */
 
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ClipDialog } from "./ClipDialog";
 import { storedClipOf, type StoredClip } from "./clips";
 import type { Attestation, Example, Gloss, ImagePrompt, Lexeme, Sense } from "./domain";
@@ -20,7 +20,7 @@ import { formatDay } from "./format";
 import { DictionaryEntries } from "./ExternalArticle";
 import type { ExternalEntry } from "./externalEntries";
 import type { Change, Mark } from "./articleEdit";
-import { AskIcon, BookIcon, CaretIcon, FilmIcon, HederaIcon, InfoIcon, OpenIcon, PictureIcon, PlayIcon } from "./icons";
+import { AskIcon, BookIcon, CaretIcon, FilmIcon, HederaIcon, InfoIcon, MapIcon, OpenIcon, PictureIcon, PlayIcon } from "./icons";
 import type { DiffPart } from "./wordDiff";
 import type { Article, ArticleSense } from "./selectors";
 import { CardPicture, EmptySenseImage, SenseImage, imageStateOf } from "./SenseImage";
@@ -112,7 +112,10 @@ export function looseAttestations(article: Article): Attestation[] {
   return article.attestations.filter((attestation) => !used.has(attestation.id));
 }
 
-export const senseName = (sense: Sense) => sense.domain ? `${sense.emoji ? `${sense.emoji} ` : ""}${sense.domain}` : "";
+/* A sense's own emoji and its domain, whichever it has. The emoji used to be shown only beside a
+   domain, and most senses have no domain — so nearly every sense was a bare number here while the map
+   showed the same senses by their emoji. */
+export const senseName = (sense: Sense) => [sense.emoji, sense.domain].filter(Boolean).join(" ");
 
 /** Renders the sentence with the matched surface form emphasised, without storing markup. */
 function Marked({ text, form }: { text: string; form: string | null }) {
@@ -335,10 +338,12 @@ function ExampleBlock({ example, notesLang, onListen, onPlayClip, marks = null, 
 }
 
 function SenseSection({ entry, index, headword, notesLang, pictures, clips, folded, onToggle, onListen, onPlayClip,
-                       marks = null, ask = null }: {
+                       marks = null, ask = null, onMap = null }: {
   entry: ArticleSense; index: number; headword: string; notesLang: string;
   pictures: PictureSlot | null;
   clips: ClipSlot | null;
+  /* Show this sense on the map: flown to and selected there, as Find would. */
+  onMap?: ((senseId: string) => void) | null;
   folded: boolean; onToggle(): void;
   onListen: Listen;
   onPlayClip(example: Example): void;
@@ -383,6 +388,10 @@ function SenseSection({ entry, index, headword, notesLang, pictures, clips, fold
         title={record && imageStateOf(record) === "failed" ? "The picture could not be drawn" : "Add a picture"}
         onClick={() => pictures.open(sense.id, record)}
       ><PictureIcon /></button>}
+      {onMap && mark !== "removed" && <button
+        type="button" className="ask-anchor map-anchor" aria-label="Show on the map" title="Show on the map"
+        onClick={() => onMap(sense.id)}
+      ><MapIcon /></button>}
       {mark !== "removed" && <AskAnchor ask={ask} target={{ kind: "sense", id: sense.id, label }} />}
     </div>
     <div className={`glosses${tint(moved("glosses"))}`}>
@@ -516,15 +525,17 @@ interface Card {
  * picture is the part that gives way when a card is short of room; a card whose words alone do not
  * fit scrolls on its own, as the exception, and nothing forbids it.
  */
-function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: {
+function ArticleCards({ article, pictures, onListen, onPlayClip, onReference, focusSense = null, onMap = null }: {
   article: Article; pictures: PictureSlot | null;
   onListen: Listen; onPlayClip(example: Example): void;
   onReference?(entry: ExternalEntry | null): void;
+  focusSense?: string | null;
+  onMap?: ((senseId: string) => void) | null;
 }) {
   const { lexeme } = article;
   const nav = useRef<HTMLElement | null>(null);
-  // A different word starts at its first card.
-  const { root, track, at, go, beside, onScroll } = useDeck(lexeme.id);
+  // A different word starts at its first card — or at the sense it was opened for.
+  const { root, track, at, go, jump, beside, onScroll } = useDeck(lexeme.id);
 
   const cards: Card[] = [];
   article.senses.forEach(({ sense, examples, images }, index) => {
@@ -559,12 +570,15 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
       const clip = example ? storedClipOf(example) : null;
       cards.push({
         group: `sense:${sense.id}`,
-        chip: name || String(index + 1),
+        // A domain names a sense well enough alone; otherwise its emoji and its number, as the map shows it.
+        chip: sense.domain ? name : [sense.emoji, String(index + 1)].filter(Boolean).join(" "),
         aside: false,
         body: <>
           <div className="card-sense">
             <p className="card-def" lang={sense.definitionLang} data-say={`sense:${sense.id}`}>
               <Spoken text={sense.definition} form={null}><Say target={senseTarget(sense)} onListen={onListen} /></Spoken>
+              {onMap && <button type="button" className="card-map" aria-label="Show on the map" title="Show on the map"
+                onClick={() => onMap(sense.id)}><MapIcon /></button>}
             </p>
             {sense.glosses.map((gloss) => <p key={gloss.lang} className="card-gloss">
               <span className="lg">{gloss.lang}</span><span lang={gloss.lang}>{gloss.terms.join(" · ")}</span>
@@ -627,6 +641,15 @@ function ArticleCards({ article, pictures, onListen, onPlayClip, onReference }: 
     .map((card, index) => ({ ...card, first: index }))
     .filter((card, index, all) => all.findIndex((other) => other.group === card.group) === index);
   const current = cards[Math.min(at, cards.length - 1)]?.group;
+
+  /* Opened for one sense — from the map — the deck starts on that sense's first card. Declared after
+     `useDeck`, so it runs after the deck's own return to card 0 for a new word. */
+  const firstOfFocus = focusSense ? cards.findIndex((card) => card.group === `sense:${focusSense}`) : -1;
+  useLayoutEffect(() => {
+    if (firstOfFocus > 0) jump(firstOfFocus);
+    // Once per word and sense: after that the deck is the reader's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lexeme.id, focusSense]);
 
   useEffect(() => {
     const chip = nav.current?.querySelector<HTMLElement>(".cards-chip.on");
@@ -832,7 +855,7 @@ export interface PictureSlot {
  */
 export default function LexemeArticle({ article, onNotify, meta = true, view = "page", pictures = null,
                                        clips = null, marks = null, ask = null,
-                                       onReference }: {
+                                       onReference, focusSense = null, onMap = null }: {
   article: Article;
   /** A toast, with at most one action — "Record again" after a stored pronunciation plays. */
   onNotify: Notify;
@@ -845,6 +868,10 @@ export default function LexemeArticle({ article, onNotify, meta = true, view = "
   ask?: AskSlot | null;
   /** What the dictionary section has loaded, so a question can be asked against what is on screen. */
   onReference?(entry: ExternalEntry | null): void;
+  /** The sense the article was opened for, which it opens on: its card, or its section scrolled to. */
+  focusSense?: string | null;
+  /** Show a sense on the map. Absent where a sense is not stored yet — a proposal, a preview. */
+  onMap?: ((senseId: string) => void) | null;
 }) {
   const { lexeme, senses } = article;
   const root = useRef<HTMLDivElement | null>(null);
@@ -889,9 +916,23 @@ export default function LexemeArticle({ article, onNotify, meta = true, view = "
       : undefined}
   />;
 
+  /* Opened for one sense, the page opens on it: its section at the top of the column, unfolded. At
+     once rather than smoothly — the article is arriving, not moving. */
+  useLayoutEffect(() => {
+    if (view !== "page" || !focusSense) return;
+    if (isFolded(`sense:${focusSense}`, false)) toggle(`sense:${focusSense}`, false);
+    const section = root.current?.querySelector<HTMLElement>(`section.sec[data-record="${focusSense}"]`);
+    const scroller = section?.closest<HTMLElement>(".main");
+    if (!section || !scroller) return;
+    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+    // Once per word and sense: after that the page is the reader's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lexeme.id, focusSense, view]);
+
   if (view === "cards") {
     return <div className="article-root cards-root" ref={root}>
-      <ArticleCards article={article} pictures={pictures} onListen={listen} onPlayClip={setPlaying} onReference={onReference} />
+      <ArticleCards article={article} pictures={pictures} onListen={listen} onPlayClip={setPlaying} onReference={onReference}
+        focusSense={focusSense} onMap={stored ? onMap : null} />
       <SelectionListen root={root} onListen={listenToSelection} />
       {dialog}
     </div>;
@@ -938,6 +979,7 @@ export default function LexemeArticle({ article, onNotify, meta = true, view = "
         ask={ask}
         folded={isFolded(`sense:${entry.sense.id}`, false)}
         onToggle={() => toggle(`sense:${entry.sense.id}`, false)}
+        onMap={stored ? onMap : null}
         onListen={listen}
         onPlayClip={setPlaying}
       />)}

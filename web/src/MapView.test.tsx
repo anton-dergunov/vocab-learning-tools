@@ -44,8 +44,10 @@ let store: MemoryMapStore;
 
 function view(overrides: Partial<Parameters<typeof MapView>[0]> = {}) {
   const graph = testGraph();
+  /* The map's row goes into the top bar, which the application hands it; here, a stand-in. */
+  const bar = document.body.appendChild(document.createElement("div"));
   const props = {
-    graph, owner: TEST_OWNER, language: "es", languages: languageOptions(graph), camera: null,
+    graph, owner: TEST_OWNER, language: "es", languages: languageOptions(graph), camera: null, bar,
     onCamera: vi.fn(), selected: null as string | null, onSelect: vi.fn(), onLanguage: vi.fn(),
     onOpen: vi.fn(), onClose: vi.fn(), ...overrides
   };
@@ -109,7 +111,7 @@ describe("the map surface", () => {
     expect(screen.getByText("Meaning 2 of 2")).toBeInTheDocument();
     expect(drawn?.selected).toBe(1);
     fireEvent.click(screen.getByRole("button", { name: /Open the article/ }));
-    expect(props.onOpen).toHaveBeenCalledWith("lexemepicar0001");
+    expect(props.onOpen).toHaveBeenCalledWith("lexemepicar0001", "sensepicarchop0");
   });
 
   it("flies to the word's other sense from the peek", async () => {
@@ -147,6 +149,23 @@ describe("the map surface", () => {
     rerender({ selected: null });
     fireEvent.keyDown(document, { key: "Escape" });
     expect(props.onClose).toHaveBeenCalled();
+  });
+
+  it("flies to the sense it was asked to show, as Find would, once the map holds it", async () => {
+    vi.spyOn(backendSession, "readMap").mockResolvedValue(serverMap());
+    const onFlown = vi.fn();
+    const { props } = view({ fly: "sensebalsaraft0", onFlown });
+    await screen.findByRole("button", { name: /point la balsa/ });
+    await waitFor(() => expect(handle.select).toHaveBeenCalledWith(2, { fly: true }));
+    expect(props.onSelect).toHaveBeenCalledWith("sensebalsaraft0");
+    expect(onFlown).toHaveBeenCalled();
+  });
+
+  it("draws its row in the bar it is given", async () => {
+    vi.spyOn(backendSession, "readMap").mockResolvedValue(serverMap());
+    const { props } = view();
+    await screen.findByRole("button", { name: /point la balsa/ });
+    expect((props.bar as HTMLElement).querySelector(".map-top input[aria-label='Find a word on the map']")).not.toBeNull();
   });
 
   it("asks again when the job naming its regions finishes", async () => {

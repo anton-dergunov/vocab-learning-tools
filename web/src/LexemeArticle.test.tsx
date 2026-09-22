@@ -248,3 +248,44 @@ describe("a picture that could not be drawn", () => {
     expect(screen.queryByText("The provider declined this prompt.")).toBeNull();
   });
 });
+
+describe("a sense's name, and opening on a sense", () => {
+  /* Most senses have an emoji and no domain; the emoji used to be shown only beside a domain, so the
+     article showed them as bare numbers while the map showed the same senses by their emoji. */
+  const emojiOnly = () => {
+    const graph = testGraph();
+    graph.senses = graph.senses.map((sense) => (sense.id === "sensepicaritch0" ? { ...sense, emoji: "🤧" } : sense));
+    return articleFor(graph, "lexemepicar0001")!;
+  };
+
+  it("names a sense by its emoji when it has no domain, on the page and on the chips", () => {
+    const { unmount } = render(<LexemeArticle article={emojiOnly()} onNotify={() => undefined} />);
+    expect(screen.getByText("🤧")).toBeInTheDocument();
+    expect(screen.getByText("🔪 cooking")).toBeInTheDocument();
+    unmount();
+    render(<LexemeArticle article={emojiOnly()} view="cards" onNotify={() => undefined} />);
+    expect(screen.getByRole("button", { name: "🤧 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "🔪 cooking" })).toBeInTheDocument();
+  });
+
+  it("opens the cards on the sense it was opened for", () => {
+    render(<LexemeArticle article={picar()} view="cards" focusSense="sensepicarchop0" onNotify={() => undefined} />);
+    expect(screen.getByRole("button", { name: "🔪 cooking" })).toHaveAttribute("aria-current", "true");
+  });
+
+  it("shows a sense on the map, from the page and from its card, and never for an unsaved one", () => {
+    const onMap = vi.fn();
+    const { unmount } = render(<LexemeArticle article={picar()} onNotify={() => undefined} onMap={onMap} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Show on the map" })[1]);
+    expect(onMap).toHaveBeenCalledWith("sensepicarchop0");
+    unmount();
+    render(<LexemeArticle article={picar()} view="cards" onNotify={() => undefined} onMap={onMap} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Show on the map" })[0]);
+    expect(onMap).toHaveBeenLastCalledWith("sensepicaritch0");
+  });
+
+  it("offers no map for a proposal, whose senses are not stored", () => {
+    render(<LexemeArticle article={picar()} meta={false} onNotify={() => undefined} onMap={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Show on the map" })).not.toBeInTheDocument();
+  });
+});

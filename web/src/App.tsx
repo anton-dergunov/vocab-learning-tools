@@ -263,6 +263,22 @@ export default function App() {
   const [mapSense, setMapSense] = useState<string | null>(null);
   const mapReturn = useRef(false);
   const mapCameras = useRef(new Map<string, MapCamera>());
+  /* Where the map draws its row: a slot in the top bar, handed over by a callback ref. */
+  const [mapBar, setMapBar] = useState<HTMLDivElement | null>(null);
+  /* ⌘K: focus search as soon as the search box is in the top bar again. */
+  const [searchSoon, setSearchSoon] = useState(false);
+  useEffect(() => {
+    if (!searchSoon || !search.current) return;
+    search.current.focus();
+    search.current.select();
+    setSearchSoon(false);
+  }, [searchSoon, map]);
+  /* The sense an open article was opened for (see `openLexeme`). */
+  const [focusSense, setFocusSense] = useState<string | null>(null);
+  /* Show a sense on the map, from its article: the map opens in the word's language, flown to that
+     sense and with it selected, as Find would leave it — and Back from that map is Back to the word. */
+  const [mapFly, setMapFly] = useState<string | null>(null);
+  const articleReturn = useRef<{ lexeme: string; sense: string } | null>(null);
   /* One door in, so everything that opens it also closes whatever it replaces — the same shape
      `openCapture` has. */
   const openLoops = useCallback(() => {
@@ -289,11 +305,14 @@ export default function App() {
     setExternal(null);
     setAddTab(null);
     mapReturn.current = false;
+    // Every way in starts fresh; "show on the map" says where it came from after coming in.
+    articleReturn.current = null;
   }, []);
   /* Leaving an article: back to the map when that is where it was opened from. */
   const closeArticle = useCallback(() => {
     setOpenId(null);
     setProposal(null);
+    setFocusSense(null);
     if (mapReturn.current) { mapReturn.current = false; setMap(true); }
   }, []);
   const [settings, setSettings] = useState<SettingsPage | null>(null);
@@ -752,8 +771,11 @@ export default function App() {
     });
   }, [openCapture]);
 
-  const openLexeme = useCallback((id: string) => {
+  /* `senseId` is the sense to open on — its card, or its section scrolled to — when the word is
+     opened for one of its senses, as it is from the map. */
+  const openLexeme = useCallback((id: string, senseId: string | null = null) => {
     setOpenId(id);
+    setFocusSense(senseId);
     // A proposal belongs to the entry it was written against, and is a suggestion rather than a
     // state: leaving the article drops it.
     setProposal(null);
@@ -783,8 +805,8 @@ export default function App() {
         setLoops(false);
         setStories(false);
         setMap(false);
-        search.current?.focus();
-        search.current?.select();
+        // On the map the bar holds the map's row, so the search box exists only once it has left.
+        setSearchSoon(true);
       }
       // Innermost first: leave what you are composing before leaving the entry it belongs to.
       if (event.key === "Escape") {
@@ -1173,6 +1195,7 @@ export default function App() {
      and scrolls itself must not sit inside a region that also scrolls. */
   const composing = Boolean(addTab) || Boolean(article && mode === "edit") || asking || loops || stories || map;
   const inbox = snapshot && language ? inboxCount(snapshot, language) : 0;
+  const surfaced = map || loops || stories;
   const currentTopic = topics.find((option) => option.id === topic);
   const topicLabel = topic === "all" ? "All words" : topic === "inbox" ? "Inbox" : currentTopic?.name ?? "Topic";
   const topicIcon = topic === "all" ? "📖" : topic === "inbox" ? "📥" : currentTopic?.icon ?? "📌";
@@ -1183,11 +1206,14 @@ export default function App() {
       {/* Reading a word on a phone or a tablet does not need the topic rail beside it. The loops
           surface is *not* given `article-open`: it keeps the rail wherever there is room for it,
           and drops it only on a phone, where an article drops it too. */}
-      {/* On the map the top bar goes and the map's own row is the top one (`map-open`). */}
+      {/* On the map the top bar carries the map's own row instead of search, Add and sync (`map-open`). */}
       <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops || stories || map ? " loops-open" : ""}${map ? " map-open" : ""}`}>
         <div className="brand"><span className="mark">A.</span></div>
 
         <header className="topbar">
+          {/* The map draws its row here, through a portal, so the bar is the top bar itself — the same
+              box, rule and surface — rather than a card floating over the map. */}
+          {map ? <div className="map-bar" ref={setMapBar} /> : <>
           <div className={`search ${query.trim() ? "searching" : ""}`}>
             <SearchIcon />
             <input
@@ -1265,14 +1291,17 @@ export default function App() {
               <span>{option.flag}</span><span>{option.name}</span><span className="cnt">{option.count}</span>
             </button>)}
           </div>
+          </>}
         </header>
 
         <nav className="rail" aria-label="Topics">
-          <button className={`tab ${topic === "all" ? "on" : ""}`} title="All words" onClick={() => chooseTopic("all")}>
+          {/* A topic is highlighted only while the list is what is showing: with the map, a loop or a
+              story in its place, that surface's own tab is the one lit, and lit alone. */}
+          <button className={`tab ${topic === "all" && !surfaced ? "on" : ""}`} title="All words" onClick={() => chooseTopic("all")}>
             <span className="ic">📖</span><span className="nm">All</span>
             <span className="cnt">{allCount}</span>
           </button>
-          {inbox > 0 && <button className={`tab ${topic === "inbox" ? "on" : ""}`} title="Inbox" onClick={() => chooseTopic("inbox")}>
+          {inbox > 0 && <button className={`tab ${topic === "inbox" && !surfaced ? "on" : ""}`} title="Inbox" onClick={() => chooseTopic("inbox")}>
             <span className="ic">📥</span><span className="nm">Inbox</span><span className="cnt">{inbox}</span>
           </button>}
           {/* A view of every word rather than a topic, so it sits with All and not among the topics. */}
@@ -1281,7 +1310,7 @@ export default function App() {
           </button>
           <div className="rail-sep" />
           {topics.map((option) => <button
-            key={option.id} className={`tab ${topic === option.id ? "on" : ""}`} title={option.name}
+            key={option.id} className={`tab ${topic === option.id && !surfaced ? "on" : ""}`} title={option.name}
             onClick={() => chooseTopic(option.id)}
           >
             <span className="ic">{option.icon}</span><span className="nm">{option.name}</span>
@@ -1315,13 +1344,20 @@ export default function App() {
             title and a save button on screen at every window size. */}
         <main className={`main ${composing ? "composing" : ""}${carding && !composing ? " cards-on" : ""}`} ref={main}>
           {map && snapshot && language ? <MapView
-          graph={snapshot} owner={snapshot.ownerId} language={language} languages={languages}
+          graph={snapshot} owner={snapshot.ownerId} language={language} languages={languages} bar={mapBar}
           camera={mapCameras.current.get(language) ?? null}
           onCamera={(camera) => mapCameras.current.set(language, camera)}
           selected={mapSense} onSelect={setMapSense}
           onLanguage={(code) => { setMapSense(null); setLanguage(code); }}
-          onOpen={(lexemeId) => { mapReturn.current = true; setMap(false); openLexeme(lexemeId); }}
-          onClose={() => { setMap(false); setMapSense(null); }}
+          fly={mapFly} onFlown={() => setMapFly(null)}
+          onOpen={(lexemeId, senseId) => { mapReturn.current = true; setMap(false); openLexeme(lexemeId, senseId); }}
+          onClose={() => {
+            setMap(false);
+            setMapSense(null);
+            const back = articleReturn.current;
+            articleReturn.current = null;
+            if (back) openLexeme(back.lexeme, back.sense);
+          }}
         /> : stories && snapshot && language ? <StoryView
           graph={snapshot} language={language} onMake={() => setMakingStory(true)}
           onClose={() => setStories(false)}
@@ -1451,6 +1487,14 @@ export default function App() {
               : mode === "read" ? <LexemeArticle
                   article={article} view={view} onNotify={notify} pictures={pictures} clips={clips}
                   marks={markSlot} ask={askSlot} onReference={setReference}
+                  focusSense={focusSense}
+                  onMap={proposal ? null : (senseId) => {
+                    if (article.lexeme.language !== language) setLanguage(article.lexeme.language);
+                    setMapSense(senseId);
+                    setMapFly(senseId);
+                    openMap();
+                    articleReturn.current = { lexeme: article.lexeme.id, sense: senseId };
+                  }}
                 />
               // Editing is a composer above, so only reading and the read-only projection get here.
               : <Suspense fallback={<p className="empty">Loading the editor…</p>}>

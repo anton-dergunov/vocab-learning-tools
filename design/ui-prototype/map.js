@@ -789,14 +789,19 @@
       if (!r.width || !r.height) return;
       const keep = W ? current() : null;
       W = r.width; H = r.height;
-      dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
+      // The emoji are rasterised per pixel ratio; a resize alone does not change them.
+      if (ratio !== dpr) sprites.clear();
+      dpr = ratio;
       canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-      sprites.clear();
       const before = fitK;
       measureFit();
       if (keep && data) place(keep.cx, keep.cy, keep.k * (fitK / before));
       else if (data) fit(false);
       while (pending.length) pending.shift()();
+      /* Setting the canvas's size clears it, so it is drawn again now rather than on the next frame:
+         waiting left one blank frame per resize, and dragging a window's edge made the map blink. */
+      if (data) draw(performance.now());
       request();
     }
     const sizes = new ResizeObserver(resize);
