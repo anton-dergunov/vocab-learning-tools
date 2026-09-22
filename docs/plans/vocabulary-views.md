@@ -1,7 +1,8 @@
 # Vocabulary views · ways to see the word list
 
-**Status:** a list of ideas, none specified and none built. The first to be worked out is
-[the meaning space](meaning-space.md). Each of the others needs defining before it is planned.
+**Status:** a list of ideas. [The meaning space](meaning-space.md) is specified and its first
+version is being built; none of the others is specified yet. Each needs defining before it is
+planned.
 
 Today the vocabulary is a plain list, sortable several ways and grouped into topics. That is a good
 default and it stays. What it cannot do is show how words relate — to each other, across languages,
