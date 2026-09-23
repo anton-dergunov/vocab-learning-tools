@@ -1,7 +1,7 @@
 """The narrow loop client, against recorded responses from the real service.
 
-`fixtures/*.json` were captured from lexibeat 0.2.0 in-process (`schema.json` from 0.5.0, which
-added the `bundle` identity and `family_details`) — the contract in the only shape
+`fixtures/*.json` were captured from lexibeat 0.2.0 in-process (`schema.json` from 0.6.0; 0.4.0
+added the `bundle` identity and 0.5.0 `family_details`) — the contract in the only shape
 Acervo consumes. Re-record them when `deploy/acervo/lexibeat/pin.json` moves; the recorder is in
 that commit's message and takes half a minute.
 

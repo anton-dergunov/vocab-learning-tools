@@ -1,6 +1,6 @@
 {
   "api_version": "1.0.0",
-  "engine_version": "1.4.0",
+  "engine_version": "1.5.0",
   "production_bundle": true,
   "bundle": {
     "present": true,
@@ -27,7 +27,7 @@
   ],
   "profiles": {
     "production-v1": {
-      "version": "1.4.0",
+      "version": "1.5.0",
       "families": [
         "meditative",
         "organic",
