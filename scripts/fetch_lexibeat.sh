@@ -6,10 +6,10 @@
 # (docs/plans/lexibeat-integration.md §2.1). This script is what turns that pin into a file on disk:
 # the wheel the lexibeat image installs.
 #
-# **The sample bundle is not fetched here, and that is the point.** It is ~1.9 GB of audio, it
+# **The sample bundle is not fetched here, and that is the point.** It is ~3.1 GB of audio, it
 # belongs in a volume on the server rather than in a build context, and it must never reach the
 # release archive. `pin.json` names it in a block of its own, and it is fetched once on the server
-# with `./deploy.sh --install-samples`. Pulling it here would put two gigabytes into every checkout,
+# with `./deploy.sh --install-samples`. Pulling it here would put three gigabytes into every checkout,
 # every CI job and every release tarball to no end.
 #
 # The wheel digest is the *release's*, copied from its SHA256SUMS asset — and it is byte-reproducible

@@ -151,7 +151,6 @@ services:
       # Where to come home for a voice. `serve.py` implements LexiBeat's `Backend` as a call to
       # POST /pronunciations/take, carrying the render-scoped token that arrived with the request.
       ACERVO_API_URL: "${ACERVO_LEXIBEAT_API_URL:-http://server:8000/api/acervo/v1}"
-      LEXIBEAT_BUNDLE_ROOT: /var/lib/lexibeat/bundle/lexibeat-production-core-v1
       LEXIBEAT_SERVICE_OUT: /var/lib/lexibeat/out
     # **Deliberately no provider credential of any kind**, and this is the one companion service
     # where that is true — no GEMINI_API_KEY, no Cloudflare pair, no Vertex project, no credentials
@@ -162,7 +161,8 @@ services:
     # Deliberately no `ports` either, for `speech-retrieval`'s reason: a render is asked for by the
     # server, and nothing outside this network talks to it.
     volumes:
-      # ~1.9 GB of content-addressed audio, fetched once with `lexibeat-bundle fetch` and never
+      # ~3.1 GB of content-addressed audio, the bundle `lexibeat/pin.json` names — the entrypoint
+      # looks for that root and no other — fetched once with `lexibeat-bundle fetch` and never
       # deleted by a reset — the dictionaries arrangement, and for its reason: the owner's own data
       # moved between the owner's own machines. Without it the engine serves and offers only the
       # sample-free electronic palette, which is a different category of sound rather than a

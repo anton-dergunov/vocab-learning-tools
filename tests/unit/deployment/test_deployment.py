@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -798,6 +799,51 @@ def test_the_deployer_forwards_a_transition_through_the_launcher(tmp_path: Path)
     assert result.returncode == 0, result.stderr
     assert "deploy-acervo deploy" in ssh_log.read_text(encoding="utf-8")
     assert " --transition" in ssh_log.read_text(encoding="utf-8")
+
+
+def test_installing_the_samples_sends_every_pinned_part_and_the_whole_digest(tmp_path: Path) -> None:
+    """GitHub refuses a release asset of 2 GiB or more, so the bundle is published in parts. Each
+    part must reach the fetch, in order, beside the digest of the archive they join into."""
+    pin = json.loads((REPO_ROOT / "deploy/acervo/lexibeat/pin.json").read_text(encoding="utf-8"))
+    env, ssh_log = _jobs_ssh(tmp_path, "")
+    result = _deploy_remotely(env, "--install-samples")
+    assert result.returncode == 0, result.stderr
+    sent = ssh_log.read_text(encoding="utf-8")
+    base = f"{pin['repository']}/releases/download/{pin['tag']}/"
+    expected = " ".join(f"--from {base}{part}" for part in pin["bundle"]["parts"])
+    assert f"deploy-acervo install-samples {expected} --sha256 '{pin['bundle']['sha256']}'" in sent
+
+
+def test_the_launcher_fetches_every_part_and_refuses_anything_that_is_not_one(tmp_path: Path) -> None:
+    helper = runnable_remote_helper(tmp_path)
+    root = tmp_path / "acervo"
+    release = root / "releases" / "one"
+    (release / "deploy" / "acervo").mkdir(parents=True)
+    (release / "deploy" / "acervo" / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    (root / "current-release").write_text(f"{release}\n", encoding="utf-8")
+    log = tmp_path / "docker.log"
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_docker_path(tmp_path)}:{env['PATH']}"
+    env["ACERVO_TEST_DOCKER_LOG"] = str(log)
+    part = "https://github.com/owner/lexibeat/releases/download/v1/bundle.tar"
+    digest = "a" * 64
+
+    result = subprocess.run(
+        [str(helper), "install-samples", "--from", f"{part}.001", "--from", f"{part}.002",
+         "--sha256", digest, "--root", str(root)],
+        env=env, text=True, capture_output=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (f"lexibeat-bundle fetch --into /var/lib/lexibeat/bundle --from {part}.001 "
+            f"--from {part}.002 --sha256 {digest}") in log.read_text(encoding="utf-8")
+
+    for refused in (part, f"{part}.001;reboot", "https://example.com/bundle.tar.001"):
+        result = subprocess.run(
+            [str(helper), "install-samples", "--from", refused, "--sha256", digest,
+             "--root", str(root)],
+            env=env, text=True, capture_output=True, check=False,
+        )
+        assert result.returncode == 2, refused
 
 
 def test_a_transition_still_refuses_while_jobs_are_open(tmp_path: Path) -> None:
@@ -2039,7 +2085,7 @@ def test_the_loop_service_is_given_no_provider_credential_at_all() -> None:
 
 
 def test_the_loop_sample_bundle_is_never_deleted_by_a_reset() -> None:
-    """~1.9 GB fetched once, and the dictionaries arrangement for the dictionaries' reason: it is the
+    """~3.1 GB fetched once, and the dictionaries arrangement for the dictionaries' reason: it is the
     owner's own data moved between the owner's own machines, not something a reset should cost them.
 
     `--reset-data` clears the Anki collections and the worker's, and nothing else — so this asserts

@@ -76,10 +76,11 @@ def render(args: argparse.Namespace) -> int:
     if schema.sample_free:
         # Said loudly. Rendering goes ahead — that is the decision — but a track made on the
         # sample-free palette is not a slightly plainer version of the same thing.
-        print("samples    NONE — this loop will use the synthesised electronic palette.")
-        print("           Fetch the bundle once with `lexibeat-bundle fetch`; see pin.json.")
+        print("samples    NOT the pinned bundle, or not all of it — this loop will be thinner than")
+        print("           the music was tuned against. Install it with ./deploy.sh --install-samples.")
     else:
-        print(f"samples    present, so all {len(schema.families)} families are available")
+        print(f"samples    bundle v{schema.bundle_version}, complete, so all "
+              f"{len(schema.families)} families are available")
 
     with AcervoClient(args.server_url) as client:
         try:
@@ -105,7 +106,8 @@ def render(args: argparse.Namespace) -> int:
             items=words,
             source_language={"code": args.language, "name": args.language_name or args.language},
             target_language={"code": args.gloss_language, "name": args.gloss_language_name or args.gloss_language},
-            token=token, pattern=args.pattern, family=args.family, seed=args.seed,
+            token=token, delivery=args.delivery, pattern=args.pattern, family=args.family,
+            seed=args.seed,
         )
     except LoopError as failure:
         print(f"The render was refused: {failure.message}", file=sys.stderr)
@@ -166,6 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     one.add_argument("--pattern", default="retrieval")
     one.add_argument("--family", default="auto")
     one.add_argument("--seed", type=int, default=None)
+    # Plain by default because it is the cheap one: one recording a line, varied by the generator.
+    # The server reads the owner's Settings ▸ Loops choice instead; this command has no settings.
+    one.add_argument("--delivery", choices=("plain", "directed"), default="plain")
     one.add_argument("--out", default=None, help="write the finished MP3 here")
 
     args = parser.parse_args(argv)

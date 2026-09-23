@@ -37,7 +37,7 @@ jobs:
       run: ./scripts/fetch_speech.sh
 
     - name: Fetch the pinned lexibeat wheel
-      # The loop image COPYs it out of vendor/. Only the wheel: the pin also names a ~1.9 GB sample
+      # The loop image COPYs it out of vendor/. Only the wheel: the pin also names a ~3.1 GB sample
       # bundle, which is fetched once on the server and has no business in a CI checkout.
       run: ./scripts/fetch_lexibeat.sh
 

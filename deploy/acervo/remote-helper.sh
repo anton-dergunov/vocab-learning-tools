@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PROTOCOL=11
+PROTOCOL=12
 HELPER_PATH=/usr/local/sbin/deploy-acervo
 SUDOERS_PATH=/etc/sudoers.d/deploy-acervo
 PATH="$PATH:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin"
@@ -349,32 +349,41 @@ deploy_release() {
 # already: `deploy` extracts an installer out of a streamed archive and runs it as root. What is
 # checked here is only that the operation is a bare word, so nothing path-like or flag-like can
 # arrive where a subcommand is expected.
-# The sample pack: ~1.9 GB of audio, fetched once into the directory the running service actually
+# The sample pack: ~3.1 GB of audio, fetched once into the directory the running service actually
 # mounts. **That last clause is the whole reason this exists.** The obvious command —
 # `docker compose -f compose.yaml run --rm lexibeat lexibeat-bundle fetch …` — omits the deployment's
 # env file, so `ACERVO_LEXIBEAT_BUNDLE` is unset, compose falls back to a *named volume*, and the
 # bundle unpacks, verifies and reports success into a store nothing serves from. It is a silent
-# failure that costs two gigabytes and looks exactly like a success.
+# failure that costs three gigabytes and looks exactly like a success. A bundle the pin no longer
+# names is removed by the fetch itself, once the new one has verified, so an upgrade frees its space.
 #
 # The URL and the digest come from the pin on the calling side, where the repository is: this end
 # only checks that they are the shape they should be, so the operation list stays as narrow as the
 # rest of it.
 install_samples() {
-  bundle_url=
+  # Every `--from` is one numbered part of the archive, in order — GitHub refuses a release asset of
+  # 2 GiB or more — and each is checked for shape here before any reaches the fetch.
+  bundle_from=
   bundle_sha=
   acervo_root=
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --from) [ "$#" -ge 2 ] || exit 2; bundle_url=$2; shift 2 ;;
+      --from)
+        [ "$#" -ge 2 ] || exit 2
+        case "$2" in
+          https://github.com/*.tar.[0-9][0-9][0-9]) ;;
+          *) echo "install-samples needs https://github.com/… .tar.NNN release part URLs" >&2; exit 2 ;;
+        esac
+        case "$2" in
+          *[!A-Za-z0-9./:_-]*) echo "install-samples: a part URL has an unexpected character" >&2; exit 2 ;;
+        esac
+        bundle_from="$bundle_from --from $2"; shift 2 ;;
       --sha256) [ "$#" -ge 2 ] || exit 2; bundle_sha=$2; shift 2 ;;
       --root) [ "$#" -ge 2 ] || exit 2; acervo_root=$2; shift 2 ;;
-      *) echo "install-samples takes --from, --sha256 and --root" >&2; exit 2 ;;
+      *) echo "install-samples takes --from (once per part), --sha256 and --root" >&2; exit 2 ;;
     esac
   done
-  case "$bundle_url" in
-    https://github.com/*.tar) ;;
-    *) echo "install-samples needs a https://github.com/… .tar release URL" >&2; exit 2 ;;
-  esac
+  [ -n "$bundle_from" ] || { echo "install-samples needs at least one --from" >&2; exit 2; }
   case "$bundle_sha" in
     *[!0-9a-f]*|"") echo "install-samples needs a hex sha256" >&2; exit 2 ;;
     *) [ "${#bundle_sha}" -eq 64 ] || { echo "install-samples needs a 64-character sha256" >&2; exit 2; } ;;
@@ -395,10 +404,13 @@ install_samples() {
     --env-file "$acervo_root/secrets.env" \
     --env-file "$acervo_root/llm.env" \
     -f "$compose_file"
-  echo "Fetching the sample pack — about 1.9 GB, once." >&2
+  echo "Fetching the sample pack — about 3.1 GB, once. It replaces any older one." >&2
+  # Unquoted on purpose: it is a list of `--from URL` pairs, each checked above to hold no space or
+  # shell metacharacter, so splitting it on spaces is exactly the argument list.
+  # shellcheck disable=SC2086
   "$docker" compose "$@" run --rm lexibeat \
     lexibeat-bundle fetch --into /var/lib/lexibeat/bundle \
-    --from "$bundle_url" --sha256 "$bundle_sha" || exit $?
+    $bundle_from --sha256 "$bundle_sha" || exit $?
   # The engine reads the catalogue per request, so a restart is not strictly needed — but the
   # entrypoint's one-line verdict is, and it is printed only at start.
   "$docker" compose "$@" up -d --force-recreate lexibeat >&2 || exit $?

@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 profile=${ACERVO_DEPLOY_PROFILE:-"$repo_root/.acervo-deploy"}
 helper_path=/usr/local/sbin/deploy-acervo
-helper_protocol=11
+helper_protocol=12
 worker_arguments=
 
 mode=
@@ -80,7 +80,7 @@ usage:
                       while they run. A deploy never carries a job across versions
   --create-account    create one account on the running server, reading the address
                       and password from the terminal
-  --install-samples   fetch the loop generator's sample pack — about 1.9 GB, once —
+  --install-samples   fetch the loop generator's sample pack — about 3.1 GB, once —
                       into the directory the running service mounts. Without it no
                       loop can be made. The URL and digest come from the pin, so
                       neither is typed by hand
@@ -476,10 +476,13 @@ read_pin_url() {
   [ -f "$pin" ] || { echo "Missing pin: $pin" >&2; exit 1; }
   # Concatenation rather than an f-string: same-quoted nesting inside one is a syntax error before
   # Python 3.12, and this runs on whatever `python3` the invoking machine happens to have.
-  bundle_url=$(python3 -c '
+  # One `--from` per part, in order: GitHub refuses a release asset of 2 GiB or more, so the bundle
+  # is published in parts and the fetch joins them before checking the whole archive's digest.
+  bundle_from=$(python3 -c '
 import json, sys
 pin = json.load(open(sys.argv[1], encoding="utf-8"))
-print(pin["repository"] + "/releases/download/" + pin["tag"] + "/" + pin["bundle"]["file"])
+base = pin["repository"] + "/releases/download/" + pin["tag"] + "/"
+print(" ".join("--from " + base + part for part in pin["bundle"]["parts"]))
 ' "$pin")
   bundle_sha=$(python3 -c '
 import json, sys
@@ -518,7 +521,7 @@ if [ "$action" = install-samples ]; then
       --env-file "$acervo_root/llm.env" \
       -f "$(dirname "$0")/deploy/acervo/compose.yaml" \
       run --rm lexibeat lexibeat-bundle fetch --into /var/lib/lexibeat/bundle \
-      --from "$bundle_url" --sha256 "$bundle_sha"
+      $bundle_from --sha256 "$bundle_sha"
     exit $?
   fi
   if [ "$action" = status ]; then
@@ -659,7 +662,7 @@ if [ "$action" = install-samples ]; then
     echo "--install-samples needs the reviewed launcher; install it once with ./deploy.sh --install-helper" >&2
     exit 2
   fi
-  ssh -T "$target" "sudo -n $helper_path install-samples --from '$bundle_url' --sha256 '$bundle_sha'"
+  ssh -T "$target" "sudo -n $helper_path install-samples $bundle_from --sha256 '$bundle_sha'"
   exit $?
 fi
 

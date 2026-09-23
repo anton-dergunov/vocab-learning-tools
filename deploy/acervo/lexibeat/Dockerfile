@@ -18,10 +18,6 @@ FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    # The package resolves its default bundle relative to the repository root, which in a wheel
-    # install is `site-packages`. It must be set explicitly or the engine quietly finds no samples
-    # and offers only the electronic palette, which sounds like a different product.
-    LEXIBEAT_BUNDLE_ROOT=/var/lib/lexibeat/bundle/lexibeat-production-core-v1 \
     # Where finished tracks are written before Acervo fetches them. A mount, not the image.
     LEXIBEAT_SERVICE_OUT=/var/lib/lexibeat/out \
     LEXIBEAT_SERVICE_QUEUE=4 \
@@ -51,7 +47,7 @@ RUN pip install --no-cache-dir /tmp/wheels/lexibeat-*.whl && \
         "httpx>=0.28,<1" && \
     rm -rf /tmp/wheels
 
-# `bundle/` holds ~1.9 GB of content-addressed audio, fetched once with `lexibeat-bundle fetch` and
+# `bundle/` holds ~3.1 GB of content-addressed audio, fetched once with `lexibeat-bundle fetch` and
 # never deleted by a reset — the dictionaries arrangement, and for the same reason: it is the owner's
 # own data moved between the owner's own machines. `out/` is finished tracks and is disposable.
 RUN mkdir -p /var/lib/lexibeat/bundle /var/lib/lexibeat/out \
@@ -59,6 +55,9 @@ RUN mkdir -p /var/lib/lexibeat/bundle /var/lib/lexibeat/out \
 
 COPY deploy/acervo/lexibeat/entrypoint.sh /usr/local/bin/lexibeat-entrypoint
 COPY deploy/acervo/lexibeat/serve.py /app/serve.py
+# The entrypoint reads the bundle's root from the pin, so which bundle this image looks for is
+# written down once — beside the digest it was fetched against — rather than in three places.
+COPY deploy/acervo/lexibeat/pin.json /app/pin.json
 # `a+rx`, not `+x`: a bare `+x` is masked by the umask, and the installer extracts a release under
 # `umask 077`, so the copied file arrives owner-only and stays that way. The container runs as the
 # deploying user against a root-owned file and cannot open its own entry point — which reads as

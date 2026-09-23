@@ -1,20 +1,23 @@
 {
   "note": "The one version of lexibeat this deployment runs. Acervo names a version and upgrades deliberately; the two repositories do not share a release cadence. See docs/plans/lexibeat-integration.md 2.1.",
   "repository": "https://github.com/anton-dergunov/lexibeat",
-  "version": "0.3.0",
-  "tag": "v0.3.0",
+  "version": "0.4.0",
+  "tag": "v0.4.0",
   "artifacts": {
     "wheel": {
-      "file": "lexibeat-0.3.0-py3-none-any.whl",
-      "sha256": "e13a9ab7c51bee197ce748d658fc5d1ee269b1a96ba5bfc337ffaa006d6ccc14"
+      "file": "lexibeat-0.4.0-py3-none-any.whl",
+      "sha256": "3b85bf8e5731cd8229ddaf91aef646278342b9cbd25fcda1bef88f6b67c7b982"
     }
   },
-  "bundleNote": "The sample bundle is in its own block because it goes somewhere else. `artifacts` is what scripts/fetch_lexibeat.sh puts in vendor/lexibeat/ for the image build; this is ~1.9 GB of audio that is fetched ONCE, on the server, into a volume, and never enters a build context or the release archive. Its digest is inline rather than read from the release's SHA256SUMS, because that asset is written by the release workflow and the workflow does not build the bundle - `lexibeat-bundle publish` does, on a workstation, and prints this. Without the bundle the engine still serves and offers only the sample-free `electronic` palette, which is audibly a different category of thing.",
+  "bundleNote": "The sample bundle is in its own block because it goes somewhere else. `artifacts` is what scripts/fetch_lexibeat.sh puts in vendor/lexibeat/ for the image build; this is ~3.1 GB of audio that is fetched ONCE, on the server, into a volume, and never enters a build context or the release archive. It is published as numbered parts because GitHub refuses a release asset of 2 GiB or more; `sha256` and `bytes` are the whole archive's once the parts are joined in order, which is what the fetch checks. Its digest is inline rather than read from the release's SHA256SUMS, because that asset is written by the release workflow and the workflow does not build the bundle - `lexibeat-bundle publish` does, on a workstation, and prints this. `root` is not only a description: the lexibeat image copies this file in and looks for the bundle at /var/lib/lexibeat/bundle/<root>, so a volume still holding an older bundle reads as no bundle at all and Acervo refuses with loops_no_samples until --install-samples has run. This is the listener-approved Wave 3 library; its manifest carries the expansion policy that switches on the sustained strings, contrabasses and Wave 3 leads. A bundle without that policy renders the plainer control behaviour, and nothing about it looks wrong except the music.",
   "bundle": {
-    "file": "lexibeat-production-core-v1.tar",
-    "sha256": "d2ae4443aa1ee129ea238e26304f569da243a9a53b5547d61d23f93f50b4185f",
-    "bytes": 1959075840,
-    "assets": 1207,
-    "root": "lexibeat-production-core-v1"
+    "parts": [
+      "lexibeat-production-core-v3.tar.001",
+      "lexibeat-production-core-v3.tar.002"
+    ],
+    "sha256": "5f5c02e5616f3e29ccfcc77e1142114ed0ef8be8fd0e19f64ec80d4ca55585b3",
+    "bytes": 3067648000,
+    "assets": 2440,
+    "root": "lexibeat-production-core-v3"
   }
 }

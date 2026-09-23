@@ -54,7 +54,11 @@ class Schema:
 
     api_version: str
     engine_version: str
+    # Complete, not merely present: a bundle missing files renders thinner beds rather than failing.
     production_bundle: bool
+    # Which bundle, from its own manifest. The generator's container looks for the one `pin.json`
+    # names, so a stale volume reads as no bundle at all; this is for saying which one answered.
+    bundle_version: str
     patterns: tuple[str, ...]
     families: tuple[str, ...]
     max_items: int
@@ -136,6 +140,7 @@ class LoopService:
             api_version=_text(payload.get("api_version")),
             engine_version=_text(payload.get("engine_version")),
             production_bundle=payload.get("production_bundle") is True,
+            bundle_version=_text((payload.get("bundle") or {}).get("version")),
             patterns=tuple(_text(row.get("id")) for row in patterns or [] if isinstance(row, dict)),
             families=tuple(_text(name) for name in payload.get("families") or []),
             max_items=_int((payload.get("limits") or {}).get("max_items")),

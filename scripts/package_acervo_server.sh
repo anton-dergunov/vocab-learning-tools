@@ -92,8 +92,8 @@ cp "$speech_wheel" "$bundle/vendor/speech/"
 # The pinned lexibeat wheel, on the same terms and for the same reason: compose builds the loop
 # service from the extracted archive, so a release without it deploys a service that cannot build.
 #
-# Only the wheel. The ~1.9 GB sample bundle the same pin names is deliberately *not* here: it is
-# fetched once on the server into a volume, and putting two gigabytes of audio into every release
+# Only the wheel. The ~3.1 GB sample bundle the same pin names is deliberately *not* here: it is
+# fetched once on the server into a volume, and putting three gigabytes of audio into every release
 # archive to save one command would be the opposite trade to the one the dictionaries make, which
 # are small enough to ride along.
 lexibeat_wheel="$repo_root/vendor/lexibeat/$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]["wheel"]["file"])' "$repo_root/deploy/acervo/lexibeat/pin.json")"

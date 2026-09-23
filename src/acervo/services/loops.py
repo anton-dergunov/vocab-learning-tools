@@ -104,8 +104,8 @@ def schema(settings: Settings) -> dict[str, Any]:
     return {
         "apiVersion": found.api_version,
         "engineVersion": found.engine_version,
-        # False means the sample bundle is not installed, so every bed is the synthesised palette.
-        # Rendering still goes ahead — the interface says so rather than refusing (§2.2).
+        # False means the pinned sample bundle is not installed, or not all of it: `create` refuses
+        # with `loops_no_samples` rather than render beds from whatever part of it is there.
         "productionBundle": found.production_bundle,
         "patterns": list(found.patterns),
         "families": list(found.families),

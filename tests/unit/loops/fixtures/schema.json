@@ -2,6 +2,15 @@
   "api_version": "1.0.0",
   "engine_version": "1.4.0",
   "production_bundle": true,
+  "bundle": {
+    "present": true,
+    "complete": true,
+    "bundle": "lexibeat-production-core",
+    "version": "3",
+    "assets": 2440,
+    "missing": 0,
+    "expanded": true
+  },
   "patterns": [
     {
       "id": "alternating",
