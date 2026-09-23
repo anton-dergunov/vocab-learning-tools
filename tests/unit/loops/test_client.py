@@ -1,7 +1,7 @@
 """The narrow loop client, against recorded responses from the real service.
 
-`fixtures/*.json` were captured from lexibeat 0.2.0 in-process (`schema.json` from 0.4.0, which
-added the `bundle` identity) — the contract in the only shape
+`fixtures/*.json` were captured from lexibeat 0.2.0 in-process (`schema.json` from 0.5.0, which
+added the `bundle` identity and `family_details`) — the contract in the only shape
 Acervo consumes. Re-record them when `deploy/acervo/lexibeat/pin.json` moves; the recorder is in
 that commit's message and takes half a minute.
 
@@ -52,7 +52,8 @@ def test_the_catalogues_are_read_from_the_service_and_never_copied_here():
     schema = service(answering(recorded("schema"))).schema()
     assert schema.api_version == "1.0.0"
     assert set(schema.patterns) == {"retrieval", "alternating"}
-    assert "auto" in schema.families and len(schema.families) > 5
+    assert len(schema.families) > 5 and "auto" not in [one.id for one in schema.families]
+    assert all(one.label and one.description for one in schema.families)
     assert schema.max_items > 0
     assert schema.bundle_version == "3"
 

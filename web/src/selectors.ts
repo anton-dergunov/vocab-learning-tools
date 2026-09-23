@@ -8,7 +8,7 @@
 import {
   effectiveShortGloss,
   type Attestation, type Example, type ImagePrompt, type Lexeme, type LexemeStatus,
-  type AudioSegment, type Loop, type LoopItem, type OwnedFields, type Sense, type Story, type StoryPart,
+  type AudioSegment, type Bed, type Loop, type LoopItem, type OwnedFields, type Sense, type Story, type StoryPart,
   type StoryWord, type StudyState, type SyncFields,
   type Topic, type Vocabulary, type VocabularyGraph
 } from "./domain";
@@ -561,6 +561,41 @@ export function loopTitle(graph: VocabularyGraph, loop: Loop, limit = 3): string
   const named = items.slice(0, limit).map((item) => item.sourceText);
   const rest = items.length - named.length;
   return rest > 0 ? `${named.join(", ")} +${rest}` : named.join(", ");
+}
+
+/**
+ * The beds the owner kept, newest first, one per piece of music.
+ *
+ * A favourite *is* its style and seed, so two records naming the same pair — kept twice, or from
+ * two devices — are one favourite here. There is no uniqueness constraint to lean on instead: that
+ * is the data rule for every replicated collection.
+ */
+export function favouriteBeds(graph: VocabularyGraph): Bed[] {
+  const seen = new Set<string>();
+  return live(graph.beds)
+    .slice()
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
+    .filter((bed) => {
+      const key = `${bed.styleId}\u0000${bed.seed}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+/** The kept bed a loop's music is, if it is one: the same style and the same seed. */
+export function bedOfLoop(graph: VocabularyGraph, loop: Loop): Bed | undefined {
+  if (!loop.styleId) return undefined;
+  return live(graph.beds).find((bed) => bed.styleId === loop.styleId && bed.seed === loop.seed);
+}
+
+/** A style's name in words: the generator's label where it gave one, else the id with its hyphens gone. */
+export function styleLabel(families: readonly { id: string; label: string }[] | undefined, styleId: string | null): string {
+  if (!styleId) return "No music yet";
+  const named = families?.find((family) => family.id === styleId)?.label;
+  if (named) return named;
+  const words = styleId.replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /**

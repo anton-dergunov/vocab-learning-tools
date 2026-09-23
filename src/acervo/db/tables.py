@@ -28,7 +28,7 @@ from sqlalchemy import (
 
 metadata = MetaData()
 
-# The fourteen replicated tables, in graph order: topics before lexemes, lexemes before senses and
+# The fifteen replicated tables, in graph order: topics before lexemes, lexemes before senses and
 # attestations, those before examples, sense-linked image prompts and pronunciations. Applying a batch in this order
 # means a relation always resolves, so it is also the merge order the write route uses — and,
 # reversed and with the first two dropped, the tombstone order.
@@ -37,7 +37,8 @@ metadata = MetaData()
 # is an owner-level artefact that *references* words — so they hang off nothing and could sit
 # anywhere after `lexemes`. Last is where they go anyway, because that is what puts them inside the
 # word reset: a loop every one of whose captions names a deleted word is a track nothing describes,
-# and a story whose every word is gone is one nothing asked for.
+# and a story whose every word is gone is one nothing asked for. A favourite bed follows the loop it
+# was kept from, and goes with it in that reset.
 REPLICATED = (
     "vocabularies",
     "topics",
@@ -53,6 +54,7 @@ REPLICATED = (
     "stories",
     "story_parts",
     "story_words",
+    "beds",
 )
 
 
@@ -554,6 +556,25 @@ loop_items = Table(
     Index("idx_loop_items_owner_revision", "owner", "revision"),
     Index("idx_loop_items_owner_loop_order", "owner", "loop", "item_order"),
     Index("idx_loop_items_owner_lexeme", "owner", "lexeme"),
+)
+
+# A bed the owner kept: the music of one loop, to be asked for again for another. Style and seed
+# replay it for any words (the bed does not depend on them), and `bed_fingerprint` is what proves a
+# replay made the same one. It is a record of its own rather than a flag on the loop, so deleting the
+# loop does not take the favourite with it; the reference then points at a tombstone, as a loop
+# item's does at a deleted word.
+beds = Table(
+    "beds",
+    metadata,
+    Column("id", String(15), primary_key=True),
+    _owner(),
+    Column("style_id", String(120), nullable=False),
+    Column("seed", Integer, nullable=False, default=0),
+    Column("engine_version", String(64), nullable=False, default=""),
+    Column("bed_fingerprint", String(64), nullable=False, default=""),
+    Column("source_loop", String(15), ForeignKey("loops.id", ondelete="CASCADE"), nullable=False),
+    *_sync_fields(),
+    Index("idx_beds_owner_revision", "owner", "revision"),
 )
 
 stories = Table(

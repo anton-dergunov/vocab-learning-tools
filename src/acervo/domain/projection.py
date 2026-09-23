@@ -391,6 +391,26 @@ def _assign_loop(value: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _project_bed(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "styleId": row["style_id"],
+        "seed": to_int(row["seed"]),
+        "engineVersion": text_or_none(row["engine_version"]),
+        "bedFingerprint": text_or_none(row["bed_fingerprint"]),
+        "sourceLoopId": row["source_loop"],
+    }
+
+
+def _assign_bed(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "style_id": trimmed(value.get("styleId")),
+        "seed": to_int(value.get("seed")),
+        "engine_version": trimmed(value.get("engineVersion")),
+        "bed_fingerprint": trimmed(value.get("bedFingerprint")),
+        "source_loop": trimmed(value.get("sourceLoopId")),
+    }
+
+
 def _project_loop_item(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "loopId": row["loop"],
@@ -565,6 +585,7 @@ COLLECTIONS: tuple[Collection, ...] = (
     Collection("stories", tables.stories, _project_story, _assign_story),
     Collection("storyParts", tables.story_parts, _project_story_part, _assign_story_part),
     Collection("storyWords", tables.story_words, _project_story_word, _assign_story_word),
+    Collection("beds", tables.beds, _project_bed, _assign_bed),
 )
 
 COLLECTION_BY_KEY = {collection.key: collection for collection in COLLECTIONS}

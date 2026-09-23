@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AddView, { type AddTab, type CaptureSeed } from "./AddView";
-import type { ImagePrompt } from "./domain";
+import type { ImagePrompt, Loop } from "./domain";
 import AskDock, { type Detent } from "./AskDock";
 import ReviewBar from "./ReviewBar";
 import MadeBar from "./MadeBar";
@@ -18,7 +18,7 @@ import { newId } from "./ids";
 import {
   backendSession, type CaptureFoldable, type CaptureHealth, type CaptureRequest,
   type ChatCapture, type ChatNeighbour,
-  type ChatProposal, type ChatSubject, type ChatTurn, type ImageStyle
+  type ChatProposal, type ChatSubject, type ChatTurn, type ImageStyle, type LoopMusic
 } from "./api";
 import {
   forgetCachedLookups, hydrateGlosses, lookup as lookupDictionaries, searchDictionaries,
@@ -1116,6 +1116,46 @@ export default function App() {
   }
 
   /**
+   * New music for a loop: the server renders it again and replaces the track when it lands.
+   *
+   * The job is shown at once rather than when the next event arrives, so the player says "Making new
+   * music" the moment it was asked for; the old track goes on playing until then.
+   */
+  async function changeLoopMusic(loopId: string, music: LoopMusic) {
+    try {
+      const answer = await backendSession.changeLoopMusic(loopId, music);
+      jobStream.apply(answer.job);
+      notify("Making new music — it takes a few minutes");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "New music could not be asked for.");
+    }
+  }
+
+  /**
+   * Keep a loop's music as a favourite, or stop keeping it. An ordinary write of a `beds` record —
+   * online-only and loud when it fails — and unkeeping tombstones every record naming this music, so
+   * one kept twice (or from two devices) does not linger as a second star.
+   */
+  async function toggleKeptBed(loop: Loop) {
+    if (!snapshot || !loop.styleId) return;
+    const matching = snapshot.beds.filter((bed) => !bed.deleted && bed.styleId === loop.styleId && bed.seed === loop.seed);
+    try {
+      if (matching.length) {
+        for (const bed of matching) await repository.delete("beds", bed.id);
+      } else {
+        await repository.saveBed({
+          styleId: loop.styleId, seed: loop.seed, engineVersion: loop.engineVersion,
+          bedFingerprint: loop.bedFingerprint, sourceLoopId: loop.id
+        });
+      }
+      setSnapshot(repository.snapshot());
+      notify(matching.length ? "No longer a favourite" : "Kept — offered next time you make a loop");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "That could not be saved.");
+    }
+  }
+
+  /**
    * Delete a story everywhere, pictures and all.
    *
    * A route rather than an ordinary tombstone for `removeLoop`'s reason: the pictures are
@@ -1366,6 +1406,8 @@ export default function App() {
           graph={snapshot} language={language} onMake={() => setMakingLoop(true)}
           onClose={() => setLoops(false)}
           onDelete={removeLoop}
+          onChangeMusic={(loopId, music) => void changeLoopMusic(loopId, music)}
+          onToggleKeep={(loop) => void toggleKeptBed(loop)}
         /> : addTab ? <AddView
             // A new composition is a fresh view, not a prop change: remounting is what makes "add
             // this word, then that one" start clean rather than editing the previous draft. The key

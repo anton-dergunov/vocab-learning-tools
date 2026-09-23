@@ -109,6 +109,9 @@ const ICON = {
   note:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 4.2L9.2 6.4v9.05a2.9 2.9 0 1 0 1.5 2.55V9.1l6.8-1.5v5.6a2.9 2.9 0 1 0 1.5 2.55z"/></svg>',
   /* Play it again, and go on to the next one: the two glyphs every player uses, so neither needs a
      label to be understood. */
+  star:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.8l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>',
+  starOn: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.8l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>',
+  down:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h11a3 3 0 0 1 3 3v1"/><path d="M18 17H7a3 3 0 0 1-3-3v-1"/><path d="M8.5 4.5L6 7l2.5 2.5"/><path d="M15.5 19.5L18 17l-2.5-2.5"/></svg>',
   continue:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11M4 12h8M4 17h8"/><path d="M16 11.5v7l5.5-3.5z" fill="currentColor" stroke-width="1"/></svg>',
   /* The map: a folded sheet, and the four corners of "show all of it". */
@@ -1407,8 +1410,39 @@ function seekBar(loop, rows) {
     <div class="seek-times"><span class="at">0:00</span><span>${clock(loop.durationSeconds)}</span></div>`;
 }
 
+/* A style in words, the generator's where it gave them — `selectors.ts` `styleLabel`. */
+function styleLabel(styleId) {
+  if (!styleId) return "No music yet";
+  const named = LOOP_SCHEMA.families.find((family) => family.id === styleId);
+  if (named) return named.label;
+  const words = styleId.replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+const bedOfLoop = (loop) => BEDS.find((bed) => bed.styleId === loop.styleId && bed.seed === loop.seed);
+const bedAbout = (bed) => {
+  const source = loopOf(bed.sourceLoopId);
+  return source ? `kept ${bed.createdAt.slice(5)} · from “${loopTitle(source)}”` : `kept ${bed.createdAt.slice(5)}`;
+};
+
+/* The player's menu of other music — `LoopMusic.tsx` `MusicMenu`. Choosing is asking; no Apply. */
+function musicMenu(loop) {
+  const others = BEDS.filter((bed) => !(bed.styleId === loop.styleId && bed.seed === loop.seed));
+  const row = (attrs, name, about, cls = "") => `<button ${attrs}${cls ? ` class="${cls}"` : ""}>
+      <span class="music-name">${name}</span><span class="music-about">${esc(about)}</span></button>`;
+  return `<div class="menu music-menu${state.musicMenu ? " open" : ""}" role="menu" aria-label="New music for this loop">
+    ${row('role="menuitem" data-music=""', "New music in this style", `${styleLabel(loop.styleId)}, with a different bed`)}
+    ${others.length ? '<div class="menu-label label">Favourites</div>' : ""}
+    ${others.map((bed) => row(`role="menuitem" data-music="${bed.styleId}"`, `${ICON.starOn}${esc(styleLabel(bed.styleId))}`, bedAbout(bed))).join("")}
+    <div class="menu-label label">Styles</div>
+    ${LOOP_SCHEMA.families.map((family) => row(
+      `role="menuitemradio" aria-checked="${family.id === loop.styleId}" data-music="${family.id}"`,
+      esc(family.label), family.description, family.id === loop.styleId ? "on" : "")).join("")}
+  </div>`;
+}
+
 function playerBlock(loop) {
   const rows = loopItemsOf(loop.id);
+  const kept = Boolean(bedOfLoop(loop));
   return `<div class="player">
     ${seekBar(loop, rows)}
     <div class="transport">
@@ -1420,7 +1454,17 @@ function playerBlock(loop) {
       <button class="switch${player.autoplay ? " on" : ""}" data-switch="autoplay"
               aria-pressed="${player.autoplay}" aria-label="Go on to the next loop when this one ends">${ICON.continue}</button>
     </div>
-    <div class="player-bed label">${esc((loop.styleId || "no bed").replace(/-/g, " "))} · ${rows.length} words</div>
+    <div class="player-bed">
+      ${state.remaking === loop.id ? '<span class="bed-status label">Making new music · 38% · Rendering the music bed</span>' : ""}
+      <span class="bed-line">
+        <button class="bed-name label" id="bedName" aria-haspopup="menu" aria-expanded="${Boolean(state.musicMenu)}"
+                ${state.remaking === loop.id ? "disabled" : ""}>${esc(styleLabel(loop.styleId))}${ICON.down}</button>
+        <button class="bed-star${kept ? " on" : ""}" id="bedStar" aria-pressed="${kept}"
+                aria-label="${kept ? "No longer keep this music" : "Keep this music as a favourite"}">${kept ? ICON.starOn : ICON.star}</button>
+        <span class="label">· ${rows.length} words</span>
+        ${musicMenu(loop)}
+      </span>
+    </div>
   </div>`;
 }
 
@@ -2038,6 +2082,13 @@ function loopEligible() {
     && (state.topic === "all" || x.topics.includes(state.topic))).length;
 }
 
+/* One choice in the dialog's list — `LoopMusic.tsx` `MusicChoices`. */
+function musicChoice(value, name, about, on = false, extra = "") {
+  return `<div class="music-choice${on ? " on" : ""}">
+    <button type="button" role="radio" aria-checked="${on}" data-choice="${esc(value)}">
+      <span class="music-name">${name}</span><span class="music-about">${esc(about)}</span></button>${extra}</div>`;
+}
+
 function renderLoopDialog() {
   const eligible = loopEligible();
   const where = state.topic === "all" ? langOf(state.lang).name : `${langOf(state.lang).name} · ${topicOf(state.topic).name}`;
@@ -2055,11 +2106,15 @@ function renderLoopDialog() {
             <input type="range" id="loopCount" min="4" max="${Math.max(4, Math.min(24, eligible))}" value="${count}">
             <output for="loopCount" id="loopCountOut">${count} words</output>
           </span></label>
-        <label class="config-field"><span>Music</span>
-          <select id="loopFamily">
-            <option value="auto">Surprise me</option>
-            ${LOOP_SCHEMA.families.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join("")}
-          </select></label>
+        <div class="config-field"><span>Music</span>
+          <div class="music-choices" role="radiogroup" aria-label="Music">
+            ${musicChoice("surprise", "Surprise me", "New music, in any style", true)}
+            ${BEDS.length ? '<div class="music-group label">Favourites</div>' : ""}
+            ${BEDS.map((bed) => musicChoice(`bed:${bed.id}`, `${ICON.starOn}${esc(styleLabel(bed.styleId))}`, bedAbout(bed), false,
+              loopOf(bed.sourceLoopId) ? `<button type="button" class="music-preview" aria-label="Hear this music">${ICON.play}</button>` : "")).join("")}
+            <div class="music-group label">Styles</div>
+            ${LOOP_SCHEMA.families.map((family) => musicChoice(family.id, esc(family.label), family.description)).join("")}
+          </div></div>
         <p class="config-help">A word with no single term to say is not eligible: a loop has to
           choose one meaning, and <i>espolvorear</i> has none written down yet.</p>
         <div class="loop-engine">engine ${esc(LOOP_SCHEMA.engineVersion)} · ${
@@ -2084,6 +2139,16 @@ function openLoopDialog() {
   document.addEventListener("keydown", onKey);
   const range = $("#loopCount", node);
   range.oninput = () => { $("#loopCountOut", node).textContent = `${range.value} words`; };
+  $(".music-choices", node).onclick = (ev) => {
+    const choice = ev.target.closest("[data-choice]");
+    if (ev.target.closest(".music-preview")) { toast("Plays the loop this music was kept from — prototype only"); return; }
+    if (!choice) return;
+    node.querySelectorAll(".music-choice").forEach((one) => {
+      const on = one.contains(choice);
+      one.classList.toggle("on", on);
+      one.querySelector("[data-choice]").setAttribute("aria-checked", String(on));
+    });
+  };
   $("#loopGo", node).onclick = () => { shut(); toast("Asked for a loop — prototype only, nothing was made"); };
 }
 
@@ -2133,6 +2198,23 @@ $("#main").addEventListener("click", (ev) => {
     return;
   }
   if (ev.target.closest("#playPause")) { player.playing ? loopPause() : loopPlay(); return; }
+  if (ev.target.closest("#bedName")) { state.musicMenu = !state.musicMenu; render(); return; }
+  if (ev.target.closest("#bedStar")) {
+    const loop = loopOf(state.loopOpen);
+    const kept = bedOfLoop(loop);
+    if (kept) BEDS.splice(BEDS.indexOf(kept), 1);
+    else BEDS.unshift({ id: `bd${Date.now()}`, styleId: loop.styleId, seed: loop.seed, sourceLoopId: loop.id, createdAt: "2026-09-23" });
+    toast(kept ? "No longer a favourite" : "Kept — offered next time you make a loop");
+    render();
+    return;
+  }
+  const music = ev.target.closest("[data-music]");
+  if (music) {
+    state.musicMenu = false; state.remaking = state.loopOpen;
+    toast("Making new music — it takes a few minutes (prototype only)");
+    render();
+    return;
+  }
   const open = ev.target.closest("[data-loop]");
   if (open) {
     state.loopOpen = open.dataset.loop;

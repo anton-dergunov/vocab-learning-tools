@@ -74,6 +74,78 @@
     "playful-plucked",
     "bright-pastoral"
   ],
+  "family_details": [
+    {
+      "id": "meditative",
+      "label": "Meditative",
+      "description": "Slow and spacious: long held chords, little or no percussion."
+    },
+    {
+      "id": "organic",
+      "label": "Organic",
+      "description": "Earthy mid-tempo pulse: marimba or piano over soft hand percussion."
+    },
+    {
+      "id": "acoustic",
+      "label": "Acoustic",
+      "description": "Gentle and melodic: piano, marimba or glockenspiel over warm strings."
+    },
+    {
+      "id": "sunlit",
+      "label": "Sunlit",
+      "description": "Bright and relaxed, lightly rhythmic."
+    },
+    {
+      "id": "radiant",
+      "label": "Radiant",
+      "description": "The brightest and quickest: open, major-key, uplifting."
+    },
+    {
+      "id": "acoustic-flow",
+      "label": "Acoustic flow",
+      "description": "Calm and flowing: sustained piano and strings, a light pulse."
+    },
+    {
+      "id": "playful-minimal",
+      "label": "Playful minimal",
+      "description": "Light and sparse: a few bouncy notes over a soft pad."
+    },
+    {
+      "id": "warm-motion",
+      "label": "Warm motion",
+      "description": "Warm, flowing, gently propulsive."
+    },
+    {
+      "id": "bright-organic",
+      "label": "Bright organic",
+      "description": "Upbeat and airy: marimba or piano with a moving bass line."
+    },
+    {
+      "id": "gentle-game",
+      "label": "Gentle game",
+      "description": "Quick, cheerful arpeggios, like a calm game menu."
+    },
+    {
+      "id": "sunlit-acoustic",
+      "label": "Sunlit acoustic",
+      "description": "Guitar, harp or plucked strings; bright and unhurried."
+    },
+    {
+      "id": "gentle-movement",
+      "label": "Gentle movement",
+      "description": "A soft pulse carried by piano, vibraphone, ocarina or organ."
+    },
+    {
+      "id": "playful-plucked",
+      "label": "Playful plucked",
+      "description": "Kalimba, mbira, strumstick and guitar: plucked and bouncy."
+    },
+    {
+      "id": "bright-pastoral",
+      "label": "Bright pastoral",
+      "description": "Ocarina and pizzicato strings; open, countryside feel."
+    }
+  ],
   "energy": [
     "calm",
     "balanced",

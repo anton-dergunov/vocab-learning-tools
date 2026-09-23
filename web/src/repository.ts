@@ -1,6 +1,6 @@
 import {
   validateChanges, validateGraph, type GraphIndex,
-  type Attestation, type AttestationInput, type EntityKind, type Example, type ExampleInput,
+  type Attestation, type AttestationInput, type Bed, type BedInput, type EntityKind, type Example, type ExampleInput,
   type ImagePrompt, type ImagePromptInput, type Lexeme, type LexemeInput, type Loop, type LoopInput,
   type LoopItem, type LoopItemInput, type Pronunciation, type Sense, type SenseInput,
   type OwnedFields, type Story, type StoryInput, type StoryPart, type StoryPartInput,
@@ -17,18 +17,19 @@ import type { ArticleDraft } from "./yaml";
  * The shape of the records this device stores. **Any change to a replicated record's shape bumps
  * it**, so a copy stored under the old shape is wiped and pulled again rather than refused at every
  * open. 16: a story part's passages became one recording each (`audioRef`, `audioMime`,
- * `durationSeconds`) instead of times into one joined file, and nothing bumped this.
+ * `durationSeconds`) instead of times into one joined file, and nothing bumped this. 17: `beds`,
+ * the loop music the owner keeps.
  */
-export const LOCAL_SCHEMA_VERSION = 16;
+export const LOCAL_SCHEMA_VERSION = 17;
 
 export const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],
   pronunciations: [], studyStates: [], loops: [], loopItems: [], stories: [], storyParts: [],
-  storyWords: []
+  storyWords: [], beds: []
 });
 
-export type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | Pronunciation | StudyState | Loop | LoopItem | Story | StoryPart | StoryWord;
-type EntityInput = VocabularyInput | TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput | LoopInput | LoopItemInput | StoryInput | StoryPartInput | StoryWordInput;
+export type Entity = Vocabulary | Topic | Lexeme | Sense | Attestation | Example | ImagePrompt | Pronunciation | StudyState | Loop | LoopItem | Story | StoryPart | StoryWord | Bed;
+type EntityInput = VocabularyInput | TopicInput | LexemeInput | SenseInput | AttestationInput | ExampleInput | ImagePromptInput | StudyStateInput | LoopInput | LoopItemInput | StoryInput | StoryPartInput | StoryWordInput | BedInput;
 
 /** What the server returns for a batch of applied records. */
 export interface RemoteWrite {
@@ -101,6 +102,7 @@ export interface AcervoRepository {
   saveImagePrompt(input: ImagePromptInput, id?: string): Promise<ImagePrompt>;
   saveStudyState(input: StudyStateInput, id?: string): Promise<StudyState>;
   saveLoop(input: LoopInput, id?: string): Promise<Loop>;
+  saveBed(input: BedInput, id?: string): Promise<Bed>;
   /** Takes the named words out of the Inbox in one write, and says how many moved. */
   fileWords(ids: readonly string[]): Promise<number>;
   delete(kind: EntityKind, id: string): Promise<void>;
@@ -188,7 +190,8 @@ export class LocalAcervoRepository implements AcervoRepository {
       loopItems: contents.loopItems,
       stories: contents.stories,
       storyParts: contents.storyParts,
-      storyWords: contents.storyWords
+      storyWords: contents.storyWords,
+      beds: contents.beds
     } : null;
     const refusal = graph ? refusalOf(graph, ownerId) : null;
     if (!graph || refusal) {
@@ -409,6 +412,8 @@ export class LocalAcervoRepository implements AcervoRepository {
    * and loud when it fails, like every other write.
    */
   saveLoop(input: LoopInput, id?: string) { return this.save("loops", input, id) as Promise<Loop>; }
+  /** Keep a loop's music as a favourite. Unkeeping it is `delete("beds", id)`, a tombstone. */
+  saveBed(input: BedInput, id?: string) { return this.save("beds", input, id) as Promise<Bed>; }
 
   /**
    * Takes words out of the Inbox, as one write.

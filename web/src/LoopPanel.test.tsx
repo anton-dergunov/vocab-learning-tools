@@ -16,7 +16,8 @@ import { MemoryMediaStore } from "./mediaStore";
 
 const SCHEMA: LoopSchema = {
   apiVersion: "1.0.0", engineVersion: "1.4.0", maxItems: 24,
-  patterns: ["retrieval"], families: ["auto", "gentle-game"], productionBundle: true
+  patterns: ["retrieval"], productionBundle: true,
+  families: [{ id: "gentle-game", label: "Gentle game", description: "Quick, cheerful arpeggios." }]
 };
 
 function settings(loops: "plain" | "expressive" = "expressive"): PronunciationSettings {

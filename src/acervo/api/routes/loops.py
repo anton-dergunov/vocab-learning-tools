@@ -4,6 +4,9 @@
   query: the interface sampled them from the scope on screen and the server does not re-derive that
   scope. Choosing words by hand is therefore the same route with a different list, and no server
   change at all.
+- `POST /loops/{id}/music` renders a loop again with other music: a family, a seed, or both (a
+  favourite). It queues the same `loop` job with those as its input and leaves the row alone, so the
+  loop goes on describing the track it holds until the new one lands and replaces it.
 - `DELETE /loops/{id}` tombstones the loop and its words and unlinks the track. It is a route
   rather than an ordinary client write for the reason the image routes are: a track is megabytes,
   nothing else would ever remove it, and the row and the file have to be written by the same party.
@@ -32,8 +35,9 @@ from starlette.concurrency import run_in_threadpool
 from acervo.api.auth import owner_id
 from acervo.api.errors import data
 from acervo.api.payload import json_body
+from acervo.errors import ApiError
 from acervo.repository import graph, jobs
-from acervo.services.loops import create, remove, schema
+from acervo.services.loops import create, music, remove, schema
 
 router = APIRouter()
 
@@ -63,6 +67,23 @@ async def make(request: Request) -> JSONResponse:
                              subject_id=loop["id"], input={"family": family} if family else {})
     )
     return data({"loop": loop, "job": queued}, status=202)
+
+
+@router.post("/loops/{loop_id}/music")
+async def change_music(loop_id: str, request: Request) -> JSONResponse:
+    """New music for a loop: another style, the same style afresh, or a kept favourite."""
+    owner = owner_id(request)
+    body = await json_body(request)
+    # One render at a time for a loop. A second request would queue behind the first, and the one
+    # the owner is waiting to hear would be replaced by the other a few minutes later.
+    if await run_in_threadpool(jobs.open_for, owner, "loop", loop_id) is not None:
+        raise ApiError(409, "loop_busy", "This loop is already being made; wait for it to finish.")
+    given = await run_in_threadpool(music, request.app.state.settings, owner, loop_id, body)
+    queued = await run_in_threadpool(
+        lambda: jobs.enqueue(owner, "loop", trigger="manual", subject_kind="loop",
+                             subject_id=loop_id, input=given)
+    )
+    return data({"job": queued}, status=202)
 
 
 @router.delete("/loops/{loop_id}")

@@ -36,12 +36,12 @@ function view(loops: Loop[]) {
     vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [],
     imagePrompts: [], pronunciations: [], studyStates: [],
     loops, loopItems: loops.map((one) => item(one.id)),
-    stories: [], storyParts: [], storyWords: []
+    stories: [], storyParts: [], storyWords: [], beds: []
   };
   const onDelete = vi.fn();
   render(<LoopView
     graph={graph} language="es" onMake={() => undefined} onClose={() => undefined}
-    onDelete={onDelete}
+    onDelete={onDelete} onChangeMusic={() => undefined} onToggleKeep={() => undefined}
   />);
   return onDelete;
 }

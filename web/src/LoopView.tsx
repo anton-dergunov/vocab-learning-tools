@@ -15,9 +15,10 @@
  */
 
 import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "react";
+import type { LoopMusic } from "./api";
 import { jobFor, jobStream, isOpen as jobIsOpen } from "./jobs";
 import { stripOf } from "./ProgressStrip";
-import type { VocabularyGraph } from "./domain";
+import type { Loop, VocabularyGraph } from "./domain";
 import { BackIcon, HourglassIcon, PauseIcon, PlayIcon, PlusIcon } from "./icons";
 import * as player from "./loops";
 import LoopPlayer from "./LoopPlayer";
@@ -28,7 +29,7 @@ function clock(seconds: number | null): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-export default function LoopView({ graph, language, onMake, onClose, onDelete }: {
+export default function LoopView({ graph, language, onMake, onClose, onDelete, onChangeMusic, onToggleKeep }: {
   graph: VocabularyGraph;
   language: string;
   onMake(): void;
@@ -36,6 +37,9 @@ export default function LoopView({ graph, language, onMake, onClose, onDelete }:
   onClose(): void;
   /** Online-only and loud when it fails, like every other write. */
   onDelete(loopId: string): void;
+  onChangeMusic(loopId: string, music: LoopMusic): void;
+  /** Keep this loop's music as a favourite, or stop keeping it. */
+  onToggleKeep(loop: Loop): void;
 }) {
   const playback = player.usePlayback();
   const live = useSyncExternalStore(jobStream.subscribe, jobStream.getStatus);
@@ -80,7 +84,11 @@ export default function LoopView({ graph, language, onMake, onClose, onDelete }:
         <span className="label">Loops</span>
         <span className="spacer" />
       </div>
-      <LoopPlayer loop={open} items={items} />
+      <LoopPlayer
+        loop={open} items={items} graph={graph}
+        onChangeMusic={(music) => onChangeMusic(open.id, music)}
+        onToggleKeep={() => onToggleKeep(open)}
+      />
     </section>;
   }
 
@@ -140,7 +148,11 @@ export default function LoopView({ graph, language, onMake, onClose, onDelete }:
               <span className="loop-main">
                 <span className="loop-title">{loopTitle(graph, loop)}</span>
                 <span className="loop-sub">
-                  {ready
+                  {ready && making
+                    /* New music being made for a loop that already plays: it goes on playing the
+                       old track until this finishes, so the row says both. */
+                    ? <span className="doing">New music · {stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "queued"}</span>
+                    : ready
                     ? `${items.length} words · ${clock(loop.durationSeconds)}`
                     : making
                       /* What it is *doing*, in the generator's own words — this is a four-minute

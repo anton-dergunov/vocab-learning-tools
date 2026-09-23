@@ -11,7 +11,7 @@ export type Register = typeof REGISTERS[number];
 export type LexemeStatus = typeof LEXEME_STATUSES[number];
 export type SourceKind = typeof SOURCE_KINDS[number];
 export type ExampleOrigin = typeof EXAMPLE_ORIGINS[number];
-export type EntityKind = "vocabularies" | "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "pronunciations" | "studyStates" | "loops" | "loopItems" | "stories" | "storyParts" | "storyWords";
+export type EntityKind = "vocabularies" | "topics" | "lexemes" | "senses" | "attestations" | "examples" | "imagePrompts" | "pronunciations" | "studyStates" | "loops" | "loopItems" | "stories" | "storyParts" | "storyWords" | "beds";
 /** What a pronunciation reads: a lexeme's headword, a sense's definition, an example's or an attestation's text. */
 export const PRONUNCIATION_TARGETS = ["lexeme", "sense", "example", "attestation"] as const;
 export type PronunciationTarget = typeof PRONUNCIATION_TARGETS[number];
@@ -293,6 +293,24 @@ export interface LoopItem extends SyncFields, OwnedFields {
 }
 
 /**
+ * A bed the owner kept: the music of one loop, to be asked for again for new words.
+ *
+ * `styleId` and `seed` replay it — the generator's bed does not depend on the words — and
+ * `bedFingerprint` is what proves a replay made the same one. It is a record of its own rather than
+ * a flag on the loop, so deleting the loop does not take the favourite with it: `sourceLoopId` then
+ * points at a tombstone, as a loop item's `lexemeId` does at a deleted word, and the favourite simply
+ * has nothing left to preview.
+ */
+export interface Bed extends SyncFields, OwnedFields {
+  id: string;
+  styleId: string;
+  seed: number;
+  engineVersion: string | null;
+  bedFingerprint: string | null;
+  sourceLoopId: string;
+}
+
+/**
  * A story: a handful of words told back to you as a short illustrated tale.
  *
  * **Its state is derived and there is no status column**, exactly as for a `Loop`. A story with no
@@ -414,6 +432,7 @@ export interface VocabularyGraph {
   stories: Story[];
   storyParts: StoryPart[];
   storyWords: StoryWord[];
+  beds: Bed[];
 }
 
 export type VocabularyInput = Omit<Vocabulary, "id" | keyof SyncFields | keyof OwnedFields>;
@@ -429,6 +448,7 @@ export type LoopItemInput = Omit<LoopItem, "id" | keyof SyncFields | keyof Owned
 export type StoryInput = Omit<Story, "id" | keyof SyncFields | keyof OwnedFields>;
 export type StoryPartInput = Omit<StoryPart, "id" | keyof SyncFields | keyof OwnedFields>;
 export type StoryWordInput = Omit<StoryWord, "id" | keyof SyncFields | keyof OwnedFields>;
+export type BedInput = Omit<Bed, "id" | keyof SyncFields | keyof OwnedFields>;
 
 const RECORD_ID = /^[a-z0-9]{15}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -758,6 +778,17 @@ const CHECKS: { [K in EntityKind]: (record: VocabularyGraph[K][number], find: Fi
       Array.isArray(record.translationForms) && record.translationForms.every((one) => typeof one === "string"),
       "Story word translated forms are invalid."
     );
+  },
+  beds(record: Bed, find: Find): void {
+    invariant(typeof record.styleId === "string" && record.styleId.length > 0, "A kept bed names its style.");
+    optionalString(record.engineVersion, "Kept bed engine version");
+    optionalString(record.bedFingerprint, "Kept bed fingerprint");
+    // A loop's own bound, since a kept bed's seed is a loop's seed.
+    invariant(Number.isSafeInteger(record.seed) && record.seed >= 0, "Kept bed seed is invalid.");
+    // Among *all* loops, tombstones included: a favourite outlives the loop it was kept from.
+    const loop = find.loops(record.sourceLoopId);
+    invariant(loop, "Kept bed references a missing loop.");
+    invariant(record.ownerId === loop.ownerId, "Kept bed and loop must have the same owner.");
   }
 };
 
@@ -875,7 +906,8 @@ export function validateChanges(
 
 const EMPTY_KINDS = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],
-  pronunciations: [], studyStates: [], loops: [], loopItems: [], stories: [], storyParts: [], storyWords: []
+  pronunciations: [], studyStates: [], loops: [], loopItems: [], stories: [], storyParts: [], storyWords: [],
+  beds: []
 });
 
 /** The graph with the change set laid over it, a replaced record keeping its place. */

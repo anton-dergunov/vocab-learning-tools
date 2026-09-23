@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validateGraph, type LoopItem } from "./domain";
 import {
-  articleFor, articleFromDraft, inboxCount, languageOptions, loopCandidates, loopIsReady,
+  articleFor, articleFromDraft, bedOfLoop, favouriteBeds, inboxCount, styleLabel, languageOptions, loopCandidates, loopIsReady,
   loopItemsOf, loopMomentAt, loopTitle, loopsIn, sampleLexemeIds, shortGlossOf, utteranceStarts,
   strengthOf, topicOptions, visibleRows
 } from "./selectors";
@@ -198,6 +198,30 @@ describe("loops", () => {
     const [rendered, queued] = loopsIn(graph, "es");
     expect(loopIsReady(rendered)).toBe(true);
     expect(loopIsReady(queued)).toBe(false);
+  });
+
+  it("finds the kept bed a loop's music is, by style and seed", () => {
+    const [rendered, queued] = loopsIn(graph, "es");
+    expect(bedOfLoop(graph, rendered)?.id).toBe("bedmorning00001");
+    expect(bedOfLoop(graph, queued)).toBeUndefined();
+    expect(bedOfLoop(graph, { ...rendered, seed: rendered.seed + 1 })).toBeUndefined();
+  });
+
+  it("lists each kept piece of music once, newest first, and never a tombstone", () => {
+    const kept = graph.beds[0];
+    const twice = { ...graph, beds: [
+      kept,
+      { ...kept, id: "bedmorning00002", createdAt: "2026-09-05T00:00:00.000Z" },
+      { ...kept, id: "bedother0000001", seed: 3, createdAt: "2026-09-04T00:00:00.000Z" },
+      { ...kept, id: "bedgone00000001", seed: 4, deleted: true }
+    ] };
+    expect(favouriteBeds(twice).map((bed) => bed.id)).toEqual(["bedmorning00002", "bedother0000001"]);
+  });
+
+  it("names a style in words, the generator's where it gave them", () => {
+    expect(styleLabel([{ id: "acoustic-flow", label: "Acoustic flow" }], "acoustic-flow")).toBe("Acoustic flow");
+    expect(styleLabel(undefined, "bright-pastoral")).toBe("Bright pastoral");
+    expect(styleLabel(undefined, null)).toBe("No music yet");
   });
 
   it("derives a title from the words rather than storing one", () => {

@@ -232,3 +232,59 @@ def test_the_kind_declares_its_phases_up_front(server, generator, runner, clock)
     done = [job for job in jobs.recent(server.owner, 50) if job["kind"] == "loop"][0]
     assert [step["name"] for step in done["steps"]] == ["loop.render", "loop.store"]
     assert [step["state"] for step in done["steps"]] == ["done", "done"]
+
+
+# ── new music for a loop ────────────────────────────────────────────────────
+
+
+def test_new_music_renders_again_and_leaves_the_row_until_the_track_lands(server, generator, runner, clock):
+    loop = a_loop(server, 1)
+    drive(runner, clock)
+    before = [row for row in stored(server, "loops") if row["id"] == loop["id"]][0]
+
+    answer = server.post(f"/loops/{loop['id']}/music", {"family": "meditative", "seed": 777})
+    assert answer.status_code == 202, answer.text
+    assert answer.json()["data"]["job"]["input"] == {"family": "meditative", "seed": "777"}
+    # Nothing written yet: the row still describes the track it holds.
+    now = [row for row in stored(server, "loops") if row["id"] == loop["id"]][0]
+    assert (now["seed"], now["styleId"], now["audioRef"]) == (
+        before["seed"], before["styleId"], before["audioRef"])
+
+    drive(runner, clock)
+    asked = generator.started[-1]
+    assert (asked["family"], asked["seed"]) == ("meditative", 777)
+
+
+def test_new_music_in_the_same_style_keeps_the_family_and_draws_a_new_seed(server, generator, runner, clock):
+    loop = a_loop(server, 1)
+    drive(runner, clock)
+    answer = server.post(f"/loops/{loop['id']}/music", {})
+    assert answer.status_code == 202, answer.text
+    given = answer.json()["data"]["job"]["input"]
+    assert given["family"] == "acoustic-flow" and given["seed"].isdigit()
+
+
+def test_new_music_waits_for_the_render_already_under_way(server, generator, runner, clock):
+    loop = a_loop(server, 1)
+    # The render asked for when the loop was made is still queued.
+    busy = server.post(f"/loops/{loop['id']}/music", {})
+    assert busy.status_code == 409
+    assert busy.json()["error"]["code"] == "loop_busy"
+
+
+def test_new_music_is_only_music_the_generator_offers(server, generator, runner, clock):
+    loop = a_loop(server, 1)
+    drive(runner, clock)
+    assert server.post(f"/loops/{loop['id']}/music", {"family": "polka"}).status_code == 400
+    assert server.post(f"/loops/{loop['id']}/music", {"seed": -3}).status_code == 400
+    assert server.post("/loops/zzzzzzzzzzzzzzz/music", {}).status_code == 404
+
+
+def test_try_again_on_a_change_of_music_asks_for_the_same_music(server, generator, runner, clock):
+    loop = a_loop(server, 1)
+    drive(runner, clock)
+    server.post(f"/loops/{loop['id']}/music", {"family": "meditative", "seed": 31})
+    again = server.post("/jobs", {"kind": "loop", "subject": {"kind": "loop", "id": loop["id"]},
+                                  "input": {"family": "meditative", "seed": "31"}})
+    assert again.status_code == 202, again.text
+    assert again.json()["data"]["input"] == {"family": "meditative", "seed": "31"}

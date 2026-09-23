@@ -631,12 +631,6 @@ const EXTERNAL = [
    An empty `audioRef` is the whole of what "not rendered yet" means. One loop here is in that state
    on purpose, so the row that is still being made can be looked at beside the ones that are done. */
 
-const LOOP_BEDS = {
-  "gentle-game":      { family: "gentle game", sampled: true },
-  "late-piano":       { family: "late piano",  sampled: true },
-  "electronic-pulse": { family: "electronic",  sampled: false }
-};
-
 /* The times per word, in the proportions a real render produces: the word is spoken as its turn
    opens, the translation a quarter of the way through — that gap is the recall gap, and it is
    deliberately the longest — and then the pair twice more, evenly an eighth of the turn apart, with
@@ -711,7 +705,7 @@ const LOOPS = [
   },
   {
     id: "lp3f81nzc6yh5t2", language: "es", position: 2,
-    styleId: "late-piano", seed: 88213, engineVersion: "1.4.0", bedFingerprint: "b1d9042ce7f3aa88",
+    styleId: "acoustic-flow", seed: 88213, engineVersion: "1.4.0", bedFingerprint: "b1d9042ce7f3aa88",
     pattern: "retrieval", audioRef: "loops/es/lp3f81nzc6yh5t2-91c47b3e.mp3", audioMime: "audio/mpeg",
     durationSeconds: endOf("lp3f81nzc6yh5t2"), createdAt: "2026-09-12", editedAt: "2026-09-12"
   },
@@ -723,11 +717,9 @@ const LOOPS = [
     pattern: "retrieval", audioRef: null, audioMime: null,
     durationSeconds: null, createdAt: "2026-09-18", editedAt: "2026-09-18"
   },
-  /* Made on a server with no sample pack, so the bed is oscillators rather than instruments. Worth
-     showing: it is a different category of sound, not a plainer one, and the row says so. */
   {
     id: "lp2h63vxr8ns1g4", language: "es", position: 4,
-    styleId: "electronic-pulse", seed: 22910, engineVersion: "1.4.0", bedFingerprint: "44aa1c0b9e21f7d6",
+    styleId: "bright-pastoral", seed: 22910, engineVersion: "1.4.0", bedFingerprint: "44aa1c0b9e21f7d6",
     pattern: "retrieval", audioRef: "loops/es/lp2h63vxr8ns1g4-2f70d4aa.mp3", audioMime: "audio/mpeg",
     durationSeconds: endOf("lp2h63vxr8ns1g4"), createdAt: "2026-08-30", editedAt: "2026-08-30"
   }
@@ -737,9 +729,25 @@ const LOOPS = [
    `productionBundle: false` would mean every bed is the synthesised palette. */
 const LOOP_SCHEMA = {
   apiVersion: "1", engineVersion: "1.4.0", productionBundle: true,
-  patterns: ["retrieval"], families: ["gentle game", "late piano", "bright pop", "slow dub", "electronic"],
-  maxItems: 40
+  patterns: ["retrieval"], maxItems: 40,
+  /* Each kind of music with the generator's own words for it. "Surprise me" is not among them: it
+     is the absence of a choice, and the dialog's to name. */
+  families: [
+    { id: "meditative", label: "Meditative", description: "Slow and spacious: long held chords, little or no percussion." },
+    { id: "organic", label: "Organic", description: "Earthy mid-tempo pulse: marimba or piano over soft hand percussion." },
+    { id: "acoustic-flow", label: "Acoustic flow", description: "Calm and flowing: sustained piano and strings, a light pulse." },
+    { id: "gentle-game", label: "Gentle game", description: "Quick, cheerful arpeggios, like a calm game menu." },
+    { id: "sunlit-acoustic", label: "Sunlit acoustic", description: "Guitar, harp or plucked strings; bright and unhurried." },
+    { id: "playful-plucked", label: "Playful plucked", description: "Kalimba, mbira, strumstick and guitar: plucked and bouncy." },
+    { id: "bright-pastoral", label: "Bright pastoral", description: "Ocarina and pizzicato strings; open, countryside feel." }
+  ]
 };
+
+/* Beds the owner kept (`web/src/domain.ts` `Bed`): the music of one loop, offered again when a loop
+   is made. Style and seed replay it; the loop it came from is what the dialog plays to preview it. */
+const BEDS = [
+  { id: "bd4m81xq0zv2c7n", styleId: "gentle-game", seed: 104740, sourceLoopId: "lp7k2md90xqv4b1", createdAt: "2026-09-17" }
+];
 
 /* ── stories ──
    A story is a handful of words told back as a short illustrated tale. Its state is derived, like a

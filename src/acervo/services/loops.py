@@ -48,6 +48,9 @@ MAX_WORDS = 40
 # it is asked for, so Try again reproduces the same bed rather than a different one, and the value
 # stored is provably the value that produced the track: the generator echoes back what it is given.
 SEED_LIMIT = 2 ** 31
+# What a seed may be when it is given rather than minted — a favourite's, which came from a loop and
+# may have been minted by the generator itself before Acervo sent one. The graph's bound.
+SEED_MAX = 2 ** 53 - 1
 
 TRACK_LIMIT = 64 * 1024 * 1024
 
@@ -108,9 +111,28 @@ def schema(settings: Settings) -> dict[str, Any]:
         # with `loops_no_samples` rather than render beds from whatever part of it is there.
         "productionBundle": found.production_bundle,
         "patterns": list(found.patterns),
-        "families": list(found.families),
+        # Each with the generator's own label and sentence, so the dialog can say what a kind of
+        # music *is*. "Surprise me" is the dialog's, and not one of these.
+        "families": [{"id": one.id, "label": one.label, "description": one.description}
+                     for one in found.families],
         "maxItems": min(found.max_items or MAX_WORDS, MAX_WORDS),
     }
+
+
+def _offered(settings: Settings, family: str) -> None:
+    """Refuse before anything is written: no samples, or a family the generator does not have."""
+    offered = schema(settings)
+    if not offered.get("productionBundle"):
+        raise ApiError(409, "loops_no_samples", NO_SAMPLES)
+    if family and family not in {one["id"] for one in offered.get("families", [])}:
+        raise ApiError(400, "invalid_input", f"The generator has no “{family}” music.")
+
+
+def _seed(value: Any) -> int:
+    """A seed a caller supplied — a favourite's — held to the bound the graph stores."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= SEED_MAX:
+        raise ApiError(400, "invalid_input", "A loop's seed is a whole number the browser can hold.")
+    return value
 
 
 # ── making one ──────────────────────────────────────────────────────────────
@@ -136,12 +158,13 @@ def create(settings: Settings, owner: str, device: str, body: dict[str, Any]) ->
     # Asked before anything is written, so a server without its samples refuses in a second rather
     # than writing rows, queueing a job and failing minutes later with the generator's own wording
     # about a missing `salamander`. One extra call on an operation that already takes minutes.
-    offered = schema(settings)
-    if not offered.get("productionBundle"):
-        raise ApiError(409, "loops_no_samples", NO_SAMPLES)
     family = str(body.get("family") or "").strip()
-    if family and family not in offered.get("families", []):
-        raise ApiError(400, "invalid_input", f"The generator has no “{family}” music.")
+    _offered(settings, family)
+    # A favourite is a family *and* a seed, and only the pair replays it: a seed alone would be
+    # read with `auto`, which may pick a different family for it.
+    if body.get("seed") is not None and not family:
+        raise ApiError(400, "invalid_input", "A loop's seed is given only with its family.")
+    seed = _seed(body["seed"]) if body.get("seed") is not None else secrets.randbelow(SEED_LIMIT)
 
     held = graph.owned_records(owner, "lexemes", wanted)
     items: list[dict[str, Any]] = []
@@ -172,7 +195,7 @@ def create(settings: Settings, owner: str, device: str, body: dict[str, Any]) ->
             "id": loop_id, "language": language,
             # Everything the render decides is empty until it has. An absent `audioRef` is the whole
             # of what "not made yet" means.
-            "styleId": None, "seed": secrets.randbelow(SEED_LIMIT), "engineVersion": None,
+            "styleId": None, "seed": seed, "engineVersion": None,
             "bedFingerprint": None,
             "pattern": str(body.get("pattern") or "retrieval"),
             "audioRef": None, "audioMime": None, "durationSeconds": None,
@@ -201,8 +224,32 @@ def create(settings: Settings, owner: str, device: str, body: dict[str, Any]) ->
 # ── rendering it ────────────────────────────────────────────────────────────
 
 
-def render_request(settings: Settings, owner: str, loop_id: str) -> dict[str, Any]:
-    """Everything one render needs, read in one go before any of it is sent."""
+def music(settings: Settings, owner: str, loop_id: str, body: dict[str, Any]) -> dict[str, str]:
+    """What a change of music asks the render for: a family and a seed, as the job's input.
+
+    **The row is not touched.** Its `styleId` and `seed` go on describing the track it holds until a
+    new track lands, when `store` writes both together; writing the seed now would leave a loop
+    whose numbers name music it does not have for as long as the render took — or for good, if it
+    failed. The request therefore travels on the job, exactly as the family already did.
+
+    An omitted family is the loop's own, so "new music in this style" is this call with nothing
+    in it; an omitted seed is a new one. A favourite supplies both.
+    """
+    loop = graph.owned_records(owner, "loops", [loop_id]).get(loop_id)
+    if loop is None or loop.get("deleted"):
+        raise ApiError(404, "not_found", "That loop is not in your vocabulary.")
+    family = str(body.get("family") or loop.get("styleId") or "").strip()
+    _offered(settings, family)
+    seed = _seed(body["seed"]) if body.get("seed") is not None else secrets.randbelow(SEED_LIMIT)
+    return {**({"family": family} if family else {}), "seed": str(seed)}
+
+
+def render_request(settings: Settings, owner: str, loop_id: str,
+                   seed: int | None = None) -> dict[str, Any]:
+    """Everything one render needs, read in one go before any of it is sent.
+
+    `seed` is a change of music's, carried on the job; otherwise the loop's own.
+    """
     loop = graph.owned_records(owner, "loops", [loop_id]).get(loop_id)
     if loop is None or loop.get("deleted"):
         raise ApiError(404, "not_found", "That loop is not in your vocabulary.")
@@ -234,8 +281,8 @@ def render_request(settings: Settings, owner: str, loop_id: str) -> dict[str, An
         # asked for later — see `delivery`.
         "delivery": delivery(owner),
         # The loop's own seed, so the bed is reproducible and the number that comes back is one this
-        # side can store. See `SEED_LIMIT`.
-        "seed": int(loop.get("seed") or 0),
+        # side can store — or the one a change of music asked for. See `SEED_LIMIT` and `music`.
+        "seed": int(seed if seed is not None else loop.get("seed") or 0),
     }
 
 

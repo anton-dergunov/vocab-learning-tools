@@ -48,9 +48,11 @@ def _render(context: JobContext, step: Step, loop_id: str) -> str | None:
     if operation_id:
         operation = loops.follow(context.settings, operation_id)
     else:
-        request = loops.render_request(context.settings, context.owner, loop_id)
-        # Read for the record. The generator cannot work out which order speaks a loop, and does not
-        # receive it yet — see `services/loops.delivery`.
+        # A change of music carries its seed here rather than on the row, which goes on describing
+        # the track it holds until the new one lands; see `services/loops.music`.
+        seed = str(context.input.get("seed") or "").strip()
+        request = loops.render_request(context.settings, context.owner, loop_id,
+                                       seed=int(seed) if seed.isdigit() else None)
         family = str(context.input.get("family") or "").strip()
         operation = loops.start(context.settings, request, **({"family": family} if family else {}))
         step.note(operationId=operation.id, delivery=loops.delivery(context.owner),

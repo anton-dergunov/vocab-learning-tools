@@ -809,7 +809,8 @@ def test_installing_the_samples_sends_every_pinned_part_and_the_whole_digest(tmp
     result = _deploy_remotely(env, "--install-samples")
     assert result.returncode == 0, result.stderr
     sent = ssh_log.read_text(encoding="utf-8")
-    base = f"{pin['repository']}/releases/download/{pin['tag']}/"
+    # The bundle's own release, which the wheel's tag need not be: it is not re-uploaded every time.
+    base = f"{pin['repository']}/releases/download/{pin['bundle']['release']}/"
     expected = " ".join(f"--from {base}{part}" for part in pin["bundle"]["parts"])
     assert f"deploy-acervo install-samples {expected} --sha256 '{pin['bundle']['sha256']}'" in sent
 

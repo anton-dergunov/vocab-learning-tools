@@ -201,6 +201,13 @@ def _queued_for(connection: Connection, owner: str, kind: str, subject_id: str) 
     ).mappings().first()
 
 
+def open_for(owner: str, kind: str, subject_id: str) -> dict[str, Any] | None:
+    """The queued or running job of this kind about this record, if there is one."""
+    with reading() as connection:
+        row = _open_for(connection, owner, kind, subject_id)
+        return project(row) if row is not None else None
+
+
 def open_of_kind(kind: str, owner: str | None = None) -> list[dict[str, Any]]:
     with reading() as connection:
         query = select(_jobs).where(_jobs.c.kind == kind, _jobs.c.state.in_(OPEN))

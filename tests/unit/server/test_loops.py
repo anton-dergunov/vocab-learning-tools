@@ -99,7 +99,11 @@ def test_the_generators_catalogues_are_read_rather_than_copied(server, generator
     assert answer.status_code == 200, answer.text
     body = answer.json()["data"]
     assert set(body["patterns"]) == {"retrieval", "alternating"}
-    assert "auto" in body["families"]
+    # Each kind of music with the generator's own words for it — and never "auto", which is the
+    # absence of a choice and the dialog's to name ("Surprise me").
+    ids = [family["id"] for family in body["families"]]
+    assert "auto" not in ids and "acoustic-flow" in ids
+    assert all(family["label"] and family["description"] for family in body["families"])
     assert body["productionBundle"] is True
     # One route, written out. Nothing concatenates a path a client sent.
     assert [httpx.URL(str(call.url)).path for call in generator.calls] == ["/api/v1/schema"]
@@ -238,6 +242,37 @@ def test_the_music_the_dialog_chose_reaches_the_render(server, generator):
     # It rides on the job rather than on the row: an instruction for the render, not a fact about
     # the loop — whose own `styleId` records what the render *chose*.
     assert answer.json()["data"]["job"]["input"] == {"family": "acoustic-flow"}
+
+
+def test_a_favourite_is_asked_for_by_its_family_and_its_seed(server, generator):
+    """Only the pair replays a bed: a seed read with `auto` may land on another family."""
+    made = words(server, 1)
+    answer = ask(server, [made[0]["id"]], family="acoustic-flow", seed=9007199254740991)
+    assert answer.status_code == 202, answer.text
+    assert answer.json()["data"]["loop"]["seed"] == 9007199254740991
+    assert answer.json()["data"]["job"]["input"] == {"family": "acoustic-flow"}
+
+    alone = ask(server, [made[0]["id"]], seed=5)
+    assert alone.status_code == 400
+    for wrong in (-1, 2 ** 53, 1.5, "7", True):
+        assert ask(server, [made[0]["id"]], family="acoustic-flow", seed=wrong).status_code == 400
+
+
+def test_a_favourite_bed_is_kept_and_outlives_its_loop(server, generator):
+    from graph_records import stamp
+    made = words(server, 1)
+    loop = ask(server, [made[0]["id"]]).json()["data"]["loop"]
+    bed = {"id": "bedbedbedbedbed", "styleId": "acoustic-flow", "seed": 104740,
+           "engineVersion": "1.4.0", "bedFingerprint": "90c6ad267d159b0e",
+           "sourceLoopId": loop["id"], **stamp()}
+    assert server.push({"beds": [bed]}).status_code == 200
+    assert server.delete(f"/loops/{loop['id']}",
+                         headers={"x-acervo-device": "device000000001"}).status_code == 200
+    kept = [row for row in server.pull().json()["data"]["changes"]["beds"] if row["id"] == bed["id"]]
+    assert kept and not kept[0]["deleted"] and kept[0]["sourceLoopId"] == loop["id"]
+
+    nowhere = {**bed, "id": "bedbedbedbedbe2", "sourceLoopId": "zzzzzzzzzzzzzzz"}
+    assert server.push({"beds": [nowhere]}).status_code == 400
 
 
 def test_music_the_generator_does_not_offer_is_refused_rather_than_sent(server, generator):

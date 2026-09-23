@@ -45,8 +45,8 @@ INPUTS: dict[str, tuple[str, ...]] = {
     "image.rebrief": ("senseId",),
     # Try again on a loop keeps the music that was asked for, which the interface re-sends from the
     # job it is retrying. Without it here the field would be dropped and the retry would differ from
-    # the original in a way nobody asked for.
-    "loop": ("family",),
+    # the original in a way nobody asked for. `seed` is a change of music's (`POST /loops/{id}/music`).
+    "loop": ("family", "seed"),
 }
 TRIGGERS = ("manual", "import")
 

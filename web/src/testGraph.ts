@@ -250,6 +250,13 @@ export function testGraph(): VocabularyGraph {
         id: "storyword000003", storyId: "storyqueued0001", lexemeId: "lexemepicar0001",
         position: 0, sourceText: "picar", forms: [], translationForms: [], ...sync("09-04")
       }
+    ],
+    // The morning loop's music, kept as a favourite.
+    beds: [
+      {
+        id: "bedmorning00001", styleId: "sunlit-acoustic", seed: 104740, engineVersion: "1.4.0",
+        bedFingerprint: "90c6ad267d159b0e", sourceLoopId: "loopmorning0001", ...sync("09-03")
+      }
     ]
   };
 }

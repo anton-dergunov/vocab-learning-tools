@@ -6,9 +6,9 @@
  * is what makes choosing words by hand later the same route with a different list, and no server
  * change at all.
  *
- * The families are the generator's own catalogue, read from `GET /loops/schema` and never copied
- * into Acervo: a family added in a later version of it appears here with nothing changing on this
- * side.
+ * The music is chosen from `MusicChoices`: Surprise me, a favourite the owner kept, or one of the
+ * generator's styles with the sentence it gives to choose it by. The styles are its own catalogue,
+ * read from `GET /loops/schema` and never copied into Acervo.
  *
  * **Without the sample pack this refuses rather than warns.** Fifteen of the generator's sixteen bed
  * families name instruments loaded from its catalogue, so a pack-less render dies partway through on
@@ -20,11 +20,12 @@
  */
 
 import { useEffect, useState } from "react";
-import { AcervoApiError, backendSession, type LoopSchema } from "./api";
+import { AcervoApiError, backendSession } from "./api";
 import type { VocabularyGraph } from "./domain";
 import { BookIcon } from "./icons";
 import { languageOf } from "./languages";
-import { loopCandidates, sampleLexemeIds, type ListQuery } from "./selectors";
+import { MusicChoices, musicOf, useLoopSchema, type MusicChoice } from "./LoopMusic";
+import { favouriteBeds, loopCandidates, sampleLexemeIds, type ListQuery } from "./selectors";
 
 const DEFAULT_WORDS = 12;
 
@@ -37,22 +38,14 @@ export default function LoopDialog({ graph, query, deviceId, onClose, onMade, on
   onMade(loopId: string): void;
   onNotify(message: string): void;
 }) {
-  const [schema, setSchema] = useState<LoopSchema | null>(null);
-  const [trouble, setTrouble] = useState<string | null>(null);
-  const [family, setFamily] = useState("auto");
+  const { schema, trouble } = useLoopSchema(true);
+  const [music, setMusic] = useState<MusicChoice>({ kind: "surprise" });
+  const favourites = favouriteBeds(graph);
   const eligible = loopCandidates(graph, query).length;
   const noSamples = Boolean(schema && !schema.productionBundle);
   const most = Math.min(schema?.maxItems ?? 24, Math.max(4, eligible));
   const [words, setWords] = useState(Math.min(DEFAULT_WORDS, Math.max(4, eligible)));
   const [asking, setAsking] = useState(false);
-
-  useEffect(() => {
-    void backendSession.loopSchema()
-      .then(setSchema)
-      .catch((error: unknown) => setTrouble(error instanceof AcervoApiError
-        ? error.message
-        : "The loop generator could not be reached."));
-  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -66,7 +59,7 @@ export default function LoopDialog({ graph, query, deviceId, onClose, onMade, on
       const answer = await backendSession.makeLoop({
         deviceId, language: query.language,
         lexemeIds: sampleLexemeIds(graph, query, Math.min(words, eligible), Date.now()),
-        ...(family === "auto" ? {} : { family })
+        ...musicOf(music)
       });
       onMade(answer.loop.id);
       onClose();
@@ -110,13 +103,13 @@ export default function LoopDialog({ graph, query, deviceId, onClose, onMade, on
           </span>
         </label>
 
-        <label className="config-field">
+        <div className="config-field">
           <span>Music</span>
-          <select value={family} onChange={(event) => setFamily(event.target.value)}>
-            <option value="auto">Surprise me</option>
-            {(schema?.families ?? []).map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </label>
+          <MusicChoices
+            graph={graph} families={schema?.families ?? []} favourites={favourites}
+            value={music} onChange={setMusic}
+          />
+        </div>
 
         <p className="config-help">
           A word with no single term to say is not eligible: a loop has to choose one meaning, and a

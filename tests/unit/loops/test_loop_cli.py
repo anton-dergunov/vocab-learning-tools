@@ -19,7 +19,7 @@ class FakeService:
 
     def schema(self) -> Schema:
         return Schema(api_version="1.0.0", engine_version="1.4.0", production_bundle=True,
-                      bundle_version="3", patterns=("retrieval",), families=("auto",),
+                      bundle_version="3", patterns=("retrieval",), families=(),
                       max_items=24)
 
     def start(self, **kwargs) -> Operation:

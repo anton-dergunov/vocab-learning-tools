@@ -45,6 +45,15 @@ class LoopError(Exception):
 
 
 @dataclass(frozen=True)
+class Family:
+    """One kind of music, with the words the generator gives a listener to choose it by."""
+
+    id: str
+    label: str
+    description: str
+
+
+@dataclass(frozen=True)
 class Schema:
     """What this deployment of the generator can be asked for.
 
@@ -60,7 +69,9 @@ class Schema:
     # names, so a stale volume reads as no bundle at all; this is for saying which one answered.
     bundle_version: str
     patterns: tuple[str, ...]
-    families: tuple[str, ...]
+    # The kinds of music there are. `auto` is not one of them: it is the absence of a choice, and
+    # the generator leaves it out of these for that reason.
+    families: tuple[Family, ...]
     max_items: int
 
     @property
@@ -142,7 +153,10 @@ class LoopService:
             production_bundle=payload.get("production_bundle") is True,
             bundle_version=_text((payload.get("bundle") or {}).get("version")),
             patterns=tuple(_text(row.get("id")) for row in patterns or [] if isinstance(row, dict)),
-            families=tuple(_text(name) for name in payload.get("families") or []),
+            families=tuple(
+                Family(_text(row.get("id")), _text(row.get("label")), _text(row.get("description")))
+                for row in payload.get("family_details") or [] if isinstance(row, dict)
+            ),
             max_items=_int((payload.get("limits") or {}).get("max_items")),
         )
 

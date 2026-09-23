@@ -20,21 +20,39 @@
  * **The controls do not scroll.** This surface owns its height: the words scroll inside it and the
  * controls are a footer that cannot move. A player that drifts as you scroll is one you have to
  * chase to press pause.
+ *
+ * **The music is changed from its own name.** The style under the transport is a button: it opens
+ * `MusicMenu` — new music in this style, a kept favourite, or another style — and choosing one asks
+ * the server to render the loop again. The old track goes on playing until the new one lands, and
+ * then the player starts it from the beginning. The star beside the name keeps this music as a
+ * favourite, so it is offered the next time a loop is made; nothing asks you to keep the music you
+ * are replacing, because replacing it is usually the reason you did not.
  */
 
-import { useEffect, useRef } from "react";
-import type { Loop, LoopItem } from "./domain";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { LoopMusic } from "./api";
+import type { Loop, LoopItem, VocabularyGraph } from "./domain";
 import { setLoopAutoplay, setLoopRepeat, useLoopAutoplay, useLoopRepeat } from "./editorPreferences";
-import { ContinueIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, RepeatIcon } from "./icons";
+import { ContinueIcon, DownIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon, RepeatIcon, StarIcon } from "./icons";
+import { isOpen as jobIsOpen, jobFor, jobStream } from "./jobs";
+import { MusicMenu, useLoopSchema } from "./LoopMusic";
 import * as player from "./loops";
-import { loopMomentAt } from "./selectors";
+import { stripOf } from "./ProgressStrip";
+import { bedOfLoop, favouriteBeds, loopIsReady, loopMomentAt, styleLabel } from "./selectors";
 
 function clock(seconds: number): string {
   const whole = Math.max(0, Math.floor(seconds || 0));
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-export default function LoopPlayer({ loop, items }: { loop: Loop; items: LoopItem[] }) {
+export default function LoopPlayer({ loop, items, graph, onChangeMusic, onToggleKeep }: {
+  loop: Loop;
+  items: LoopItem[];
+  graph: VocabularyGraph;
+  /** Online-only and loud when it fails, like every other write. */
+  onChangeMusic(music: LoopMusic): void;
+  onToggleKeep(): void;
+}) {
   const playback = player.usePlayback();
   const repeat = useLoopRepeat();
   const autoplay = useLoopAutoplay();
@@ -43,6 +61,41 @@ export default function LoopPlayer({ loop, items }: { loop: Loop; items: LoopIte
   const at = here ? playback.at : 0;
   const total = (here && playback.duration) || loop.durationSeconds || 0;
   const moment = loopMomentAt(items, at);
+  const { schema } = useLoopSchema();
+  const live = useSyncExternalStore(jobStream.subscribe, jobStream.getStatus);
+  const job = jobFor(live, "loop", loop.id);
+  const making = jobIsOpen(job);
+  const kept = Boolean(bedOfLoop(graph, loop));
+  const [choosing, setChoosing] = useState(false);
+  const heard = useRef(loop.audioRef);
+
+  /* A new track has landed for this loop. The old one is what the element holds, so it is stopped,
+     its bytes forgotten — nothing names them any more — and the new one started from the top if the
+     old one was playing. Its words are timed afresh, so "from where you were" would be a guess. */
+  useEffect(() => {
+    const previous = heard.current;
+    heard.current = loop.audioRef;
+    if (!previous || previous === loop.audioRef) return;
+    const wasPlaying = player.nowPlaying()?.loop.id === loop.id && player.playback().playing;
+    if (player.nowPlaying()?.loop.id === loop.id) player.stop();
+    void player.forget(previous);
+    if (wasPlaying) void player.play(loop, items);
+  }, [loop.audioRef]);
+
+  useEffect(() => {
+    if (!choosing) return;
+    const away = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(".music-menu, .bed-name")) return;
+      setChoosing(false);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setChoosing(false); };
+    window.addEventListener("pointerdown", away);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("pointerdown", away);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [choosing]);
 
   /* Keep the word being taught in the middle of the column. `scrollIntoView` rather than arithmetic
      on `offsetTop`, which is measured from the offset parent and not from the scroller. */
@@ -130,15 +183,42 @@ export default function LoopPlayer({ loop, items }: { loop: Loop; items: LoopIte
         ><ContinueIcon /></button>
       </div>
 
-      <div className="player-bed label">
+      <div className="player-bed">
+        {/* What is happening to the music, when something is: a track being fetched, new music being
+            made — in the generator's own words — or why the last attempt did not work. */}
         {playback.failed
-          ? <span className="warn">{playback.failed}</span>
-          : playback.loading && here
-            ? "Fetching the track…"
-            /* The bed's own name, as the generator's catalogue writes it. Whether this deployment
-               has the sample pack is a question about the server rather than about one loop, and it
-               is answered where it can be acted on: Settings ▸ Loops, and the make dialog. */
-            : `${(loop.styleId ?? "no bed").replace(/-/g, " ")} · ${items.length} words`}
+          ? <span className="bed-status warn">{playback.failed}</span>
+          : making
+            ? <span className="bed-status label">Making new music · {stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "queued"}</span>
+            : job?.state === "failed" && loopIsReady(loop)
+              ? <span className="bed-status warn">New music could not be made · {job.message || job.error || "no reason given"}</span>
+              : playback.loading && here
+                ? <span className="bed-status label">Fetching the track…</span>
+                : null}
+        <span className="bed-line">
+          {/* The bed's own name, as the generator's catalogue writes it. Whether this deployment has
+              the sample pack is a question about the server rather than about one loop, and it is
+              answered where it can be acted on: Settings ▸ Loops, and the make dialog. */}
+          <button
+            className="bed-name label" aria-haspopup="menu" aria-expanded={choosing}
+            disabled={!loopIsReady(loop) || making}
+            title="Choose other music for this loop"
+            onClick={() => setChoosing(!choosing)}
+          >{styleLabel(schema?.families, loop.styleId)}<DownIcon /></button>
+          <button
+            className={`bed-star${kept ? " on" : ""}`} aria-pressed={kept}
+            disabled={!loop.styleId}
+            aria-label={kept ? "No longer keep this music" : "Keep this music as a favourite"}
+            title={kept ? "Kept as a favourite" : "Keep this music as a favourite"}
+            onClick={onToggleKeep}
+          ><StarIcon filled={kept} /></button>
+          <span className="label">· {items.length} words</span>
+          {choosing && <MusicMenu
+            graph={graph} loop={loop} families={schema?.families ?? []}
+            favourites={favouriteBeds(graph)}
+            onChoose={(music) => { setChoosing(false); onChangeMusic(music); }}
+          />}
+        </span>
       </div>
     </div>
   </div>;

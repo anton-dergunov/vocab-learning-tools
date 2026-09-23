@@ -481,7 +481,7 @@ read_pin_url() {
   bundle_from=$(python3 -c '
 import json, sys
 pin = json.load(open(sys.argv[1], encoding="utf-8"))
-base = pin["repository"] + "/releases/download/" + pin["tag"] + "/"
+base = pin["repository"] + "/releases/download/" + pin["bundle"]["release"] + "/"
 print(" ".join("--from " + base + part for part in pin["bundle"]["parts"]))
 ' "$pin")
   bundle_sha=$(python3 -c '

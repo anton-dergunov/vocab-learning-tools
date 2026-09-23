@@ -6,7 +6,7 @@ type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type LoginResponse = { token: string; user: { id: string; email: string } };
 
 /** Shared with the server hook. A mismatch stops synchronisation until the app is updated. */
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 interface SyncEnvelope {
   schemaVersion: number;
@@ -585,14 +585,28 @@ export interface ServerMap {
 
 export type MapAnswer = ServerMap | { current: true; version: string };
 
+/** One kind of music, with the generator's own words to choose it by. */
+export interface LoopFamily {
+  id: string;
+  label: string;
+  description: string;
+}
+
 export interface LoopSchema {
   apiVersion: string;
   engineVersion: string;
-  /** False means the sample bundle is not installed, so every bed is the synthesised palette. */
+  /** False means the pinned sample bundle is not installed, or not all of it: no loop can be made. */
   productionBundle: boolean;
   patterns: string[];
-  families: string[];
+  /** Every kind of music there is. "Surprise me" is not one of them — it is asking for none. */
+  families: LoopFamily[];
   maxItems: number;
+}
+
+/** A change of music: another style, the same style afresh (nothing given), or a kept bed (both). */
+export interface LoopMusic {
+  family?: string;
+  seed?: number;
 }
 
 export interface LoopRequest {
@@ -602,6 +616,8 @@ export interface LoopRequest {
   lexemeIds: string[];
   pattern?: string;
   family?: string;
+  /** A kept bed's seed, given only with its family: the pair is what replays it. */
+  seed?: number;
 }
 
 /* ── stories ──
@@ -823,6 +839,13 @@ export const backendSession = {
      that was asked for and not made is one with no `audioRef`, which is all "not ready" means. */
   makeLoop(request: LoopRequest): Promise<{ loop: Loop; job: Job }> {
     return client.call<{ loop: Loop; job: Job }>("/loops", { method: "POST", body: JSON.stringify(request) });
+  },
+  /* Renders the loop again with other music. The row is left alone until the new track lands, so the
+     loop goes on playing — and describing — the music it has; 409 `loop_busy` while one is under way. */
+  changeLoopMusic(loopId: string, music: LoopMusic): Promise<{ job: Job }> {
+    return client.call<{ job: Job }>(
+      `/loops/${encodeURIComponent(loopId)}/music`, { method: "POST", body: JSON.stringify(music) }
+    );
   },
   /* A route rather than an ordinary tombstone, because the track goes with the rows: it is megabytes
      and nothing else would ever remove it, so the row and the file are written by the same party —
