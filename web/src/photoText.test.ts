@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PhotoPoint, PhotoReading, PhotoWord } from "./api";
 import {
-  hitTest, photoRegionFor, selectedText, selectionIn, sentenceOf, sentenceOutlines, span, tapped, wordOutlines
+  cropRegion, hitTest, photoRegionFor, selectedText, selectionIn, sentenceOf, sentenceOutlines, span, tapped, wordOutlines
 } from "./photoText";
 
 /* A photo 1000 × 500 px holding two printed lines, each word 0.1 wide and 0.04 tall:
@@ -127,3 +127,19 @@ describe("what is drawn and kept", () => {
     expect(photoRegionFor(READING, ["w0"], null).sentence).toEqual([]);
   });
 });
+
+describe("keeping the square that was on screen", () => {
+  it("moves a region onto the crop, clamps what straddles its edge and drops what is outside", () => {
+    const region = {
+      words: [[[0.1, 0.5], [0.2, 0.5], [0.2, 0.55], [0.1, 0.55]]] as [number, number][][],
+      sentence: [
+        [[0.1, 0.3], [0.9, 0.3], [0.9, 0.34], [0.1, 0.34]],
+        [[0.1, 0.38], [0.9, 0.38], [0.9, 0.42], [0.1, 0.42]]
+      ] as [number, number][][]
+    };
+    const cropped = cropRegion(region, 0.4, 0.25);
+    expect(cropped.words).toEqual([[[0.1, 0.4], [0.2, 0.4], [0.2, 0.6], [0.1, 0.6]]]);
+    expect(cropped.sentence).toEqual([[[0.1, 0], [0.9, 0], [0.9, 0.08], [0.1, 0.08]]]);
+  });
+});
+

@@ -625,7 +625,7 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .att .t .say { margin-left: 7px; }
 .att.has-photo { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 14px; align-items: start; }
 .att-photo {
-  padding: 0; width: 88px; aspect-ratio: 3 / 4; border-radius: 6px; overflow: hidden;
+  padding: 0; width: 88px; aspect-ratio: 1; border-radius: 6px; overflow: hidden;
   border: 1px solid var(--rule); background: var(--surface-2);
 }
 .att-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -1542,35 +1542,55 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
 .photo-start .validation { margin: 16px auto 0; max-width: 60ch; text-align: left; }
 .photo-start-buttons { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
 .photo-camera { display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.photo-viewfinder {
-  display: block; width: 100%; max-height: 58vh; object-fit: contain; border-radius: 10px;
-  background: #000;
+/* One square for every photo: the viewfinder, the frozen frame and the viewer. A camera photo is
+   exactly that square. Anything else fills its width — so a phone screenshot reads at about its real
+   size — and scrolls up and down inside it, never sideways, which leaves a sideways drag free for
+   selecting a phrase. `cqw` is the window's own width: the square is as tall as it is wide, or as
+   tall as a short image, whichever is less. */
+.photo-window {
+  position: relative; width: min(100%, 60vh); margin: 0 auto; container-type: inline-size;
+  border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); background: var(--surface-2);
 }
+.photo-square { max-height: 100cqw; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.photo-square::-webkit-scrollbar { display: none; }
+.photo-square.fixed { aspect-ratio: 1; height: 100cqw; overflow: hidden; }
+.photo-viewfinder { display: block; width: 100%; height: 100%; object-fit: cover; background: #000; }
+/* More of the image beyond an edge: a fade there, so it is plain the square scrolls. */
+.photo-window::before, .photo-window::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 34px; pointer-events: none;
+  opacity: 0; transition: opacity .15s; z-index: 1;
+}
+.photo-window::before { top: 0; background: linear-gradient(var(--paper), transparent); }
+.photo-window::after { bottom: 0; background: linear-gradient(transparent, var(--paper)); }
+.photo-window.more-above::before, .photo-window.more-below::after { opacity: .9; }
+.photo-scroll-hint { text-align: center; margin: 8px auto 0; }
 .photo-camera-buttons { display: flex; align-items: center; gap: 22px; }
 .photo-shutter {
   width: 64px; height: 64px; border-radius: 50%; cursor: pointer;
   border: 4px solid var(--surface); background: var(--core); box-shadow: 0 0 0 2px var(--core);
 }
 .photo-shutter:active { transform: scale(.94); }
-.photo-stage { display: flex; justify-content: center; }
 .photo-frame {
-  position: relative; display: inline-block; max-width: 100%; line-height: 0;
-  border-radius: 8px; overflow: hidden; box-shadow: var(--shadow);
-  touch-action: none; user-select: none; -webkit-user-select: none;
+  position: relative; line-height: 0;
+  touch-action: pan-y; user-select: none; -webkit-user-select: none;
 }
-.photo-frame img { display: block; max-width: 100%; max-height: 54vh; width: auto; height: auto; }
+.photo-frame img { display: block; width: 100%; height: auto; }
 .photo-frame svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .photo-frame polygon { vector-effect: non-scaling-stroke; }
 .photo-sentence { fill: var(--corpus); fill-opacity: .16; stroke: none; }
 .photo-word { fill: var(--core); fill-opacity: .3; stroke: var(--core); stroke-width: 2; }
 .photo-uncertain { fill: none; stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 3 3; stroke-opacity: .7; }
 .photo-status {
-  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); line-height: 1.4;
+  position: absolute; left: 50%; bottom: 14px; z-index: 2; transform: translateX(-50%); line-height: 1.4;
   background: var(--ink); color: var(--paper); padding: 7px 14px; border-radius: 999px; font-size: 13.5px;
 }
 .photo-sheet { max-width: 780px; margin: 18px auto 0; }
 .photo-sheet .validation { margin: 0 0 12px; }
-.photo-meaning { font-family: var(--serif); font-size: 19px; line-height: 1.4; margin: 0 0 12px; min-height: 1.4em; }
+/* One line, always: it is what the tap was for, and a second line pushes the sentence off screen. */
+.photo-meaning {
+  font-family: var(--serif); font-size: 19px; line-height: 1.4; margin: 0 0 12px; min-height: 1.4em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .photo-meaning strong { font-weight: 700; }
 .photo-meaning-pending { color: var(--ink-3); }
 .photo-meaning-failed { font-family: var(--sans); font-size: 14.5px; color: var(--warn); }
@@ -1579,9 +1599,15 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
 .photo-options { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
 .photo-sources { display: flex; flex-wrap: wrap; gap: 6px; }
 .photo-sources .cards-chip { cursor: pointer; padding: 6px 13px; }
+.composer:has(.photo-window) .composer-buttons { flex-wrap: nowrap; }
 .photo-viewer { width: min(920px, 100%); }
-.photo-viewer .photo-frame { display: block; width: fit-content; margin: 0 auto; }
-.photo-viewer .photo-frame img { max-height: 72vh; }
+
+/* The smallest phones: the tabs give up their spacing before the title gives up its words. */
+@container vp (max-width: 390px) {
+  .composer-head { gap: 6px; }
+  .composer-head .seg button { padding: 5px 5px; letter-spacing: 0; }
+  .composer-head .head-rest { display: none; }
+}
 /* The application's switch row, which the prototype had not needed before the sheet's "Keep the photo". */
 .config-switch {
   display: flex; align-items: flex-start; gap: 11px; cursor: pointer;
@@ -2058,8 +2084,11 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   .review-bar { margin: -20px -16px 14px; padding: 10px 16px; }
   /* Three segments, a title and a close button do not fit a phone at full size. */
   .composer-head { gap: 8px; }
-  .composer-head h2 { font-size: 18px; }
-  .composer-head .seg button { padding: 5px 8px; letter-spacing: .06em; }
+  /* One line: a title on two costs a row the photo needs, and it gives way before the tabs do. */
+  .composer-head h2 { font-size: 17px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .composer-head .seg { flex: none; }
+  .composer-head .seg button { padding: 5px 7px; letter-spacing: .04em; }
+  .photo-meaning { font-size: 17px; }
   .sec { grid-template-columns: minmax(0,1fr); gap: 0; padding: 24px 0 4px; }
   .sec > .rail-l .inner { position: static; }
   .sec .num { display: inline; margin-right: 8px; }
@@ -2357,6 +2386,9 @@ body.tablet .viewport { width: 834px; height: 1000px; }
   .app.loops-open { grid-template-rows: var(--topbar) 0 minmax(0,1fr) auto; }
   .app.loops-open .topbar { display: flex; }
   .app.loops-open .rail { display: none; }
+  /* Adding a word files nothing under a topic yet, and the photo needs the height. */
+  .app.adding { grid-template-rows: var(--topbar) 0 minmax(0,1fr) auto; }
+  .app.adding .rail { display: none; }
   .app.article-open .main .pane { padding-top: max(12px, env(safe-area-inset-top)); }
   /* One line per section heading: "01 · 🎭 theater", "✳ Where you met it". */
   .sec > .rail-l { margin-bottom: 8px; }

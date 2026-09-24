@@ -72,7 +72,7 @@ export interface CaptureSeed {
  */
 export default function AddView({
   tab, onTab, graph, problems, busy, seed, captureHealth,
-  onClose, onCreate, onCapture, onOpenLexeme, onFoldIn, onChat, onReadPhoto, onLookUp, onWarmPhoto,
+  onClose, onCreate, onCapture, onOpenLexeme, onFoldIn, onChat, onReadPhoto, onStorePhoto, onLookUp, onWarmPhoto,
   offline = false, onNotify
 }: {
   tab: AddTab;
@@ -99,6 +99,7 @@ export default function AddView({
   onChat?(document: string, turns: ChatTurn[]): Promise<ChatResult>;
   /** Photo capture's three round trips. Without them there is no Photo tab. */
   onReadPhoto?(photo: Blob): Promise<PhotoReading>;
+  onStorePhoto?(photo: Blob): Promise<{ photoRef: string }>;
   onLookUp?(request: QuickLookUpRequest, signal: AbortSignal): Promise<QuickLookUp>;
   onWarmPhoto?(): void;
   /** From `syncStatus`: chat is a round trip, and the dock is the only part of this that needs one. */
@@ -277,7 +278,8 @@ export default function AddView({
   }, []);
 
   const head = <>
-    <h2>Add a word</h2>
+    {/* "a word" goes on the smallest phones, before the tabs lose their labels. */}
+    <h2>Add<span className="head-rest"> a word</span></h2>
     <span className="spacer" />
     <div className="seg">
       <button className={tab === "capture" ? "on" : ""} onClick={() => onTab("capture")}>Text</button>
@@ -335,7 +337,7 @@ export default function AddView({
     {failure && <div className="validation bad" role="alert"><strong>{failure}</strong></div>}
   </>;
 
-  if (tab === "photo" && onReadPhoto && onLookUp) {
+  if (tab === "photo" && onReadPhoto && onStorePhoto && onLookUp) {
     return <PhotoCapture
       head={head}
       notices={notices}
@@ -343,6 +345,7 @@ export default function AddView({
       unavailable={noVocabularies ? "There is no vocabulary to add a word to yet" : cannotBuild?.reason ?? null}
       working={working}
       onRead={onReadPhoto}
+      onStore={onStorePhoto}
       onLookUp={onLookUp}
       onAdd={(add) => void addFromPhoto(add)}
       onOpenLexeme={onOpenLexeme}

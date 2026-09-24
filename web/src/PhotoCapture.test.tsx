@@ -5,7 +5,8 @@ import PhotoCapture from "./PhotoCapture";
 
 vi.mock("./photoImage", () => ({
   encodePhoto: vi.fn(async () => new Blob(["jpeg"], { type: "image/jpeg" })),
-  still: vi.fn()
+  still: vi.fn(() => document.createElement("canvas")),
+  cropSquare: vi.fn(async () => new Blob(["square"], { type: "image/jpeg" }))
 }));
 
 const box = (x: number, y: number): PhotoPoint[] => [[x, y], [x + 0.1, y], [x + 0.1, y + 0.04], [x, y + 0.04]];
@@ -43,6 +44,7 @@ function setUp(overrides: Partial<Parameters<typeof PhotoCapture>[0]> = {}) {
     unavailable: null,
     working: false,
     onRead: vi.fn(async () => READING),
+    onStore: vi.fn(async () => ({ photoRef: "photos/owner0000000001/fedcba9876543210.jpg" })),
     onLookUp: vi.fn(async () => FOUND),
     onAdd: vi.fn(),
     onOpenLexeme: vi.fn(),
@@ -61,6 +63,15 @@ async function choose(view: ReturnType<typeof render>) {
   const frame = view.container.querySelector<HTMLElement>(".photo-frame")!;
   frame.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500, x: 0, y: 0, toJSON: () => ({}) });
   return frame;
+}
+
+/** Makes the square scroll: the image inside it is three squares tall, scrolled down by one. */
+function tall(view: ReturnType<typeof render>, scrollTop: number) {
+  const square = view.container.querySelector<HTMLElement>(".photo-square")!;
+  Object.defineProperty(square, "scrollHeight", { value: 1500, configurable: true });
+  Object.defineProperty(square, "clientHeight", { value: 500, configurable: true });
+  square.scrollTop = scrollTop;
+  fireEvent.scroll(square);
 }
 
 function tap(frame: HTMLElement, x: number, y: number) {
@@ -170,5 +181,66 @@ describe("the Photo tab", () => {
     expect(await screen.findByText(/temporarily rate limited/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(onRead).toHaveBeenCalledTimes(2));
+  });
+
+  it("hides the action bar while the camera is live, so nothing covers the shutter", async () => {
+    getUserMedia.mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [] });
+    const { view } = setUp();
+    fireEvent.click(screen.getByRole("button", { name: "Take a photo" }));
+    expect(await screen.findByRole("button", { name: "Take the photo" })).toBeInTheDocument();
+    expect(view.container.querySelector(".composer-actions")).toBeNull();
+    expect(view.container.querySelector(".photo-square.fixed video")).not.toBeNull();
+  });
+
+  it("selects a phrase with a sideways drag along the line", async () => {
+    const { props, view } = setUp();
+    const frame = await choose(view);
+    fireEvent.pointerDown(frame, { clientX: 290, clientY: 60, pointerId: 1 });
+    fireEvent.pointerMove(frame, { clientX: 590, clientY: 62, pointerId: 1 });
+    fireEvent.pointerUp(frame, { clientX: 590, clientY: 62, pointerId: 1 });
+    await waitFor(() => expect(props.onLookUp).toHaveBeenCalled());
+    expect(vi.mocked(props.onLookUp).mock.calls.at(-1)![0].selection).toEqual({ start: 3, end: 16 });
+  });
+
+  it("treats a finger moving up or down as scrolling, not as a tap", async () => {
+    const { props, view } = setUp();
+    const frame = await choose(view);
+    fireEvent.pointerDown(frame, { clientX: 290, clientY: 60, pointerId: 1 });
+    fireEvent.pointerUp(frame, { clientX: 291, clientY: 120, pointerId: 1 });
+    await act(async () => { await Promise.resolve(); });
+    expect(props.onLookUp).not.toHaveBeenCalled();
+  });
+
+  it("keeps a scrolled image as the square that was on screen", async () => {
+    const { cropSquare } = await import("./photoImage");
+    const { props, view } = setUp();
+    const frame = await choose(view);
+    tall(view, 0);
+    expect(screen.getByText(/Swipe up or down/)).toBeInTheDocument();
+    expect(view.container.querySelector(".photo-window.more-below")).not.toBeNull();
+    tall(view, 500);
+    expect(screen.queryByText(/Swipe up or down/)).toBeNull();
+    tap(frame, 290, 60);
+    await screen.findByText("llevar a cabo");
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(props.onAdd).toHaveBeenCalled());
+    expect(vi.mocked(cropSquare).mock.calls.at(-1)!.slice(1)).toEqual([1 / 3, 1 / 3]);
+    expect(props.onStore).toHaveBeenCalledTimes(1);
+    const added = vi.mocked(props.onAdd).mock.calls[0][0];
+    expect(added.photoRef).toBe("photos/owner0000000001/fedcba9876543210.jpg");
+    expect(await added.photo!.text()).toBe("square");
+    // The word sat at 0.10–0.14 of the whole image, which is above the square that was kept.
+    expect(added.photoRegion!.words).toEqual([]);
+  });
+
+  it("keeps a photo that fits the square whole, with no second upload", async () => {
+    const { props, view } = setUp();
+    const frame = await choose(view);
+    tap(frame, 290, 60);
+    await screen.findByText("llevar a cabo");
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(props.onAdd).toHaveBeenCalled());
+    expect(props.onStore).not.toHaveBeenCalled();
+    expect(vi.mocked(props.onAdd).mock.calls[0][0].photoRef).toBe(READING.photoRef);
   });
 });

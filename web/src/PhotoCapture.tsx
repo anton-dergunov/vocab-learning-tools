@@ -4,10 +4,10 @@ import type {
 } from "./api";
 import Composer from "./Composer";
 import type { PhotoRegion, SourceKind } from "./domain";
-import { encodePhoto, still } from "./photoImage";
+import { cropSquare, encodePhoto, still } from "./photoImage";
 import {
-  hitTest, isWord, photoRegionFor, pointsOf, selectedText, selectionIn, sentenceOf, sentenceOutlines,
-  span, tapped, UNCERTAIN, wordOutlines
+  cropRegion, hitTest, isWord, photoRegionFor, pointsOf, selectedText, selectionIn, sentenceOf,
+  sentenceOutlines, span, tapped, UNCERTAIN, wordOutlines
 } from "./photoText";
 
 /** What Add sends: the sentence as it stands in the sheet, and what was learned about it. */
@@ -47,6 +47,9 @@ const CAMERA_ERRORS: Record<string, string> = {
   NotReadableError: "The camera is in use by another app. Close it, then try again."
 };
 
+/** How far a finger may move and still be a tap, in CSS pixels. */
+const SLOP = 8;
+
 /** A tapped selection's look-up is cached by the sentence it was asked about and where the tap was. */
 const keyOf = (text: string, at: { start: number; end: number }) => `${at.start}:${at.end}\u0000${text}`;
 
@@ -62,12 +65,19 @@ const keyOf = (text: string, at: { start: number; end: number }) => `${at.start}
  * proposal is reviewed as an article and saved like any other. The frame sits above the sheet and
  * never beside it, because the device this matters most on is a tablet in portrait.
  *
+ * **Every photo is shown in one square.** A camera photo *is* that square — the viewfinder is square
+ * and the shutter keeps exactly what it showed, so the photo read and kept is the photo framed. An
+ * image that is not square fills the square's width, so a screenshot reads at about its real size,
+ * and scrolls up and down inside it; a sideways drag is then always free to select a phrase. What is
+ * kept of a scrolled image is the square that was on screen when Add was pressed.
+ *
  * The highlight is an SVG over the frozen image in the image's own coordinates. That is not the
  * overlay the YAML editor was forbidden: that one failed because two text layouts had to agree to
  * the pixel, and here there is one coordinate system and nothing to drift.
  */
 export default function PhotoCapture({
-  head, notices, offline, unavailable, working, onRead, onLookUp, onAdd, onOpenLexeme, onFoldIn, onWarm
+  head, notices, offline, unavailable, working, onRead, onStore, onLookUp, onAdd, onOpenLexeme, onFoldIn,
+  onWarm
 }: {
   head: ReactNode;
   /** The Add view's own notices — a duplicate, a fall-through, a refusal — shown above the buttons. */
@@ -78,6 +88,8 @@ export default function PhotoCapture({
   /** Add is on its way to the server. */
   working: boolean;
   onRead(photo: Blob): Promise<PhotoReading>;
+  /** Keeps a photo pending without reading it: the square of a scrolled image that was on screen. */
+  onStore(photo: Blob): Promise<{ photoRef: string }>;
   onLookUp(request: QuickLookUpRequest, signal: AbortSignal): Promise<QuickLookUp>;
   onAdd(add: PhotoAdd): void;
   onOpenLexeme(id: string): void;
@@ -98,8 +110,13 @@ export default function PhotoCapture({
   const video = useRef<HTMLVideoElement | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const frame = useRef<HTMLDivElement | null>(null);
+  const viewport = useRef<HTMLDivElement | null>(null);
   const picker = useRef<HTMLInputElement | null>(null);
-  const pressed = useRef<{ from: string | null; dragged: boolean } | null>(null);
+  const pressed = useRef<{ from: string | null; x: number; y: number; dragged: boolean } | null>(null);
+  /** Whether the image runs past the square, and which way there is more of it. */
+  const [overflow, setOverflow] = useState({ tall: false, above: false, below: false, scrolled: false });
+  const [keeping, setKeeping] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const asking = useRef<AbortController | null>(null);
 
   const reading = stage.kind === "read" ? stage.reading : null;
@@ -169,12 +186,13 @@ export default function PhotoCapture({
   useEffect(() => {
     if (stage.kind !== "camera" || !video.current || !stream.current) return;
     video.current.srcObject = stream.current;
-    void video.current.play().catch(() => undefined);
+    // `play` answers a promise in a browser and nothing at all where there is no media stack.
+    void Promise.resolve(video.current.play?.()).catch(() => undefined);
   }, [stage.kind]);
 
   async function shutter() {
     if (!video.current) return;
-    const shot = await still(video.current, stream.current?.getVideoTracks()[0] ?? null);
+    const shot = still(video.current);
     stopCamera();
     await take(shot, "book");
   }
@@ -266,26 +284,49 @@ export default function PhotoCapture({
   function down(event: React.PointerEvent) {
     if (!reading) return;
     const point = at(event);
-    pressed.current = { from: point ? hitTest(reading, point) : null, dragged: false };
-    (event.target as Element).setPointerCapture?.(event.pointerId);
+    pressed.current = { from: point ? hitTest(reading, point) : null, x: event.clientX, y: event.clientY, dragged: false };
   }
 
   function move(event: React.PointerEvent) {
     const press = pressed.current;
-    if (!reading || !press?.from) return;
+    if (!reading || !press) return;
+    const dx = Math.abs(event.clientX - press.x);
+    const dy = Math.abs(event.clientY - press.y);
+    if (!press.dragged) {
+      // A finger moving up or down is scrolling, which the browser does itself (`touch-action:
+      // pan-y`); one moving along a line is selecting a phrase. A mouse has a wheel for scrolling.
+      const along = event.pointerType === "mouse" ? Math.max(dx, dy) > SLOP : dx > SLOP && dx > dy;
+      if (!along) return;
+      press.dragged = true;
+      (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+    }
     const point = at(event);
     const over = point ? hitTest(reading, point) : null;
-    if (!over || (over === press.from && !press.dragged)) return;
-    press.dragged = true;
+    if (!over) return;
+    press.from = press.from ?? over;
     setSelection(span(reading, press.from, over));
   }
 
-  function up() {
+  function up(event: React.PointerEvent) {
     const press = pressed.current;
     pressed.current = null;
     if (!reading || !press || press.dragged) return;
+    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > SLOP) return;
     // A tap on nothing selects nothing, so it is plain that the word was not read.
     setSelection(press.from ? tapped(reading, selection, press.from) : []);
+  }
+
+  /** Which way the image runs past the square, measured whenever it moves or arrives. */
+  function measure() {
+    const box = viewport.current;
+    if (!box) return;
+    const tall = box.scrollHeight > box.clientHeight + 2;
+    setOverflow((was) => ({
+      tall,
+      above: tall && box.scrollTop > 2,
+      below: tall && box.scrollTop + box.clientHeight < box.scrollHeight - 2,
+      scrolled: was.scrolled || box.scrollTop > 2
+    }));
   }
 
   function another() {
@@ -296,17 +337,41 @@ export default function PhotoCapture({
     setLookUps(new Map());
   }
 
-  function add() {
-    if (!reading) return;
+  /**
+   * Add, with the photo as it will be kept. A square photo is kept whole. A taller one is kept as
+   * the square that is on screen now: cropped here, sent to be stored, and its region moved onto
+   * the crop — so what the article shows later is what was looked at while choosing the word.
+   */
+  async function add() {
+    if (!reading || !photo) return;
     const found = lookUp?.state === "done" ? lookUp.result : null;
-    onAdd({
-      text: sentence.trim(),
-      resolution: found && !found.duplicates.length ? found.resolution : null,
-      photoRef: keep ? reading.photoRef : null,
-      photoRegion: keep ? photoRegionFor(reading, selection, typed ? null : current) : null,
-      sourceKind: source,
-      photo: keep ? photo?.blob ?? null : null
-    });
+    const resolution = found && !found.duplicates.length ? found.resolution : null;
+    const region = photoRegionFor(reading, selection, typed ? null : current);
+    const box = viewport.current;
+    if (!keep) {
+      onAdd({ text: sentence.trim(), resolution, photoRef: null, photoRegion: null, sourceKind: source, photo: null });
+      return;
+    }
+    if (!box || box.scrollHeight <= box.clientHeight + 2) {
+      onAdd({ text: sentence.trim(), resolution, photoRef: reading.photoRef, photoRegion: region, sourceKind: source, photo: photo.blob });
+      return;
+    }
+    const top = box.scrollTop / box.scrollHeight;
+    const size = box.clientHeight / box.scrollHeight;
+    setKeeping(true);
+    setProblem(null);
+    try {
+      const square = await cropSquare(photo.blob, top, size);
+      const { photoRef } = await onStore(square);
+      onAdd({
+        text: sentence.trim(), resolution, photoRef, photoRegion: cropRegion(region, top, size),
+        sourceKind: source, photo: square
+      });
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : "The photo could not be kept.");
+    } finally {
+      setKeeping(false);
+    }
   }
 
   const outlines = useMemo(() => {
@@ -325,19 +390,22 @@ export default function PhotoCapture({
     {stage.kind !== "idle" && stage.kind !== "camera" && <button className="tb-btn" onClick={another}>Another photo</button>}
     <span className="spacer" />
     {held.length === 1 && found?.foldable && <button
-      className="tb-btn" onClick={() => onFoldIn(held[0].id, found.foldable!)}
-    >Fold this sentence in</button>}
+      className="tb-btn" aria-label="Fold this sentence in" onClick={() => onFoldIn(held[0].id, found.foldable!)}
+    >Fold in</button>}
     {held.length > 0
-      ? <button className="tb-btn primary" onClick={() => onOpenLexeme(held[0].id)}>Open {held[0].headword}</button>
+      ? <button className="tb-btn primary" aria-label={`Open ${held[0].headword}`} onClick={() => onOpenLexeme(held[0].id)}>Open</button>
       : <button
           className="tb-btn primary"
-          disabled={!reading || !selection.length || !sentence.trim() || working || blocked}
-          onClick={add}
-        >{working ? "Building…" : "Add"}</button>}
+          disabled={!reading || !selection.length || !sentence.trim() || working || keeping || blocked}
+          onClick={() => void add()}
+        >{keeping ? "Keeping…" : working ? "Building…" : "Add"}</button>}
   </div>;
 
-  return <Composer label="Add a word from a photo" head={head} fill={false} actions={<>
+  // No action bar under a live camera: its own buttons are the ones that matter, and the bar would
+  // cover the shutter.
+  return <Composer label="Add a word from a photo" head={head} fill={false} actions={stage.kind === "camera" ? null : <>
     {notices}
+    {problem && <div className="validation bad" role="alert"><strong>{problem}</strong></div>}
     {offline && <div className="validation bad" role="alert">
       <strong>Photo capture needs the server.</strong>
       <span>Your words are all still here; try again once it can be reached.</span>
@@ -368,27 +436,36 @@ export default function PhotoCapture({
     </div>}
 
     {stage.kind === "camera" && <div className="photo-camera">
-      <video ref={video} className="photo-viewfinder" playsInline muted aria-label="Camera" />
+      <div className="photo-window"><div className="photo-square fixed">
+        <video ref={video} className="photo-viewfinder" playsInline muted aria-label="Camera" />
+      </div></div>
       <div className="photo-camera-buttons">
         <button className="tb-btn" onClick={() => { stopCamera(); setStage({ kind: "idle" }); }}>Cancel</button>
         <button className="photo-shutter" aria-label="Take the photo" onClick={() => void shutter()} />
       </div>
     </div>}
 
-    {photo && stage.kind !== "idle" && stage.kind !== "camera" && <div className="photo-stage">
+    {photo && stage.kind !== "idle" && stage.kind !== "camera" && <div
+      className={`photo-window${overflow.above ? " more-above" : ""}${overflow.below ? " more-below" : ""}`}
+    >
+      <div className="photo-square" ref={viewport} onScroll={measure}>
       <div
         className="photo-frame" ref={frame}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { pressed.current = null; }}
       >
-        <img src={photo.url} alt="The photo being read" draggable={false} />
+        <img src={photo.url} alt="The photo being read" draggable={false} onLoad={measure} />
         {outlines && <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
           {outlines.uncertain.map((polygon, index) => <polygon key={`u${index}`} className="photo-uncertain" points={pointsOf(polygon)} />)}
           {outlines.sentence.map((polygon, index) => <polygon key={`s${index}`} className="photo-sentence" points={pointsOf(polygon)} />)}
           {outlines.words.map((polygon, index) => <polygon key={`w${index}`} className="photo-word" points={pointsOf(polygon)} />)}
         </svg>}
-        {stage.kind === "reading" && <div className="photo-status" role="status">Reading the photo…</div>}
       </div>
+      </div>
+      {stage.kind === "reading" && <div className="photo-status" role="status">Reading the photo…</div>}
     </div>}
+    {overflow.tall && !overflow.scrolled && stage.kind === "read" && <p className="hint photo-scroll-hint">
+      Swipe up or down to see the rest. The square on screen is what is kept.
+    </p>}
 
     {stage.kind === "failed" && <div className="validation bad" role="alert">
       <strong>{stage.message}</strong>
@@ -444,7 +521,7 @@ function PhotoSheet({
           ? <>
               <strong lang={found.resolution.language}>{found.resolution.headword}</strong>
               {found.resolution.gloss ? <span> — {found.resolution.gloss}</span> : null}
-              {held.length > 0 && <span className="photo-held"> · already in your words</span>}
+              {held.length > 0 && <span className="photo-held"> · already in your words as {held[0].headword}</span>}
             </>
           : <span className="photo-meaning-pending">
               <strong lang={reading.language ?? undefined}>{selectedText(reading, selection)}</strong> — looking it up…

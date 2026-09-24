@@ -49,9 +49,11 @@ translation over. The first part is drawn as if it were being read aloud: its bu
 first sentence tinted, as the application tints the passage that is sounding.
 
 Photo capture is the Add view's Photo tab, never where Add opens: `?add=photo` is the start, with
-nothing switched on, and `?add=photo&photo=read` is the fixture page already read — "llevada a cabo"
-tapped, its sentence banded line by line, a blurred word at the foot marked rather than hidden, and
-the sheet below the frame. The attestation photo on `picar` opens the whole frame.
+nothing switched on. Every photo is shown in one square. `?add=photo&photo=read` is a camera photo,
+which *is* that square — "llevada a cabo" tapped, its sentence banded line by line, the sheet below.
+`?add=photo&photo=screenshot` is a chosen image taller than the square: it fills the width, scrolls
+inside it with a fade at the edge that has more, and is kept as the square on screen. The attestation
+photo on `picar` opens the kept square.
 
 For loops: `?loops=1&t=12` is the moment the whole design is for — `picar` is
 being said and its translation is still a bar. `t=20` is a few seconds later,

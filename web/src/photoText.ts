@@ -188,6 +188,20 @@ export function photoRegionFor(
   };
 }
 
+/**
+ * A region remapped onto a crop of its photo — the square of a tall screenshot that was on screen.
+ * `top` and `size` are shares of the photo's height, over its whole width. A polygon wholly outside
+ * the crop is dropped; one that straddles its edge is clamped to it.
+ */
+export function cropRegion(region: PhotoRegion, top: number, size: number): PhotoRegion {
+  const moved = (polygons: [number, number][][]) => polygons
+    .filter((polygon) => polygon.some(([, y]) => y > top && y < top + size))
+    .map((polygon) => polygon.map(([x, y]) => [
+      x, Math.round(Math.min(1, Math.max(0, (y - top) / size)) * 10_000) / 10_000
+    ] as [number, number]));
+  return { words: moved(region.words), sentence: moved(region.sentence) };
+}
+
 /** An SVG `points` attribute for a polygon in the photo's normalised space. */
 export function pointsOf(polygon: PhotoPoint[]): string {
   return polygon.map(([x, y]) => `${x},${y}`).join(" ");

@@ -98,16 +98,30 @@ as a PWA:
 - The camera stopped on `visibilitychange`.
 - Plain error messages for `NotAllowedError`, `NotFoundError` and `NotReadableError`.
 
-The frame is re-encoded through the canvas, which also strips EXIF. **It is not cropped to a
-square.** The spike measured what the square costs: sentences run past it, and a landscape page
-loses the start and end of every line. On Vision the square crop lowered correct sentences from 98%
-to about 70%, and removed 4 of 54 tapped words from the image entirely. Send the frame the
-viewfinder shows; the sheet below the frame is a layout decision, not a crop.
+The frame is re-encoded through the canvas, which also strips EXIF. **Every photo is shown in one
+square, and a camera photo *is* that square**: the viewfinder is square, and the shutter keeps
+exactly the square it showed, so the photo framed, the photo read and the photo kept are one photo.
+A square also leaves the phone the height it needs for the sheet below, and matches every other
+picture in Acervo.
+
+That is not the crop the spike warned against. The spike cut a centre square out of photos the owner
+had framed as portraits, and so cut off sentences they had taken care to include — correct sentences
+fell from 98% to about 70%. A square viewfinder is framed as a square; nothing is cut that was seen.
+
+An image that is not square — a screenshot, a photo chosen from the gallery — fills the square's
+width, so a phone screenshot reads at about its real size, and scrolls up and down inside it, with a
+fade at the edge that has more. It never scrolls sideways, so a sideways drag along a line is always
+free to select a phrase. Vision reads the whole image, so every sentence stays tappable wherever it
+is scrolled to; what is **kept** is the square on screen when Add is pressed, cropped on the device
+and stored through `POST /photo/store` without a second reading.
 
 The upload is **2048 px on the long edge at JPEG quality 0.85**, about 400 KB. At 1280 px (about
 190 KB) Vision still hits the tapped word 98% of the time, but character error on camera sentences
-rises from 0.4% to 2.3%. So 1280 is the setting for a poor uplink, not the default. Three ways to
-take the picture are still to be compared on the owner's phone:
+rises from 0.4% to 2.3%. So 1280 is the setting for a poor uplink, not the default. Of the three ways
+to take the picture, **the video frame is the one used**: on the owner's phone `takePhoto()` returned
+a narrower field of view than the preview, so every line lost its start and end between framing and
+reading. What is on screen is what is read, at the cost of resolution — a video frame is about
+1080–1440 px square, where the spike measured the tapped word still found 98% of the time at 1280:
 
 | Path | Resolution | Cost |
 | --- | --- | --- |
@@ -329,9 +343,9 @@ layer is `services/photo.py`, and `test_layering.py` enforces both.
   (step 7 of the experiment): rules rise from 69% to 81%, and SaT falls from 98% to 87%, because
   Vision starts paragraphs mid-sentence. SaT is pinned in `models/segmenter.json`, baked into the
   image, and loaded when the Photo tab opens rather than at startup.
-- **The camera path** is `ImageCapture.takePhoto()` where it exists and the video frame elsewhere;
-  "Choose an image" is the native camera's route. Comparing the three on the owner's phone is still
-  to do.
+- **The camera path** is the video frame, cut to the square the viewfinder shows. `takePhoto()` was
+  tried first and dropped: its field of view differed from the preview's. "Choose an image" is the
+  native camera's route, and a gallery photo scrolls in the square like a screenshot.
 - **Folding a sentence in does not keep the photo.** It goes through the article conversation, which
   carries text; keeping the photo there is future work.
 - **A sign is a photo with no sentence**: an attestation with empty text is allowed when it carries a
@@ -377,8 +391,8 @@ The layout format above is character offsets and polygons, so nothing in it assu
 
 ## Build order after the spike
 
-0. The camera-path comparison on the owner's phone — still to do. The owner decided against the
-   degraded RapidOCR mode for the first build.
+0. The camera path: settled on the video frame after using it (see above). The owner decided
+   against the degraded RapidOCR mode for the first build.
 1. **Built.** The OCR package and `/photo/read`, with Vision as the `ocr` row.
 2. **Built.** The capture split and the quick call, with its own fast model kind.
 3. **Built.** `photoRef` and `photoRegion` on attestations, pending-photo promotion in `merge_graph`,

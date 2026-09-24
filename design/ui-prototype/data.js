@@ -121,9 +121,9 @@ const LEXEMES = [
         sourceKind: "conversation", sourceTitle: "WhatsApp — grupo del curso", sourceUrl: null, capturedAt: "11 Feb 2026" },
       { text: "Se pican las verduras en dados de un centimetro y se reservan.", translation: "The vegetables are diced into one-centimetre cubes and set aside.",
         sourceKind: "web", sourceTitle: "Receta — pisto manchego, El Comidista", sourceUrl: "https://example.com/pisto", capturedAt: "3 Mar 2026",
-        /* Photo capture (docs/plans/photo-capture.md) will keep the picture a sentence was read
-           from. Drawn here only so the section is designed with room for one. */
-        photo: "img/met-photo.jpg" }
+        /* Photo capture (docs/plans/photo-capture.md) keeps the square photo a sentence was read
+           from. Drawn here so the section is designed with room for one. */
+        photo: "img/met-photo-square.jpg" }
     ],
     study: { system: "anki", reps: 21, lapses: 4, stability: 18.3, difficulty: 8.4, retrievability: 0.71, lastReview: "22 Aug 2026" }
   },

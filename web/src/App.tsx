@@ -1069,6 +1069,7 @@ export default function App() {
   /* Photo capture's round trips, which write nothing: a photo read into a page, the quick look-up a
      tap makes, and the warm-up the Photo tab sends so the first photo is not the one that waits. */
   const readPhoto = useCallback((photo: Blob) => backendSession.readPhoto(photo), []);
+  const storePhoto = useCallback((photo: Blob) => backendSession.storePhoto(photo), []);
   const lookUp = useCallback((request: QuickLookUpRequest, signal: AbortSignal) =>
     backendSession.resolveCapture(repository.state().deviceId, request, signal), []);
   const warmPhoto = useCallback(() => { void backendSession.warmPhoto().catch(() => undefined); }, []);
@@ -1254,7 +1255,7 @@ export default function App() {
           surface is *not* given `article-open`: it keeps the rail wherever there is room for it,
           and drops it only on a phone, where an article drops it too. */}
       {/* On the map the top bar carries the map's own row instead of search, Add and sync (`map-open`). */}
-      <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops || stories || map ? " loops-open" : ""}${map ? " map-open" : ""}`}>
+      <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops || stories || map ? " loops-open" : ""}${map ? " map-open" : ""}${addTab ? " adding" : ""}`}>
         <div className="brand"><span className="mark">A.</span></div>
 
         <header className="topbar">
@@ -1431,6 +1432,7 @@ export default function App() {
             onFoldIn={foldIn}
             onChat={captureHealth?.available === false ? undefined : askAboutDraft}
             onReadPhoto={readPhoto}
+            onStorePhoto={storePhoto}
             onLookUp={lookUp}
             onWarmPhoto={warmPhoto}
             offline={syncStatus.state === "offline"}

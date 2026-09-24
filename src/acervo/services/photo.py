@@ -92,6 +92,21 @@ def pending_path(media: Path, reference: str) -> Path:
     return kept.parent / "pending" / kept.name
 
 
+def store(settings: Settings, owner: str, data: bytes) -> dict[str, Any]:
+    """Keep a photo pending without reading it, and say what it will be called once kept.
+
+    What a scrolled screenshot is kept as: the device crops it to the square that was on screen and
+    sends that. It is a clean JPEG, so `prepare` keeps it byte for byte, and the reference names the
+    very bytes the device holds — which is what lets it put them in its own cache under that name.
+    """
+    photo, width, height = prepare(data)
+    reference = reference_for(owner, photo)
+    media = Path(settings.media_path)
+    if not (media / reference).is_file():
+        _place(pending_path(media, reference), photo)
+    return {"photoRef": reference, "width": width, "height": height}
+
+
 def read(settings: Settings, owner: str, data: bytes) -> dict[str, Any]:
     """Read one photo: store it pending, ask the owner's `ocr` chain, and lay the page out."""
     warm()
@@ -104,9 +119,7 @@ def read(settings: Settings, owner: str, data: bytes) -> dict[str, Any]:
     page = layout.page(reading.words, width, height, segment.shared().split)
     segmented = time.monotonic() - started
 
-    media = Path(settings.media_path)
-    if not (media / reference).is_file():
-        _place(pending_path(media, reference), photo)
+    store(settings, owner, photo)
     language = _vocabulary_language(reading.language, vocabularies)
     journal.outcome(
         "photo-read",

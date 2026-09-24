@@ -1077,6 +1077,14 @@ export const backendSession = {
       body: photo
     }, false, PHOTO_TIMEOUT);
   },
+  /** Keeps a photo pending without reading it — the square of a screenshot that was on screen. */
+  storePhoto(photo: Blob): Promise<{ photoRef: string; width: number; height: number }> {
+    return client.call("/photo/store", {
+      method: "POST",
+      headers: { "Content-Type": photo.type || "image/jpeg" },
+      body: photo
+    }, false, PHOTO_TIMEOUT);
+  },
   /** The Photo tab opened: the server loads its sentence splitter now rather than on the first photo. */
   warmPhoto(): Promise<unknown> {
     return client.call("/photo/warm", { method: "POST", body: "{}" });

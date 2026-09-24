@@ -305,3 +305,16 @@ def test_the_sweep_removes_pending_photos_nobody_added_after_a_day(reader):
 
 def test_warming_answers_at_once(reader):
     assert reader.post("/photo/warm", {}).json()["data"] == {"warming": True}
+
+
+def test_a_crop_is_stored_byte_for_byte_and_not_read(reader):
+    """A scrolled screenshot is kept as the square that was on screen, cropped on the device."""
+    data = jpeg(300, 300)
+    answer = reader.client.post(
+        "/api/acervo/v1/photo/store", headers={**reader.auth, "Content-Type": "image/jpeg"}, content=data
+    )
+    assert answer.status_code == 200, answer.json()
+    stored = answer.json()["data"]
+    assert (stored["width"], stored["height"]) == (300, 300)
+    assert photo_service.pending_path(reader.media, stored["photoRef"]).read_bytes() == data
+    assert reader.asked == [], "storing is not reading"

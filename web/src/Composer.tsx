@@ -16,13 +16,14 @@ import type { ReactNode } from "react";
 export default function Composer({ label, head, actions, fill, children }: {
   label: string;
   head: ReactNode;
-  actions: ReactNode;
+  /** Absent where the surface's own controls are the ones that matter — a live camera. */
+  actions: ReactNode | null;
   fill?: boolean;
   children: ReactNode;
 }) {
   return <section className="composer" aria-label={label}>
     <div className="composer-head">{head}</div>
     <div className={`composer-body${fill ? " fill" : ""}`}>{children}</div>
-    <div className="composer-actions">{actions}</div>
+    {actions ? <div className="composer-actions">{actions}</div> : null}
   </section>;
 }

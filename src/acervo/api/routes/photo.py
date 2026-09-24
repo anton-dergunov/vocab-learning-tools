@@ -33,6 +33,14 @@ async def read(request: Request) -> JSONResponse:
     return data(await run_in_threadpool(photo.read, request.app.state.settings, owner, payload))
 
 
+@router.post("/photo/store")
+async def store(request: Request) -> JSONResponse:
+    """Keep a photo pending without reading it: the square of a screenshot that was on screen."""
+    owner = owner_id(request)
+    payload = await binary_body(request, PHOTO_LIMIT)
+    return data(await run_in_threadpool(photo.store, request.app.state.settings, owner, payload))
+
+
 @router.post("/photo/warm")
 def warm(request: Request) -> JSONResponse:
     """Load the sentence splitter now, because the owner has just opened the Photo tab."""

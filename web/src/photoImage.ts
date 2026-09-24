@@ -35,22 +35,37 @@ export async function encodePhoto(source: Blob | HTMLCanvasElement): Promise<Blo
 }
 
 /**
- * The best still the camera can give. `ImageCapture.takePhoto()` is the full sensor with the camera's
- * own focus, and only Chrome on Android has it; everywhere else it is the video frame on screen,
- * which is usually 1080p at most. Which is sharper on the owner's phone is still to be compared.
+ * The photo exactly as the viewfinder framed it: the centre square of the video frame on screen.
+ *
+ * Not `ImageCapture.takePhoto()`. The full-sensor still it returns has a different field of view
+ * from the preview — on the owner's phone a narrower one, so every line lost its start and its end
+ * between framing the page and reading it. What is on screen is what is read and what is kept, and
+ * the cost is resolution: a video frame is about 1080–1440 px square, where the spike measured the
+ * tapped word still found 98% of the time at 1280.
  */
-export async function still(video: HTMLVideoElement, track: MediaStreamTrack | null): Promise<Blob | HTMLCanvasElement> {
-  const Capture = (globalThis as unknown as { ImageCapture?: new (track: MediaStreamTrack) => { takePhoto(): Promise<Blob> } }).ImageCapture;
-  if (Capture && track) {
-    try {
-      return await new Capture(track).takePhoto();
-    } catch {
-      /* the frame on screen is still a photo */
-    }
-  }
+export function still(video: HTMLVideoElement): HTMLCanvasElement {
+  const side = Math.min(video.videoWidth, video.videoHeight);
+  const size = Math.min(side, LONG_EDGE);
   const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d")?.drawImage(video, 0, 0);
+  canvas.width = size;
+  canvas.height = size;
+  canvas.getContext("2d")?.drawImage(
+    video, (video.videoWidth - side) / 2, (video.videoHeight - side) / 2, side, side, 0, 0, size, size
+  );
   return canvas;
+}
+
+/**
+ * A square cut from a photo already sent, as a JPEG: the part of a tall screenshot that was on screen
+ * when Add was pressed. `top` and `size` are shares of the photo's height; the width is all of it.
+ */
+export async function cropSquare(photo: Blob, top: number, size: number): Promise<Blob> {
+  const bitmap = await createImageBitmap(photo);
+  const side = bitmap.width;
+  const canvas = document.createElement("canvas");
+  canvas.width = side;
+  canvas.height = Math.min(side, Math.round(size * bitmap.height));
+  canvas.getContext("2d")?.drawImage(bitmap, 0, -Math.round(top * bitmap.height));
+  bitmap.close();
+  return encodePhoto(canvas);
 }

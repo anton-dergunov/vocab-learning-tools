@@ -1163,13 +1163,28 @@ let captureBlocked = null;
 let photoStage = "idle";
 let photoKeep = true;
 let photoSource = "book";
+/* The camera case: a square photo, exactly as the square viewfinder framed it. */
 const PHOTO = {
-  src: "img/met-photo.jpg",
+  src: "img/met-photo-square.jpg",
   sentence: "Esta gigantesca operación, llevada a cabo en el mayor secreto, había sido ordenada por el rey de Francia Felipe IV el Hermoso y dirigida por su consejero Guillermo de Nogaret.",
   headword: "llevar a cabo",
   gloss: "to carry out",
   /* Where "llevada a cabo" and its sentence are on the page, in the photo's own 0–1 coordinates —
      what the server's reading gives the interface to hit-test and draw. */
+  words: [[[0.205, 0.267], [0.412, 0.267], [0.412, 0.311], [0.205, 0.311]]],
+  bands: [
+    [[0.664, 0.217], [0.94, 0.217], [0.94, 0.262], [0.664, 0.262]],
+    [[0.069, 0.267], [0.94, 0.267], [0.94, 0.311], [0.069, 0.311]],
+    [[0.069, 0.317], [0.94, 0.317], [0.94, 0.362], [0.069, 0.362]],
+    [[0.069, 0.366], [0.475, 0.366], [0.475, 0.41], [0.069, 0.41]]
+  ],
+  uncertain: []
+};
+/* The chosen-image case: taller than the square, so it fills the width and scrolls inside it. The
+   blurred word at its foot is marked as uncertain rather than hidden. */
+const SCREEN = {
+  ...PHOTO,
+  src: "img/met-photo.jpg",
   words: [[[0.205, 0.388], [0.412, 0.388], [0.412, 0.421], [0.205, 0.421]]],
   bands: [
     [[0.664, 0.35], [0.94, 0.35], [0.94, 0.384], [0.664, 0.384]],
@@ -1177,7 +1192,6 @@ const PHOTO = {
     [[0.069, 0.425], [0.94, 0.425], [0.94, 0.459], [0.069, 0.459]],
     [[0.069, 0.462], [0.475, 0.462], [0.475, 0.495], [0.069, 0.495]]
   ],
-  /* A blurred word at the bottom edge: kept tappable, and marked as uncertain rather than hidden. */
   uncertain: [[[0.62, 0.955], [0.8, 0.955], [0.8, 0.985], [0.62, 0.985]]]
 };
 const points = (polygon) => polygon.map(([x, y]) => `${x},${y}`).join(" ");
@@ -1203,14 +1217,16 @@ function renderPhotoTab() {
       </div>
       <div class="composer-actions"><div class="composer-buttons"><span class="spacer"></span>
         <button class="tb-btn primary" disabled>Add</button></div></div>`;
+  const shown = photoStage === "screenshot" ? SCREEN : PHOTO;
   const chips = [["book", "Book"], ["sign", "Sign"], ["web", "Screen"], ["unknown", "Other"]]
     .map(([kind, label]) => `<button class="cards-chip${photoSource === kind ? " on" : ""}" data-photo-source="${kind}" aria-pressed="${photoSource === kind}">${label}</button>`).join("");
   return `
       <div class="composer-body">
-        <div class="photo-stage"><div class="photo-frame">
-          <img src="${PHOTO.src}" alt="The photo being read" draggable="false">
-          ${photoOverlay({ words: PHOTO.words, bands: PHOTO.bands, uncertain: PHOTO.uncertain })}
-        </div></div>
+        <div class="photo-window" id="photoWindow"><div class="photo-square" id="photoSquare"><div class="photo-frame">
+          <img src="${shown.src}" alt="The photo being read" draggable="false">
+          ${photoOverlay({ words: shown.words, bands: shown.bands, uncertain: shown.uncertain })}
+        </div></div></div>
+        ${photoStage === "screenshot" ? `<p class="hint photo-scroll-hint" id="photoHint">Swipe up or down to see the rest. The square on screen is what is kept.</p>` : ""}
         <div class="photo-sheet">
           <div class="photo-meaning" aria-live="polite"><strong lang="es">${PHOTO.headword}</strong><span> — ${PHOTO.gloss}</span></div>
           <label class="label" for="photoSentence">The sentence, as it will be kept</label>
@@ -1236,7 +1252,7 @@ function renderSheet() {
   host.innerHTML = `
     <section class="composer" aria-label="Add a word">
       <div class="composer-head">
-        <h2>Add a word</h2>
+        <h2>Add<span class="head-rest"> a word</span></h2>
         <span class="spacer"></span>
         <div class="seg">
           <button data-tab="capture" class="${addTab === "capture" ? "on" : ""}">Text</button>
@@ -1321,10 +1337,10 @@ function openPhotoViewer(src) {
     <section class="settings photo-viewer" role="dialog" aria-modal="true" aria-labelledby="photo-viewer-title">
       <header><h2 id="photo-viewer-title">Where you met it</h2>
         <button class="close" id="photoViewerClose" aria-label="Close">×</button></header>
-      <div class="settings-body"><div class="photo-frame">
+      <div class="settings-body"><div class="photo-window"><div class="photo-square"><div class="photo-frame">
         <img src="${esc(src)}" alt="The photo this word was captured from">
-        <!-- The application draws the attestation's photoRegion here; the fixture keeps none. -->
-      </div></div>
+        ${src === PHOTO.src ? photoOverlay({ words: PHOTO.words, bands: PHOTO.bands }) : ""}
+      </div></div></div></div>
     </section></div>`);
 }
 
@@ -2395,6 +2411,7 @@ function render() {
   // Not `&& !composing`: the loops surface *is* a composing surface — it owns its height so its
   // controls cannot drift — and excluding it here left the rail on screen behind the player.
   $(".app").classList.toggle("loops-open", state.loops || state.stories || state.map);
+  $(".app").classList.toggle("adding", Boolean(state.add));
   // The map's own row is the top one: search, Add and sync are one Back away, and on a map the height
   // they took is worth more than they are.
   $(".app").classList.toggle("map-open", state.map);
@@ -2527,7 +2544,19 @@ function wireSheet() {
   if (sd) sd.onclick = () => { toast("Saved to Inbox — prototype only"); setTimeout(closeSheet, 500); };
   const read = () => { photoStage = "read"; renderSheet(); };
   if ($("#photoTake")) $("#photoTake").onclick = () => { read(); toast("The camera is not wired up in this prototype — showing a photo"); };
-  if ($("#photoChoose")) $("#photoChoose").onclick = read;
+  if ($("#photoChoose")) $("#photoChoose").onclick = () => { photoStage = "screenshot"; renderSheet(); };
+  const square = $("#photoSquare");
+  if (square) {
+    const measure = () => {
+      const tall = square.scrollHeight > square.clientHeight + 2;
+      $("#photoWindow").classList.toggle("more-above", tall && square.scrollTop > 2);
+      $("#photoWindow").classList.toggle("more-below", tall && square.scrollTop + square.clientHeight < square.scrollHeight - 2);
+      if (square.scrollTop > 2) $("#photoHint")?.remove();
+    };
+    square.onscroll = measure;
+    square.querySelector("img").onload = measure;
+    measure();
+  }
   if ($("#photoAnother")) $("#photoAnother").onclick = () => { photoStage = "idle"; renderSheet(); };
   if ($("#photoKeep")) $("#photoKeep").onchange = (event) => { photoKeep = event.target.checked; };
   $("#composer").querySelectorAll("[data-photo-source]").forEach((b) => {
@@ -2882,7 +2911,7 @@ if (params.get("capture") === "off") {
 if (params.get("wrap") === "off") editorWrap = false;
 if (params.get("numbers") === "on") editorNumbers = true;
 if (params.get("theme")) setTheme(params.get("theme"));
-if (params.get("photo") === "read") photoStage = "read";
+if (["read", "screenshot"].includes(params.get("photo"))) photoStage = params.get("photo");
 if (params.get("add")) openSheet(params.get("add"));
 if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
   const f = params.get("frame");
