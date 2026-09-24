@@ -1,0 +1,3 @@
+{attached} Use them for three things only: who the characters are — keep each person's and animal's face, age, build, hair and skin, so a reader recognises them at a glance; the art style, palette and rendering; and the feel of the place — its light, season and materials. Reuse nothing else. This is a new, later moment in the story, so draw a completely new picture: a different composition and camera angle, new poses, a facial expression that fits what happens now, and a different part of the setting, or a different place if the story has moved on. What people wear and carry follows the description below, not the reference. Never copy or lightly edit a reference: a picture that could be mistaken for an earlier one is wrong.
+
+The new picture: {picture}
