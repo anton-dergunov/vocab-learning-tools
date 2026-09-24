@@ -1,9 +1,8 @@
 """**A throwaway script. Delete it once it has run.**
 
-It carries one Acervo database across one specific schema change — the one that gave `image_settings`
-the `story_continuity` column, which says whether a story's later pictures are drawn with its earlier
-ones as references — and it exists so that the owner's words, pictures, recordings and stories are
-not rebuilt along with the schema.
+It carries one Acervo database across one specific schema change — the one that gave `stories` the
+`guidance` column, the owner's own note to the writer — and it exists so that the owner's words,
+pictures, recordings and stories are not rebuilt along with the schema.
 
 Nothing that ships imports this. It is the way out named in AGENTS.md, "Backward compatibility stays
 out of the shipped code": a converter outside the application, written for one transition, run by
@@ -14,8 +13,8 @@ database at all, which is how a stale one announces itself.
 **Why this change can be carried at all.** The head revision id is a digest of the whole schema, so
 any change moves it and `db/bootstrap.py` then refuses to serve a database stamped with the old one.
 Here it does not have to mean `--reset-database`, because the change is *purely additive*: one new
-column with a default on one table, and not one existing column, index or constraint altered. An
-owner who saved picture settings before this reads as the default, `artwork`.
+column with a default on one table, and not one existing column, index or constraint altered. Every
+story written before this reads as one asked for with no guidance, which is what it was.
 
 **What makes that honest rather than hopeful is that the script checks rather than assumes.** It
 compares every table on disk against what the code declares and refuses — naming what differs — if
@@ -25,7 +24,7 @@ anything but that column has moved.
 and afterwards checks the whole schema again whatever this script said. To run it alone, on a copy you
 have taken first, with the server stopped:
 
-    python scripts/throwaway/add_story_continuity.py --database PATH --dry-run
+    python scripts/throwaway/add_story_guidance.py --database PATH --dry-run
 """
 
 from __future__ import annotations
@@ -44,13 +43,13 @@ from acervo.db.alembic.versions.bootstrap import revision as HEAD  # noqa: E402
 from acervo.db.tables import metadata  # noqa: E402
 
 # The one head this converts *from*. `transition.py` reads it to choose this script.
-FROM_REVISION = "bootstrap_203766d3cba6"
+FROM_REVISION = "bootstrap_292b9031e7bd"
 
-TABLE = "image_settings"
+TABLE = "stories"
 # An explicit DDL default, because SQLAlchemy's `default=` is applied in Python and SQLite refuses to
 # add a NOT NULL column that has none.
 COLUMNS = {
-    "story_continuity": "VARCHAR(16) NOT NULL DEFAULT 'artwork'",
+    "guidance": "TEXT NOT NULL DEFAULT ''",
 }
 
 

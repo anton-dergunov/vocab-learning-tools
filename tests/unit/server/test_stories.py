@@ -83,6 +83,28 @@ def test_the_kind_and_the_style_may_be_chosen(server):
     assert (story["typeId"], story["styleId"]) == ("mystery", "film-noir")
 
 
+def test_the_owners_own_guidance_is_kept_on_the_story(server):
+    """On the story rather than the job, for the kind's reason: Try again on a story that was never
+    written must write the story that was asked for."""
+    made = words(server, 2)
+    answer = ask(server, [one["id"] for one in made], guidance="  Tell it from the cat's side.  ")
+    story = answer.json()["data"]["story"]
+    assert story["guidance"] == "Tell it from the cat's side."
+    held = graph.owned_records(server.owner, "stories", [story["id"]])[story["id"]]
+    assert held["guidance"] == "Tell it from the cat's side."
+
+    without = ask(server, [one["id"] for one in made]).json()["data"]["story"]
+    assert without["guidance"] is None, "nothing asked is nothing stored"
+
+
+@pytest.mark.parametrize("guidance", [{"not": "text"}, "x" * 1001])
+def test_guidance_that_is_not_a_short_note_is_refused(server, guidance):
+    made = [one["id"] for one in words(server, 2)]
+    refused = ask(server, made, guidance=guidance)
+    assert refused.status_code == 400
+    assert refused.json()["error"]["code"] == "invalid_input"
+
+
 def test_a_kind_or_a_style_nobody_has_is_refused_by_name(server):
     made = [one["id"] for one in words(server, 2)]
     assert ask(server, made, typeId="limerick").status_code == 400

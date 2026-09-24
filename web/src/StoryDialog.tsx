@@ -12,6 +12,9 @@
  *
  * The default is **three words**, not twelve. A story has to weave every word it is given into
  * twenty sentences, and the prose buckles long before a loop's dozen would.
+ *
+ * The guidance box is the owner's own words to the writer, kept on the story so Try again writes the
+ * story that was asked for. It is sent only when something is in it.
  */
 
 import { useEffect, useState } from "react";
@@ -22,6 +25,8 @@ import { languageOf } from "./languages";
 import { sampleLexemeIds, storyCandidates, type ListQuery } from "./selectors";
 
 const DEFAULT_WORDS = 3;
+/** The server's bound (`GUIDANCE_LIMIT`), so the box stops where the route would refuse. */
+const GUIDANCE_LIMIT = 1000;
 
 export default function StoryDialog({ graph, query, deviceId, onClose, onMade, onNotify }: {
   graph: VocabularyGraph;
@@ -37,6 +42,7 @@ export default function StoryDialog({ graph, query, deviceId, onClose, onMade, o
   const [kind, setKind] = useState("auto");
   const [style, setStyle] = useState("auto");
   const [asking, setAsking] = useState(false);
+  const [guidance, setGuidance] = useState("");
   const eligible = storyCandidates(graph, query).length;
   const most = Math.min(offered?.maxWords ?? 8, Math.max(1, eligible));
   const [words, setWords] = useState(Math.min(DEFAULT_WORDS, Math.max(1, eligible)));
@@ -62,7 +68,8 @@ export default function StoryDialog({ graph, query, deviceId, onClose, onMade, o
         deviceId, language: query.language,
         lexemeIds: sampleLexemeIds(graph, query, Math.min(words, eligible), Date.now()),
         ...(kind === "auto" ? {} : { typeId: kind }),
-        ...(style === "auto" ? {} : { styleId: style })
+        ...(style === "auto" ? {} : { styleId: style }),
+        ...(guidance.trim() ? { guidance: guidance.trim() } : {})
       });
       onMade(answer.story.id);
       onClose();
@@ -127,6 +134,15 @@ export default function StoryDialog({ graph, query, deviceId, onClose, onMade, o
               <option key={one.id} value={one.id}>{one.label}</option>
             ))}
           </select>
+        </label>
+
+        <label className="config-field">
+          <span>Anything else? <em>(optional)</em></span>
+          <textarea
+            value={guidance} maxLength={GUIDANCE_LIMIT} rows={3}
+            placeholder="Set it on a night train, tell it from the dog’s side, keep it gentle…"
+            onChange={(event) => setGuidance(event.target.value)}
+          />
         </label>
 
         <p className="config-help">

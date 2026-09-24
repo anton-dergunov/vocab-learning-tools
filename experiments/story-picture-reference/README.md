@@ -148,6 +148,43 @@ OUT=experiments/story-picture-reference/out-2
 
 `report` now also splits the result by artwork vs photographic, and style by style.
 
+## Run 2 results
+
+The owner rated run 2 blind: references won **9 of 12** and tied 3, and never lost:
+
+| | continuity | no difference |
+| --- | --- | --- |
+| Photographic styles (10) | **7** | 3 |
+| … of which cinematic-photoreal (8) | **5** | 3 |
+| Drawn and painted (2) | **2** | 0 |
+
+With the picture-first prompt, the photoreal loss of run 1 did not come back, so references became
+the default in every style. The owner also saw a new failure. Each part anchored a returning person
+to the *latest* picture of them, so a slightly different profile in part 2 became the truth for
+part 3 and was pushed further in part 4: the face drifted part by part.
+
+## Run 3: which picture a returning character is drawn from
+
+The application now draws a returning character from the **first** picture that showed them, and a
+returning place from its **last** (`continuity.references(characters="first")`). Run 3 checks that
+on five fresh cinematic stories. It has two sets and no `original` in the comparison:
+- `continuity`: the character's latest picture, as in run 2;
+- `continuity-first`: the character's first picture.
+
+A part whose references are the same in both sets, backed by byte-identical pictures, is drawn once
+and copied, so the sets differ only where the anchor does.
+
+```bash
+OUT=experiments/story-picture-reference/out-3
+.venv/bin/python experiments/story-picture-reference/run.py --out $OUT fetch --newest 5 \
+  --server-url https://acervo.example.com --email learner@account.example.com
+.venv/bin/python experiments/story-picture-reference/run.py --out $OUT prepare
+.venv/bin/python experiments/story-picture-reference/run.py --out $OUT draw
+.venv/bin/python experiments/story-picture-reference/review.py --out $OUT --sets continuity,continuity-first \
+  --host "$(tailscale ip -4)" --port 8765
+.venv/bin/python experiments/story-picture-reference/run.py --out $OUT report
+```
+
 ## Running it (run 1)
 
 All on the laptop. The output goes to `out/`, which is ignored: it holds the owner's stories.

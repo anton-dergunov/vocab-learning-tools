@@ -1,6 +1,6 @@
-"""The one-off converter that added `story_continuity` to `image_settings`.
+"""The one-off converter that added `guidance` to `stories`.
 
-**Delete this file together with `scripts/throwaway/add_story_continuity.py`**, once that has run. It
+**Delete this file together with `scripts/throwaway/add_story_guidance.py`**, once that has run. It
 is tested against a database built the way the owner's was — the current schema minus the new
 columns, stamped with the head from before them — because the point of a converter is that words,
 pictures and recordings survive it, and a test that started from an empty database would prove
@@ -24,7 +24,7 @@ from acervo.db.alembic.versions.bootstrap import revision as HEAD  # noqa: E402
 from acervo.db.tables import metadata  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location(
-    "add_story_continuity", ROOT / "scripts" / "throwaway" / "add_story_continuity.py")
+    "add_story_guidance", ROOT / "scripts" / "throwaway" / "add_story_guidance.py")
 converter = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(converter)
 
@@ -48,12 +48,12 @@ def _row(table, **overrides) -> dict:
 
 @pytest.fixture
 def old(tmp_path) -> Path:
-    """The owner's database as it was: the current schema without the column, one saved setting."""
+    """The owner's database as it was: the current schema without the column, one story in it."""
     path = tmp_path / "acervo.db"
     engine = create_engine(f"sqlite+pysqlite:///{path}")
     metadata.create_all(engine)
-    parts = metadata.tables[converter.TABLE]  # the settings table
-    row = _row(parts, id="imgsetting00001", owner="owner0000000001", draw_enabled=0, styles_off="[\"film-noir\"]", boost_variety=1, edited_at="2026-09-24T10:00:00.000Z")
+    parts = metadata.tables[converter.TABLE]  # the stories table
+    row = _row(parts, id="story0000000001", owner="owner0000000001", language="es", title="La tortuga marina", style_id="folk-naive")
     with engine.begin() as connection:
         for column in converter.COLUMNS:
             connection.execute(text(f"ALTER TABLE {converter.TABLE} DROP COLUMN {column}"))
@@ -88,10 +88,10 @@ def test_it_converts_from_the_head_it_was_written_for_and_keeps_every_row(old):
     assert converter.main(["--database", str(old)]) == 0
 
     assert _stamp(old) == HEAD
-    rows = _query(old, f"SELECT id, draw_enabled, styles_off, story_continuity FROM {converter.TABLE}")
+    rows = _query(old, f"SELECT id, title, style_id, guidance FROM {converter.TABLE}")
     assert len(rows) == 1
-    assert rows[0][:3] == ("imgsetting00001", 0, '["film-noir"]'), "what was saved survives"
-    assert rows[0][3] == "artwork", "and it follows the default the column declares"
+    assert rows[0][:3] == ("story0000000001", "La tortuga marina", "folk-naive"), "the story survives"
+    assert rows[0][3] == "", "and reads as one asked for with no guidance"
     engine = create_engine(f"sqlite+pysqlite:///{old}")
     assert schemacheck.compare(engine, metadata, sorted(metadata.tables)) == []
 

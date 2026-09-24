@@ -348,6 +348,8 @@ export interface Story extends SyncFields, OwnedFields {
   modelId: string | null;
   /** Sparse, renumbered on reorder. Ordering is respected rather than enforced. */
   position: number;
+  /** What the owner asked the writer for, in their own words. Null when nothing was asked. */
+  guidance: string | null;
 }
 
 /**
@@ -760,6 +762,7 @@ const CHECKS: { [K in EntityKind]: (record: VocabularyGraph[K][number], find: Fi
     optionalString(record.titleTranslation, "Story title translation");
     optionalString(record.emoji, "Story emoji");
     optionalString(record.modelId, "Story model");
+    optionalString(record.guidance, "Story guidance");
     invariant(Number.isSafeInteger(record.position) && record.position >= 0, "Story position is invalid.");
   },
   storyParts(record: StoryPart, find: Find): void {

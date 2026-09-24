@@ -190,12 +190,13 @@ export function testGraph(): VocabularyGraph {
       {
         id: "storypicada0001", language: "es", typeId: "funny", styleId: "comic-book",
         title: "La balsa que picaba", titleTranslation: "The raft that stung",
-        emoji: "\u{1F6F6}", modelId: "gemini/gemini-3.5-flash-lite", position: 0, ...sync("09-03")
+        emoji: "\u{1F6F6}", modelId: "gemini/gemini-3.5-flash-lite", position: 0, guidance: null,
+        ...sync("09-03")
       },
       {
         // Asked for and never written: having no parts is the whole of what says so.
         id: "storyqueued0001", language: "es", typeId: "mystery", styleId: "film-noir",
-        title: null, titleTranslation: null, emoji: "\u{1F575}", modelId: null,
+        title: null, titleTranslation: null, emoji: "\u{1F575}", modelId: null, guidance: null,
         position: 1, ...sync("09-04")
       }
     ],

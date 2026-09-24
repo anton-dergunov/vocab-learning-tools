@@ -57,6 +57,11 @@ IMAGE_MODEL = "vertex_ai/gemini-3.1-flash-lite-image"
 PICTURE_USD = 0.0342  # $0.0336 a picture and about two references at $0.00028
 TEXT_CHAIN = ["gemini-free"]  # the labels; GEMINI_API_KEY from `.env`
 RECENT = 5
+# The sets a run draws, and which picture a returning character is drawn from in each. Run 2 drew
+# `continuity` with the latest; run 3 compares that with the first, which the application now uses.
+# Order matters: a part the two would draw from the same plan and the same pictures is drawn once,
+# for the first set, and copied to the second, so they differ only where the anchor does.
+SETS = {"continuity": "last", "continuity-first": "first"}
 # The rests `src/acervo/work/` uses for the same three conditions: 30 s, doubling, ten minutes.
 FIRST_REST, LONGEST_REST = 30.0, 600.0
 
@@ -175,9 +180,10 @@ def _picture(story_id: str, set_name: str, index: int) -> Path:
 
 
 def _prompt_for(story: dict[str, Any], labels: continuity.Continuity, index: int, style: Any,
-                drawn: Callable[[int], bool]) -> tuple[str, tuple[continuity.Reference, ...]] | None:
+                drawn: Callable[[int], bool], anchor: str = "first",
+                ) -> tuple[str, tuple[continuity.Reference, ...]] | None:
     """What part `index` would be drawn from, or None when nothing recurs and it keeps its picture."""
-    chosen = continuity.references(labels, index, drawn)
+    chosen = continuity.references(labels, index, drawn, characters=anchor)
     if not chosen:
         return None
     picture = illustrate.compose(story["parts"][index]["imagePrompt"], style)
@@ -235,23 +241,27 @@ def prepare(args: argparse.Namespace) -> None:
         if story["styleId"] not in styles:
             print(f"  style {story['styleId']!r} is not in this checkout, so `draw` will skip it")
             continue
-        for index in range(count):
-            shown = labels.parts[index]
-            head = f"part {index + 1} [{', '.join(shown.characters) or 'nobody'} @ {shown.scene}]"
-            drawn = _prompt_for(story, labels, index, styles[story["styleId"]], lambda _part: True)
-            if drawn is None:
-                print(f"    {head}: no references → keeps the original picture")
-                continue
-            prompt, chosen = drawn
-            (folder / f"continuity-part-{index + 1}.md").write_text(prompt + "\n", encoding="utf-8")
-            served = "; ".join(
-                f"part {one.part + 1} ({', '.join(key.removeprefix('scene:') for key in one.keeps)})"
-                for one in chosen)
-            change = f"  — change: {shown.change}" if shown.change else ""
-            print(f"    {head} ← {served}{change}")
-            to_draw += not _picture(story["id"], "continuity", index).exists()
+        for set_name, anchor in SETS.items():
+            print(f"  [{set_name}: characters from their {anchor} picture]")
+            for index in range(count):
+                shown = labels.parts[index]
+                head = f"part {index + 1} [{', '.join(shown.characters) or 'nobody'} @ {shown.scene}]"
+                drawn = _prompt_for(story, labels, index, styles[story["styleId"]],
+                                    lambda _part: True, anchor)
+                if drawn is None:
+                    print(f"    {head}: no references → keeps the original picture")
+                    continue
+                prompt, chosen = drawn
+                (folder / f"{set_name}-part-{index + 1}.md").write_text(prompt + "\n", encoding="utf-8")
+                served = "; ".join(
+                    f"part {one.part + 1} ({', '.join(key.removeprefix('scene:') for key in one.keeps)})"
+                    for one in chosen)
+                change = f"  — change: {shown.change}" if shown.change else ""
+                print(f"    {head} ← {served}{change}")
+                to_draw += not _picture(story["id"], set_name, index).exists()
     print(f"\nEvery prompt is in {OUT / 'prompts'}/<story id>/.")
-    print(f"`draw` will make {to_draw} pictures, about ${to_draw * PICTURE_USD:.2f}")
+    print(f"`draw` will make at most {to_draw} pictures, about ${to_draw * PICTURE_USD:.2f} — fewer "
+          "where the two sets share a plan and it copies instead")
 
 
 # ── draw ────────────────────────────────────────────────────────────────────
@@ -283,6 +293,28 @@ def _draw_one(row: Any, prompt: str, pictures: list[bytes], entry: dict[str, Any
             return None
 
 
+def _same_as_earlier_set(story: dict[str, Any], labels: continuity.Continuity, set_name: str,
+                         index: int, chosen: tuple[continuity.Reference, ...],
+                         style: Any) -> Path | None:
+    """An earlier set's picture of this part, when it was drawn from exactly this plan.
+
+    Same references, chosen for the same ids, and the pictures behind them byte for byte the same:
+    then the two sets would only differ by the dice, and a difference the dice made is noise.
+    """
+    names = list(SETS)
+    for earlier in names[:names.index(set_name)]:
+        theirs = continuity.references(
+            labels, index, lambda part: _picture(story["id"], earlier, part).exists(),
+            characters=SETS[earlier])
+        drawn = _picture(story["id"], earlier, index)
+        if theirs != chosen or not drawn.exists():
+            continue
+        if all(_picture(story["id"], earlier, one.part).read_bytes()
+               == _picture(story["id"], set_name, one.part).read_bytes() for one in chosen):
+            return drawn
+    return None
+
+
 def draw(args: argparse.Namespace) -> None:
     row = load_catalogue().find(IMAGE_PROVIDER)
     problem = unmet(row)
@@ -298,38 +330,45 @@ def draw(args: argparse.Namespace) -> None:
         if story["styleId"] not in styles:
             print(f"skip {story['title']}: style {story['styleId']!r} is not in this checkout")
             continue
-        for index in range(len(story["parts"])):
-            target = _picture(story["id"], "continuity", index)
-            if target.exists():
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            drawn = _prompt_for(story, labels, index, styles[story["styleId"]],
-                                lambda part: _picture(story["id"], "continuity", part).exists())
-            if drawn is None:
-                shutil.copyfile(_picture(story["id"], "original", index), target)
-                continue
-            if args.limit is not None and drawn_now >= args.limit:
-                print(f"stopped at --limit {args.limit}; ${spent:.2f} spent this run")
-                return
-            prompt, chosen = drawn
-            pictures = [_picture(story["id"], "continuity", one.part).read_bytes() for one in chosen]
-            entry = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "story": story["id"],
-                     "set": "continuity", "part": index + 1,
-                     "references": [one.part + 1 for one in chosen]}
-            result = _draw_one(row, prompt, pictures, entry)
-            if result is None:
-                break  # later parts may be drawn from this one, so the story stops here
-            with Image.open(io.BytesIO(result.data)) as image:
-                size = list(image.size)
-            target.write_bytes(encode_master(result.data))
-            cost = result.answer.cost_usd or 0.0
-            _log({**entry, "seconds": round(result.answer.seconds, 2), "costUsd": cost,
-                  "drawnSize": size, "warnings": list(result.answer.warnings)})
-            spent += cost
-            drawn_now += 1
-            print(f"  {story['createdAt'][:10]} {story['title'][:38]:<38} part {index + 1} ← "
-                  f"{[one.part + 1 for one in chosen]}  {result.answer.seconds:.0f} s  "
-                  f"${cost:.4f}  (run ${spent:.2f})")
+        for set_name, anchor in SETS.items():
+            for index in range(len(story["parts"])):
+                target = _picture(story["id"], set_name, index)
+                if target.exists():
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                drawn = _prompt_for(story, labels, index, styles[story["styleId"]],
+                                    lambda part: _picture(story["id"], set_name, part).exists(),
+                                    anchor)
+                if drawn is None:
+                    shutil.copyfile(_picture(story["id"], "original", index), target)
+                    continue
+                prompt, chosen = drawn
+                twin = _same_as_earlier_set(story, labels, set_name, index, chosen,
+                                            styles[story["styleId"]])
+                if twin is not None:
+                    shutil.copyfile(twin, target)
+                    continue
+                if args.limit is not None and drawn_now >= args.limit:
+                    print(f"stopped at --limit {args.limit}; ${spent:.2f} spent this run")
+                    return
+                pictures = [_picture(story["id"], set_name, one.part).read_bytes() for one in chosen]
+                entry = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "story": story["id"],
+                         "set": set_name, "part": index + 1,
+                         "references": [one.part + 1 for one in chosen]}
+                result = _draw_one(row, prompt, pictures, entry)
+                if result is None:
+                    break  # later parts may be drawn from this one, so the set stops here
+                with Image.open(io.BytesIO(result.data)) as image:
+                    size = list(image.size)
+                target.write_bytes(encode_master(result.data))
+                cost = result.answer.cost_usd or 0.0
+                _log({**entry, "seconds": round(result.answer.seconds, 2), "costUsd": cost,
+                      "drawnSize": size, "warnings": list(result.answer.warnings)})
+                spent += cost
+                drawn_now += 1
+                print(f"  {story['createdAt'][:10]} {story['title'][:34]:<34} [{set_name}] "
+                      f"part {index + 1} ← {[one.part + 1 for one in chosen]}  "
+                      f"{result.answer.seconds:.0f} s  ${cost:.4f}  (run ${spent:.2f})")
     print(f"done: {drawn_now} drawn this run, ${spent:.2f}")
 
 

@@ -154,11 +154,12 @@ image_settings = Table(
     Column("boost_variety", Boolean, nullable=False, default=True),
     Column("edited_at", String(24), nullable=False),
     # Whether a story's later pictures are drawn with its earlier pictures of the same people and
-    # places as references: `artwork` (every style but the photographic ones), `all`, or `off`.
-    # Photographic styles are left out by default because that is where references lost, 4–0, in
-    # experiments/story-picture-reference; drawn and painted styles won 8–0. Declared last so a
+    # places as references: `all` (the default), `artwork` (every style but the photographic ones),
+    # or `off`. Run 1 of experiments/story-picture-reference lost 4–0 in the photoreal style, and
+    # run 2 — the shipped, picture-first prompt, on twelve fresh stories — won 7–0 with 3 ties in
+    # photographic styles and never lost, so every style is the default. Declared last so a
     # database that gained it by `ALTER TABLE` has its columns in the order a fresh one does.
-    Column("story_continuity", String(16), nullable=False, default="artwork"),
+    Column("story_continuity", String(16), nullable=False, default="all"),
     Index("idx_image_settings_owner", "owner", unique=True),
 )
 
@@ -609,6 +610,11 @@ stories = Table(
     # that has not been drawn. Both facts are already in the graph.
     Column("story_order", Integer, nullable=False, default=0),
     *_sync_fields(),
+    # What the owner asked the writer for in their own words — "set it in 1920s Buenos Aires", "make
+    # the dog the narrator" — kept on the story, for `type_id`'s reason: Try again on a story that
+    # was never written must write the story that was asked for. Declared last so a database that
+    # gained it by `ALTER TABLE` has its columns in the order a fresh one does.
+    Column("guidance", Text, nullable=False, default=""),
     Index("idx_stories_owner_revision", "owner", "revision"),
     Index("idx_stories_owner_language_order", "owner", "language", "story_order"),
 )

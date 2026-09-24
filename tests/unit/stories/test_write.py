@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from acervo.stories.write import (
-    MAX_PART_CHARS, StoryRefused, Written, is_form_of, parse_reply,
+    MAX_PART_CHARS, StoryRefused, Written, build_request, is_form_of, parse_reply,
 )
 
 WORDS = [
@@ -158,3 +158,15 @@ def test_a_suppletive_form_is_a_known_false_negative():
 def test_unused_names_every_word_the_story_did_not_reach():
     written = Written(title="t", emoji="", parts=(), forms={"a": ("x",)})
     assert written.unused(["a", "b", "c"]) == ("b", "c")
+
+
+
+def test_guidance_travels_only_when_there_is_some():
+    """A story asked for without a note is the request it always was, byte for byte."""
+    common = dict(language="es", language_name="Spanish", words=[], story_type_brief="Make it land.",
+                  story_type_label="Funny", parts=4)
+    assert "guidance" not in build_request(**common)
+    assert "guidance" not in build_request(**common, guidance="   ")
+    asked = build_request(**common, guidance="Set it on a night train.")
+    assert asked["guidance"] == "Set it on a night train."
+    assert list(asked) == ["language", "kind", "guidance", "parts", "words"]

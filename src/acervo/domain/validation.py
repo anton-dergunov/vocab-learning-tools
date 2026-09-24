@@ -30,6 +30,8 @@ SOURCE_KIND_VALUES = ("web", "book", "conversation", "video", "lesson", "sign", 
 PHOTO_REF = re.compile(r"^photos/(?P<owner>[a-z0-9]{15})/(?P<digest>[0-9a-f]{16})\.jpg$")
 # The most polygons a photo region may carry: a sentence of a hundred words, and then some.
 PHOTO_REGION_LIMIT = 400
+# A story's guidance is a note in the owner's words, not a second prompt: a few sentences at most.
+GUIDANCE_LIMIT = 1000
 ORIGIN_VALUES = ("attestation", "llm", "tatoeba", "subtitle", "wiktionary", "manual")
 # What a pronunciation reads, and the table and field each one names.
 PRONUNCIATION_TARGETS = {
@@ -94,7 +96,7 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
     "stories": {
         "language": (True, 35), "type_id": (False, 64), "style_id": (False, 120),
         "title": (False, 240), "title_translation": (False, 240), "emoji": (False, 16),
-        "model_id": (False, 120),
+        "model_id": (False, 120), "guidance": (False, GUIDANCE_LIMIT),
     },
     "story_parts": {
         "heading": (False, 240), "heading_translation": (False, 240),

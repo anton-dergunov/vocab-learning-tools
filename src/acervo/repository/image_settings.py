@@ -25,10 +25,10 @@ from acervo.db import tables
 from acervo.domain.ids import new_record_id, now_instant
 from acervo.repository.session import reading, transaction
 
-# Which stories draw their later pictures from their earlier ones: every style but the photographic
-# ones, every style, or none. The first is the default, and why is on the column in `db/tables.py`.
-CONTINUITY = ("artwork", "all", "off")
-CONTINUITY_DEFAULT = "artwork"
+# Which stories draw their later pictures from their earlier ones: every style, every style but the
+# photographic ones, or none. The first is the default, and why is on the column in `db/tables.py`.
+CONTINUITY = ("all", "artwork", "off")
+CONTINUITY_DEFAULT = "all"
 
 
 class ImageSettings(Mapping):

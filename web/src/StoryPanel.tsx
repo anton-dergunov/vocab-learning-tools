@@ -38,18 +38,18 @@ const ORDERS: { id: PronunciationOrder; title: string; help: string }[] = [
 ];
 
 /* Measured rather than felt (experiments/story-picture-reference): drawn from its earlier pictures,
-   a story in a drawn or painted style was preferred 8 times in 10 and never lost; in a photographic
-   style the plain pictures won 4 times in 7, because matching a reference costs a photograph more. */
+   a story was preferred 17 times in 29 and lost 4, all four in the first run's photoreal style;
+   with the picture-first prompt that shipped, it did not lose in any style. */
 const CONTINUITY: { id: StoryContinuity; title: string; help(photographic: string): string }[] = [
   {
-    id: "artwork", title: "In drawn and painted styles",
-    help: (photographic) => "A later picture is drawn from the earlier pictures of the people and "
-      + "places it shows again, so they stay recognisable. Photographic styles are left out, where "
-      + `this costs more than it gives${photographic ? `: ${photographic}` : ""}.`
+    id: "all", title: "In every style",
+    help: () => "A later picture is drawn from the earlier pictures of the people and places it "
+      + "shows again, so they stay recognisable."
   },
   {
-    id: "all", title: "In every style",
-    help: () => "The same, photographic styles included."
+    id: "artwork", title: "In drawn and painted styles only",
+    help: (photographic) => "The same, with the photographic styles left out"
+      + `${photographic ? `: ${photographic}` : ""}.`
   },
   {
     id: "off", title: "Off",

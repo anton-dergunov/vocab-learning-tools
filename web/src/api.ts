@@ -743,6 +743,8 @@ export interface StoryRequest {
   lexemeIds: string[];
   typeId?: string;
   styleId?: string;
+  /** The owner's own note to the writer — a setting, a narrator, a tone. Optional. */
+  guidance?: string;
 }
 
 export interface JobRequest {

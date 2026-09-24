@@ -36,37 +36,53 @@ def test_a_part_with_nobody_and_nowhere_seen_before_is_given_nothing():
     assert continuity.references(POST_IT, 1) == (), "a different man in a different place"
 
 
-def test_each_returning_person_and_place_is_served_by_the_last_picture_that_showed_it():
+def test_a_returning_person_is_drawn_from_the_first_picture_and_a_place_from_the_last():
+    """Anchored to the latest picture, a face drifted a little further with every part."""
     assert continuity.references(POST_IT, 2) == (
         Reference(0, ("spencer", "scene:lab")),
         Reference(1, ("art_fry",)),
     )
-    # Spencer and the lab were both last seen in part 3, so one picture serves both.
-    assert continuity.references(POST_IT, 3) == (Reference(2, ("spencer", "scene:lab")),)
+    assert continuity.references(POST_IT, 3) == (
+        Reference(0, ("spencer",)),
+        Reference(2, ("scene:lab",)),
+    )
+
+
+def test_the_earlier_rule_takes_the_last_picture_of_both():
+    assert continuity.references(POST_IT, 3, characters="last") == (
+        Reference(2, ("spencer", "scene:lab")),
+    )
 
 
 def test_a_part_whose_picture_is_missing_is_passed_over_for_the_one_before_it():
     chosen = continuity.references(POST_IT, 3, drawn=lambda part: part != 2)
     assert chosen == (Reference(0, ("spencer", "scene:lab")),)
+    assert continuity.references(POST_IT, 3, drawn=lambda part: part != 0) == (
+        Reference(2, ("spencer", "scene:lab")),
+    ), "Spencer's first picture failed, so his next one stands in"
 
 
-def test_never_more_than_two_and_the_most_recent_are_kept():
+def test_never_more_than_two_and_characters_come_before_the_place():
     many = continuity.parse_reply(labels(
         (["ana"], "street", ""), (["luis"], "flat", ""), (["eva"], "park", ""),
-        (["ana", "luis", "eva"], "street", ""),
+        (["luis", "eva"], "street", ""),
     ), 4)
     chosen = continuity.references(many, 3)
-    assert [reference.part for reference in chosen] == [1, 2]
+    assert [reference.part for reference in chosen] == [1, 2], "Luis and Eva, not the street"
+    assert [reference.part for reference in continuity.references(many, 3, characters="last")] == [1, 2]
     assert continuity.MAX_REFERENCES == 2
 
 
 def test_the_prompt_says_who_to_keep_whose_place_it_is_and_who_must_not_be_drawn():
     chosen = continuity.references(POST_IT, 3)
     text = continuity.reference_lines(POST_IT, 3, chosen)
-    assert "Reference 1 is the picture from part 3" in text
+    assert "Reference 1 is the picture from part 1" in text
     assert "SPENCER" in text and "same face" in text
-    assert "This moment is in the same place" in text
-    assert "It also shows ART FRY, who is not in this moment: do not draw them." in text
+    first, second = text.split("Reference 2")
+    assert "Its setting is not where this moment happens" not in first, "part 1 is the lab too"
+    assert "the same place at an earlier time" in first
+    assert "This moment is in the same place" in second
+    assert "It also shows ART FRY, who is not in this moment: do not draw them." in second
     assert "yellow notes" in text and "follow this and not the reference" in text
 
 

@@ -23,7 +23,7 @@ function settings(overrides: Partial<PronunciationSettings> = {}): Pronunciation
 
 function pictures(overrides: Partial<ImageSettings> = {}): ImageSettings {
   return {
-    drawEnabled: true, stylesOff: [], boostVariety: true, storyContinuity: "artwork", chosen: false,
+    drawEnabled: true, stylesOff: [], boostVariety: true, storyContinuity: "all", chosen: false,
     maxAttempts: 4, available: true,
     styles: [
       { id: "cinematic-photoreal", label: "Cinematic photograph", mono: false, photographic: true },
@@ -94,21 +94,23 @@ describe("Settings ▸ Stories", () => {
     await waitFor(() => expect(notified).toHaveBeenCalledWith("The server cannot be reached."));
     expect(screen.getByRole("radio", { name: /takes a direction/ })).toBeChecked();
   });
-  it("draws later pictures from earlier ones in drawn and painted styles until told otherwise", async () => {
+  it("draws later pictures from earlier ones in every style until told otherwise", async () => {
     await panel();
-    const artwork = await screen.findByRole("radio", { name: /In drawn and painted styles/ });
-    expect(artwork).toBeChecked();
-    expect(screen.getByText(/Photographic styles are left out.*Cinematic photograph/)).toBeInTheDocument();
+    const every = await screen.findByRole("radio", { name: /In every style/ });
+    expect(every).toBeChecked();
+    const choices = screen.getAllByRole("radio").filter((one) => one.getAttribute("name") === "story-continuity");
+    expect(choices[0]).toBe(every);
+    expect(screen.getByText(/photographic styles left out: Cinematic photograph/)).toBeInTheDocument();
     expect(screen.queryByText(/Naïve folk painting/)).not.toBeInTheDocument();
   });
 
   it("stores the picture choice with the picture settings and nothing else", async () => {
     await panel();
     const saved = vi.spyOn(backendSession, "saveImageSettings")
-      .mockResolvedValue(pictures({ storyContinuity: "all", chosen: true }));
-    fireEvent.click(await screen.findByRole("radio", { name: /In every style/ }));
-    await waitFor(() => expect(saved).toHaveBeenCalledWith({ storyContinuity: "all" }));
-    expect(screen.getByRole("radio", { name: /In every style/ })).toBeChecked();
+      .mockResolvedValue(pictures({ storyContinuity: "artwork", chosen: true }));
+    fireEvent.click(await screen.findByRole("radio", { name: /In drawn and painted styles only/ }));
+    await waitFor(() => expect(saved).toHaveBeenCalledWith({ storyContinuity: "artwork" }));
+    expect(screen.getByRole("radio", { name: /In drawn and painted styles only/ })).toBeChecked();
   });
 
   it("puts the picture choice back when the server refuses it", async () => {
@@ -118,6 +120,6 @@ describe("Settings ▸ Stories", () => {
       .mockRejectedValue(new AcervoApiError("That could not be saved here.", 400, "invalid_input"));
     fireEvent.click(await screen.findByRole("radio", { name: /^Off/ }));
     await waitFor(() => expect(notices).toEqual(["That could not be saved here."]));
-    expect(screen.getByRole("radio", { name: /In drawn and painted styles/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /In every style/ })).toBeChecked();
   });
 });

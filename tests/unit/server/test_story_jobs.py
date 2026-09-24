@@ -145,7 +145,7 @@ def only_the_story(server) -> None:
             jobs.finish(job["id"], "cancelled")
 
 
-def a_story(server, count: int = 2, style: str = "comic-book") -> dict:
+def a_story(server, count: int = 2, style: str = "comic-book", **extra) -> dict:
     server.push({"vocabularies": [vocabulary()]})
     ids = []
     for index in range(count):
@@ -156,7 +156,7 @@ def a_story(server, count: int = 2, style: str = "comic-book") -> dict:
         ids.append(entry["id"])
     answer = server.post("/stories", {"deviceId": "device000000001", "language": "es",
                                       "lexemeIds": ids, "typeId": "funny",
-                                      "styleId": style})
+                                      "styleId": style, **extra})
     assert answer.status_code == 202, answer.text
     only_the_story(server)
     return answer.json()["data"]["story"]
@@ -394,11 +394,11 @@ def test_a_later_picture_is_drawn_from_the_earlier_pictures_of_who_and_where_it_
     assert models.image_calls == 4
     # Parts 1 and 2 have nobody and nowhere seen before, so they take the ordinary route with no
     # references; part 3 is given part 1 (Marcos, the street) and part 2 (Ana); part 4 is given
-    # part 2 (the flat) and part 3 (Marcos, last seen there).
+    # part 1 (Marcos, as he was first drawn) and part 2 (the flat, last seen there).
     assert [count for count, _prompt in models.referenced] == [2, 2]
     last = models.referenced[-1][1]
-    assert "Reference 1 is the picture from part 2" in last
-    assert "Reference 2 is the picture from part 3" in last
+    assert "Reference 1 is the picture from part 1" in last
+    assert "Reference 2 is the picture from part 2" in last
     assert "ANA, who is not in this moment" in last
     assert "that night" in last
     assert "the picture wins" in last, "the picture comes first, the references second"
@@ -417,7 +417,7 @@ def test_switched_off_there_is_no_label_call_and_no_reference(server, models, ru
     assert models.texts == [] and len(models.prompts) == 3, "no fourth text call was made"
 
 
-@pytest.mark.parametrize("setting, referenced", [("artwork", 0), ("all", 2)])
+@pytest.mark.parametrize("setting, referenced", [("artwork", 0), ("all", 2)])  # "all" is the default
 def test_a_photographic_style_is_left_out_unless_every_style_was_asked_for(
         server, models, runner, references, setting, referenced):
     image_settings.save(server.owner, story_continuity=setting)
@@ -460,3 +460,13 @@ def test_the_pair_that_drew_the_first_picture_is_asked_first_for_the_rest():
     rows = [{"imageRef": "x.webp", "imageModelId": "model/b"}, {"imageRef": ""}]
     assert stories._pinned((one, two), rows) == (two, one)
     assert stories._pinned((one, two), [{"imageRef": ""}]) == (one, two), "nothing drawn, no pin"
+
+
+def test_the_owners_guidance_reaches_the_writer(server, models, runner):
+    a_story(server, 1, guidance="Tell it from the dog's side.")
+    models.texts = [story_reply(4), translation_reply(4), brief_reply(4)]
+
+    runner.run_until_idle()
+
+    assert '"guidance": "Tell it from the dog\'s side."' in models.prompts[0]
+    assert "The reader's own guidance" in models.prompts[0], "and the prompt says what it is for"

@@ -10,10 +10,9 @@
 # `mono` marks a style with no colour to spend — the brief writer is told to avoid one when the
 # meaning depends on colour.
 # `photographic` marks a style that renders as a photograph rather than as something drawn, painted
-# or made. A story's later pictures are drawn with its earlier ones as references, and in
-# experiments/story-picture-reference that won 8–0 in drawn and painted styles and lost 4–0 in the
-# photoreal one: a photograph shows the compromise between matching a reference and composing a good
-# picture, where a painting absorbs it. Settings ▸ Stories lets the owner leave these out.
+# or made. A story's later pictures are drawn with its earlier ones as references; run 1 of
+# experiments/story-picture-reference lost 4–0 in the photoreal style, and run 2, with a prompt that
+# puts the picture first, won there too. Settings ▸ Stories can still leave these styles out.
 #
 # `stained-glass` was here and was removed in round 1 of experiments/sense-images: leaded glass
 # implies a building, so it kept dragging the scene into a church whatever the sentence said,

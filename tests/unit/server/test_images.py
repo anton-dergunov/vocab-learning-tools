@@ -576,14 +576,14 @@ def test_no_record_means_following_the_deployment_default(server):
     assert view["stylesOff"] == []
     assert view["drawEnabled"] is True
     assert view["boostVariety"] is True
-    assert view["storyContinuity"] == "artwork"
+    assert view["storyContinuity"] == "all"
     assert view["maxAttempts"] == MAX_ATTEMPTS
     assert {style["id"] for style in view["styles"]} >= {"oil-painting", "film-noir"}
     assert view["available"] is True
 
 
 def test_which_stories_draw_from_their_earlier_pictures_is_one_of_three_answers(server):
-    for answer in ("all", "off", "artwork"):
+    for answer in ("artwork", "off", "all"):
         saved = server.put("/images/settings", {"storyContinuity": answer})
         assert saved.status_code == 200, saved.json()
         assert server.get("/images/settings").json()["data"]["storyContinuity"] == answer

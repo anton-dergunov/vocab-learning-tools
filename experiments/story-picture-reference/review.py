@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 OUT = Path(os.environ.get("STORY_PICTURES_OUT") or HERE / "out")
 SEED = 20260924
 RECENT = 5
-SETS = ("original", "continuity", "v2", "v2+continuity")
+SETS = ["original", "continuity", "continuity-first", "v2", "v2+continuity"]
 LETTERS = "ABCD"
 FLAGS = ("characters change", "wrong person reused", "too alike")
 
@@ -73,7 +73,7 @@ def build() -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
             if content not in seen:
                 sets.append(set_)
                 seen.append(content)
-        if "original" not in sets or len(sets) < 2:
+        if len(sets) < 2:
             if _pictures(story, "continuity") is not None:
                 identical.append(story["title"])
             continue
@@ -364,8 +364,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--out", type=Path, default=OUT,
                         help="the run directory (default: out/, which holds run 1)")
+    parser.add_argument("--sets", help="which sets to compare, comma-separated (default: every one "
+                        "on disk); run 3 compares continuity,continuity-first")
     args = parser.parse_args(argv)
     OUT = args.out.resolve()
+    if args.sets:
+        SETS[:] = [one.strip() for one in args.sets.split(",") if one.strip()]
     if not (OUT / "stories.json").exists():
         raise SystemExit("No stories yet: run `run.py fetch` and `run.py draw` first.")
     Handler.stories, Handler.key = build()

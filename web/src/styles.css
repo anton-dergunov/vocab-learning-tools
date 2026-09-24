@@ -2243,11 +2243,12 @@ details.fold .fold-body { padding: 4px 0 18px; }
 
 /* ══════════════════════════ export & import ══════════════════════════ */
 .config-field { display: grid; gap: 5px; font-size: 13px; color: var(--ink-3); }
-.config-field select {
+.config-field select, .config-field textarea {
   padding: 9px 11px; border: 1px solid var(--rule); border-radius: 7px;
   background: var(--surface); color: var(--ink); font-size: 14px;
 }
-.config-field select:focus { border-color: var(--core); outline: none; }
+.config-field textarea { font: inherit; font-size: 14px; line-height: 1.45; resize: vertical; min-height: 64px; }
+.config-field select:focus, .config-field textarea:focus { border-color: var(--core); outline: none; }
 .transfer-file {
   padding: 10px 12px; border: 1px dashed var(--rule); border-radius: 8px;
   background: var(--surface); color: var(--ink-2); font-size: 13px; width: 100%;

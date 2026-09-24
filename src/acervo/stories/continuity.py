@@ -2,8 +2,8 @@
 
 **References are chosen by identity, never by position.** A text call labels every part's brief with
 the characters it puts in frame and the one place it is set in, as stable ids. Part k is then given
-the last earlier picture of each character it shows and the last earlier picture of its place, if
-either appeared before — and nothing when nothing recurs. The case this exists for is *La invención
+the *first* picture of each character it shows and the *last* picture of its place, if either
+appeared before — and nothing when nothing recurs. The case this exists for is *La invención
 del Post-it*: part 1 is one man in a laboratory and part 2, years later, is a different man in a
 church. Handing part 2 the first picture would have painted the first man's face onto the second.
 
@@ -111,25 +111,44 @@ def parse_reply(payload: Any, count: int) -> Continuity:
 
 
 def references(continuity: Continuity, index: int,
-               drawn: Callable[[int], bool] = lambda _part: True) -> tuple[Reference, ...]:
-    """The earlier pictures part `index` (0-based) is drawn from, oldest first.
+               drawn: Callable[[int], bool] = lambda _part: True,
+               characters: str = "first") -> tuple[Reference, ...]:
+    """The earlier pictures part `index` (0-based) is drawn from, in reading order.
 
-    Each id this part shares with an earlier one is served by the **last** earlier part that shows
-    it *and has a picture* — a part whose drawing failed is passed over for the one before it. A
-    picture that serves several ids is sent once. Past `MAX_REFERENCES` the most recent are kept;
-    what that drops is carried by the brief alone, which is what every picture relied on before.
+    **A returning character is drawn from the first picture that showed them; a returning place from
+    the last.** Anchoring a person to the most recent picture let a face drift: part 2 drew a
+    slightly different profile, part 3 took that as the truth and pushed it further, and by part 4
+    the man was someone else. The first picture is the one the reader met him in. A place, by
+    contrast, is meant to carry what has happened to it, so its latest picture is the right one.
+    `characters="last"` is the earlier rule, kept so `experiments/story-picture-reference` can
+    compare the two.
+
+    Only a part that *has* a picture counts — a part whose drawing failed is passed over. A picture
+    that serves several ids is sent once. Past `MAX_REFERENCES`, the characters are kept before the
+    place, since who someone is matters more than where; what that drops is carried by the brief
+    alone, which is what every picture relied on before references existed.
     """
     shown = continuity.parts[index]
-    chosen: dict[int, list[str]] = {}
-    for identifier in (*shown.characters, _SCENE + shown.scene):
-        for earlier in range(index - 1, -1, -1):
+
+    def served_by(identifier: str, first: bool) -> int | None:
+        for earlier in (range(index) if first else range(index - 1, -1, -1)):
             other = continuity.parts[earlier]
             present = identifier == _SCENE + other.scene or identifier in other.characters
             if present and drawn(earlier):
-                chosen.setdefault(earlier, []).append(identifier)
-                break
-    kept = sorted(chosen)[-MAX_REFERENCES:]
-    return tuple(Reference(earlier, tuple(chosen[earlier])) for earlier in kept)
+                return earlier
+        return None
+
+    wanted = [(person, characters == "first") for person in shown.characters]
+    wanted.append((_SCENE + shown.scene, False))
+    chosen: dict[int, list[str]] = {}
+    for identifier, first in wanted:
+        earlier = served_by(identifier, first)
+        if earlier is not None:
+            chosen.setdefault(earlier, []).append(identifier)
+    # Insertion order is priority — characters as the part lists them, then the place — for the
+    # anchored rule; the older one keeps the most recent pictures, as it always did.
+    kept = list(chosen)[:MAX_REFERENCES] if characters == "first" else sorted(chosen)[-MAX_REFERENCES:]
+    return tuple(Reference(earlier, tuple(chosen[earlier])) for earlier in sorted(kept))
 
 
 def _name(identifier: str) -> str:
@@ -151,6 +170,11 @@ def reference_lines(continuity: Continuity, index: int, chosen: Sequence[Referen
                 f"It shows the place {_name(shown.scene)} as it was last seen — "
                 f"{continuity.scenes[shown.scene]}. This moment is in the same place: keep it "
                 f"recognisable, and show it from a new viewpoint.")
+        elif other.scene == shown.scene:
+            # The same place at an earlier time, sent for a person: the place as it is now comes
+            # from another reference, and telling the model this one is elsewhere would be false.
+            sentences.append("It is the same place at an earlier time; take the place as it is now "
+                             "from the description.")
         else:
             sentences.append("Its setting is not where this moment happens: do not reuse it.")
         absent = [one for one in other.characters if one not in shown.characters]

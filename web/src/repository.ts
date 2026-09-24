@@ -20,7 +20,7 @@ import type { ArticleDraft } from "./yaml";
  * `durationSeconds`) instead of times into one joined file, and nothing bumped this. 17: `beds`,
  * the loop music the owner keeps. 18: an attestation's `photoRef` and `photoRegion`.
  */
-export const LOCAL_SCHEMA_VERSION = 18;
+export const LOCAL_SCHEMA_VERSION = 19;
 
 export const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],

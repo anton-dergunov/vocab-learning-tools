@@ -72,11 +72,17 @@ def build_request(
     story_type_brief: str,
     story_type_label: str,
     parts: int,
+    guidance: str = "",
 ) -> dict[str, Any]:
-    """What the model is told. Plain data — the prompt is the template this is appended to."""
+    """What the model is told. Plain data — the prompt is the template this is appended to.
+
+    `guidance` is the owner's own note, and only sent when there is one, so a story asked for without
+    it is the request it always was.
+    """
     return {
         "language": {"code": language, "name": language_name},
         "kind": {"name": story_type_label, "direction": story_type_brief},
+        **({"guidance": guidance} if guidance.strip() else {}),
         "parts": parts,
         "words": [
             {

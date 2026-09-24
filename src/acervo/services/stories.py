@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from acervo.domain.ids import is_record_id, new_record_id, now_instant
+from acervo.domain.validation import GUIDANCE_LIMIT
 from acervo.errors import ApiError
 from acervo.images.styles import load_styles
 from acervo.models import chain, load_catalogue
@@ -141,6 +142,13 @@ def create(settings: Settings, owner: str, device: str, body: dict[str, Any]) ->
     if style_id and style_id not in styles:
         raise ApiError(400, "invalid_input", f"There is no “{style_id}” style.")
 
+    guidance = body.get("guidance") or ""
+    if not isinstance(guidance, str):
+        raise ApiError(400, "invalid_input", "A story's guidance is text.")
+    guidance = guidance.strip()
+    if len(guidance) > GUIDANCE_LIMIT:
+        raise ApiError(400, "invalid_input",
+                       f"A story's guidance is at most {GUIDANCE_LIMIT} characters.")
     parts = int(body.get("parts") or DEFAULT_PARTS)
     if not MIN_PARTS <= parts <= MAX_PARTS:
         raise ApiError(400, "invalid_input",
@@ -176,6 +184,7 @@ def create(settings: Settings, owner: str, device: str, body: dict[str, Any]) ->
             # what "not written yet" means.
             "title": "", "titleTranslation": "", "emoji": chosen_type.emoji, "modelId": "",
             "position": graph.next_story_position(owner, language),
+            "guidance": guidance,
             **stamp,
         }],
         "storyWords": [{
@@ -274,7 +283,7 @@ def write_story(settings: Settings, owner: str, device: str, story_id: str) -> d
     request = write.build_request(
         language=story["language"], language_name=language_name(story["language"]),
         words=words, story_type_brief=story_type.brief, story_type_label=story_type.label,
-        parts=DEFAULT_PARTS,
+        parts=DEFAULT_PARTS, guidance=story.get("guidance") or "",
     )
     try:
         written, usage = writer.write(request, words)
