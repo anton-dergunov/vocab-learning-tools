@@ -1,5 +1,11 @@
 # Story pictures drawn with earlier pictures of the same people and places
 
+**Closed 24 Sep 2026.** Shipped: a story's later pictures are drawn with its earlier ones as
+references, chosen by who and where (`stories/continuity.py`). A returning character is anchored
+to their first picture and a returning place to its last, at most two references, under a
+picture-first prompt, and on for every style by default. Three blind runs led there; their results
+are below.
+
 ## Question
 
 A story's four pictures are drawn by four independent, text-only calls. The only thing that keeps a
@@ -117,6 +123,45 @@ The fix:
 
 After the fix, three runs of three kept one lab, like the labeller, whose example already had one.
 
+## Run 1 results
+
+**Run 1, 24 Sep 2026: 19 stories, 52 pictures, $1.77.** Nearly every picture hit Vertex's 429 at
+least once and drew after a rest. The median draw time was 5 s.
+
+Two stories had nothing recurring, so every part kept its stored picture, and they were not shown.
+One is the real *La invención del Post-it*: Spencer in the lab, Art Fry in the church, an office
+worker in an office, a desk. That is the case the positional first version would have got wrong.
+
+The owner rated the other 17 blind:
+
+| | continuity | original | no difference |
+| --- | --- | --- | --- |
+| All 17 | **10** | 4 | 3 |
+| Drawn, painted or made styles (10) | **8** | 0 | 2 |
+| Photographic styles: cinematic-photoreal, film-noir, golden-hour (7) | 2 | **4** | 1 |
+| … of which cinematic-photoreal (4) | 0 | **4** | 0 |
+
+Flags were rare: "too alike" once on continuity, and "characters change" once on original.
+
+**Reading.** References work: the same people and places come back. Outside photographic styles
+they won 8 to 0 (a sign test gives p ≈ 0.008). In the photoreal style they lost 4 to 0. The owner's
+account is that a conditioned picture serves two masters — draw a good picture, and match the
+reference — and in a photograph the second visibly costs the first. In *La fuga de Harry Houdini*
+the conditioned guards are recognisably the same men, but they turn into grimacing, near-identical
+caricatures, where the unconditioned ones are plainer and more natural. A painted style tolerates
+the compromise. A photograph shows it.
+
+**The v2 story** (*La leyenda de la laguna*, folk-naive) ranked `continuity` best of four, above
+`original`, `v2` and `v2+continuity`. That says less about the ids than it seems:
+- The v2 briefs were written by `gemini-3.1-flash-lite`, the free tier's fallback.
+- They stopped restating the hero's description. Part 2 says only "a young man in simple linen
+  robes". Parts 3 and 4 give his name and nothing else.
+- So `v2` drew three different young men, and references in `v2+continuity` repaired only part of
+  it.
+
+The labeller, reading the stored briefs, kept them intact. The risk this shows is real: asking the
+brief writer for ids as well dilutes its most important rule.
+
 ## Run 2: the shipped code, and the photographic question
 
 After run 1 the design went into the application:
@@ -185,6 +230,24 @@ OUT=experiments/story-picture-reference/out-3
 .venv/bin/python experiments/story-picture-reference/run.py --out $OUT report
 ```
 
+## Run 3 results
+
+The owner rated run 3 blind, on five fresh cinematic-photoreal stories; four had a preference.
+Anchoring to the **first** picture was preferred **3 to 1**.
+
+| Story | Preferred |
+| --- | --- |
+| La audición de Mateo | first |
+| La tarde en el río | first |
+| La sirena del puerto | latest |
+| La campana de Oseira | first |
+
+**The differences were very small**, and both sets were acceptable. The owner had to look closely
+to see them. What separated the two was the failure run 2 had shown: with the latest picture as the
+anchor, a facial feature was sometimes exaggerated a little more with each part. It happened less
+often than in run 2, but it was still visible. Four stories cannot settle a preference this close.
+The result agrees with what shipped between run 2 and run 3, and there is no reason to change it.
+
 ## Running it (run 1)
 
 All on the laptop. The output goes to `out/`, which is ignored: it holds the owner's stories.
@@ -216,42 +279,3 @@ checked against billing):
 - the v2 story adds about 6.
 
 `prepare` prints the exact count, and `draws.jsonl` records LiteLLM's cost for every call.
-
-## Results
-
-**Run 1, 24 Sep 2026: 19 stories, 52 pictures, $1.77.** Nearly every picture hit Vertex's 429 at
-least once and drew after a rest. The median draw time was 5 s.
-
-Two stories had nothing recurring, so every part kept its stored picture, and they were not shown.
-One is the real *La invención del Post-it*: Spencer in the lab, Art Fry in the church, an office
-worker in an office, a desk. That is the case the positional first version would have got wrong.
-
-The owner rated the other 17 blind:
-
-| | continuity | original | no difference |
-| --- | --- | --- | --- |
-| All 17 | **10** | 4 | 3 |
-| Drawn, painted or made styles (10) | **8** | 0 | 2 |
-| Photographic styles: cinematic-photoreal, film-noir, golden-hour (7) | 2 | **4** | 1 |
-| … of which cinematic-photoreal (4) | 0 | **4** | 0 |
-
-Flags were rare: "too alike" once on continuity, and "characters change" once on original.
-
-**Reading.** References work: the same people and places come back. Outside photographic styles
-they won 8 to 0 (a sign test gives p ≈ 0.008). In the photoreal style they lost 4 to 0. The owner's
-account is that a conditioned picture serves two masters — draw a good picture, and match the
-reference — and in a photograph the second visibly costs the first. In *La fuga de Harry Houdini*
-the conditioned guards are recognisably the same men, but they turn into grimacing, near-identical
-caricatures, where the unconditioned ones are plainer and more natural. A painted style tolerates
-the compromise. A photograph shows it.
-
-**The v2 story** (*La leyenda de la laguna*, folk-naive) ranked `continuity` best of four, above
-`original`, `v2` and `v2+continuity`. That says less about the ids than it seems:
-- The v2 briefs were written by `gemini-3.1-flash-lite`, the free tier's fallback.
-- They stopped restating the hero's description. Part 2 says only "a young man in simple linen
-  robes". Parts 3 and 4 give his name and nothing else.
-- So `v2` drew three different young men, and references in `v2+continuity` repaired only part of
-  it.
-
-The labeller, reading the stored briefs, kept them intact. The risk this shows is real: asking the
-brief writer for ids as well dilutes its most important rule.
