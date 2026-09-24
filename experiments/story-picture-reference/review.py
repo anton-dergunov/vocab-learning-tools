@@ -4,9 +4,10 @@
 
 Standard library only. On first start each story's sets are shuffled into letters with a fixed seed
 and written to `out/key.json`; the page is never told which letter is which, and a picture's URL is
-`/img/<story>/<letter>/<n>`, so nothing on screen or in the address bar gives it away. Part 1 is the
-same stored picture in every set and says nothing either. Labels go to `out/ratings.json` on every
-tap, so closing the tab loses nothing. `run.py report` unblinds them.
+`/img/<story>/<letter>/<n>`, so nothing on screen or in the address bar gives it away. A part a set
+did not redraw is the same picture in both, which says nothing either. A set identical to another
+is not shown, and a story left with one set is not shown at all. Labels go to `out/ratings.json` on
+every tap, so closing the tab loses nothing. `run.py report` unblinds them.
 """
 
 from __future__ import annotations
@@ -26,9 +27,9 @@ HERE = Path(__file__).resolve().parent
 OUT = Path(os.environ.get("STORY_PICTURES_OUT") or HERE / "out")
 SEED = 20260924
 RECENT = 5
-SETS = ("original", "first+prev", "prev", "first")
+SETS = ("original", "continuity", "v2", "v2+continuity")
 LETTERS = "ABCD"
-FLAGS = ("characters change", "too alike")
+FLAGS = ("characters change", "wrong person reused", "too alike")
 
 _lock = threading.Lock()
 
@@ -43,26 +44,38 @@ def _write(path: Path, value: Any) -> None:
     temporary.replace(path)
 
 
-def _complete(story: dict[str, Any], set_: str) -> bool:
-    folder = OUT / story["id"] / set_
-    first = 1 if set_ == "original" else 2
-    return all((folder / f"part-{n}.webp").exists() for n in range(first, len(story["parts"]) + 1))
+def _pictures(story: dict[str, Any], set_: str) -> list[Path] | None:
+    """The set's pictures in order, or None while any is missing."""
+    files = [OUT / story["id"] / set_ / f"part-{n}.webp" for n in range(1, len(story["parts"]) + 1)]
+    return files if all(file.exists() for file in files) else None
 
 
 def build() -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
     """The stories that can be reviewed, oldest first, and the letter → set key for each.
 
-    A story is shown once its original and main sets are complete. The key is kept across restarts;
-    a story whose available sets changed since (the variants finishing, say) is reshuffled only if
-    nothing has been rated on it yet, so a label never silently comes to mean another set.
+    A set is shown once all its pictures exist, and only if it differs from every set before it —
+    a story where nothing recurs keeps every stored picture, and comparing a set with itself would
+    only add noise. The key is kept across restarts; a story whose sets changed since (the v2 sets
+    finishing, say) is reshuffled only if nothing has been rated on it yet, so a label never
+    silently comes to mean another set.
     """
     stories = sorted(_read(OUT / "stories.json", []), key=lambda story: story["createdAt"])
     key: dict[str, dict[str, str]] = _read(OUT / "key.json", {})
     ratings = _read(OUT / "ratings.json", {})
-    shown = []
+    shown, identical = [], []
     for story in stories:
-        sets = [set_ for set_ in SETS if _complete(story, set_)]
-        if "original" not in sets or "first+prev" not in sets:
+        sets, seen = [], []
+        for set_ in SETS:
+            files = _pictures(story, set_)
+            if files is None:
+                continue
+            content = [file.read_bytes() for file in files]
+            if content not in seen:
+                sets.append(set_)
+                seen.append(content)
+        if "original" not in sets or len(sets) < 2:
+            if _pictures(story, "continuity") is not None:
+                identical.append(story["title"])
             continue
         held = key.get(story["id"])
         if held is None or (sorted(held.values()) != sorted(sets) and story["id"] not in ratings):
@@ -71,6 +84,8 @@ def build() -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
             key[story["id"]] = dict(zip(LETTERS, order))
         shown.append(story)
     _write(OUT / "key.json", key)
+    for title in identical:
+        print(f"  not shown, nothing redrawn: {title}")
     recent = {story["id"] for story in stories[-RECENT:]}
     return [{
         "id": story["id"],
@@ -115,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, KeyError):
                 self._send(404, b"", "text/plain")
                 return
-            file = OUT / story_id / ("original" if n == 1 else set_) / f"part-{n}.webp"
+            file = OUT / story_id / set_ / f"part-{n}.webp"
             if not file.exists():
                 self._send(404, b"", "text/plain")
                 return
