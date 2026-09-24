@@ -97,7 +97,13 @@ export interface ImageStyle {
   label: string;
   /** A style with no colour to spend, which the writer avoids where the meaning needs colour. */
   mono: boolean;
+  /** A style that renders as a photograph, which `storyContinuity: "artwork"` leaves out. */
+  photographic: boolean;
 }
+
+/** Whether a story's later pictures are drawn from its earlier pictures of the same people and
+ *  places: in every style but the photographic ones, in every style, or never. */
+export type StoryContinuity = "artwork" | "all" | "off";
 
 export interface ImageSettings {
   /** Whether a saved word's pictures are drawn on their own, spending money while nobody is watching. */
@@ -105,6 +111,7 @@ export interface ImageSettings {
   /** The styles switched **off**, never the ones switched on — so a new style arrives on. */
   stylesOff: string[];
   boostVariety: boolean;
+  storyContinuity: StoryContinuity;
   /** False means nothing has been chosen and the deployment default is in force. */
   chosen: boolean;
   maxAttempts: number;
@@ -1129,7 +1136,7 @@ export const backendSession = {
   imageSettings(): Promise<ImageSettings> {
     return client.call<ImageSettings>("/images/settings");
   },
-  saveImageSettings(changes: Partial<Pick<ImageSettings, "drawEnabled" | "stylesOff" | "boostVariety">>): Promise<ImageSettings> {
+  saveImageSettings(changes: Partial<Pick<ImageSettings, "drawEnabled" | "stylesOff" | "boostVariety" | "storyContinuity">>): Promise<ImageSettings> {
     return client.call<ImageSettings>("/images/settings", {
       method: "PUT", body: JSON.stringify(changes)
     });

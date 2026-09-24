@@ -21,7 +21,7 @@ from test_story_jobs import (
 )
 
 from acervo.models.errors import ProviderUnavailable
-from acervo.repository import graph, jobs, pronunciation_settings
+from acervo.repository import graph, image_settings, jobs, pronunciation_settings
 from acervo.work.runner import Runner
 
 DEVICE = "device000000001"
@@ -70,6 +70,9 @@ def models(server, monkeypatch) -> Models:
     monkeypatch.setenv("OPENAI_API_KEY", "a-key")
     monkeypatch.setattr("acervo.models.call.completion", lambda **kw: stub.completion(**kw))
     monkeypatch.setattr("acervo.models.call.image_generation", lambda **kw: stub.image_generation(**kw))
+    # This file is about the voice. Drawing from earlier pictures adds a text call to label them,
+    # which would take a reply queued for narration, and is pinned in `test_story_jobs.py`.
+    image_settings.save(server.owner, story_continuity="off")
     return stub
 
 

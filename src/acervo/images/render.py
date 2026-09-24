@@ -45,7 +45,8 @@ class Renderer:
     def __init__(self, size: tuple[int, int] = MASTER) -> None:
         self.size = size
 
-    def draw(self, prompt: str, seed: int, candidate: chain.Candidate) -> Rendered:
+    def draw(self, prompt: str, seed: int, candidate: chain.Candidate,
+             references: tuple[bytes, ...] = ()) -> Rendered:
         """Draw one picture with one pair.
 
         A provider that looks at the prompt and declines raises `ProviderRefused("refused")` from
@@ -53,8 +54,10 @@ class Renderer:
         rate limited or down raises `ProviderUnavailable`, which is the caller's cue to try another
         pair.
         """
+        # Only when there are some, so a sense picture's call is exactly what it was.
+        extra = {"references": references} if references else {}
         result: ImageResult = call.image(
-            prompt, row=candidate.row, model=candidate.model, seed=seed, size=self.size
+            prompt, row=candidate.row, model=candidate.model, seed=seed, size=self.size, **extra
         )
         return Rendered(encode_master(result.data, self.size), result.answer)
 

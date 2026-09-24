@@ -80,7 +80,7 @@ Caddyfile
 
 # The story-picture-reference run: the owner's stories, their pictures, and the key that would
 # reveal the blind. The README keeps the numbers.
-/experiments/story-picture-reference/out/
+/experiments/story-picture-reference/out*/
 
 /spoken_plans/
 

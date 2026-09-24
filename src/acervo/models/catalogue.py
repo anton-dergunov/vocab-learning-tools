@@ -131,6 +131,17 @@ class Row:
     def style_for(self, model: str) -> str:
         return str(self.audio_for(model).get("style") or "none")
 
+    def image_references(self) -> int:
+        """How many reference pictures this row's image models take alongside a prompt; 0 for none.
+
+        A declaration, like `style`: a model that is sent pictures it cannot read either refuses the
+        call or ignores them, and ignoring them silently draws a stranger where a returning
+        character was asked for. Only a row that says so is sent any.
+        """
+        image = self.capabilities.get("image") if isinstance(self.capabilities, dict) else None
+        count = (image or {}).get("references", 0) if isinstance(image, dict) else 0
+        return count if isinstance(count, int) and not isinstance(count, bool) else 0
+
     def speaks(self, model: str, language: str) -> bool:
         """Whether this model can say something in this BCP-47 language, by the row's own account."""
         languages = self.audio_for(model).get("languages", "any")
@@ -257,6 +268,13 @@ def _validate(row: Row) -> None:
     if row.json_mode not in JSON_MODES:
         raise CatalogueError(f"{row.id} declares an unknown jsonMode {row.json_mode!r}")
     _validate_audio(row)
+    image = row.capabilities.get("image") if isinstance(row.capabilities, dict) else None
+    if isinstance(image, dict) and "references" in image:
+        count = image["references"]
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise CatalogueError(f"{row.id} declares image references that are not a count")
+        if count and "image" in row.adapter:
+            raise CatalogueError(f"{row.id} declares image references on an adapter that sends none")
     if row.keyEnv and row.keyEnv in row.passes.values():
         raise CatalogueError(f"{row.id} passes its key as an ordinary call argument")
     # `requires` names are the row's non-secret deployment facts — a project, an account id, a

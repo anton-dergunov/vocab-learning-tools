@@ -1,14 +1,15 @@
 /**
- * Settings ▸ Stories: which voice reads a story and whether it is recorded when the story is made.
+ * Settings ▸ Stories: which voice reads a story, whether it is recorded when the story is made, and
+ * whether its later pictures are drawn from its earlier ones.
  *
- * Both live in the pronunciation settings the server keeps for the owner, so what is pinned here is
- * that the panel reads them from there, writes only what it changed, and puts things back when the
- * server refuses.
+ * The first two live in the pronunciation settings and the third in the picture settings the server
+ * keeps for the owner, so what is pinned here is that the panel reads each from its own place,
+ * writes only what it changed, and puts things back when the server refuses.
  */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AcervoApiError, backendSession, type PronunciationSettings } from "./api";
+import { AcervoApiError, backendSession, type ImageSettings, type PronunciationSettings } from "./api";
 import StoryPanel from "./StoryPanel";
 
 function settings(overrides: Partial<PronunciationSettings> = {}): PronunciationSettings {
@@ -20,8 +21,22 @@ function settings(overrides: Partial<PronunciationSettings> = {}): Pronunciation
   };
 }
 
-async function panel(stored = settings(), onNotify: (message: string) => void = () => undefined) {
+function pictures(overrides: Partial<ImageSettings> = {}): ImageSettings {
+  return {
+    drawEnabled: true, stylesOff: [], boostVariety: true, storyContinuity: "artwork", chosen: false,
+    maxAttempts: 4, available: true,
+    styles: [
+      { id: "cinematic-photoreal", label: "Cinematic photograph", mono: false, photographic: true },
+      { id: "folk-naive", label: "Naïve folk painting", mono: false, photographic: false }
+    ],
+    ...overrides
+  };
+}
+
+async function panel(stored = settings(), onNotify: (message: string) => void = () => undefined,
+  drawn = pictures()) {
   vi.spyOn(backendSession, "pronunciationSettings").mockResolvedValue(stored);
+  vi.spyOn(backendSession, "imageSettings").mockResolvedValue(drawn);
   const saved = vi.spyOn(backendSession, "savePronunciationSettings")
     .mockImplementation(async (changes) => ({
       ...stored,
@@ -78,5 +93,31 @@ describe("Settings ▸ Stories", () => {
 
     await waitFor(() => expect(notified).toHaveBeenCalledWith("The server cannot be reached."));
     expect(screen.getByRole("radio", { name: /takes a direction/ })).toBeChecked();
+  });
+  it("draws later pictures from earlier ones in drawn and painted styles until told otherwise", async () => {
+    await panel();
+    const artwork = await screen.findByRole("radio", { name: /In drawn and painted styles/ });
+    expect(artwork).toBeChecked();
+    expect(screen.getByText(/Photographic styles are left out.*Cinematic photograph/)).toBeInTheDocument();
+    expect(screen.queryByText(/Naïve folk painting/)).not.toBeInTheDocument();
+  });
+
+  it("stores the picture choice with the picture settings and nothing else", async () => {
+    await panel();
+    const saved = vi.spyOn(backendSession, "saveImageSettings")
+      .mockResolvedValue(pictures({ storyContinuity: "all", chosen: true }));
+    fireEvent.click(await screen.findByRole("radio", { name: /In every style/ }));
+    await waitFor(() => expect(saved).toHaveBeenCalledWith({ storyContinuity: "all" }));
+    expect(screen.getByRole("radio", { name: /In every style/ })).toBeChecked();
+  });
+
+  it("puts the picture choice back when the server refuses it", async () => {
+    const notices: string[] = [];
+    await panel(settings(), (message) => notices.push(message));
+    vi.spyOn(backendSession, "saveImageSettings")
+      .mockRejectedValue(new AcervoApiError("That could not be saved here.", 400, "invalid_input"));
+    fireEvent.click(await screen.findByRole("radio", { name: /^Off/ }));
+    await waitFor(() => expect(notices).toEqual(["That could not be saved here."]));
+    expect(screen.getByRole("radio", { name: /In drawn and painted styles/ })).toBeChecked();
   });
 });

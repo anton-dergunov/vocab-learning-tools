@@ -9,6 +9,11 @@
 # writer never had a reason to reach for them.
 # `mono` marks a style with no colour to spend — the brief writer is told to avoid one when the
 # meaning depends on colour.
+# `photographic` marks a style that renders as a photograph rather than as something drawn, painted
+# or made. A story's later pictures are drawn with its earlier ones as references, and in
+# experiments/story-picture-reference that won 8–0 in drawn and painted styles and lost 4–0 in the
+# photoreal one: a photograph shows the compromise between matching a reference and composing a good
+# picture, where a painting absorbs it. Settings ▸ Stories lets the owner leave these out.
 #
 # `stained-glass` was here and was removed in round 1 of experiments/sense-images: leaded glass
 # implies a building, so it kept dragging the scene into a church whatever the sentence said,
@@ -22,6 +27,7 @@
 styles:
   cinematic-photoreal:
     label: Cinematic photograph
+    photographic: true
     weight: 1
     brief: >-
       a photorealistic cinematic still, 35mm anamorphic, shallow depth of field, dramatic key
@@ -38,6 +44,7 @@ styles:
 
   golden-hour:
     label: Golden-hour photography
+    photographic: true
     weight: 1
     brief: >-
       naturalistic photography in low golden-hour sun, long warm rim light, soft haze in the air,
@@ -271,6 +278,7 @@ styles:
 
   film-noir:
     label: Film noir
+    photographic: true
     weight: 1
     mono: true
     brief: >-
@@ -336,6 +344,7 @@ styles:
 
   neon-cyberpunk:
     label: Neon night
+    photographic: true
     weight: 1
     brief: >-
       a rain-slick neon night street, teal and magenta signage bleeding into volumetric haze, wet

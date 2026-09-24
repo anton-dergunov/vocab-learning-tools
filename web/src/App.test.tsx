@@ -1223,8 +1223,9 @@ describe("Acervo application", () => {
     signedIn();
     await openList();
     vi.spyOn(backendSession, "imageSettings").mockResolvedValue({
-      drawEnabled: true, stylesOff: [], boostVariety: true, chosen: false, maxAttempts: 4,
-      available: true, styles: [{ id: "flat-vector", label: "Flat vector", mono: false }]
+      drawEnabled: true, stylesOff: [], boostVariety: true, storyContinuity: "artwork",
+      chosen: false, maxAttempts: 4, available: true,
+      styles: [{ id: "flat-vector", label: "Flat vector", mono: false, photographic: false }]
     });
     vi.spyOn(backendSession, "imagePrompt").mockRejectedValue(new Error("offline"));
     const redraw: Job = {

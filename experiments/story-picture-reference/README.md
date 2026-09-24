@@ -117,7 +117,38 @@ The fix:
 
 After the fix, three runs of three kept one lab, like the labeller, whose example already had one.
 
-## Running it
+## Run 2: the shipped code, and the photographic question
+
+After run 1 the design went into the application:
+- the labeller as a separate call, `prompts/acervo_story_continuity.md`, with option 2 dropped;
+- at most **two** references;
+- a picture-first prompt, `prompts/acervo_story_reference.md`;
+- `photographic: true` on four styles in the style table: cinematic-photoreal, golden-hour,
+  film-noir and neon-cyberpunk;
+- a three-way setting that leaves those styles out by default.
+
+Run 2 checks that decision on 12 fresh stories the owner has not seen, 7 of them in the cinematic
+style. `run.py` now imports the application's own labeller, reference choice, wording and
+`call.image(references=…)` rather than keeping copies, so it measures what ships. It draws every
+style with references, photographic ones included, so the default can be checked rather than
+assumed.
+
+The positional sets and the v2 sets of run 1 are gone from the apparatus. The v2 prompt is kept in
+`prompts/` as the record of what was tried.
+
+```bash
+OUT=experiments/story-picture-reference/out-2
+.venv/bin/python experiments/story-picture-reference/run.py --out $OUT fetch --newest 12 \
+  --server-url https://acervo.example.com --email learner@account.example.com
+.venv/bin/python experiments/story-picture-reference/run.py --out $OUT prepare   # free
+.venv/bin/python experiments/story-picture-reference/run.py --out $OUT draw
+.venv/bin/python experiments/story-picture-reference/review.py --out $OUT --host "$(tailscale ip -4)" --port 8765
+.venv/bin/python experiments/story-picture-reference/run.py --out $OUT report
+```
+
+`report` now also splits the result by artwork vs photographic, and style by style.
+
+## Running it (run 1)
 
 All on the laptop. The output goes to `out/`, which is ignored: it holds the owner's stories.
 
@@ -151,4 +182,39 @@ checked against billing):
 
 ## Results
 
-Not yet run.
+**Run 1, 24 Sep 2026: 19 stories, 52 pictures, $1.77.** Nearly every picture hit Vertex's 429 at
+least once and drew after a rest. The median draw time was 5 s.
+
+Two stories had nothing recurring, so every part kept its stored picture, and they were not shown.
+One is the real *La invención del Post-it*: Spencer in the lab, Art Fry in the church, an office
+worker in an office, a desk. That is the case the positional first version would have got wrong.
+
+The owner rated the other 17 blind:
+
+| | continuity | original | no difference |
+| --- | --- | --- | --- |
+| All 17 | **10** | 4 | 3 |
+| Drawn, painted or made styles (10) | **8** | 0 | 2 |
+| Photographic styles: cinematic-photoreal, film-noir, golden-hour (7) | 2 | **4** | 1 |
+| … of which cinematic-photoreal (4) | 0 | **4** | 0 |
+
+Flags were rare: "too alike" once on continuity, and "characters change" once on original.
+
+**Reading.** References work: the same people and places come back. Outside photographic styles
+they won 8 to 0 (a sign test gives p ≈ 0.008). In the photoreal style they lost 4 to 0. The owner's
+account is that a conditioned picture serves two masters — draw a good picture, and match the
+reference — and in a photograph the second visibly costs the first. In *La fuga de Harry Houdini*
+the conditioned guards are recognisably the same men, but they turn into grimacing, near-identical
+caricatures, where the unconditioned ones are plainer and more natural. A painted style tolerates
+the compromise. A photograph shows it.
+
+**The v2 story** (*La leyenda de la laguna*, folk-naive) ranked `continuity` best of four, above
+`original`, `v2` and `v2+continuity`. That says less about the ids than it seems:
+- The v2 briefs were written by `gemini-3.1-flash-lite`, the free tier's fallback.
+- They stopped restating the hero's description. Part 2 says only "a young man in simple linen
+  robes". Parts 3 and 4 give his name and nothing else.
+- So `v2` drew three different young men, and references in `v2+continuity` repaired only part of
+  it.
+
+The labeller, reading the stored briefs, kept them intact. The risk this shows is real: asking the
+brief writer for ids as well dilutes its most important rule.

@@ -576,9 +576,27 @@ def test_no_record_means_following_the_deployment_default(server):
     assert view["stylesOff"] == []
     assert view["drawEnabled"] is True
     assert view["boostVariety"] is True
+    assert view["storyContinuity"] == "artwork"
     assert view["maxAttempts"] == MAX_ATTEMPTS
     assert {style["id"] for style in view["styles"]} >= {"oil-painting", "film-noir"}
     assert view["available"] is True
+
+
+def test_which_stories_draw_from_their_earlier_pictures_is_one_of_three_answers(server):
+    for answer in ("all", "off", "artwork"):
+        saved = server.put("/images/settings", {"storyContinuity": answer})
+        assert saved.status_code == 200, saved.json()
+        assert server.get("/images/settings").json()["data"]["storyContinuity"] == answer
+    refused = server.put("/images/settings", {"storyContinuity": "photographic"})
+    assert refused.status_code == 400
+    assert refused.json()["error"]["code"] == "invalid_input"
+
+
+def test_the_styles_say_which_of_them_are_photographs(server):
+    """The setting's default leaves these out, so the screen names them."""
+    styles = {style["id"]: style for style in server.get("/images/settings").json()["data"]["styles"]}
+    assert {one for one, style in styles.items() if style["photographic"]} == {
+        "cinematic-photoreal", "golden-hour", "film-noir", "neon-cyberpunk"}
 
 
 def test_switching_drawing_off_is_stored_and_leaves_the_buttons_working(server):

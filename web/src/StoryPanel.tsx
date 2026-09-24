@@ -1,5 +1,6 @@
 /**
- * Settings ▸ Stories: which voice reads a story, and whether it is recorded when the story is made.
+ * Settings ▸ Stories: which voice reads a story, whether it is recorded when the story is made, and
+ * whether its later pictures are drawn from its earlier ones.
  *
  * Both are **owner** state, stored beside the other pronunciation choices and read by the server
  * when it records — a phone that has never opened this screen still gets the story recorded the way
@@ -10,11 +11,15 @@
  * Nothing here is a device fact. Whether a recording is *kept on this device* is Settings ▸
  * Pronunciation's switch, because a part's recording is kept with the clips: the same kind of
  * thing, about the same size.
+ *
+ * The picture choice is stored with the other picture settings (`/images/settings`), because the
+ * server reads it when it draws; it is shown here because it is a question about stories.
  */
 
 import { useEffect, useState } from "react";
 import {
-  AcervoApiError, backendSession, type PronunciationOrder, type PronunciationSettings
+  AcervoApiError, backendSession, type ImageSettings, type PronunciationOrder,
+  type PronunciationSettings, type StoryContinuity
 } from "./api";
 
 /* The same two orders as everywhere else, said in terms of what each does to a story. The costs are
@@ -32,13 +37,50 @@ const ORDERS: { id: PronunciationOrder; title: string; help: string }[] = [
   }
 ];
 
+/* Measured rather than felt (experiments/story-picture-reference): drawn from its earlier pictures,
+   a story in a drawn or painted style was preferred 8 times in 10 and never lost; in a photographic
+   style the plain pictures won 4 times in 7, because matching a reference costs a photograph more. */
+const CONTINUITY: { id: StoryContinuity; title: string; help(photographic: string): string }[] = [
+  {
+    id: "artwork", title: "In drawn and painted styles",
+    help: (photographic) => "A later picture is drawn from the earlier pictures of the people and "
+      + "places it shows again, so they stay recognisable. Photographic styles are left out, where "
+      + `this costs more than it gives${photographic ? `: ${photographic}` : ""}.`
+  },
+  {
+    id: "all", title: "In every style",
+    help: () => "The same, photographic styles included."
+  },
+  {
+    id: "off", title: "Off",
+    help: () => "Every picture is drawn from its own description alone."
+  }
+];
+
 export default function StoryPanel({ onNotify }: { onNotify(message: string): void }) {
   const [settings, setSettings] = useState<PronunciationSettings | null>(null);
+  const [pictures, setPictures] = useState<ImageSettings | null>(null);
 
   useEffect(() => {
-    void backendSession.pronunciationSettings().then(setSettings)
-      .catch((error: unknown) => onNotify(error instanceof AcervoApiError ? error.message : "Settings could not be read."));
+    const failed = (error: unknown) =>
+      onNotify(error instanceof AcervoApiError ? error.message : "Settings could not be read.");
+    void backendSession.pronunciationSettings().then(setSettings).catch(failed);
+    void backendSession.imageSettings().then(setPictures).catch(failed);
   }, []);
+
+  const choosePictures = async (storyContinuity: StoryContinuity) => {
+    const before = pictures;
+    if (!before) return;
+    setPictures({ ...before, storyContinuity, chosen: true });
+    try {
+      setPictures(await backendSession.saveImageSettings({ storyContinuity }));
+    } catch (error) {
+      setPictures(before);
+      onNotify(error instanceof AcervoApiError ? error.message : "That could not be saved.");
+    }
+  };
+  const photographic = (pictures?.styles ?? []).filter((style) => style.photographic)
+    .map((style) => style.label).join(", ");
 
   /* Optimistic, then reconciled, then rolled back if the server refused — the shape `LoopPanel` and
      `PronunciationPanel` use, because it is the same record being written. */
@@ -100,5 +142,23 @@ export default function StoryPanel({ onNotify }: { onNotify(message: string): vo
         </span>
       </span>
     </label>}
+
+    <h4 className="provider-heading">Keep characters and places consistent across pictures</h4>
+    <p className="config-help">
+      Each picture comes first; the earlier ones are only a guide to who is who. A person or place
+      that does not appear again is never carried over, and a model that cannot take earlier
+      pictures draws every part from its description, as before.
+    </p>
+    {pictures && <div className="config-choices" role="radiogroup"
+      aria-label="Keep characters and places consistent across pictures">
+      {CONTINUITY.map((choice) => <label key={choice.id} className="config-switch">
+        <input
+          type="radio" name="story-continuity" value={choice.id}
+          checked={pictures.storyContinuity === choice.id}
+          onChange={() => void choosePictures(choice.id)}
+        />
+        <span><strong>{choice.title}</strong><span>{choice.help(photographic)}</span></span>
+      </label>)}
+    </div>}
   </section>;
 }

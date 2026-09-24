@@ -32,6 +32,7 @@ class Style:
     when: tuple[str, ...]
     weight: float
     mono: bool
+    photographic: bool = False
 
 
 class StyleTable:
@@ -115,6 +116,7 @@ def load_styles(path: str | Path | None = None) -> StyleTable:
                 when=tuple(str(item).strip() for item in (fields.get("when") or []) if str(item).strip()),
                 weight=float(fields.get("weight", 1)),
                 mono=bool(fields.get("mono", False)),
+                photographic=bool(fields.get("photographic", False)),
             )
         )
     return StyleTable(styles, hashlib.sha256(raw).hexdigest()[:12])

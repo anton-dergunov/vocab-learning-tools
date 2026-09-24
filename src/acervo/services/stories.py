@@ -39,7 +39,7 @@ from acervo.services.models import chain_for, refusal
 from acervo.services.prompts import prompt_text
 from acervo.services.rules import with_rules
 from acervo.settings import Settings
-from acervo.stories import illustrate, translate, write
+from acervo.stories import continuity, illustrate, translate, write
 from acervo.stories.types import story_types
 
 # A story is built around a handful of words, not a vocabulary list. The ceiling is about what the
@@ -57,6 +57,8 @@ DEFAULT_PARTS = 4
 WRITE_TEMPLATE = "acervo_story_write"
 TRANSLATE_TEMPLATE = "acervo_story_translate"
 BRIEF_TEMPLATE = "acervo_story_brief"
+CONTINUITY_TEMPLATE = "acervo_story_continuity"
+REFERENCE_TEMPLATE = "acervo_story_reference"
 
 # A picture that has failed this many times is left alone. `images/` uses the same number for the
 # same reason: past this it is the brief that is wrong, not the weather.
@@ -408,6 +410,17 @@ def draw_pictures(settings: Settings, owner: str, device: str, story_id: str,
     **What is missing is re-derived here rather than passed in**, which is what makes a retry cost
     only what it has to: a run that lost its last picture redraws one and not four.
 
+    **One model draws the whole story, as one voice reads it** (`services/story_audio`): the pair
+    that drew its first picture is asked first for every later one, and the chain is walked past it
+    only when it is busy or out of allowance, which is what `chain.walk` already does. A fall-through
+    mid-story to a model that draws differently is a style change halfway through a book.
+
+    **Later pictures are drawn from the earlier ones** where the owner's `storyContinuity` says so
+    for this style: `stories/continuity.py` labels who and where each brief shows, and a part is sent
+    the last earlier pictures of its returning people and place. The labels are one small text call
+    per run, and opportunistic — a label call that fails, or a pair that takes no reference
+    pictures, draws the part exactly as it was drawn before any of this existed.
+
     `progress(done, total)` is called before the first picture and after each attempt, drawn or
     refused, so a caller can say "picture 2 of 4". It is a plain callable and not a job's step: this
     layer does not know jobs exist, and `gate` is handed in the same way.
@@ -422,29 +435,48 @@ def draw_pictures(settings: Settings, owner: str, device: str, story_id: str,
     candidates = _candidates(settings, owner, "image")
     _require(candidates, settings, owner, "image")
     media = Path(settings.media_path)
+    catalogue = load_catalogue()
     drawn = 0
+    referenced = 0
     failed: list[str] = []
 
-    # Progress is counted over every part that has a brief, not only the ones this run will draw. A
-    # run resumed after a rest, or a Try again, then carries on from what is already there instead
-    # of restarting from zero over a shorter list — which is how a percentage runs backwards.
-    briefed = [row for row in _parts(owner, story_id) if (row.get("imagePrompt") or "").strip()]
+    # Every part, in reading order, because a reference is found by position in the story. Progress
+    # is counted over every part that has a brief, not only the ones this run will draw. A run
+    # resumed after a rest, or a Try again, then carries on from what is already there instead of
+    # restarting from zero over a shorter list — which is how a percentage runs backwards.
+    rows = _parts(owner, story_id)
+    briefed = [row for row in rows if (row.get("imagePrompt") or "").strip()]
     pending = [
-        row for row in briefed
-        if not row.get("imageRef") and int(row.get("attempts") or 0) < MAX_ATTEMPTS
+        index for index, row in enumerate(rows)
+        if (row.get("imagePrompt") or "").strip() and not row.get("imageRef")
+        and int(row.get("attempts") or 0) < MAX_ATTEMPTS
     ]
     attempted = len(briefed) - len(pending)
     if progress is not None:
         progress(attempted, len(briefed))
 
-    for row in pending:
+    labels = _labels(settings, owner, story, rows, style, pending)
+    template = _template(settings, REFERENCE_TEMPLATE) if labels else ""
+
+    for index in pending:
+        row = rows[index]
         if gate is not None:
             gate()
+        chosen: tuple[continuity.Reference, ...] = ()
+        if labels is not None:
+            chosen = continuity.references(
+                labels, index, lambda earlier: _picture_exists(media, rows[earlier]))
+        pictures = [media.joinpath(rows[reference.part]["imageRef"]).read_bytes()
+                    for reference in chosen]
         try:
             rendered = illustrate.draw(
                 row["imagePrompt"], style,
                 seed=_seed_for(row["id"], int(row.get("attempts") or 0)),
-                candidates=candidates, catalogue=load_catalogue(),
+                candidates=_pinned(candidates, rows), catalogue=catalogue,
+                references=pictures,
+                with_references=(continuity.compose(
+                    template, labels, index, chosen, illustrate.compose(row["imagePrompt"], style))
+                    if chosen else None),
             )
         except ChainExhausted as exhausted:
             # **Not counted against the part, and the step stops here.** `services/images.py` states
@@ -472,22 +504,80 @@ def draw_pictures(settings: Settings, owner: str, device: str, story_id: str,
         _place(media, reference, rendered.data)
         previous = row.get("imageRef")
         at = now_instant()
+        stored = {
+            **row, "imageRef": reference, "imageModelId": rendered.answer.model,
+            "attempts": int(row.get("attempts") or 0) + 1, "failureReason": "",
+            "editedAt": at, "editedBy": device,
+        }
         try:
-            graph.merge_graph(owner, device, {"storyParts": [{
-                **row, "imageRef": reference, "imageModelId": rendered.answer.model,
-                "attempts": int(row.get("attempts") or 0) + 1, "failureReason": "",
-                "editedAt": at, "editedBy": device,
-            }]}, enqueue=None)
+            graph.merge_graph(owner, device, {"storyParts": [stored]}, enqueue=None)
         except Exception:
             _discard(media, reference, keep=previous)
             raise
         _discard(media, previous, keep=reference)
+        # Held for the rest of this run: a later part is drawn from this picture, and the pin reads
+        # which pair drew it.
+        rows[index] = stored
         drawn += 1
+        if chosen and catalogue.find(rendered.answer.provider_id).image_references():
+            referenced += 1
         attempted += 1
         if progress is not None:
             progress(attempted, len(briefed))
 
-    return {"drawn": drawn, "failed": failed}
+    return {"drawn": drawn, "referenced": referenced, "failed": failed}
+
+
+def _labels(settings: Settings, owner: str, story: dict[str, Any], rows: list[dict[str, Any]],
+            style: Any, pending: list[int]) -> continuity.Continuity | None:
+    """Who and where each brief shows, or None when references will not be used this run.
+
+    None when the owner's setting leaves this style out, when nothing left to draw has an earlier
+    part to draw from, or when the label call fails for any reason — the pictures are drawn either
+    way, and a picture without references is what every story had before.
+    """
+    if not image_settings.settings(owner).continuity_for(style.photographic):
+        return None
+    if not any(index > 0 for index in pending):
+        return None
+    briefs = [(row.get("imagePrompt") or "").strip() for row in rows]
+    if not all(briefs):
+        return None
+    candidates = _candidates(settings, owner, "text")
+    if not candidates:
+        return None
+    labeller = continuity.Labeller(load_catalogue(), candidates,
+                                   _template(settings, CONTINUITY_TEMPLATE))
+    parts = [write.Part(row["heading"] or "", row["text"] or "") for row in rows]
+    try:
+        labels, _usage = labeller.label(
+            continuity.build_request(title=story.get("title") or "", parts=parts, briefs=briefs),
+            len(rows),
+        )
+    except (ChainExhausted, ProviderError):
+        return None
+    return labels
+
+
+def _pinned(candidates: tuple[chain.Candidate, ...],
+            rows: list[dict[str, Any]]) -> tuple[chain.Candidate, ...]:
+    """The owner's chain with the pair that drew this story's first picture moved to the front.
+
+    Read back off the graph rather than remembered, so a Try again a day later pins the same pair.
+    A preference and not a cage: it is only first in the walk, so a busy or exhausted pin is
+    stepped over — the lesson `services/story_audio` learned when insisting cost three silent parts.
+    """
+    model = next((row.get("imageModelId") for row in rows
+                  if row.get("imageRef") and row.get("imageModelId")), None)
+    if not model:
+        return candidates
+    first = [candidate for candidate in candidates if candidate.model == model][:1]
+    return (*first, *(candidate for candidate in candidates if candidate not in first))
+
+
+def _picture_exists(media: Path, row: dict[str, Any]) -> bool:
+    reference = row.get("imageRef")
+    return bool(reference) and media.joinpath(reference).is_file()
 
 
 def _seed_for(part_id: str, attempt: int) -> int:

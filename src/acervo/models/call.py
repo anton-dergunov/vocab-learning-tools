@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import re
 import time
 from typing import Any, Mapping, Sequence
@@ -273,11 +274,28 @@ def image(
     model: str | None = None,
     seed: int | None = None,
     size: tuple[int, int] | None = None,
+    references: Sequence[bytes] = (),
     timeout: float = TIMEOUT_SECONDS,
 ) -> ImageResult:
-    """One image call against one row, through LiteLLM or through the row's own adapter."""
+    """One image call against one row, through LiteLLM or through the row's own adapter.
+
+    `references` are earlier pictures the model should draw from, sent only where the row declares
+    `capabilities.image.references`; elsewhere they are dropped with a warning, the rule `speech`
+    follows for a `style`. The prompt is the caller's to word so that it says what each one is for.
+    """
     model = model or row.models_for("image")[0]
     started = time.monotonic()
+    warnings: list[str] = []
+    if references:
+        allowed = row.image_references()
+        if not allowed:
+            warnings.append("this provider takes no reference pictures, so none were sent")
+            references = ()
+        elif len(references) > allowed:
+            warnings.append(f"this provider takes {allowed} reference pictures; the rest were not sent")
+            references = tuple(references)[-allowed:]
+    if references:
+        return _image_with_references(prompt, row, model, size, references, timeout, started, warnings)
     if row.adapter.get("image"):
         from acervo.models import cloudflare
 
@@ -298,7 +316,6 @@ def image(
     image_capabilities = (row.capabilities.get("image") or {}) if isinstance(row.capabilities, dict) else {}
     if image_capabilities.get("responseFormat", "b64_json"):
         request["response_format"] = image_capabilities.get("responseFormat", "b64_json")
-    warnings: list[str] = []
     # Size and seed are declared, not assumed, for the same reason `speech` declares `style`: what
     # a provider does with a parameter it does not support is not uniform. Vertex drops both
     # silently — `size` becomes an aspect ratio and nothing else, and its transformer never reads
@@ -333,6 +350,65 @@ def image(
         mime="image/png",
         answer=_answer(row, model, started, response, warnings),
     )
+
+
+def _image_with_references(prompt: str, row: Row, model: str, size: tuple[int, int] | None,
+                           references: Sequence[bytes], timeout: float, started: float,
+                           warnings: list[str]) -> ImageResult:
+    """The same picture asked for over the chat route, where a message can carry images.
+
+    LiteLLM's `image_generation` takes no image for Vertex Gemini, and `completion` with
+    `modalities` does. The row's image `params` travel unchanged — `imageConfig` included, which on
+    this route is copied into `generationConfig` — with the aspect ratio added from `size`, because
+    here there is no `size` parameter to carry it.
+    """
+    params = row.params_for("image")
+    if size is not None:
+        divisor = math.gcd(size[0], size[1]) or 1
+        params["imageConfig"] = {**(params.get("imageConfig") or {}),
+                                 "aspectRatio": f"{size[0] // divisor}:{size[1] // divisor}"}
+        warnings.append(f"this provider chooses its own resolution, not {size[0]}x{size[1]}")
+    content: list[dict[str, Any]] = [
+        {"type": "image_url",
+         "image_url": {"url": f"data:{_picture_mime(data)};base64,{base64.b64encode(data).decode()}"}}
+        for data in references
+    ]
+    content.append({"type": "text", "text": prompt})
+    try:
+        response = completion(
+            model=model,
+            messages=[{"role": "user", "content": content}],
+            modalities=["image", "text"],
+            timeout=row.timeout_for("image", timeout),
+            **params,
+            **_transport(row),
+        )
+    except Exception as error:  # noqa: BLE001
+        _raise(row, model, error)
+        raise
+    message = response.choices[0].message
+    images = getattr(message, "images", None) or []
+    url = ((images[0] or {}).get("image_url") or {}).get("url", "") if images else ""
+    if "," not in url:
+        said = (getattr(message, "content", None) or "").strip()[:200]
+        raise ProviderRefused(
+            "refused", f"the provider returned no image{': ' + said if said else ''}",
+            provider_id=row.id, model=model,
+        )
+    header, encoded = url.split(",", 1)
+    mime = header.removeprefix("data:").split(";", 1)[0] or "image/png"
+    return ImageResult(
+        data=base64.b64decode(encoded), mime=mime,
+        answer=_answer(row, model, started, response, warnings),
+    )
+
+
+def _picture_mime(data: bytes) -> str:
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    return "image/jpeg"
 
 
 def _audio_adapter(name: str):

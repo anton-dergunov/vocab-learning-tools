@@ -9,7 +9,7 @@ vi.mock("./media", () => ({ acquire: vi.fn(async () => "blob:picture"), release:
 afterEach(() => { vi.restoreAllMocks(); });
 
 const row = () => testGraph().imagePrompts[0];
-const STYLES = [{ id: "flat-vector", label: "Flat vector", mono: false }, { id: "ukiyo-e", label: "Ukiyo-e", mono: false }];
+const STYLES = [{ id: "flat-vector", label: "Flat vector", mono: false, photographic: false }, { id: "ukiyo-e", label: "Ukiyo-e", mono: false, photographic: false }];
 
 function dialog(overrides: Partial<Parameters<typeof ImageDialog>[0]> = {}) {
   const props = {

@@ -4,7 +4,9 @@
 batching a word's senses and matters more here. Each picture is drawn by a model that has never
 seen the others, so anything that must stay the same across them — a man's jacket, a dog's collar —
 has to be restated in every brief. Deciding those descriptions once, with all the parts in view, is
-the only way four pictures read as four parts of one story.
+the only way four pictures read as four parts of one story. Since `continuity.py`, a later picture
+may also be handed the earlier pictures of the people and places it shows again — but only where
+the pair can read them, so the restated description is still what every picture stands on.
 
 The draw call is `images/`-shaped on purpose: the style text is appended here rather than asked for
 in the brief, so the same brief in another style is one substitution, and a `FRAME` states the
@@ -122,19 +124,33 @@ class BriefWriter:
 
 
 def draw(brief: str, style: Style, *, seed: int, candidates: Sequence[chain.Candidate],
-         catalogue: Catalogue) -> Rendered:
+         catalogue: Catalogue, references: Sequence[bytes] = (),
+         with_references: str | None = None) -> Rendered:
     """One part's picture, in the story's one style.
 
     Through `chain.walk` even with a single pair, for the reason `services/images._draw` gives:
     `walk` is what remembers a refusal, and skipping it would re-probe an exhausted allowance on
     every part of every story.
+
+    `with_references` is the whole prompt to send *with* `references` (`continuity.compose`), and it
+    is decided per pair: a pair whose row takes reference pictures gets both, and any other gets the
+    plain brief — so a fall-through to such a row draws exactly what it drew before references
+    existed, rather than a prompt describing pictures it was never shown.
     """
     renderer = Renderer()
+    plain = compose(brief, style)
+    sent = tuple(references)
+
+    def ask(candidate: chain.Candidate) -> Rendered:
+        if sent and with_references and candidate.row.image_references() >= len(sent):
+            return renderer.draw(with_references, seed, candidate, sent)
+        return renderer.draw(plain, seed, candidate)
+
     return chain.walk(
         "image",
         [candidate.named for candidate in candidates],
         catalogue,
-        lambda candidate: renderer.draw(compose(brief, style), seed, candidate),
+        ask,
         chain.stamped,
         caller="story.draw",
     )

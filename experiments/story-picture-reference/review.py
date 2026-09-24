@@ -357,11 +357,15 @@ fetch("/data").then(r => r.json()).then(data => {
 
 
 def main(argv: list[str] | None = None) -> None:
+    global OUT
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--host", default="127.0.0.1",
                         help="address to listen on; the laptop's Tailscale IP to reach it from a tablet")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--out", type=Path, default=OUT,
+                        help="the run directory (default: out/, which holds run 1)")
     args = parser.parse_args(argv)
+    OUT = args.out.resolve()
     if not (OUT / "stories.json").exists():
         raise SystemExit("No stories yet: run `run.py fetch` and `run.py draw` first.")
     Handler.stories, Handler.key = build()

@@ -101,7 +101,9 @@ def settings_view(settings: Settings, owner: str) -> dict[str, Any]:
         **chosen,
         "maxAttempts": MAX_ATTEMPTS,
         "styles": [
-            {"id": style.id, "label": style.label, "mono": style.mono} for style in table.styles
+            {"id": style.id, "label": style.label, "mono": style.mono,
+             "photographic": style.photographic}
+            for style in table.styles
         ],
         # Whether this server could draw one right now, so the screen can say "no provider is
         # configured" instead of offering a button that will refuse.
@@ -123,6 +125,11 @@ def apply_settings(settings: Settings, owner: str, body: dict[str, Any]) -> dict
         changes["draw_enabled"] = _flag(body["drawEnabled"], "drawEnabled")
     if "boostVariety" in body:
         changes["boost_variety"] = _flag(body["boostVariety"], "boostVariety")
+    if "storyContinuity" in body:
+        if body["storyContinuity"] not in image_settings.CONTINUITY:
+            raise ApiError(400, "invalid_input",
+                           f"storyContinuity takes {', '.join(image_settings.CONTINUITY)}.")
+        changes["story_continuity"] = body["storyContinuity"]
     if "stylesOff" in body:
         submitted = body["stylesOff"]
         if not isinstance(submitted, list):

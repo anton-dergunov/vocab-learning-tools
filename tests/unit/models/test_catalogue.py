@@ -414,3 +414,18 @@ def test_a_row_may_not_list_its_key_among_the_settings_it_shows(tmp_path):
     path.write_text(json.dumps(document), encoding="utf-8")
     with pytest.raises(CatalogueError, match="lists its key among the settings"):
         load_catalogue(path)
+
+
+def test_only_the_vertex_image_row_declares_that_it_takes_reference_pictures():
+    """A story's later picture is drawn from its earlier ones only where a row says it can read
+    them; everywhere else the picture is drawn from the brief alone, as before."""
+    declared = {row.id: row.image_references() for row in SHIPPED.rows if row.serves("image")}
+    assert declared.pop("vertex") > 0
+    assert set(declared.values()) == {0}
+
+
+@pytest.mark.parametrize("count", [-1, "2", True])
+def test_image_references_that_are_not_a_count_are_refused(tmp_path, count):
+    path = written(tmp_path, a_row(capabilities={"image": {"references": count}}))
+    with pytest.raises(CatalogueError, match="not a count"):
+        load_catalogue(path)

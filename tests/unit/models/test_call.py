@@ -359,6 +359,52 @@ def test_the_requested_resolution_survives_litellms_vertex_mapping():
     assert mapped["aspectRatio"] == "1:1"
 
 
+def _answered_with_a_picture():
+    url = "data:image/png;base64," + base64.b64encode(b"PNGDATA").decode()
+    message = litellm.Message(role="assistant", content="")
+    message.images = [{"image_url": {"url": url}}]
+    return litellm.ModelResponse(choices=[{"index": 0, "message": message}])
+
+
+def test_reference_pictures_go_over_the_chat_route_with_the_rows_resolution(monkeypatch):
+    """`image_generation` takes no image for Vertex Gemini, and `completion` with `modalities`
+    does. The pictures come first and the prompt last, and `imageConfig` gains the aspect ratio
+    `size` would otherwise have carried — measured to arrive, as 1024x1024 in 52 of 52."""
+    calls = []
+    monkeypatch.setattr(call, "image_generation", _raising(AssertionError("the text-only route")))
+    monkeypatch.setattr(call, "completion", _recording(calls, _answered_with_a_picture()))
+    webp = b"RIFF\x00\x00\x00\x00WEBPVP8 "
+    result = call.image("a later moment", row=SHIPPED.find("vertex"), size=(1024, 1024),
+                        references=[webp, webp])
+    assert result.data == b"PNGDATA" and result.mime == "image/png"
+    sent = calls[-1]
+    assert sent["modalities"] == ["image", "text"]
+    content = sent["messages"][0]["content"]
+    assert [part["type"] for part in content] == ["image_url", "image_url", "text"]
+    assert content[0]["image_url"]["url"].startswith("data:image/webp;base64,")
+    assert content[-1]["text"] == "a later moment"
+    assert sent["imageConfig"] == {"imageSize": "1K", "aspectRatio": "1:1"}
+    assert sent["vertex_location"] == "global"
+
+
+def test_reference_pictures_a_row_cannot_read_are_dropped_with_a_warning(monkeypatch):
+    calls = []
+    payload = litellm.ImageResponse(data=[{"b64_json": base64.b64encode(b"PNG").decode()}])
+    monkeypatch.setattr(call, "image_generation", _recording(calls, payload))
+    monkeypatch.setattr(call, "completion", _raising(AssertionError("the chat route")))
+    result = call.image("a hook", row=SHIPPED.find("openai"), references=[b"one"])
+    assert result.data == b"PNG"
+    assert any("no reference pictures" in warning for warning in result.answer.warnings)
+
+
+def test_a_chat_reply_with_no_picture_is_a_refusal_rather_than_an_empty_image(monkeypatch):
+    message = litellm.Message(role="assistant", content="I cannot draw that.")
+    monkeypatch.setattr(call, "completion", _recording(
+        [], litellm.ModelResponse(choices=[{"index": 0, "message": message}])))
+    with pytest.raises(ProviderRefused, match="cannot draw that"):
+        call.image("a hook", row=SHIPPED.find("vertex"), references=[b"one"])
+
+
 def test_a_row_that_cannot_take_the_response_format_is_not_sent_it(monkeypatch):
     """Vertex refuses the parameter outright — "Setting `response_format` is not supported by
     vertex_ai" — so the row says it cannot take it and the call path has no provider branch."""

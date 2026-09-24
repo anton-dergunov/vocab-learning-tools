@@ -25,6 +25,11 @@ from acervo.db import tables
 from acervo.domain.ids import new_record_id, now_instant
 from acervo.repository.session import reading, transaction
 
+# Which stories draw their later pictures from their earlier ones: every style but the photographic
+# ones, every style, or none. The first is the default, and why is on the column in `db/tables.py`.
+CONTINUITY = ("artwork", "all", "off")
+CONTINUITY_DEFAULT = "artwork"
+
 
 class ImageSettings(Mapping):
     """The owner's answer, or the deployment default when they have not given one.
@@ -34,7 +39,7 @@ class ImageSettings(Mapping):
     "following the default" rather than showing the default as though it had been picked.
     """
 
-    __slots__ = ("draw_enabled", "styles_off", "boost_variety", "chosen")
+    __slots__ = ("draw_enabled", "styles_off", "boost_variety", "story_continuity", "chosen")
 
     def __init__(
         self,
@@ -42,6 +47,7 @@ class ImageSettings(Mapping):
         draw_enabled: bool = True,
         styles_off: Iterable[str] = (),
         boost_variety: bool = True,
+        story_continuity: str = CONTINUITY_DEFAULT,
         chosen: bool = False,
     ) -> None:
         self.draw_enabled = bool(draw_enabled)
@@ -49,6 +55,8 @@ class ImageSettings(Mapping):
         # hand-edited row cannot make the offered list depend on JSON key order.
         self.styles_off = tuple(sorted({str(one) for one in styles_off if str(one).strip()}))
         self.boost_variety = bool(boost_variety)
+        # An unknown value reads as the default rather than raising, for `_read`'s reason below.
+        self.story_continuity = story_continuity if story_continuity in CONTINUITY else CONTINUITY_DEFAULT
         self.chosen = bool(chosen)
 
     def __getitem__(self, key: str) -> Any:
@@ -56,14 +64,20 @@ class ImageSettings(Mapping):
             "drawEnabled": self.draw_enabled,
             "stylesOff": list(self.styles_off),
             "boostVariety": self.boost_variety,
+            "storyContinuity": self.story_continuity,
             "chosen": self.chosen,
         }[key]
 
     def __iter__(self):
-        return iter(("drawEnabled", "stylesOff", "boostVariety", "chosen"))
+        return iter(("drawEnabled", "stylesOff", "boostVariety", "storyContinuity", "chosen"))
 
     def __len__(self) -> int:
-        return 4
+        return 5
+
+    def continuity_for(self, photographic: bool) -> bool:
+        """Whether a story drawn in a style that is (or is not) photographic uses references."""
+        return self.story_continuity == "all" or (
+            self.story_continuity == "artwork" and not photographic)
 
     def weights(self, style_ids: Iterable[str]) -> dict[str, float]:
         """The switched-off styles as the zero weights `StyleTable.offer` already understands.
@@ -86,6 +100,7 @@ def _read(row: Any) -> ImageSettings:
         # capture path down, and an unknown style id is harmless — it switches nothing off.
         styles_off=stored if isinstance(stored, list) else (),
         boost_variety=row["boost_variety"],
+        story_continuity=row["story_continuity"],
         chosen=True,
     )
 
@@ -104,6 +119,7 @@ def save(
     draw_enabled: bool | None = None,
     styles_off: Iterable[str] | None = None,
     boost_variety: bool | None = None,
+    story_continuity: str | None = None,
 ) -> ImageSettings:
     """Change only what is named. Returns the whole stored document, so a caller echoes disk.
 
@@ -126,12 +142,15 @@ def save(
             draw_enabled=current.draw_enabled if draw_enabled is None else draw_enabled,
             styles_off=current.styles_off if styles_off is None else styles_off,
             boost_variety=current.boost_variety if boost_variety is None else boost_variety,
+            story_continuity=(current.story_continuity if story_continuity is None
+                              else story_continuity),
             chosen=True,
         )
         values = {
             "draw_enabled": wanted.draw_enabled,
             "styles_off": list(wanted.styles_off),
             "boost_variety": wanted.boost_variety,
+            "story_continuity": wanted.story_continuity,
             "edited_at": now_instant(),
         }
 

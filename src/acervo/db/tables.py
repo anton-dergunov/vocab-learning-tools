@@ -153,6 +153,12 @@ image_settings = Table(
     # writer toward styles it would otherwise pass over. `StyleTable.hints()` on or off.
     Column("boost_variety", Boolean, nullable=False, default=True),
     Column("edited_at", String(24), nullable=False),
+    # Whether a story's later pictures are drawn with its earlier pictures of the same people and
+    # places as references: `artwork` (every style but the photographic ones), `all`, or `off`.
+    # Photographic styles are left out by default because that is where references lost, 4–0, in
+    # experiments/story-picture-reference; drawn and painted styles won 8–0. Declared last so a
+    # database that gained it by `ALTER TABLE` has its columns in the order a fresh one does.
+    Column("story_continuity", String(16), nullable=False, default="artwork"),
     Index("idx_image_settings_owner", "owner", unique=True),
 )
 

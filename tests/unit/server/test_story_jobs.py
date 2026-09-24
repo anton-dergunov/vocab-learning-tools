@@ -22,7 +22,7 @@ import litellm
 import pytest
 from graph_records import lexeme, sense, vocabulary
 
-from acervo.repository import graph, jobs, pronunciation_settings
+from acervo.repository import graph, image_settings, jobs, pronunciation_settings
 from acervo.services import stories
 from acervo.work import kinds
 from acervo.work.runner import Runner
@@ -72,8 +72,21 @@ class Models:
         self.image_calls = 0
         self.image_fails_after: int | None = None
         self.image_rate_limited = False
+        # Pictures asked for over the chat route, as a row that takes references is: the number of
+        # reference pictures each carried, and the prompt it was sent with.
+        self.referenced: list[tuple[int, str]] = []
 
     def completion(self, **kwargs):
+        if "modalities" in kwargs:
+            content = kwargs["messages"][-1]["content"]
+            self.image_calls += 1
+            self.referenced.append((sum(1 for one in content if one["type"] == "image_url"),
+                                    content[-1]["text"]))
+            url = "data:image/png;base64," + base64.b64encode(PICTURE).decode()
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(
+                    images=[{"image_url": {"url": url}}], content=""))],
+                usage=None, _hidden_params={})
         self.prompts.append(kwargs["messages"][-1]["content"])
         payload = self.texts.pop(0)
         return litellm.ModelResponse(
@@ -132,7 +145,7 @@ def only_the_story(server) -> None:
             jobs.finish(job["id"], "cancelled")
 
 
-def a_story(server, count: int = 2) -> dict:
+def a_story(server, count: int = 2, style: str = "comic-book") -> dict:
     server.push({"vocabularies": [vocabulary()]})
     ids = []
     for index in range(count):
@@ -143,7 +156,7 @@ def a_story(server, count: int = 2) -> dict:
         ids.append(entry["id"])
     answer = server.post("/stories", {"deviceId": "device000000001", "language": "es",
                                       "lexemeIds": ids, "typeId": "funny",
-                                      "styleId": "comic-book"})
+                                      "styleId": style})
     assert answer.status_code == 202, answer.text
     only_the_story(server)
     return answer.json()["data"]["story"]
@@ -344,3 +357,106 @@ def test_a_writer_that_refuses_is_terminal_rather_than_retried(server, models, r
     assert "slur" in (job["message"] or ""), "the writer's own words survive the hand-off"
     # And the story reads as one that was asked for and never written.
     assert graph.story_parts(server.owner, story["id"]) == []
+
+
+# ── drawn from the earlier pictures ─────────────────────────────────────────
+
+
+def continuity_reply() -> dict:
+    """Marcos on the street; Ana alone in her flat; both on the street; Marcos in the flat."""
+    return {
+        "characters": [{"id": "marcos", "description": "a thin man in a green jacket"},
+                       {"id": "ana", "description": "a woman with a red scarf"}],
+        "scenes": [{"id": "street", "description": "a Spanish street"},
+                   {"id": "flat", "description": "a small top-floor flat"}],
+        "parts": [
+            {"characters": ["marcos"], "scene": "street", "change": ""},
+            {"characters": ["ana"], "scene": "flat", "change": ""},
+            {"characters": ["marcos", "ana"], "scene": "street", "change": ""},
+            {"characters": ["marcos"], "scene": "flat", "change": "that night"},
+        ],
+    }
+
+
+@pytest.fixture
+def references(monkeypatch):
+    """The test image row, declared as one that takes reference pictures, as Vertex's does."""
+    monkeypatch.setattr("acervo.models.catalogue.Row.image_references", lambda row: 14)
+
+
+def test_a_later_picture_is_drawn_from_the_earlier_pictures_of_who_and_where_it_shows(
+        server, models, runner, references):
+    a_story(server, 1)
+    models.texts = [story_reply(4), translation_reply(4), brief_reply(4), continuity_reply()]
+
+    runner.run_until_idle()
+
+    assert models.image_calls == 4
+    # Parts 1 and 2 have nobody and nowhere seen before, so they take the ordinary route with no
+    # references; part 3 is given part 1 (Marcos, the street) and part 2 (Ana); part 4 is given
+    # part 2 (the flat) and part 3 (Marcos, last seen there).
+    assert [count for count, _prompt in models.referenced] == [2, 2]
+    last = models.referenced[-1][1]
+    assert "Reference 1 is the picture from part 2" in last
+    assert "Reference 2 is the picture from part 3" in last
+    assert "ANA, who is not in this moment" in last
+    assert "that night" in last
+    assert "the picture wins" in last, "the picture comes first, the references second"
+    assert _draw_step(server)["detail"]["referenced"] == 2
+
+
+def test_switched_off_there_is_no_label_call_and_no_reference(server, models, runner, references):
+    image_settings.save(server.owner, story_continuity="off")
+    a_story(server, 1)
+    models.texts = [story_reply(4), translation_reply(4), brief_reply(4)]
+
+    runner.run_until_idle()
+
+    assert models.image_calls == 4
+    assert models.referenced == []
+    assert models.texts == [] and len(models.prompts) == 3, "no fourth text call was made"
+
+
+@pytest.mark.parametrize("setting, referenced", [("artwork", 0), ("all", 2)])
+def test_a_photographic_style_is_left_out_unless_every_style_was_asked_for(
+        server, models, runner, references, setting, referenced):
+    image_settings.save(server.owner, story_continuity=setting)
+    a_story(server, 1, style="cinematic-photoreal")
+    models.texts = [story_reply(4), translation_reply(4), brief_reply(4)]
+    if referenced:
+        models.texts.append(continuity_reply())
+
+    runner.run_until_idle()
+
+    assert models.image_calls == 4
+    assert len(models.referenced) == referenced
+
+
+def test_labels_that_cannot_be_had_cost_no_picture(server, models, runner, references):
+    """The label call is opportunistic: a reply that will not parse means no references, and the
+    story is drawn exactly as it was before references existed."""
+    story = a_story(server, 1)
+    models.texts = [story_reply(4), translation_reply(4), brief_reply(4), {"nonsense": True},
+                    {"nonsense": True}]
+
+    runner.run_until_idle()
+
+    assert all(part["imageRef"] for part in graph.story_parts(server.owner, story["id"]))
+    assert models.referenced == []
+
+
+def test_a_row_that_takes_no_references_draws_every_part_the_ordinary_way(server, models, runner):
+    a_story(server, 1)
+    models.texts = [story_reply(4), translation_reply(4), brief_reply(4), continuity_reply()]
+
+    runner.run_until_idle()
+
+    assert models.image_calls == 4
+    assert models.referenced == [], "the labels are made, and nothing is sent that cannot be read"
+
+
+def test_the_pair_that_drew_the_first_picture_is_asked_first_for_the_rest():
+    one, two = (SimpleNamespace(model="model/a"), SimpleNamespace(model="model/b"))
+    rows = [{"imageRef": "x.webp", "imageModelId": "model/b"}, {"imageRef": ""}]
+    assert stories._pinned((one, two), rows) == (two, one)
+    assert stories._pinned((one, two), [{"imageRef": ""}]) == (one, two), "nothing drawn, no pin"

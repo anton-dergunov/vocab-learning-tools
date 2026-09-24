@@ -70,7 +70,7 @@ def _draw(context: JobContext, step: Step, story_id: str) -> str | None:
         context.settings, context.owner, DEVICE, story_id,
         gate=step.gate, progress=step.progress,
     )
-    step.note(drawn=drawn["drawn"], failed=len(drawn["failed"]))
+    step.note(drawn=drawn["drawn"], referenced=drawn["referenced"], failed=len(drawn["failed"]))
     # A picture that could not be drawn is recorded on its own part and does not fail the job: the
     # story is readable without it, and Try again redraws exactly the ones still missing.
     return "partial" if drawn["failed"] else None

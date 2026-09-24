@@ -4,13 +4,13 @@ import ImagePanel from "./ImagePanel";
 import { AcervoApiError, backendSession, type ImageSettings } from "./api";
 
 const STYLES = [
-  { id: "oil-painting", label: "Oil on canvas", mono: false },
-  { id: "film-noir", label: "Film noir", mono: true },
-  { id: "ukiyo-e", label: "Japanese woodblock", mono: false }
+  { id: "oil-painting", label: "Oil on canvas", mono: false, photographic: false },
+  { id: "film-noir", label: "Film noir", mono: true, photographic: true },
+  { id: "ukiyo-e", label: "Japanese woodblock", mono: false, photographic: false }
 ];
 
 const settings = (overrides: Partial<ImageSettings> = {}): ImageSettings => ({
-  drawEnabled: true, stylesOff: [], boostVariety: true, chosen: false,
+  drawEnabled: true, stylesOff: [], boostVariety: true, storyContinuity: "artwork", chosen: false,
   maxAttempts: 4, styles: STYLES, available: true, ...overrides
 });
 
