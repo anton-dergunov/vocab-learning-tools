@@ -14,7 +14,7 @@
  * simply reads as one that was asked for and not made, and Try again queues another.
  */
 
-import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { LoopMusic } from "./api";
 import { jobFor, jobStream, isOpen as jobIsOpen } from "./jobs";
 import { stripOf } from "./ProgressStrip";
@@ -22,6 +22,7 @@ import type { Loop, VocabularyGraph } from "./domain";
 import { BackIcon, HourglassIcon, PauseIcon, PlayIcon, PlusIcon } from "./icons";
 import * as player from "./loops";
 import LoopPlayer from "./LoopPlayer";
+import SwipeRow from "./SwipeRow";
 import { loopIsReady, loopItemsOf, loopTitle, loopsIn } from "./selectors";
 
 function clock(seconds: number | null): string {
@@ -46,28 +47,6 @@ export default function LoopView({ graph, language, onMake, onClose, onDelete, o
   const loops = loopsIn(graph, language);
   const [openId, setOpenId] = useState<string | null>(playback.loopId);
   const open = loops.find((loop) => loop.id === openId) ?? null;
-  /* Which row has been right-clicked, and where within it, so the menu opens under the pointer. A
-     pointer has a gesture for this and a finger does not, so the finger gets the row itself: the
-     list below is two snap points wide and Delete is the second. */
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  const menuId = menu?.id ?? null;
-
-  useEffect(() => {
-    if (!menuId) return;
-    /* A press inside the menu is left alone: it is the first half of the click that chooses Delete,
-       and closing on it unmounts the button before the click can arrive. */
-    const away = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest(".loop-menu")) return;
-      setMenu(null);
-    };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
-    window.addEventListener("pointerdown", away);
-    window.addEventListener("keydown", escape);
-    return () => {
-      window.removeEventListener("pointerdown", away);
-      window.removeEventListener("keydown", escape);
-    };
-  }, [menuId]);
 
   /* The queue the player moves through when Next, or Play the next one, asks for another. Kept in
      the player rather than here, so leaving this surface does not end it: a loop goes on playing
@@ -120,61 +99,45 @@ export default function LoopView({ graph, language, onMake, onClose, onDelete, o
           ? job.message || stripOf(job)?.failure || job.error || ""
           : "";
         const here = playback.loopId === loop.id && playback.playing;
-        const remove = () => { setMenu(null); onDelete(loop.id); };
-        /* The shell is the scroller, and Delete is its second snap point. The row itself is not
-           `disabled` even when there is nothing to play: a loop that was never made is the one you
-           most want rid of, and a disabled button answers no gesture at all. */
-        return <div
-          key={loop.id} className="loop-item"
-          onContextMenu={(event) => {
-            event.preventDefault();
-            const box = event.currentTarget.getBoundingClientRect();
-            setMenu({ id: loop.id, x: event.clientX - box.left, y: event.clientY - box.top });
-          }}
+        /* Delete is the row's one action, by right-click or by swipe (`SwipeRow`). The row itself is
+           not `disabled` even when there is nothing to play: a loop that was never made is the one
+           you most want rid of, and a disabled button answers no gesture at all. */
+        return <SwipeRow
+          key={loop.id}
+          actions={[{ label: "Delete", menuLabel: "Delete this loop", tone: "danger", run: () => onDelete(loop.id) }]}
         >
-          <div className="loop-shell">
-            <button
-              className={`loop-row${playback.loopId === loop.id ? " on" : ""}`}
-              aria-disabled={!ready}
-              onClick={() => {
-                if (!ready) return;
-                setOpenId(loop.id);
-                if (!here) void player.play(loop, items);
-              }}
-            >
-              <span className={`loop-go${ready ? "" : " pending"}`}>
-                {ready ? (here ? <PauseIcon /> : <PlayIcon />) : <HourglassIcon />}
-              </span>
-              <span className="loop-main">
-                <span className="loop-title">{loopTitle(graph, loop)}</span>
-                <span className="loop-sub">
-                  {ready && making
-                    /* New music being made for a loop that already plays: it goes on playing the
-                       old track until this finishes, so the row says both. */
-                    ? <span className="doing">New music · {stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "queued"}</span>
-                    : ready
-                    ? `${items.length} words · ${clock(loop.durationSeconds)}`
-                    : making
-                      /* What it is *doing*, in the generator's own words — this is a four-minute
-                         operation and "being made" says nothing you could not already see. */
-                      ? <span className="doing">{stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "Being made…"}</span>
-                      /* Why, not only that. The reason is on the job the whole time; saying "never
-                         made" and nothing else is what left a failure with no next step. */
-                      : <span className="warn">{failure ? `Never made · ${failure}` : "Never made"}</span>}
-                </span>
-              </span>
-            </button>
-            <div className="loop-swipe">
-              <button className="loop-delete" onClick={remove}>Delete</button>
-            </div>
-          </div>
-          {menu?.id === loop.id && <div
-            className="menu open loop-menu" role="menu"
-            style={{ "--menu-x": `${menu.x}px`, "--menu-y": `${menu.y}px` } as CSSProperties}
+          <button
+            className={`loop-row${playback.loopId === loop.id ? " on" : ""}`}
+            aria-disabled={!ready}
+            onClick={() => {
+              if (!ready) return;
+              setOpenId(loop.id);
+              if (!here) void player.play(loop, items);
+            }}
           >
-            <button role="menuitem" className="danger" onClick={remove}>Delete this loop</button>
-          </div>}
-        </div>;
+            <span className={`loop-go${ready ? "" : " pending"}`}>
+              {ready ? (here ? <PauseIcon /> : <PlayIcon />) : <HourglassIcon />}
+            </span>
+            <span className="loop-main">
+              <span className="loop-title">{loopTitle(graph, loop)}</span>
+              <span className="loop-sub">
+                {ready && making
+                  /* New music being made for a loop that already plays: it goes on playing the
+                     old track until this finishes, so the row says both. */
+                  ? <span className="doing">New music · {stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "queued"}</span>
+                  : ready
+                  ? `${items.length} words · ${clock(loop.durationSeconds)}`
+                  : making
+                    /* What it is *doing*, in the generator's own words — this is a four-minute
+                       operation and "being made" says nothing you could not already see. */
+                    ? <span className="doing">{stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "Being made…"}</span>
+                    /* Why, not only that. The reason is on the job the whole time; saying "never
+                       made" and nothing else is what left a failure with no next step. */
+                    : <span className="warn">{failure ? `Never made · ${failure}` : "Never made"}</span>}
+              </span>
+            </span>
+          </button>
+        </SwipeRow>;
       })}
     </div>
 

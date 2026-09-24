@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validateGraph, type LoopItem } from "./domain";
 import {
-  articleFor, articleFromDraft, bedOfLoop, favouriteBeds, inboxCount, styleLabel, languageOptions, loopCandidates, loopIsReady,
+  articleFor, articleFromDraft, bedOfLoop, chosenFor, favouriteBeds, loopEligible, selectedWords, inboxCount, styleLabel, languageOptions, loopCandidates, loopIsReady,
   loopItemsOf, loopMomentAt, loopTitle, loopsIn, sampleLexemeIds, shortGlossOf, utteranceStarts,
   strengthOf, topicOptions, visibleRows
 } from "./selectors";
@@ -256,6 +256,28 @@ describe("loops", () => {
     expect(new Set(once).size).toBe(2);
     expect(sampleLexemeIds(graph, query, 99, 7)).toHaveLength(loopCandidates(graph, query).length);
     expect(sampleLexemeIds(graph, query, 0, 7)).toEqual([]);
+  });
+});
+
+describe("the selection", () => {
+  const graph = testGraph();
+
+  it("keeps the words that still exist in this language, in the order chosen", () => {
+    const deleted = testGraph();
+    deleted.lexemes.find((one) => one.id === "lexemebalsa0001")!.deleted = true;
+    const ids = ["lexemeturmoil01", "lexemebalsa0001", "lexemepicar0001", "lexemenothere01"];
+    expect(selectedWords(graph, "es", ids).map((word) => word.id)).toEqual(["lexemebalsa0001", "lexemepicar0001"]);
+    expect(selectedWords(deleted, "es", ids).map((word) => word.id)).toEqual(["lexemepicar0001"]);
+  });
+
+  it("says which chosen words a kind will leave out, and why", () => {
+    const words = selectedWords(graph, "es", ["lexemeespolv001", "lexemebalsa0001", "lexemepicar0001"]);
+    const chosen = chosenFor(graph, words, { eligible: loopEligible, why: "no single term to say", max: 1, noun: "loop" });
+    expect(chosen.map((word) => [word.id, word.skip])).toEqual([
+      ["lexemeespolv001", "no single term to say"],
+      ["lexemebalsa0001", ""],
+      ["lexemepicar0001", "a loop takes at most 1"]
+    ]);
   });
 });
 

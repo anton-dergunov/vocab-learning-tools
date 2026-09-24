@@ -4,6 +4,9 @@ import type { ImagePrompt, Loop } from "./domain";
 import AskDock, { type Detent } from "./AskDock";
 import ReviewBar from "./ReviewBar";
 import MadeBar from "./MadeBar";
+import SelectionBar from "./SelectionBar";
+import type { WordSource } from "./MakeFrom";
+import { clearSelected, restoreSelected, toggleSelected, useSelectedIds } from "./wordSelection";
 import LoopDialog from "./LoopDialog";
 import LoopView from "./LoopView";
 import StoryDialog from "./StoryDialog";
@@ -29,7 +32,7 @@ import {
   externalEntryOf, EXTERNAL_ROW_LIMIT, mergeHits, referenceTextOf,
   type ExternalEntry, type ExternalRow, type RawHit
 } from "./externalEntries";
-import { BackIcon, FileIcon, GearIcon, MoreIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
+import { BackIcon, FileIcon, GearIcon, MoreIcon, PencilIcon, PlusIcon, SearchIcon, SelectIcon, TrashIcon } from "./icons";
 import { useDefaultArticleView, type ArticleView } from "./editorPreferences";
 import LexemeArticle, {
   type AskSlot, type AskTarget, type ClipSlot, type MarkSlot, type PictureSlot, HeadwordListen
@@ -43,7 +46,7 @@ import {
 } from "./pwa";
 import { repository, type ReplicaSnapshot } from "./repository";
 import {
-  articleFor, articleFromDraft, inboxCount, languageOptions, lexemesIn, shortGlossOf,
+  articleFor, articleFromDraft, inboxCount, languageOptions, lexemesIn, selectedWords, shortGlossOf,
   topicOptions, visibleRows, type SortKey, type TopicSelection
 , loopsIn, storiesIn } from "./selectors";
 import Settings, { type Page as SettingsPage } from "./Settings";
@@ -253,9 +256,10 @@ export default function App() {
      it shows need the column. What is *playing* is the player module's, not this: a loop goes on
      playing while you read a word. */
   const [loops, setLoops] = useState(false);
-  const [makingLoop, setMakingLoop] = useState(false);
+  /* Which make dialog is open, and whether it starts on the selection or on a draw from the scope. */
+  const [makingLoop, setMakingLoop] = useState<WordSource | null>(null);
   const [stories, setStories] = useState(false);
-  const [makingStory, setMakingStory] = useState(false);
+  const [makingStory, setMakingStory] = useState<WordSource | null>(null);
   /* The map: whether it is open, the sense it is peeking at, and where it was left in each language.
      All three outlive a trip to an article opened from the map, which is what makes Back from that
      article put the map back exactly as it was. */
@@ -459,6 +463,15 @@ export default function App() {
     () => (snapshot && language ? topicOptions(snapshot, language) : []),
     [snapshot, language]
   );
+  /* The selection: this device's, per language, in the order chosen (`wordSelection.ts`). What each
+     id is comes from the replica, so a word deleted since simply is not here. */
+  const owner = snapshot?.ownerId ?? "";
+  const selectedIds = useSelectedIds(owner, language);
+  const selection = useMemo(
+    () => (snapshot && language ? selectedWords(snapshot, language, selectedIds) : []),
+    [snapshot, language, selectedIds]
+  );
+  const selectedSet = useMemo(() => new Set(selection.map((word) => word.id)), [selection]);
   /* Two feeders, one renderer. A stored article is `articleFor`; a live proposal is an unsaved
      document under review, which is exactly what `articleFromDraft` exists for and exactly what
      `AddView` already does with a generated entry. A proposal puts this view into AddView's regime
@@ -1086,6 +1099,32 @@ export default function App() {
     return () => { live = false; };
   }, [session]);
 
+  /**
+   * Put a word in the selection, or take it out. Its own language's selection, which is the one on
+   * screen everywhere but an article reached from another language.
+   *
+   * Said in a toast only where the bar is not there to say it — over an article on a phone, which
+   * keeps its whole screen for the word. Everywhere else the mark and the bar changing is the answer.
+   */
+  function toggleSelection(id: string, fromArticle = false) {
+    const lexeme = snapshot?.lexemes.find((one) => one.id === id);
+    if (!owner || !lexeme) return;
+    const on = toggleSelected(owner, lexeme.language, id);
+    const narrow = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches;
+    if (fromArticle && narrow) {
+      const count = selectedWords(snapshot!, lexeme.language, [...selectedIds, id]).length;
+      notify(on ? `Added to your selection · ${count} word${count === 1 ? "" : "s"}` : "Removed from your selection");
+    }
+  }
+
+  /* Forgetting is one tap, so it can be undone: a selection can be twenty words gathered over an hour. */
+  function clearSelection() {
+    if (!owner || !language) return;
+    const before = clearSelected(owner, language);
+    const lang = language;
+    notify("Selection cleared", { label: "Undo", run: () => restoreSelected(owner, lang, before) });
+  }
+
   async function removeLexeme(id: string) {
     try {
       await repository.delete("lexemes", id);
@@ -1244,6 +1283,11 @@ export default function App() {
   const composing = Boolean(addTab) || Boolean(article && mode === "edit") || asking || loops || stories || map;
   const inbox = snapshot && language ? inboxCount(snapshot, language) : 0;
   const surfaced = map || loops || stories;
+  /* The selection bar: over the list, the map and an article, never over Add, the loops or the
+     stories, whose own Make buttons offer the selection. Over an article `styles.css` keeps it to a
+     wide window, and `asking-open` puts it away while a conversation has the column's foot. */
+  const showSelection = selection.length > 0 && !addTab && !loops && !stories;
+  const conversing = askDetent !== "dock" && reading && Boolean(external || (article && view === "page"));
   const currentTopic = topics.find((option) => option.id === topic);
   const topicLabel = topic === "all" ? "All words" : topic === "inbox" ? "Inbox" : currentTopic?.name ?? "Topic";
   const topicIcon = topic === "all" ? "📖" : topic === "inbox" ? "📥" : currentTopic?.icon ?? "📌";
@@ -1255,7 +1299,7 @@ export default function App() {
           surface is *not* given `article-open`: it keeps the rail wherever there is room for it,
           and drops it only on a phone, where an article drops it too. */}
       {/* On the map the top bar carries the map's own row instead of search, Add and sync (`map-open`). */}
-      <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops || stories || map ? " loops-open" : ""}${map ? " map-open" : ""}${addTab ? " adding" : ""}`}>
+      <div className={`app${(article || external) && !addTab ? " article-open" : ""}${loops || stories || map ? " loops-open" : ""}${map ? " map-open" : ""}${addTab ? " adding" : ""}${showSelection ? " selecting" : ""}${conversing ? " asking" : ""}`}>
         <div className="brand"><span className="mark">A.</span></div>
 
         <header className="topbar">
@@ -1399,6 +1443,7 @@ export default function App() {
           onLanguage={(code) => { setMapSense(null); setLanguage(code); }}
           fly={mapFly} onFlown={() => setMapFly(null)}
           onOpen={(lexemeId, senseId) => { mapReturn.current = true; setMap(false); openLexeme(lexemeId, senseId); }}
+          chosen={selectedSet} onToggleChosen={(lexemeId) => toggleSelection(lexemeId)}
           onClose={() => {
             setMap(false);
             setMapSense(null);
@@ -1407,11 +1452,11 @@ export default function App() {
             if (back) openLexeme(back.lexeme, back.sense);
           }}
         /> : stories && snapshot && language ? <StoryView
-          graph={snapshot} language={language} onMake={() => setMakingStory(true)}
+          graph={snapshot} language={language} onMake={() => setMakingStory("scope")}
           onClose={() => setStories(false)}
           onDelete={removeStory}
         /> : loops && snapshot && language ? <LoopView
-          graph={snapshot} language={language} onMake={() => setMakingLoop(true)}
+          graph={snapshot} language={language} onMake={() => setMakingLoop("scope")}
           onClose={() => setLoops(false)}
           onDelete={removeLoop}
           onChangeMusic={(loopId, music) => void changeLoopMusic(loopId, music)}
@@ -1498,6 +1543,17 @@ export default function App() {
                 className="icon-btn art-file" aria-label="File it" title="File it — out of the Inbox"
                 onClick={() => void fileWords([article.lexeme.id])}
               ><FileIcon /></button>}
+              {/* Reading is when words are gathered, so the selection is a button here too. A proposal
+                  is not a word yet, so it has none. */}
+              {!proposal && (() => {
+                const on = selectedSet.has(article.lexeme.id);
+                return <button
+                  className={`icon-btn art-pick${on ? " on" : ""}`} aria-pressed={on}
+                  aria-label={on ? "Remove from selection" : "Add to selection"}
+                  title={on ? "In your selection — remove it" : "Add to selection"}
+                  onClick={() => toggleSelection(article.lexeme.id, true)}
+                ><SelectIcon on={on} /></button>;
+              })()}
               <button className="icon-btn art-delete" aria-label="Delete" title="Delete" onClick={() => void removeLexeme(article.lexeme.id)}><TrashIcon /></button>
               {/* A phone has room for one control beside the word, so the views and Delete fold into this. */}
               <div className="art-more" onClick={(event) => event.stopPropagation()}>
@@ -1518,6 +1574,9 @@ export default function App() {
                   {article.lexeme.status === "inbox" && <button role="menuitem"
                     onClick={() => { setArticleMenu(false); void fileWords([article.lexeme.id]); }}
                   >File it</button>}
+                  {!proposal && <button role="menuitem"
+                    onClick={() => { setArticleMenu(false); toggleSelection(article.lexeme.id, true); }}
+                  >{selectedSet.has(article.lexeme.id) ? "Remove from selection" : "Add to selection"}</button>}
                   <button role="menuitem" className="danger" onClick={() => { setArticleMenu(false); void removeLexeme(article.lexeme.id); }}>Delete this word</button>
                 </div>}
               </div>
@@ -1537,6 +1596,9 @@ export default function App() {
                   onSort={setSort} onOpen={openLexeme} onFileAll={(ids) => void fileWords(ids)}
                   external={externalSearch}
                   working={(id) => isEnriching(jobsStatus, id)}
+                  selected={(id) => selectedSet.has(id)}
+                  onToggleSelected={(id) => toggleSelection(id)}
+                  onDelete={(id) => void removeLexeme(id)}
                 />
               : mode === "read" ? <LexemeArticle
                   article={article} view={view} onNotify={notify} pictures={pictures} clips={clips}
@@ -1588,29 +1650,46 @@ export default function App() {
           </div>}
         </main>
 
-        {/* A row of `.app`, and drawn over the list and nowhere else: the article column already
-            carries the view segments, the delete control, the progress strip and the ask dock, and
-            §2.13 forbids a second one there. Narrow windows only — a wide one has the chip in the
-            top bar instead, and `styles.css` is what picks. */}
-        {snapshot && language && !article && !external && !addTab && !loops && !stories && !map && <MadeBar
-          graph={snapshot} language={language} chip={false}
-          onLoops={openLoops} onStories={openStories} onMap={openMap}
-        />}
+        {/* The foot of the window: a row of `.app`, holding the selection bar and the Made bar. */}
+        {snapshot && language && <div className="foot">
+          {showSelection && <SelectionBar
+            words={selection} language={language}
+            onOpen={(id) => {
+              if (map) { mapReturn.current = true; setMap(false); }
+              openLexeme(id);
+            }}
+            onRemove={(id) => toggleSelection(id)}
+            onClear={clearSelection}
+            onLoop={() => setMakingLoop("selection")}
+            onStory={() => setMakingStory("selection")}
+          />}
+          {/* The Made bar is drawn over the list and nowhere else: the article column already
+              carries the view segments, the delete control, the progress strip and the ask dock,
+              and §2.13 forbids a second one there. Narrow windows only — a wide one has the chip in
+              the top bar instead, and `styles.css` is what picks. With a selection it gives the
+              selection bar its place and draws only a loop that is playing. */}
+          {!article && !external && !addTab && !loops && !stories && !map && <MadeBar
+            graph={snapshot} language={language} chip={false} playerOnly={showSelection}
+            onLoops={openLoops} onStories={openStories} onMap={openMap}
+          />}
+        </div>}
       </div>
     </div>
 
     {makingStory && snapshot && language && <StoryDialog
       graph={snapshot}
       query={{ language, topic, query, sort }}
+      selection={selection} from={makingStory}
       deviceId={snapshot.deviceId ?? ""}
-      onClose={() => setMakingStory(false)}
+      onClose={() => setMakingStory(null)}
       onMade={() => { void syncEngine.syncNow().then(() => setSnapshot(repository.snapshot())); }}
       onNotify={notify}
     />}
 
     {makingLoop && snapshot && language && <LoopDialog
       graph={snapshot} query={{ language, topic, query, sort }} deviceId={snapshot.deviceId}
-      onClose={() => setMakingLoop(false)}
+      selection={selection} from={makingLoop}
+      onClose={() => setMakingLoop(null)}
       onMade={() => notify("Making your loop — it takes a few minutes")}
       onNotify={notify}
     />}

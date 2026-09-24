@@ -610,11 +610,24 @@ export function styleLabel(families: readonly { id: string; label: string }[] | 
  */
 export function loopCandidates(graph: VocabularyGraph, query: ListQuery): Lexeme[] {
   const rows = new Set(visibleRows(graph, query).map((row) => row.id));
-  return live(graph.lexemes).filter((lexeme) => rows.has(lexeme.id) && Boolean(lexeme.primaryGloss?.trim()));
+  return live(graph.lexemes).filter((lexeme) => rows.has(lexeme.id) && loopEligible(graph, lexeme));
 }
 
-export function sampleLexemeIds(graph: VocabularyGraph, query: ListQuery, count: number, seed = 0): string[] {
-  const candidates = loopCandidates(graph, query);
+/** Whether one word can be in a loop: it has the single term a loop speaks. */
+export function loopEligible(_graph: VocabularyGraph, lexeme: Lexeme): boolean {
+  return Boolean(lexeme.primaryGloss?.trim());
+}
+
+/**
+ * The sample a dialog sends. `candidates` is which words the kind can use — a loop's by default,
+ * and a story's from the story dialog, which used to sample a loop's and so could send a story no
+ * words at all from a scope full of words it could have used.
+ */
+export function sampleLexemeIds(
+  graph: VocabularyGraph, query: ListQuery, count: number, seed = 0,
+  candidatesOf: (graph: VocabularyGraph, query: ListQuery) => Lexeme[] = loopCandidates
+): string[] {
+  const candidates = candidatesOf(graph, query);
   // A small deterministic shuffle: xorshift over the seed, so the same scope and seed pick the same
   // words. Nothing here needs cryptographic quality, and `Math.random` would make it untestable.
   let state = (seed || 1) >>> 0;
@@ -792,10 +805,62 @@ export function storyWordEntries(graph: VocabularyGraph, storyId: string): Story
  */
 export function storyCandidates(graph: VocabularyGraph, query: ListQuery): Lexeme[] {
   const rows = new Set(visibleRows(graph, query).map((row) => row.id));
-  return live(graph.lexemes).filter((lexeme) => {
-    if (!rows.has(lexeme.id)) return false;
-    return Boolean(lexeme.shortGloss?.trim() || lexeme.primaryGloss?.trim()
-      || effectiveShortGloss(graph, lexeme.id));
+  return live(graph.lexemes).filter((lexeme) => rows.has(lexeme.id) && storyEligible(graph, lexeme));
+}
+
+/** Whether one word can be in a story: something says roughly what it means. */
+export function storyEligible(graph: VocabularyGraph, lexeme: Lexeme): boolean {
+  return Boolean(lexeme.shortGloss?.trim() || lexeme.primaryGloss?.trim()
+    || effectiveShortGloss(graph, lexeme.id));
+}
+
+/* ── the selection ───────────────────────────────────────────────────────
+   Words put aside by hand to make something from. Which ids are selected is `wordSelection.ts`'s,
+   kept on this device; what they are is read here, from the replica, every time. */
+
+/** One selected word, as the selection bar, its list and the make dialogs draw it. */
+export interface SelectedWord {
+  id: string;
+  headword: string;
+  emoji: string | null;
+  shortGloss: string;
+  lexeme: Lexeme;
+}
+
+/**
+ * The selected words that still exist in this language, in the order they were chosen. A word
+ * deleted since, or one whose id this replica does not hold, simply is not here: nothing repairs the
+ * stored selection, because nothing needs to.
+ */
+export function selectedWords(graph: VocabularyGraph, language: string, ids: readonly string[]): SelectedWord[] {
+  const byId = new Map(live(graph.lexemes).map((lexeme) => [lexeme.id, lexeme]));
+  return ids.flatMap((id) => {
+    const lexeme = byId.get(id);
+    if (!lexeme || lexeme.language !== language) return [];
+    return [{ id, headword: lexeme.headword, emoji: lexeme.emoji, shortGloss: shortGlossOf(graph, lexeme), lexeme }];
+  });
+}
+
+/** A selected word as a make dialog shows it: used, or left out and why. */
+export interface ChosenWord extends SelectedWord {
+  /** Empty when the word will be sent; otherwise the reason it will not be. */
+  skip: string;
+}
+
+/**
+ * What a dialog will send from the selection: every word, in order, each either used or left out
+ * with a reason — one the kind cannot use, or one past the kind's limit, where the first chosen
+ * are the ones used. The dialog draws exactly this, so what is undimmed is exactly what is sent.
+ */
+export function chosenFor(
+  graph: VocabularyGraph, words: readonly SelectedWord[],
+  rule: { eligible(graph: VocabularyGraph, lexeme: Lexeme): boolean; why: string; max: number; noun: string }
+): ChosenWord[] {
+  let used = 0;
+  return words.map((word) => {
+    if (!rule.eligible(graph, word.lexeme)) return { ...word, skip: rule.why };
+    used += 1;
+    return { ...word, skip: used > rule.max ? `a ${rule.noun} takes at most ${rule.max}` : "" };
   });
 }
 

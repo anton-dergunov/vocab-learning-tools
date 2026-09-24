@@ -49,6 +49,8 @@ export interface MeaningMapHandle {
   setLabels(labels: MapLabels): void;
   select(index: number, options?: { fly?: boolean; zoom?: number }): void;
   highlight(indices: Set<number> | null): void;
+  /* The selected words' points: drawn with the selection's mark, always labelled, never dimmed. */
+  choose(indices: Set<number> | null): void;
   fit(animate?: boolean): void;
   fitRegion(id: string): void;
   zoomBy(factor: number): void;
@@ -64,7 +66,7 @@ export interface MeaningMapHandle {
 interface Box { x: number; y: number; w: number; h: number; point?: number; region?: MapRegion }
 interface Colors {
   sea: string; land: string; coast: string; contour: string; ink: string; ink2: string; ink3: string;
-  rule: string; core: string; halo: string; dark: boolean;
+  rule: string; core: string; onCore: string; halo: string; dark: boolean;
 }
 type Gesture =
   | { kind: "pan"; moved: number; start: number; last: { x: number; y: number };
@@ -94,6 +96,7 @@ export function createMeaningMap(canvas: HTMLCanvasElement, options: MeaningMapO
   let labelSource: MapLabels = "name";
   let sel = -1, hover = -1;
   let lit: Set<number> | null = null;
+  let chosen: Set<number> | null = null;
   let W = 0, H = 0, dpr = 1;
   let cam = { k: 1, tx: 0, ty: 0 }, fitK = 1;
   let insets: MapInsets = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -197,7 +200,7 @@ export function createMeaningMap(canvas: HTMLCanvasElement, options: MeaningMapO
       return { level, path };
     });
     cloud = null;
-    sel = -1; hover = -1; lit = null;
+    sel = -1; hover = -1; lit = null; chosen = null;
     measureFit();
     /* A map that grows in is shown whole; new data for the map already on screen keeps the view. */
     if (opts.camera) setCamera(opts.camera);
@@ -262,7 +265,7 @@ export function createMeaningMap(canvas: HTMLCanvasElement, options: MeaningMapO
     colors = {
       sea, land: v("--map-land"), coast: v("--map-coast"), contour: v("--map-contour"),
       ink: v("--ink"), ink2: v("--ink-2"), ink3: v("--ink-3"), rule: v("--rule"),
-      core: v("--core"), halo: v("--map-halo"), dark: luminance(sea) < 0.4
+      core: v("--core"), onCore: v("--on-core"), halo: v("--map-halo"), dark: luminance(sea) < 0.4
     };
     cloud = null;
   }
@@ -393,7 +396,9 @@ export function createMeaningMap(canvas: HTMLCanvasElement, options: MeaningMapO
     const z = zoom();
     const selected = sel >= 0 ? map.points[sel] : null;
     const focus = selected !== null || (lit !== null && lit.size > 0);
-    const inFocus = (i: number) => i === sel || (lit !== null && lit.has(i)) ||
+    /* A chosen word is never dimmed: the selection is what is being gathered, and it should stay in
+       view while something else is looked at. */
+    const inFocus = (i: number) => i === sel || (lit !== null && lit.has(i)) || (chosen !== null && chosen.has(i)) ||
       (selected !== null && (selected.word === map.points[i].word || selected.near.includes(i)));
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -483,7 +488,8 @@ export function createMeaningMap(canvas: HTMLCanvasElement, options: MeaningMapO
       const p = map.points[i];
       if (emojiIn < 1) {
         ctx.globalAlpha = PA[i] * dim * (1 - emojiIn * 0.9);
-        ctx.fillStyle = i === sel || (lit !== null && lit.has(i)) ? colors.core : dot ?? hue(p.region, 1, true);
+        ctx.fillStyle = i === sel || (lit !== null && lit.has(i)) || (chosen !== null && chosen.has(i))
+          ? colors.core : dot ?? hue(p.region, 1, true);
         ctx.beginPath(); ctx.arc(x, y, i === sel ? radius + 1.5 : radius, 0, Math.PI * 2); ctx.fill();
       }
       if (emojiIn > 0 && p.emoji) {
@@ -493,6 +499,29 @@ export function createMeaningMap(canvas: HTMLCanvasElement, options: MeaningMapO
       }
     }
     ctx.globalAlpha = 1;
+    /* The selection's mark, distinct from Find's filled dots: far out a ring around the dot with a gap
+       of the map's own paper, and once points are emoji the badge a selected row wears in the list —
+       a check on a disc, at the glyph's lower right. */
+    if (chosen) {
+      for (const i of chosen) {
+        if (PA[i] <= 0.01 || i === sel) continue;
+        const x = SX(i), y = SY(i);
+        if (!onScreen(x, y)) continue;
+        if (emojiIn <= 0.5) {
+          ctx.strokeStyle = colors.halo; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(x, y, radius + 3, 0, Math.PI * 2); ctx.stroke();
+          ctx.strokeStyle = colors.core; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(x, y, radius + 3.5, 0, Math.PI * 2); ctx.stroke();
+        } else {
+          const bx = x + 10, by = y + 9;
+          ctx.fillStyle = colors.core; ctx.strokeStyle = colors.halo; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(bx, by, 6.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.strokeStyle = colors.onCore; ctx.lineWidth = 1.8; ctx.lineCap = "round"; ctx.lineJoin = "round";
+          ctx.beginPath(); ctx.moveTo(bx - 3, by + 0.1); ctx.lineTo(bx - 0.9, by + 2.2); ctx.lineTo(bx + 3.1, by - 2.1); ctx.stroke();
+          ctx.lineCap = "butt";
+        }
+      }
+    }
     if (selected) {
       ctx.strokeStyle = colors.core; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(SX(sel), SY(sel), emojiIn > 0.5 ? 14 : 7, 0, Math.PI * 2); ctx.stroke();
@@ -532,6 +561,7 @@ export function createMeaningMap(canvas: HTMLCanvasElement, options: MeaningMapO
       for (const j of siblings.get(selected.word) ?? []) if (j !== sel) forced.push(j);
       forced.push(...selected.near);
     }
+    if (chosen) forced.push(...[...chosen].slice(0, 60));
     if (lit) forced.push(...[...lit].slice(0, 40));
     if (hover >= 0) forced.push(hover);
 
@@ -567,7 +597,8 @@ export function createMeaningMap(canvas: HTMLCanvasElement, options: MeaningMapO
       ctx.font = font;
       ctx.textAlign = "left";
       ctx.strokeStyle = halo; ctx.lineWidth = 3.5;
-      ctx.fillStyle = on || (lit !== null && lit.has(i)) || (selected !== null && selected.word === p.word)
+      ctx.fillStyle = on || (lit !== null && lit.has(i)) || (chosen !== null && chosen.has(i))
+        || (selected !== null && selected.word === p.word)
         ? colors.core : colors.ink;
       ctx.strokeText(p.headword, box.x + 2, y);
       ctx.fillText(p.headword, box.x + 2, y);
@@ -900,6 +931,7 @@ export function createMeaningMap(canvas: HTMLCanvasElement, options: MeaningMapO
     setLabels(next) { labelSource = next; request(); },
     select,
     highlight(indices) { lit = indices && indices.size ? indices : null; request(); },
+    choose(indices) { chosen = indices && indices.size ? indices : null; request(); },
     fit,
     fitRegion,
     zoomBy(factor) { const c = centre(); zoomAt(c.x, c.y, factor, true); },

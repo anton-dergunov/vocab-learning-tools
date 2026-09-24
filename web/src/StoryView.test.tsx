@@ -79,7 +79,7 @@ describe("the stories surface", () => {
 
   it("deletes from the right-click menu", () => {
     const { props } = view();
-    fireEvent.contextMenu(screen.getByRole("button", { name: /La balsa que picaba/ }).closest(".loop-item")!);
+    fireEvent.contextMenu(screen.getByRole("button", { name: /La balsa que picaba/ }).closest(".swipe-item")!);
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete this story" }));
     expect(props.onDelete).toHaveBeenCalledWith("storypicada0001");
   });

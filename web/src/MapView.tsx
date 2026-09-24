@@ -15,7 +15,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import { createPortal } from "react-dom";
 import { AcervoApiError, backendSession, type ServerMap } from "./api";
 import type { VocabularyGraph } from "./domain";
-import { BackIcon, CloseIcon, FitIcon, ForwardIcon, MinusIcon, PlusIcon, SearchIcon } from "./icons";
+import { BackIcon, CloseIcon, FitIcon, ForwardIcon, MinusIcon, PlusIcon, SearchIcon, SelectIcon } from "./icons";
 import { isOpen, jobFor, jobStream } from "./jobs";
 import { languageOf } from "./languages";
 import { createMapStore, type MapStore } from "./mapStore";
@@ -53,6 +53,10 @@ export interface MapViewProps {
   onFlown?(): void;
   onOpen(lexemeId: string, senseId: string): void;
   onClose(): void;
+  /* The selection, as lexeme ids: every sense of a selected word wears its mark, because selection
+     is of words and a map is of senses. Toggled from the peek. */
+  chosen?: ReadonlySet<string>;
+  onToggleChosen?(lexemeId: string): void;
 }
 
 export function MapView(props: MapViewProps) {
@@ -152,6 +156,13 @@ export function MapView(props: MapViewProps) {
     return scored.sort((a, b) => a.score - b.score).map((entry) => entry.i);
   }, [data, find]);
   const lit = useMemo(() => (find.trim() ? new Set(matches) : null), [find, matches]);
+  const chosen = props.chosen;
+  const chosenPoints = useMemo(() => {
+    if (!data || !chosen?.size) return null;
+    const indices = new Set<number>();
+    data.points.forEach((p, i) => { if (chosen.has(p.word)) indices.add(i); });
+    return indices;
+  }, [data, chosen]);
 
   /* Asked to show one sense, the map flies to it as Find does, once it is drawn and holds it. */
   useEffect(() => {
@@ -212,6 +223,7 @@ export function MapView(props: MapViewProps) {
       initialCamera={props.camera}
       selected={index}
       highlighted={lit}
+      chosen={chosenPoints}
       label={`A map of your ${option.name} words, arranged by meaning`}
       onSelect={(point, i) => {
         onSelect(point ? point.id : null);
@@ -282,6 +294,8 @@ export function MapView(props: MapViewProps) {
           if (i >= 0) goTo(i);
         }}
         near={data.points[index].near.map((i) => data.points[i])}
+        chosen={chosen?.has(view.lexeme.id) ?? false}
+        onToggleChosen={props.onToggleChosen ? () => props.onToggleChosen?.(view.lexeme.id) : undefined}
         onOpen={() => props.onOpen(view.lexeme.id, view.sense.id)} />
     </aside>}
 
@@ -315,12 +329,15 @@ interface PeekProps {
   onClose(): void;
   onSense(senseId: string): void;
   onOpen(): void;
+  /* Whether this word is in the selection, and the toggle beside the way on. */
+  chosen: boolean;
+  onToggleChosen?(): void;
 }
 
 /* What a tap shows: enough to know the sense, and the way on. The word's other senses are one tap
    each, and the map flies there along the arc it has drawn, which is why a map of senses beats a map
    of words. */
-function Peek({ view, language, near, onClose, onSense, onOpen }: PeekProps) {
+function Peek({ view, language, near, onClose, onSense, onOpen, chosen, onToggleChosen }: PeekProps) {
   const { sense, lexeme, senses } = view;
   const picture = usePicture(view.picture?.imageRef ?? null);
   const position = senses.findIndex((entry) => entry.id === sense.id);
@@ -349,6 +366,13 @@ function Peek({ view, language, near, onClose, onSense, onOpen }: PeekProps) {
         {point.emoji} {point.headword}
       </button>)}
     </div>}
-    <button className="tb-btn primary peek-open" onClick={onOpen}>Open the article <ForwardIcon /></button>
+    {/* Select beside the way on: two things a tap on a sense can lead to, and the article is the larger. */}
+    <div className="peek-actions">
+      {onToggleChosen && <button
+        className={`tb-btn peek-pick${chosen ? " on" : ""}`} aria-pressed={chosen}
+        title={chosen ? "In your selection — remove it" : "Add to selection"} onClick={onToggleChosen}
+      ><SelectIcon on={chosen} /><span>{chosen ? "Selected" : "Select"}</span></button>}
+      <button className="tb-btn primary peek-open" onClick={onOpen}>Open the article <ForwardIcon /></button>
+    </div>
   </>;
 }

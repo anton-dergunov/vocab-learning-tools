@@ -1,7 +1,7 @@
 /**
  * The Stories surface: the stories you have, and the one you are reading.
  *
- * Modelled on `LoopView.tsx` down to the right-click menu, because it is the same shape of thing:
+ * Modelled on `LoopView.tsx` down to the row (`SwipeRow`), because it is the same shape of thing:
  * a list of made objects, each of which can be open, still being made, or asked for and never made.
  *
  * **One back arrow, and its meaning follows the level**: on an open story it returns to the
@@ -13,13 +13,14 @@
  * simply reads as one that was asked for and not written, and Try again queues another.
  */
 
-import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { isRecording, jobFor, jobStream, isOpen as jobIsOpen } from "./jobs";
 import { stripOf } from "./ProgressStrip";
 import type { VocabularyGraph } from "./domain";
 import { BackIcon, HourglassIcon, PlusIcon } from "./icons";
 import FitWords from "./FitWords";
 import StoryReader from "./StoryReader";
+import SwipeRow from "./SwipeRow";
 import {
   storiesIn, storyIsWritten, storyPartsOf, storyPictures, storyTitle, storyWordEntries, storyWordsOf
 } from "./selectors";
@@ -41,25 +42,6 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
   const stories = storiesIn(graph, language);
   const [openId, setOpenId] = useState<string | null>(null);
   const open = stories.find((story) => story.id === openId) ?? null;
-  /* Which row has been right-clicked, and where within it, so the menu opens under the pointer —
-     `LoopView`'s arrangement, and the finger gets the row's second snap point instead. */
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  const menuId = menu?.id ?? null;
-
-  useEffect(() => {
-    if (!menuId) return;
-    const away = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest(".loop-menu")) return;
-      setMenu(null);
-    };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
-    window.addEventListener("pointerdown", away);
-    window.addEventListener("keydown", escape);
-    return () => {
-      window.removeEventListener("pointerdown", away);
-      window.removeEventListener("keydown", escape);
-    };
-  }, [menuId]);
 
   if (open) {
     /* `reading` widens the column: a story is read beside its picture where there is room, and that
@@ -105,63 +87,47 @@ export default function StoryView({ graph, language, onMake, onClose, onDelete }
         const failure = job?.state === "failed"
           ? job.message || stripOf(job)?.failure || job.error || ""
           : "";
-        const remove = () => { setMenu(null); onDelete(story.id); };
-        return <div
-          key={story.id} className="loop-item"
-          onContextMenu={(event) => {
-            event.preventDefault();
-            const box = event.currentTarget.getBoundingClientRect();
-            setMenu({ id: story.id, x: event.clientX - box.left, y: event.clientY - box.top });
-          }}
+        return <SwipeRow
+          key={story.id} shellClassName="story-shell"
+          actions={[{ label: "Delete", menuLabel: "Delete this story", tone: "danger", run: () => onDelete(story.id) }]}
         >
-          <div className="loop-shell story-shell">
-            <button
-              className="loop-row" aria-disabled={!written}
-              onClick={() => { if (written) setOpenId(story.id); }}
-            >
-              <span className={`loop-go story-go${written ? "" : " pending"}`}>
-                {written ? (story.emoji || "📖") : <HourglassIcon />}
-              </span>
-              <span className="loop-main">
-                <span className="loop-title">{storyTitle(graph, story)}</span>
-                <span className="loop-sub">
-                  {making
-                    /* **One figure while it is being made**, whether or not it can be read yet. The
-                       words it was made from are what tells two finished stories apart, but while
-                       one is being built the question is how far along it is — and it used to be
-                       answered only until the first part landed, after which the line reverted to
-                       the word list and the recording went on invisibly for half an hour. */
-                    ? <span className="doing">{stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "Being written…"}</span>
-                    : written
-                      ? <FitWords className="story-words" words={words.map((word) => word.sourceText)} />
-                      /* Why, not only that: the reason is on the job the whole time. */
-                      : <span className="warn">{failure ? `Never written · ${failure}` : "Never written"}</span>}
-                </span>
-              </span>
-              <span className="story-meta">
-                {/* **Readable is worth saying while the rest is still being made**: a story has all
-                    its words the moment it has parts, and the pictures and the recording only make
-                    it better. Once it is finished this is ordinary again — what it is and how big. */}
-                {making
-                  ? written && <span className="story-ready">Ready to read</span>
-                  : written && <>
-                    <span className="story-counts">{count(pictures.total, "part")} · {count(words.length, "word")}</span>
-                    {pictures.drawn < pictures.total
-                      && <span className="warn">{pictures.drawn} of {pictures.total} drawn</span>}
-                  </>}
-              </span>
-            </button>
-            <div className="loop-swipe">
-              <button className="loop-delete" onClick={remove}>Delete</button>
-            </div>
-          </div>
-          {menu?.id === story.id && <div
-            className="menu open loop-menu" role="menu"
-            style={{ "--menu-x": `${menu.x}px`, "--menu-y": `${menu.y}px` } as CSSProperties}
+          <button
+            className="loop-row" aria-disabled={!written}
+            onClick={() => { if (written) setOpenId(story.id); }}
           >
-            <button role="menuitem" className="danger" onClick={remove}>Delete this story</button>
-          </div>}
-        </div>;
+            <span className={`loop-go story-go${written ? "" : " pending"}`}>
+              {written ? (story.emoji || "📖") : <HourglassIcon />}
+            </span>
+            <span className="loop-main">
+              <span className="loop-title">{storyTitle(graph, story)}</span>
+              <span className="loop-sub">
+                {making
+                  /* **One figure while it is being made**, whether or not it can be read yet. The
+                     words it was made from are what tells two finished stories apart, but while
+                     one is being built the question is how far along it is — and it used to be
+                     answered only until the first part landed, after which the line reverted to
+                     the word list and the recording went on invisibly for half an hour. */
+                  ? <span className="doing">{stripOf(job)?.phases.map((phase) => phase.text).join(" · ") || "Being written…"}</span>
+                  : written
+                    ? <FitWords className="story-words" words={words.map((word) => word.sourceText)} />
+                    /* Why, not only that: the reason is on the job the whole time. */
+                    : <span className="warn">{failure ? `Never written · ${failure}` : "Never written"}</span>}
+              </span>
+            </span>
+            <span className="story-meta">
+              {/* **Readable is worth saying while the rest is still being made**: a story has all
+                  its words the moment it has parts, and the pictures and the recording only make
+                  it better. Once it is finished this is ordinary again — what it is and how big. */}
+              {making
+                ? written && <span className="story-ready">Ready to read</span>
+                : written && <>
+                  <span className="story-counts">{count(pictures.total, "part")} · {count(words.length, "word")}</span>
+                  {pictures.drawn < pictures.total
+                    && <span className="warn">{pictures.drawn} of {pictures.total} drawn</span>}
+                </>}
+            </span>
+          </button>
+        </SwipeRow>;
       })}
     </div>
   </section>;

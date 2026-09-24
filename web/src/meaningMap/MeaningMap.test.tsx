@@ -7,7 +7,7 @@ import type { MapData } from "./types";
 
 /* jsdom has no canvas, so the core is replaced by a handle that records what it is asked. */
 const core = {
-  setData: vi.fn(() => 0), setStyle: vi.fn(), setLabels: vi.fn(), select: vi.fn(), highlight: vi.fn(),
+  setData: vi.fn(() => 0), setStyle: vi.fn(), setLabels: vi.fn(), select: vi.fn(), highlight: vi.fn(), choose: vi.fn(),
   fit: vi.fn(), fitRegion: vi.fn(), zoomBy: vi.fn(), zoomTo: vi.fn(), setInsets: vi.fn(),
   screenOf: vi.fn(() => ({ x: 1, y: 2 })), reveal: vi.fn(), getCamera: vi.fn(() => ({ cx: 5, cy: 6, z: 2 })),
   setCamera: vi.fn(), destroy: vi.fn()

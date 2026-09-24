@@ -1,4 +1,5 @@
-import { BookIcon, GlobeIcon } from "./icons";
+import { BookIcon, CheckIcon, GlobeIcon } from "./icons";
+import SwipeRow from "./SwipeRow";
 import type { ExternalRow } from "./externalEntries";
 import type { ListRow, SortKey, TopicSelection } from "./selectors";
 
@@ -92,7 +93,8 @@ function ExternalSection({ query, search }: { query: string; search: ExternalSea
 }
 
 export default function LexemeList({
-  rows, languageName, topic, topicLabel, topicIcon, query, sort, onSort, onOpen, onFileAll, external, working
+  rows, languageName, topic, topicLabel, topicIcon, query, sort, onSort, onOpen, onFileAll, external, working,
+  selected, onToggleSelected, onDelete
 }: {
   rows: ListRow[];
   languageName: string;
@@ -109,6 +111,12 @@ export default function LexemeList({
   external?: ExternalSearch;
   /** Whether the server is still filling a word in, so it can be found without opening it. */
   working?: (id: string) => boolean;
+  /** Whether a word is in the selection, which its row then wears as a mark. */
+  selected?: (id: string) => boolean;
+  /* A word's row actions, by right-click or by swipe (`SwipeRow`). Delete asks nothing, exactly as
+     the article's Delete asks nothing: it is a tombstone. */
+  onToggleSelected?(id: string): void;
+  onDelete?(id: string): void;
 }) {
   const trimmed = query.trim();
   let title = topicLabel;
@@ -150,9 +158,18 @@ export default function LexemeList({
       </div>
     </div>
     <div className="rows">
-      {rows.length ? rows.map((row) =>
-        <button key={row.id} className={`row ${row.status === "inbox" ? "inbox" : ""}`} onClick={() => onOpen(row.id)}>
-          <span className="plate">{row.emoji || "📄"}</span>
+      {rows.length ? rows.map((row) => {
+        const on = selected?.(row.id) ?? false;
+        /* The mark is the plate's ring and a badge on its corner, drawn so nothing in the row moves —
+           not the word, not the gloss, not the row's height. */
+        const line = <button
+          key={row.id} className={`row${row.status === "inbox" ? " inbox" : ""}${on ? " picked" : ""}`}
+          onClick={() => onOpen(row.id)}
+        >
+          <span className="plate">
+            {row.emoji || "📄"}
+            {on && <span className="pick-badge" role="img" aria-label="Selected"><CheckIcon /></span>}
+          </span>
           <span>
             <span className="word">{row.headword}{row.reading && <span className="rdg">{row.reading}</span>}</span>
             <span className="gloss">{row.shortGloss}</span>
@@ -162,7 +179,16 @@ export default function LexemeList({
             {row.senseCount > 1 && <span className="senses">{row.senseCount} senses</span>}
             {row.status === "inbox" ? <span className="prov">unreviewed</span> : <Strength row={row} />}
           </span>
-        </button>)
+        </button>;
+        if (!onToggleSelected && !onDelete) return line;
+        return <SwipeRow key={row.id} actions={[
+          ...(onToggleSelected ? [{
+            label: on ? "Unselect" : "Select", menuLabel: on ? "Remove from selection" : "Add to selection",
+            tone: "pick" as const, run: () => onToggleSelected(row.id)
+          }] : []),
+          ...(onDelete ? [{ label: "Delete", menuLabel: "Delete this word", tone: "danger" as const, run: () => onDelete(row.id) }] : [])
+        ]}>{line}</SwipeRow>;
+      })
       // With a search running, the dictionaries below are the answer, so this shrinks to a line
       // saying which question it is answering rather than taking the whole page to say "nothing".
       : showExternal ? <p className="ext-status none-yours">No words of yours match “{trimmed}”.</p>

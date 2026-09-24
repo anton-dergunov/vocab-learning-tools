@@ -19,6 +19,8 @@ export interface MeaningMapProps {
   initialCamera?: MapCamera | null;
   selected?: number;
   highlighted?: Set<number> | null;
+  /* The selected words' points, as indices: this component knows nothing of what a word is. */
+  chosen?: Set<number> | null;
   label?: string;
   onSelect?: (point: MapPoint | null, index: number) => void;
   onRegion?: (region: MapRegion) => void;
@@ -44,6 +46,7 @@ export const MeaningMap = forwardRef<MeaningMapHandle | null, MeaningMapProps>(f
     setLabels: (labels) => handle.current?.setLabels(labels),
     select: (index, options) => handle.current?.select(index, options),
     highlight: (indices) => handle.current?.highlight(indices),
+    choose: (indices) => handle.current?.choose(indices),
     fit: (animate) => handle.current?.fit(animate),
     fitRegion: (id) => handle.current?.fitRegion(id),
     zoomBy: (factor) => handle.current?.zoomBy(factor),
@@ -95,9 +98,10 @@ export const MeaningMap = forwardRef<MeaningMapHandle | null, MeaningMapProps>(f
       map.setData(props.data, camera ? { camera } : { animate: "grow" });
     }
     shown.current = { key: props.dataKey, data: props.data };
-    // New data clears the core's selection and highlight; what the host holds is put back.
+    // New data clears the core's selection, highlight and chosen points; what the host holds is put back.
     if (props.selected !== undefined && props.selected >= 0) map.select(props.selected);
     if (props.highlighted) map.highlight(props.highlighted);
+    if (props.chosen) map.choose(props.chosen);
     // `selected` is applied on its own below; `initialCamera` matters only when the key changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.data, props.dataKey]);
@@ -106,6 +110,7 @@ export const MeaningMap = forwardRef<MeaningMapHandle | null, MeaningMapProps>(f
   useEffect(() => { handle.current?.setLabels(props.labels ?? "name"); }, [props.labels]);
   useEffect(() => { handle.current?.select(props.selected ?? -1); }, [props.selected]);
   useEffect(() => { handle.current?.highlight(props.highlighted ?? null); }, [props.highlighted]);
+  useEffect(() => { handle.current?.choose(props.chosen ?? null); }, [props.chosen]);
 
   return <canvas ref={canvas} className="map-canvas" role="img" aria-label={props.label ?? "A map of words by meaning"} />;
 });

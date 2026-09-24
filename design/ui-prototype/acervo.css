@@ -889,8 +889,10 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
    The foot of the window at every width, over the list and the map, whenever this language has a
    selection: what is selected on the left — as many whole words as fit, then "+N" — and what it is
    for on the right. On a phone it takes the Made bar's place (`paintSelBar`); a loop that is playing
-   keeps its bar, which sits under this one. Never over an article: that column's foot is the ask
-   dock's (§2.13), and there the article's own Select button says what the bar would. */
+   keeps its bar, which sits under this one. Over an article only on a wide window, and only while
+   the ask dock is resting: the owner reads words to gather them, so this one bar is an exception to
+   §2.13. On a phone the word has the whole screen, and the article's own Select says what the bar
+   would. */
 .foot { grid-area: loopbar; min-width: 0; }
 .selbar {
   position: relative;
@@ -899,7 +901,13 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
   background: var(--surface); border-top: 1px solid var(--rule);
 }
 .foot > .loopbar { border-top-color: var(--rule-soft); }
+/* The last bar at the foot carries the home indicator's inset; a selection bar with a player under it
+   does not. */
+.selbar:last-child { padding-bottom: env(safe-area-inset-bottom); }
 .app:not(.selecting) .selbar { display: none; }
+/* Over an article: a wide window only, and never while a conversation has the column's foot. */
+.app.asking .selbar { display: none; }
+@container vp (max-width: 720px) { .app.article-open .selbar { display: none; } }
 .selbar-what {
   flex: 1; min-width: 0; height: 46px; display: flex; align-items: center; gap: 11px;
   padding: 0 8px 0 4px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer;
@@ -917,7 +925,7 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
   position: relative; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   font: 600 15px/1.3 var(--serif); color: var(--ink); letter-spacing: -.005em;
 }
-.selbar-more { font: 500 11.5px/1 var(--mono); color: var(--ink-3); letter-spacing: .02em; margin-left: 2px; }
+.fit-more { font: 500 11.5px/1 var(--mono); color: var(--ink-3); letter-spacing: .02em; margin-left: 2px; }
 .selbar-make { flex: none; height: 38px; }
 .selbar-make svg { color: var(--core); }
 .selbar-ic { font-size: 15px; line-height: 1; }
@@ -1243,7 +1251,7 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
 .loop-count input[type=range] { flex: 1; accent-color: var(--core); }
 .loop-count output { font-family: var(--mono); font-size: 13px; color: var(--ink); min-width: 62px; text-align: right; }
 .loop-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-.tb-btn:disabled { opacity: .45; cursor: default; filter: none; }
+.tb-btn:disabled { opacity: .5; cursor: not-allowed; }
 /* Where the words come from, and — from the selection — the words themselves, in the order they were
    chosen. One the kind cannot use is dimmed and struck, and the button counts only the rest. */
 .make-source { align-self: start; max-width: 100%; }

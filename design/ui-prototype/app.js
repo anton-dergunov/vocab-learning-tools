@@ -306,12 +306,12 @@ const isPicked = (key, lang = state.lang) => (picks[lang] || []).includes(key);
 const wordsCount = (n) => `${n} word${n === 1 ? "" : "s"}`;
 
 /* Toggle one word. Says so in a toast only where the bar is not on screen to say it — over an
-   article — since everywhere else the mark and the bar changing is the answer. */
+   article on a phone — since everywhere else the mark and the bar changing is the answer. */
 function togglePick(key, lang = state.lang) {
   const list = picks[lang] || (picks[lang] = []);
   const at = list.indexOf(key);
   if (at >= 0) list.splice(at, 1); else list.push(key);
-  if (state.openId) toast(at >= 0 ? "Removed from your selection" : `Added to your selection · ${wordsCount(list.length)}`);
+  if (state.openId && !selBarOverArticle()) toast(at >= 0 ? "Removed from your selection" : `Added to your selection · ${wordsCount(list.length)}`);
   if (!list.length) state.selList = false;
   render();
 }
@@ -2220,11 +2220,17 @@ function renderLoopBar() {
 
 /* The selection bar. It says how many words are selected and which, as many whole words as fit and
    then "+N", and offers the two things a selection is for today. Its text opens the list of every
-   selected word, where one can be taken out without finding it again among a thousand. It is drawn
-   over the list and the map at every width; `render` decides where. */
+   selected word, where one can be taken out without finding it again among a thousand.
+
+   Drawn over the list, the map and an article — reading is when words are gathered — and never over
+   Add, the loops or the stories, whose own Make buttons offer the selection. Over an article it is a
+   wide window's only: on a phone the word has the whole screen and its foot is the ask dock's, so
+   `acervo.css` hides it there, and it steps aside at any width while a conversation is open. */
 function selectionShown() {
-  return picked().length > 0 && !state.add && !state.openId && !state.openExt && !state.loops && !state.stories;
+  return picked().length > 0 && !state.add && !state.loops && !state.stories;
 }
+/* Whether the bar can be seen over an article — the same width the stylesheet decides it by. */
+const selBarOverArticle = () => $(".viewport").clientWidth > 720;
 function renderSelBar() {
   const words = picked();
   if (!words.length) return "";
@@ -2279,7 +2285,7 @@ function fitSelWords() {
     }
   }
   text.innerHTML = esc(words.slice(0, shown).join(" · ")) +
-    (shown < words.length ? ` <span class="selbar-more">+${words.length - shown}</span>` : "");
+    (shown < words.length ? ` <span class="fit-more">+${words.length - shown}</span>` : "");
 }
 window.addEventListener("resize", fitSelWords);
 
@@ -2315,6 +2321,7 @@ function paintSelBar() {
   bar.innerHTML = shown ? renderSelBar() : "";
   bar.style.display = shown ? "" : "none";
   $(".app").classList.toggle("selecting", shown);
+  $(".app").classList.toggle("asking", Boolean(state.openId) && state.ask !== "dock");
   /* On a phone the Made bar gives way to it; a loop that is playing keeps its bar, under this one,
      because hiding what is sounding would be worse than a second row. Over an article, an external
      entry or Add neither is drawn, as in the application (`MadeBar.tsx`): that column's foot is the

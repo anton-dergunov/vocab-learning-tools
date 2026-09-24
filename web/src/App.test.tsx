@@ -10,6 +10,7 @@ import { LocalAcervoRepository, repository } from "./repository";
 import type { LocalDatabase } from "./localDatabase";
 import { articleChanges } from "./testArticles";
 import { TEST_OWNER, testGraph } from "./testGraph";
+import { reloadSelectionForTests } from "./wordSelection";
 
 vi.mock("virtual:pwa-register", () => ({ registerSW: vi.fn() }));
 /* jsdom has no canvas: the map's drawing is stood in for by its points as buttons. */
@@ -1309,6 +1310,30 @@ describe("Acervo application", () => {
     expect(await screen.findByText(/tombstone/)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("button", { name: /la balsa/ })).not.toBeInTheDocument());
     expect(repository.snapshot().lexemes.find((lexeme) => lexeme.id === "lexemebalsa0001")?.deleted).toBe(true);
+  });
+
+  it("gathers words into the selection from the list and an article, and makes a loop from them", async () => {
+    localStorage.removeItem("acervo-word-selection");
+    reloadSelectionForTests();
+    vi.spyOn(backendSession, "loopSchema").mockResolvedValue({
+      apiVersion: "1.0.0", engineVersion: "1.4.0", maxItems: 24, patterns: ["retrieval"], productionBundle: true, families: []
+    });
+    signedIn();
+    await openList();
+    fireEvent.contextMenu(screen.getByRole("button", { name: /la balsa/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add to selection" }));
+    expect(await screen.findByText("1 word selected")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /picar/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add to selection" }));
+    expect(await screen.findByText("2 words selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove from selection" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Make a loop from these words" }));
+    expect(await screen.findByRole("radio", { name: /Your selection · 2/ })).toHaveAttribute("aria-checked", "true");
+    expect(await screen.findByRole("button", { name: "Make the loop from 2 words" })).toBeInTheDocument();
+    localStorage.removeItem("acervo-word-selection");
+    reloadSelectionForTests();
   });
 
   it("files a word out of the Inbox from its article, into its own topics", async () => {

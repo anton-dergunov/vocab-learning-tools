@@ -24,7 +24,8 @@ The owner's spoken note, restated as requirements.
 5. **Selected words look selected**, in the list and on the map. The mark is distinct from hover
    and from the open row, and it moves nothing.
 6. **The article.** A Select toggle sits beside Delete on a wide screen. On a phone it is an item
-   in the ⋯ menu, above "Delete this word".
+   in the ⋯ menu, above "Delete this word". Asked for after the prototype: the bar stays on screen
+   while an article is read.
 7. **The map.** The peek card has a Select toggle, and the map itself marks what is selected.
 8. **A selection bar at every width.** It shows what is selected (an icon, the count, as many words
    as fit, then "+N"), **Loop** and **Story** on the right, and **×** to forget the selection. On a
@@ -36,15 +37,20 @@ The owner's spoken note, restated as requirements.
 
 ## Decisions
 
-- **Device-local, per language, in the order chosen.** The store is `web/src/selection.ts`, kept
+- **Device-local, per language, in the order chosen.** The store is `web/src/wordSelection.ts`, kept
   in local storage under the account it was made in. It is not replicated state, so it does not
   touch `LOCAL_SCHEMA_VERSION`. An entry is a lexeme id. A word deleted since it was chosen simply
   stops appearing, and nothing repairs the store.
-- **The bar is never over an article or Add.** That column's foot belongs to the ask dock (design
-  §2.13, the rule `MadeBar.tsx` already follows). Over an article, the article's own Select button
-  shows the state, and toggling it says so in a toast. The bar is drawn over the list and the map.
-  A loop that is playing on a phone keeps its bar, under the selection bar: hiding what is sounding
-  would be worse than a second row.
+- **Where the bar is drawn.** The bar is drawn over the list, the map and an article, and never over
+  Add, the loops or the stories. Those surfaces carry their own Make buttons, and the Make buttons
+  offer the selection.
+  - **Over an article, only on a wide window, and only while the ask dock is resting.** This is a
+    deliberate exception to design §2.13, the rule `MadeBar.tsx` follows: the owner reads words in
+    order to gather them, and there is height to spare there.
+  - **On a phone the article keeps its whole screen**, and its foot belongs to the ask dock. There,
+    the ⋯ menu's Select item and a toast say what the bar would.
+  - **A loop that is playing on a phone keeps its bar**, under the selection bar. Hiding what is
+    sounding would be worse than a second row.
 - **One mark, in two places.** A selected row's plate is ringed in `--core`, with a gap of the
   page's paper, and wears a check badge at its lower right. The ring is a `box-shadow` and the badge
   is absolutely placed, so the word, the gloss and the row height never move. The map uses the same
@@ -66,5 +72,9 @@ The owner's spoken note, restated as requirements.
     limits are the loop schema's `maxItems` and a story's `maxWords`, and the first words chosen
     are the ones used.
   - The button counts only the words it will send.
+- **One row for words, loops and stories** (`web/src/SwipeRow.tsx`). It was written out twice, in
+  the loops and the stories, before words needed it.
+- **The story dialog's random draw was a loop's.** It sampled words that have a single term to
+  say, so a scope with none sent a story nothing at all. It now draws the words a story can use.
 - **No server change.** `POST /loops` and `POST /stories` already take `lexemeIds` and never
   re-derive the scope.

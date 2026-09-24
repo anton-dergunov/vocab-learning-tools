@@ -74,6 +74,12 @@ export const ContinueIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWid
 export const StarIcon = ({ filled = false }: { filled?: boolean }) => <svg viewBox="0 0 24 24" {...stroke} fill={filled ? "currentColor" : "none"} strokeWidth={1.8} strokeLinejoin="round" aria-hidden="true"><path d="M12 3.8l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z" /></svg>;
 /* Opens a menu below or above: the caret turned down. */
 export const DownIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={2.2} strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>;
+/* Selecting a word: a circle with a plus, and the same circle with a check once it is selected. */
+export const SelectIcon = ({ on = false }: { on?: boolean }) => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.8} strokeLinejoin="round" aria-hidden="true">
+  <circle cx="12" cy="12" r="8.5" />{on ? <path d="M8.3 12.3l2.5 2.5 5-5.2" /> : <path d="M12 8.5v7M8.5 12h7" />}
+</svg>;
+/* The badge a selected word wears, in the list and — drawn on the canvas — on the map. */
+export const CheckIcon = () => <svg viewBox="0 0 24 24" {...stroke} strokeWidth={3.2} strokeLinejoin="round" aria-hidden="true"><path d="M6 12.5l4 4 8-8.5" /></svg>;
 /* A loop's own mark: a beamed pair, which says music without saying "audio file". */
 export const NoteIcon = () => <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 4.2L9.2 6.4v9.05a2.9 2.9 0 1 0 1.5 2.55V9.1l6.8-1.5v5.6a2.9 2.9 0 1 0 1.5 2.55z" /></svg>;
 /* The map: a folded sheet; and the four corners of "show all of it". */

@@ -1,10 +1,11 @@
 /**
  * Make a loop: how many words, and what it should sound like.
  *
- * **The words come from what you are looking at.** The scope on screen — this language, this topic,
- * this search — is sampled here and posted as a list of ids; the server never re-derives it. Which
- * is what makes choosing words by hand later the same route with a different list, and no server
- * change at all.
+ * **The words are the selection, or a draw from what you are looking at.** Either way they are
+ * posted as a list of ids and the server never re-derives them, which is what let words chosen by
+ * hand use the same route with no server change at all (`MakeFrom.tsx`). The scope on screen — this
+ * language, this topic, this search — is sampled here; the selection is sent as chosen, less any
+ * word a loop cannot say.
  *
  * The music is chosen from `MusicChoices`: Surprise me, a favourite the owner kept, or one of the
  * generator's styles with the sentence it gives to choose it by. The styles are its own catalogue,
@@ -25,14 +26,21 @@ import type { VocabularyGraph } from "./domain";
 import { BookIcon } from "./icons";
 import { languageOf } from "./languages";
 import { MusicChoices, musicOf, useLoopSchema, type MusicChoice } from "./LoopMusic";
-import { favouriteBeds, loopCandidates, sampleLexemeIds, type ListQuery } from "./selectors";
+import { ChosenWords, SourceSwitch, wordsCount, type WordSource } from "./MakeFrom";
+import {
+  chosenFor, favouriteBeds, loopCandidates, loopEligible, sampleLexemeIds, type ListQuery, type SelectedWord
+} from "./selectors";
 
 const DEFAULT_WORDS = 12;
 
-export default function LoopDialog({ graph, query, deviceId, onClose, onMade, onNotify }: {
+export default function LoopDialog({ graph, query, selection = [], from = "scope", deviceId, onClose, onMade, onNotify }: {
   graph: VocabularyGraph;
   /** The scope on screen, exactly as the list is drawing it. */
   query: ListQuery;
+  /** The selected words in this language, in the order they were chosen. */
+  selection?: SelectedWord[];
+  /** Where the words start from: the selection bar opens this on the selection. */
+  from?: WordSource;
   deviceId: string;
   onClose(): void;
   onMade(loopId: string): void;
@@ -46,6 +54,12 @@ export default function LoopDialog({ graph, query, deviceId, onClose, onMade, on
   const most = Math.min(schema?.maxItems ?? 24, Math.max(4, eligible));
   const [words, setWords] = useState(Math.min(DEFAULT_WORDS, Math.max(4, eligible)));
   const [asking, setAsking] = useState(false);
+  const [source, setSource] = useState<WordSource>(selection.length && from === "selection" ? "selection" : "scope");
+  const fromSelection = source === "selection" && selection.length > 0;
+  const chosen = chosenFor(graph, selection, {
+    eligible: loopEligible, why: "no single term to say", max: schema?.maxItems ?? 24, noun: "loop"
+  });
+  const usable = chosen.filter((word) => !word.skip).map((word) => word.id);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -58,7 +72,7 @@ export default function LoopDialog({ graph, query, deviceId, onClose, onMade, on
     try {
       const answer = await backendSession.makeLoop({
         deviceId, language: query.language,
-        lexemeIds: sampleLexemeIds(graph, query, Math.min(words, eligible), Date.now()),
+        lexemeIds: fromSelection ? usable : sampleLexemeIds(graph, query, Math.min(words, eligible), Date.now()),
         ...musicOf(music)
       });
       onMade(answer.loop.id);
@@ -83,25 +97,26 @@ export default function LoopDialog({ graph, query, deviceId, onClose, onMade, on
         <button className="close" onClick={onClose} aria-label="Close">×</button>
       </header>
       <div className="settings-body">
-        <p className="config-help">
-          Words are drawn from what you are looking at, and set to music with their translations.
-        </p>
-        <div className="loop-scope">
-          <BookIcon />
-          <span><strong>{where}</strong> · {eligible} {eligible === 1 ? "word can" : "words can"} be in a loop</span>
-        </div>
+        <p className="config-help">Your words, set to music with their translations.</p>
+        {selection.length > 0 && <SourceSwitch source={source} onSource={setSource} selected={selection.length} where={where} />}
+        {fromSelection ? <ChosenWords words={chosen} language={query.language} noun="loop" /> : <>
+          <div className="loop-scope">
+            <BookIcon />
+            <span><strong>{where}</strong> · {eligible} {eligible === 1 ? "word can" : "words can"} be in a loop</span>
+          </div>
 
-        <label className="config-field">
-          <span>How many words</span>
-          <span className="loop-count">
-            <input
-              type="range" min={Math.min(4, most)} max={most} value={Math.min(words, most)}
-              disabled={eligible === 0}
-              onChange={(event) => setWords(Number(event.target.value))}
-            />
-            <output>{Math.min(words, most)} words</output>
-          </span>
-        </label>
+          <label className="config-field">
+            <span>How many words</span>
+            <span className="loop-count">
+              <input
+                type="range" min={Math.min(4, most)} max={most} value={Math.min(words, most)}
+                disabled={eligible === 0}
+                onChange={(event) => setWords(Number(event.target.value))}
+              />
+              <output>{Math.min(words, most)} words</output>
+            </span>
+          </label>
+        </>}
 
         <div className="config-field">
           <span>Music</span>
@@ -135,9 +150,9 @@ export default function LoopDialog({ graph, query, deviceId, onClose, onMade, on
           <button className="tb-btn" onClick={onClose}>Cancel</button>
           <button
             className="tb-btn primary"
-            disabled={asking || eligible === 0 || Boolean(trouble) || noSamples}
+            disabled={asking || (fromSelection ? usable.length === 0 : eligible === 0) || Boolean(trouble) || noSamples}
             onClick={() => void make()}
-          >{asking ? "Asking…" : "Make the loop"}</button>
+          >{asking ? "Asking…" : fromSelection ? `Make the loop from ${wordsCount(usable.length)}` : "Make the loop"}</button>
         </div>
       </div>
     </section>

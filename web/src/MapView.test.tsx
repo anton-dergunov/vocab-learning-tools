@@ -13,7 +13,7 @@ import { TEST_OWNER, testGraph } from "./testGraph";
 /* jsdom has no canvas, so the drawing is stood in for by its points as buttons: everything around it
    — which map, the peek, Find, the way to an article — is what this checks. */
 const handle = { select: vi.fn(), reveal: vi.fn(), setInsets: vi.fn(), fit: vi.fn(), zoomBy: vi.fn() };
-let drawn: { data: MapData; highlighted?: Set<number> | null; selected?: number } | null = null;
+let drawn: { data: MapData; highlighted?: Set<number> | null; chosen?: Set<number> | null; selected?: number } | null = null;
 vi.mock("./meaningMap", () => ({
   MeaningMap: forwardRef(function Stub(props: {
     data: MapData; selected?: number; highlighted?: Set<number> | null;
@@ -112,6 +112,19 @@ describe("the map surface", () => {
     expect(drawn?.selected).toBe(1);
     fireEvent.click(screen.getByRole("button", { name: /Open the article/ }));
     expect(props.onOpen).toHaveBeenCalledWith("lexemepicar0001", "sensepicarchop0");
+  });
+
+  it("marks every sense of a selected word, and selects a word from the peek", async () => {
+    vi.spyOn(backendSession, "readMap").mockResolvedValue(serverMap());
+    const onToggleChosen = vi.fn();
+    const { rerender } = view({ chosen: new Set(["lexemepicar0001"]), onToggleChosen });
+    await screen.findByRole("button", { name: /point la balsa/ });
+    expect([...(drawn?.chosen ?? [])]).toEqual([0, 1]);
+    rerender({ selected: "sensebalsaraft0" });
+    fireEvent.click(screen.getByRole("button", { name: /^Select$/ }));
+    expect(onToggleChosen).toHaveBeenCalledWith("lexemebalsa0001");
+    rerender({ selected: "sensepicaritch0" });
+    expect(screen.getByRole("button", { name: /^Selected$/ })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("flies to the word's other sense from the peek", async () => {

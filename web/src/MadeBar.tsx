@@ -31,11 +31,14 @@ function clock(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-export default function MadeBar({ graph, language, chip, onLoops, onStories, onMap }: {
+export default function MadeBar({ graph, language, chip, playerOnly = false, onLoops, onStories, onMap }: {
   graph: VocabularyGraph;
   language: string;
   /** True in the top bar, false at the foot of the window. */
   chip: boolean;
+  /* The foot bar with a selection over it: the selection bar has taken the ways in's place, so this
+     draws only a loop that is playing, and nothing while none is. */
+  playerOnly?: boolean;
   onLoops(): void;
   onStories(): void;
   /* The foot bar's third way in. The chip in the top bar has no use for it: the rail is beside it. */
@@ -69,6 +72,7 @@ export default function MadeBar({ graph, language, chip, onLoops, onStories, onM
     </span>;
   }
 
+  if (!loop && playerOnly) return null;
   if (!loop) return <div className="loopbar madebar">
     <button className="madebar-half" onClick={onLoops}>
       <span className="madebar-ic"><NoteIcon /></span>
