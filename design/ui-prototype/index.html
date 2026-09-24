@@ -72,7 +72,13 @@
   <!-- The bar is a row of `.app`, not a child of the pane: the ask dock already owns the bottom of
        the article column, and §2.13 forbids a second dock there. So this is drawn only where the
        list is, and simply is not rendered over an article, an external entry or the composer. -->
-  <div class="loopbar madebar" id="loopbar"></div>
+  <div class="foot">
+    <!-- The selection: words put aside to make a loop or a story from. Drawn over the list and the
+         map at every width, and like the bar below it never over an article. On a phone it takes
+         the Made bar's place; a loop that is playing keeps its bar, under this one. -->
+    <div class="selbar" id="selbar"></div>
+    <div class="loopbar madebar" id="loopbar"></div>
+  </div>
 </div>
 </div>
 

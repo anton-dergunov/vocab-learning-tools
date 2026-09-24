@@ -36,11 +36,15 @@ const state = {
   /* Which loop the surface is showing. What is *playing* is `player`'s, not this: a loop goes on
      playing while you read a word, which is most of the point of having one. */
   loopOpen: null,
-  /* Which loop has been right-clicked. A pointer has a gesture for this and a finger does not, so
-     the finger gets the row itself: it is two snap points wide and Delete is the second. */
-  loopMenu: null,
+  /* Which row has been right-clicked — `word:<id>`, `loop:<id>` or `story:<id>`, because a word, a
+     loop and a story are one kind of row (`swipeRow`). A pointer has a gesture for this and a finger
+     does not, so the finger gets the row itself: it is wider than the list and its actions are the
+     second snap point. */
+  rowMenu: null,
   /* Where in that row, so the menu opens under the pointer. */
-  loopMenuAt: { x: 0, y: 0 },
+  rowMenuAt: { x: 0, y: 0 },
+  /* Whether the selection bar's list of words is open. */
+  selList: false,
   /* Stories, the same shape as loops: `stories` is whether the surface is open, `storyOpen` is
      which one is being read, and `storyAt` is which part of it. `storyShown` is the set of parts
      whose translation has been turned over — per part, because revealing one answer must not
@@ -118,6 +122,11 @@ const ICON = {
   map:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5L3.5 6.5v13L9 17.5l6 2 5.5-2v-13L15 6.5z"/><path d="M9 4.5v13M15 6.5v13"/></svg>',
   fit:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
   minus:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
+  /* Selecting a word: a circle with a plus, and the same circle with a check once it is selected.
+     `check` alone is the badge a selected word wears, in the list and on the map. */
+  select: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 8.5v7M8.5 12h7"/></svg>',
+  selected:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M8.3 12.3l2.5 2.5 5-5.2"/></svg>',
+  check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12.5l4 4 8-8.5"/></svg>',
   hourglass:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10M7 20h10"/><path d="M8 4c0 4 4 5 4 8s-4 4-4 8"/><path d="M16 4c0 4-4 5-4 8s4 4 4 8"/></svg>'
 };
 
@@ -269,6 +278,90 @@ function shortGlossOf(x) {
   return g ? g.terms.join("; ") : strip(first.definition);
 }
 
+/* ── the selection ────────────────────────────────────────────────────────
+   Words put aside to make a loop or a story from. A word is *marked* — from a row's menu or swipe,
+   the article's bar, or the map's peek — never ticked: a thousand words across a dozen topics is not
+   a list anyone ticks through, and a mark survives changing topic, searching and opening things,
+   which a checkbox in one view never quite does.
+
+   One selection per language, in the order the words were chosen, because a loop and a story are
+   each in one language. In the application it is `selection.ts`: this device's, kept in local
+   storage, never synced. Here it is memory.
+
+   An entry is a lexeme id, or `map:<w>` for a word the prototype has only on its map — the map and
+   the articles are separate fixtures, so a word marked there may have no article to open. */
+const picks = {};
+/* What the prototype knows about a map-only entry, captured when it was marked. */
+const pickedFromMap = {};
+let pickUndo = null;
+
+function pickEntry(key) {
+  const x = LEXEMES.find((y) => y.id === key);
+  if (x) return { key, headword: x.headword, emoji: x.emoji, gloss: shortGlossOf(x), loopable: Boolean(x.primaryGloss), article: x.id };
+  const m = pickedFromMap[key];
+  return m ? { key, headword: m.headword, emoji: m.emoji, gloss: m.gloss, loopable: Boolean(m.gloss), article: null } : null;
+}
+function picked(lang = state.lang) { return (picks[lang] || []).map(pickEntry).filter(Boolean); }
+const isPicked = (key, lang = state.lang) => (picks[lang] || []).includes(key);
+const wordsCount = (n) => `${n} word${n === 1 ? "" : "s"}`;
+
+/* Toggle one word. Says so in a toast only where the bar is not on screen to say it — over an
+   article — since everywhere else the mark and the bar changing is the answer. */
+function togglePick(key, lang = state.lang) {
+  const list = picks[lang] || (picks[lang] = []);
+  const at = list.indexOf(key);
+  if (at >= 0) list.splice(at, 1); else list.push(key);
+  if (state.openId) toast(at >= 0 ? "Removed from your selection" : `Added to your selection · ${wordsCount(list.length)}`);
+  if (!list.length) state.selList = false;
+  render();
+}
+/* Forgetting is one tap, so it is undoable: a selection can be twenty words gathered over an hour. */
+function clearPicks(lang = state.lang) {
+  const before = (picks[lang] || []).slice();
+  if (!before.length) return;
+  picks[lang] = [];
+  state.selList = false;
+  pickUndo = () => { picks[lang] = before; render(); };
+  render();
+  toast("Selection cleared", { label: "Undo", run: () => pickUndo && pickUndo() });
+}
+
+/* The key a map point is marked under: the lexeme the prototype has an article for, else the point's
+   own word. */
+const lexemeByHeadword = new Map();
+function pointKey(p) {
+  const want = fold(p.headword);
+  if (!lexemeByHeadword.has(want)) {
+    const hit = LEXEMES.find((x) => fold(x.headword) === want || fold(x.lemma) === want);
+    lexemeByHeadword.set(want, hit ? hit.id : null);
+  }
+  return lexemeByHeadword.get(want) || `map:${p.w}`;
+}
+
+/* ── a row with actions ───────────────────────────────────────────────────
+   Words, loops and stories are one kind of row, with two ways to the same actions because a
+   pointer and a finger do not have the same gestures. A pointer right-clicks and gets `.row-menu`. A
+   finger pushes the row aside and finds `.swipe-actions` behind it — scroll-snap rather than touch
+   handling, the way the cards already swipe, so there is no pointer arithmetic to get wrong and a
+   trackpad gets it for free. `SwipeRow.tsx` in the application.
+
+   Each action is `{ label, menu, tone, attrs, sep }`: the short label the swipe shows, the longer one
+   the menu reads, `danger` for red, the data attribute the click handler acts on, and whether a rule
+   goes above it in the menu. */
+function swipeRow(key, row, actions, shellClass = "") {
+  const open = state.rowMenu === key;
+  return `<div class="swipe-item" data-row-menu="${key}">
+    <div class="swipe-shell${shellClass ? ` ${shellClass}` : ""}">
+      ${row}
+      <div class="swipe-actions">${actions.map((a) =>
+        `<button class="swipe-act${a.tone ? ` ${a.tone}` : ""}" ${a.attrs}>${a.label}</button>`).join("")}</div>
+    </div>
+    ${open ? `<div class="menu open row-menu" role="menu" style="--menu-x:${state.rowMenuAt.x}px;--menu-y:${state.rowMenuAt.y}px">
+      ${actions.map((a) => `${a.sep ? '<div class="menu-sep"></div>' : ""}<button role="menuitem"${a.tone === "danger" ? ' class="danger"' : ""} ${a.attrs}>${a.menu}</button>`).join("")}
+    </div>` : ""}
+  </div>`;
+}
+
 /* ── chrome ──────────────────────────────────────────────────────────── */
 
 function renderRail() {
@@ -344,9 +437,9 @@ function renderList() {
       </div>
     </div>
     <div class="rows">
-      ${rows.length ? rows.map((x) => `
-        <button class="row ${x.status === "inbox" ? "inbox" : ""}" data-open="${x.id}">
-          <span class="plate">${x.emoji || "\u{1F4C4}"}</span>
+      ${rows.length ? rows.map((x) => { const on = isPicked(x.id); return swipeRow(`word:${x.id}`, `
+        <button class="row${x.status === "inbox" ? " inbox" : ""}${on ? " picked" : ""}" data-open="${x.id}">
+          <span class="plate">${x.emoji || "\u{1F4C4}"}${on ? `<span class="pick-badge" role="img" aria-label="Selected">${ICON.check}</span>` : ""}</span>
           <span>
             <span class="word">${esc(x.headword)}${x.reading ? `<span class="rdg">${esc(x.reading)}</span>` : ""}</span>
             <span class="gloss">${esc(shortGlossOf(x))}</span>
@@ -356,7 +449,10 @@ function renderList() {
             ${x.senses.length > 1 ? `<span class="senses">${x.senses.length} senses</span>` : ""}
             ${x.status === "inbox" ? '<span class="prov">unreviewed</span>' : strength(x)}
           </span>
-        </button>`).join("")
+        </button>`, [
+          { label: on ? "Unselect" : "Select", menu: on ? "Remove from selection" : "Add to selection", tone: "pick", attrs: `data-pick="${x.id}"` },
+          { label: "Delete", menu: "Delete this word", tone: "danger", attrs: `data-word-delete="${x.id}"`, sep: true }
+        ]); }).join("")
       : q ? `<p class="ext-status none-yours">No words of yours match “${esc(q)}”.</p>`
           : '<p class="empty">Nothing here yet.</p>'}
     </div>
@@ -1350,11 +1446,17 @@ function closeSheet()   { state.add = false; $("#composer").innerHTML = ""; rend
 /* ── toast ───────────────────────────────────────────────────────────── */
 
 let toastTimer;
-function toast(msg) {
+/* One optional action, as the application's toast has: Undo is the only thing that uses it. */
+function toast(msg, action) {
   const t = $("#toast");
   t.textContent = msg; t.classList.add("show");
+  if (action) {
+    const b = el(`<button class="toast-action">${esc(action.label)}</button>`);
+    b.onclick = () => { t.classList.remove("show"); action.run(); };
+    t.appendChild(b);
+  }
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  toastTimer = setTimeout(() => t.classList.remove("show"), action ? 7000 : 2200);
 }
 
 /* ── loops ────────────────────────────────────────────────────────────────
@@ -1590,28 +1692,18 @@ function loopSub(loop) {
   return `${loopItemsOf(loop.id).length} words · ${clock(loop.durationSeconds)}`;
 }
 
-/* Two ways to the same Delete. A pointer right-clicks the row and gets `.loop-menu`; a finger pushes
-   the row aside and finds `.loop-swipe` behind it, which is scroll-snap rather than touch handling.
-   The row is never `disabled`: a loop that was never made is the one you most want rid of, and a
-   disabled button answers no gesture at all. */
+/* A loop is a `swipeRow` whose one action is Delete. The row is never `disabled`: a loop that was
+   never made is the one you most want rid of, and a disabled button answers no gesture at all. */
 function loopRow(loop) {
   const ready = loopIsReady(loop);
   const on = loop.id === player.loopId;
-  return `<div class="loop-item" data-loop-item="${loop.id}">
-    <div class="loop-shell">
-      <button class="loop-row${on ? " on" : ""}" data-loop="${loop.id}" aria-disabled="${ready ? "false" : "true"}">
+  return swipeRow(`loop:${loop.id}`, `<button class="loop-row${on ? " on" : ""}" data-loop="${loop.id}" aria-disabled="${ready ? "false" : "true"}">
         <span class="loop-go${ready ? "" : " pending"}">${ready ? (on && player.playing ? ICON.pause : ICON.play) : ICON.hourglass}</span>
         <span class="loop-main">
           <span class="loop-title">${esc(loopTitle(loop))}</span>
           <span class="loop-sub">${loopSub(loop)}</span>
         </span>
-      </button>
-      <div class="loop-swipe"><button class="loop-delete" data-loop-delete="${loop.id}">Delete</button></div>
-    </div>
-    ${state.loopMenu === loop.id ? `<div class="menu open loop-menu" role="menu" style="--menu-x:${state.loopMenuAt.x}px;--menu-y:${state.loopMenuAt.y}px">
-      <button role="menuitem" class="danger" data-loop-delete="${loop.id}">Delete this loop</button>
-    </div>` : ""}
-  </div>`;
+      </button>`, [{ label: "Delete", menu: "Delete this loop", tone: "danger", attrs: `data-loop-delete="${loop.id}"` }]);
 }
 
 /* ── stories ───────────────────────────────────────────────────────────────
@@ -1660,19 +1752,14 @@ function storyRow(story) {
     ? `<span class="story-meta"><span class="story-counts">${plural(parts.length, "part")} \u00b7 ${plural(words.length, "word")}</span>${
       drawn < parts.length ? `<span class="warn">${drawn} of ${parts.length} drawn</span>` : ""}</span>`
     : "";
-  return `<div class="loop-item">
-    <div class="loop-shell story-shell">
-      <button class="loop-row" data-story="${story.id}" aria-disabled="${!written}">
+  return swipeRow(`story:${story.id}`, `<button class="loop-row" data-story="${story.id}" aria-disabled="${!written}">
         <span class="loop-go story-go${written ? "" : " pending"}">${written ? story.emoji : ICON.hourglass}</span>
         <span class="loop-main">
           <span class="loop-title">${esc(storyTitle(story))}</span>
           <span class="loop-sub">${sub}</span>
         </span>
         ${meta}
-      </button>
-      <div class="loop-swipe"><button class="loop-delete">Delete</button></div>
-    </div>
-  </div>`;
+      </button>`, [{ label: "Delete", menu: "Delete this story", tone: "danger", attrs: `data-story-delete="${story.id}"` }], "story-shell");
 }
 
 function renderStories() {
@@ -1751,7 +1838,7 @@ function renderStories() {
       <span class="label">Your words</span><span class="spacer"></span>
     </div>
     <div class="loops-head"><h2>Stories</h2><span class="spacer"></span>
-      <button class="tb-btn primary">${ICON.plus}<span>Make a story</span></button></div>
+      <button class="tb-btn primary" id="makeStory">${ICON.plus}<span>Make a story</span></button></div>
     <div class="loops-list">${storiesIn(state.lang).map(storyRow).join("")}</div>
   </section>`;
 }
@@ -1908,6 +1995,7 @@ function startMap(root, d) {
   meaningMap.setData(d, returning ? { camera: returning } : { animate: mapGrown.has(state.lang) ? null : "grow" });
   mapGrown.add(state.lang);
   if (state.mapSel >= 0 && d.points[state.mapSel]) meaningMap.select(state.mapSel);
+  paintChosen(d);
   if (!d.regions.length) {
     note.hidden = false;
     note.className = "map-note";
@@ -1957,6 +2045,7 @@ function wireMap(root, d) {
     if (ev.target.closest("#mapOut")) { meaningMap && meaningMap.zoomBy(1 / 1.8); return; }
     if (ev.target.closest("#peekClose")) { state.mapSel = -1; meaningMap.select(-1); paintPeek(); return; }
     if (ev.target.closest("#peekOpen")) { openFromMap(d.points[state.mapSel]); return; }
+    if (ev.target.closest("#peekPick")) { togglePointPick(d.points[state.mapSel]); return; }
     if (!ev.target.closest(".map-find")) hits.hidden = true;
   };
   // The surface and the row in the top bar: Find's hits live in the bar, the peek in the surface.
@@ -1981,6 +2070,7 @@ function paintPeek() {
   const peek = $("#mapPeek");
   if (!peek) return;
   const d = mapData();
+  paintChosen(d);
   const p = d && state.mapSel >= 0 ? d.points[state.mapSel] : null;
   $("#composer .map").classList.toggle("peeking", Boolean(p));
   if (!p) {
@@ -2010,12 +2100,31 @@ function paintPeek() {
       const q = d.points[j];
       return `<button class="peek-chip" data-map-go="${j}" lang="${d.language}">${q.emoji} ${esc(q.headword)}</button>`;
     }).join("")}</div>` : ""}
-    <button class="tb-btn primary peek-open" id="peekOpen">Open the article ${ICON.forward}</button>`;
+    <div class="peek-actions">
+      <button class="tb-btn peek-pick${isPicked(pointKey(p)) ? " on" : ""}" id="peekPick" aria-pressed="${isPicked(pointKey(p))}"
+        title="${isPicked(pointKey(p)) ? "In your selection \u2014 remove it" : "Add to selection"}">${isPicked(pointKey(p)) ? `${ICON.selected}<span>Selected</span>` : `${ICON.select}<span>Select</span>`}</button>
+      <button class="tb-btn primary peek-open" id="peekOpen">Open the article ${ICON.forward}</button>
+    </div>`;
   /* Tell the camera what the peek covers, so a sense it flies to lands in the part still visible. */
   if (meaningMap) {
     const phone = $("#composer .map").clientWidth <= 720 && peek.offsetWidth >= $("#composer .map").clientWidth - 2;
     meaningMap.setInsets(phone ? { left: 0, bottom: peek.offsetHeight } : { left: peek.offsetWidth + 12, bottom: 0 });
   }
+}
+
+/* Every sense of a selected word wears the selection's mark: selection is of words, and a map is
+   of senses. Indices, because the map component knows nothing of lexemes. */
+function paintChosen(d) {
+  if (!meaningMap || !d) return;
+  const keys = new Set(picks[state.lang] || []);
+  const chosen = new Set();
+  if (keys.size) d.points.forEach((p, i) => { if (keys.has(pointKey(p))) chosen.add(i); });
+  meaningMap.choose(chosen);
+}
+function togglePointPick(p) {
+  const key = pointKey(p);
+  if (key.startsWith("map:")) pickedFromMap[key] = { headword: p.headword, emoji: p.emoji, gloss: p.gloss };
+  togglePick(key);
 }
 
 /* The article, when the prototype has one for this word; otherwise a note. The way back is remembered
@@ -2045,6 +2154,7 @@ function playMapUpdate() {
   const previous = new Map(d.before.points.map(([i, x, y]) => [d.points[i].id, [x, y]]));
   state.mapSel = -1; paintPeek();
   const arrived = meaningMap.setData(d, { animate: "update", previous, camera: meaningMap.getCamera() });
+  paintChosen(d);
   const note = $("#mapNote");
   note.hidden = false;
   note.className = "map-note arrived";
@@ -2106,6 +2216,114 @@ function renderLoopBar() {
       <span class="loopbar-title"></span>
       <span class="loopbar-sub"></span>
     </button>`;
+}
+
+/* The selection bar. It says how many words are selected and which, as many whole words as fit and
+   then "+N", and offers the two things a selection is for today. Its text opens the list of every
+   selected word, where one can be taken out without finding it again among a thousand. It is drawn
+   over the list and the map at every width; `render` decides where. */
+function selectionShown() {
+  return picked().length > 0 && !state.add && !state.openId && !state.openExt && !state.loops && !state.stories;
+}
+function renderSelBar() {
+  const words = picked();
+  if (!words.length) return "";
+  return `<button class="selbar-what" id="selList" aria-haspopup="menu" aria-expanded="${state.selList}"
+      aria-label="Your selection: ${wordsCount(words.length)}. Show them">
+      <span class="selbar-badge" aria-hidden="true">${ICON.selected}</span>
+      <span class="selbar-text">
+        <span class="selbar-title">${wordsCount(words.length)} selected</span>
+        <span class="selbar-words" lang="${state.lang}" data-words="${esc(words.map((w) => w.headword).join("|"))}"><span class="fit-text">${esc(words.map((w) => w.headword).join(" · "))}</span></span>
+      </span>
+    </button>
+    <button class="tb-btn selbar-make" id="selLoop" aria-label="Make a loop from these words">${ICON.note}<span>Loop</span></button>
+    <button class="tb-btn selbar-make" id="selStory" aria-label="Make a story from these words"><span class="selbar-ic" aria-hidden="true">\u{1F4D6}</span><span>Story</span></button>
+    <button class="icon-btn selbar-clear" id="selClear" aria-label="Forget the selection" title="Forget the selection">${ICON.close}</button>
+    ${state.selList ? `<div class="menu open sel-menu" role="menu" aria-label="Selected words">
+      <div class="label menu-label">Your selection · ${esc(langOf(state.lang).name)}</div>
+      <div class="sel-items">${words.map((w) => `<div class="sel-item">
+        <button class="sel-open" data-sel-open="${w.key}" role="menuitem">
+          <span class="plate" aria-hidden="true">${w.emoji || "\u{1F4C4}"}</span>
+          <span class="sel-id"><span class="sel-word" lang="${state.lang}">${esc(w.headword)}</span><span class="sel-gloss">${esc(w.gloss || "")}</span></span>
+        </button>
+        <button class="sel-drop" data-sel-drop="${w.key}" aria-label="Remove ${esc(w.headword)} from the selection" title="Remove from the selection">${ICON.close}</button>
+      </div>`).join("")}</div>
+      <div class="menu-sep"></div>
+      <button role="menuitem" id="selClear2">Clear the selection</button>
+    </div>` : ""}`;
+}
+
+/* The words line gives up whole words rather than the end of one, as a story row's does, and says
+   how many it left out: "+3" rather than "· …", because here the number is the point. */
+function fitSelWords() {
+  const line = $(".selbar-words[data-words]");
+  if (!line) return;
+  const words = line.dataset.words.split("|");
+  const text = line.querySelector(".fit-text");
+  let ruler = line.querySelector(".fit-ruler");
+  if (!ruler) {
+    ruler = document.createElement("span");
+    ruler.className = "fit-ruler";
+    ruler.setAttribute("aria-hidden", "true");
+    ruler.innerHTML = [...words, " · ", `  +${words.length}`].map((piece) => `<span>${esc(piece)}</span>`).join("");
+    line.appendChild(ruler);
+  }
+  const widths = [...ruler.children].map((one) => one.getBoundingClientRect().width);
+  const [separator, more] = widths.slice(words.length);
+  const across = (n) => widths.slice(0, n).reduce((sum, w) => sum + w, 0) + Math.max(n - 1, 0) * separator;
+  let shown = words.length;
+  if (across(shown) > line.clientWidth) {
+    shown = 1;
+    for (let n = words.length - 1; n >= 1; n -= 1) {
+      if (across(n) + more <= line.clientWidth) { shown = n; break; }
+    }
+  }
+  text.innerHTML = esc(words.slice(0, shown).join(" · ")) +
+    (shown < words.length ? ` <span class="selbar-more">+${words.length - shown}</span>` : "");
+}
+window.addEventListener("resize", fitSelWords);
+
+function wireSelBar(root) {
+  root.addEventListener("click", (ev) => {
+    if (ev.target.closest("#selList")) { state.selList = !state.selList; render(); return; }
+    if (ev.target.closest("#selClear") || ev.target.closest("#selClear2")) { clearPicks(); return; }
+    if (ev.target.closest("#selLoop")) { state.selList = false; render(); openLoopDialog("selection"); return; }
+    if (ev.target.closest("#selStory")) { state.selList = false; render(); openStoryDialog("selection"); return; }
+    const drop = ev.target.closest("[data-sel-drop]");
+    if (drop) { togglePick(drop.dataset.selDrop); return; }
+    const open = ev.target.closest("[data-sel-open]");
+    if (open) {
+      const entry = pickEntry(open.dataset.selOpen);
+      state.selList = false;
+      if (!entry || !entry.article) { toast(`In the application this opens “${entry ? entry.headword : "it"}”. The prototype has articles for only a few words.`); render(); return; }
+      if (state.map) { state.mapReturn = true; state.map = false; teardownMap(); }
+      state.openId = entry.article; state.mode = "read"; state.card = 0;
+      render();
+    }
+  });
+}
+wireSelBar($("#selbar"));
+/* A press anywhere else puts the list away, as the article's menu does. */
+document.addEventListener("pointerdown", (ev) => {
+  if (state.selList && !ev.target.closest(".selbar")) { state.selList = false; paintSelBar(); }
+});
+
+/* Only the bar, so closing its list under a press elsewhere does not rebuild what was pressed. */
+function paintSelBar() {
+  const shown = selectionShown();
+  const bar = $("#selbar");
+  bar.innerHTML = shown ? renderSelBar() : "";
+  bar.style.display = shown ? "" : "none";
+  $(".app").classList.toggle("selecting", shown);
+  /* On a phone the Made bar gives way to it; a loop that is playing keeps its bar, under this one,
+     because hiding what is sounding would be worse than a second row. Over an article, an external
+     entry or Add neither is drawn, as in the application (`MadeBar.tsx`): that column's foot is the
+     ask dock's. */
+  const elsewhere = Boolean(state.openId || state.openExt || state.add);
+  $("#loopbar").style.display = elsewhere || (shown && !player.loopId) ? "none" : "";
+  /* Split in three only while nothing plays, as `MadeBar.tsx` draws it; the player is one row. */
+  $("#loopbar").classList.toggle("madebar", !player.loopId);
+  if (shown) fitSelWords();
 }
 
 function renderLoopChip() {
@@ -2195,23 +2413,84 @@ function musicChoice(value, name, about, on = false, extra = "") {
       <span class="music-name">${name}</span><span class="music-about">${esc(about)}</span></button>${extra}</div>`;
 }
 
-function renderLoopDialog() {
+/* Where a dialog's words come from: the selection, or a random draw from what is on screen. The
+   switch is there only when there is a selection; opened from the selection bar it starts on it, and
+   from a surface's own Make button on the random draw, which is what that button always meant.
+
+   In selection mode the words are drawn as chips in the order they were chosen. One the kind cannot
+   use is dimmed and says why, and one past the limit is dimmed too — the first ones chosen are the
+   ones used — so what will be sent is always exactly what is shown undimmed. */
+const MAKE = {
+  loop: { max: 24, usable: (w) => w.loopable, why: "no single term to say" },
+  story: { max: 8, usable: () => true, why: "" }
+};
+function madeFrom(kind) {
+  const rule = MAKE[kind];
+  const words = picked();
+  let used = 0;
+  return words.map((w) => {
+    if (!rule.usable(w)) return { ...w, skip: rule.why };
+    used += 1;
+    return used > rule.max ? { ...w, skip: `a ${kind} takes at most ${rule.max}` } : { ...w, skip: "" };
+  });
+}
+function sourceBlock(kind, from, scopeHtml) {
+  const words = madeFrom(kind);
+  if (!words.length) return scopeHtml;
+  const sel = from === "selection";
+  const usable = words.filter((w) => !w.skip).length;
+  const skipped = words.length - usable;
+  const where = state.topic === "all" ? langOf(state.lang).name : `${langOf(state.lang).name} · ${topicOf(state.topic)?.name || "Inbox"}`;
+  return `<div class="config-field"><span>Words</span>
+      <div class="seg make-source" role="radiogroup" aria-label="Which words">
+        <button type="button" role="radio" data-source="selection" aria-checked="${sel}" class="${sel ? "on" : ""}">Your selection · ${words.length}</button>
+        <button type="button" role="radio" data-source="scope" aria-checked="${!sel}" class="${sel ? "" : "on"}">Random from ${esc(where)}</button>
+      </div></div>
+    <div data-pane="selection"${sel ? "" : " hidden"}>
+      <div class="make-words">${words.map((w) => `<span class="make-chip${w.skip ? " skip" : ""}" lang="${state.lang}"${w.skip ? ` title="Left out: ${esc(w.skip)}"` : ""}>
+        <span aria-hidden="true">${w.emoji || "\u{1F4C4}"}</span>${esc(w.headword)}</span>`).join("")}</div>
+      ${skipped ? `<p class="config-help make-skip">${[...new Set(words.filter((w) => w.skip).map((w) => w.skip))].map((why) => {
+        const names = words.filter((w) => w.skip === why).map((w) => `<i lang="${state.lang}">${esc(w.headword)}</i>`);
+        return `Left out, ${esc(why)}: ${names.join(", ")}.`;
+      }).join(" ")} ${usable ? `The ${kind} is made from the other ${usable}.` : `There is nothing left to make a ${kind} from.`}</p>` : ""}
+    </div>
+    <div data-pane="scope"${sel ? " hidden" : ""}>${scopeHtml}</div>`;
+}
+/* The dialog's own wiring for the switch: which pane shows, and what the button promises. */
+function wireSource(node, kind, label) {
+  const go = $(".make-go", node);
+  const usable = madeFrom(kind).filter((w) => !w.skip).length;
+  const paint = (source) => {
+    node.querySelectorAll("[data-source]").forEach((b) => {
+      const on = b.dataset.source === source;
+      b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on));
+    });
+    node.querySelectorAll("[data-pane]").forEach((pane) => { pane.hidden = pane.dataset.pane !== source; });
+    const fromSelection = source === "selection" && node.querySelector("[data-source]");
+    go.textContent = fromSelection ? `${label} from ${wordsCount(usable)}` : label;
+    go.disabled = Boolean(fromSelection) && !usable;
+  };
+  node.querySelectorAll("[data-source]").forEach((b) => { b.onclick = () => paint(b.dataset.source); });
+  paint(node.querySelector('[data-source].on')?.dataset.source || "scope");
+}
+
+function renderLoopDialog(from) {
   const eligible = loopEligible();
   const where = state.topic === "all" ? langOf(state.lang).name : `${langOf(state.lang).name} · ${topicOf(state.topic).name}`;
   const count = Math.min(12, Math.max(1, eligible));
+  const scope = `<div class="loop-scope">${ICON.book}<span><b>${esc(where)}</b> · ${eligible} words can be in a loop</span></div>
+        <label class="config-field"><span>How many words</span>
+          <span class="loop-count">
+            <input type="range" id="loopCount" min="4" max="${Math.max(4, Math.min(24, eligible))}" value="${count}">
+            <output for="loopCount" id="loopCountOut">${count} words</output>
+          </span></label>`;
   return `<div class="modal-backdrop" id="loopBackdrop">
     <section class="settings loop-dialog" role="dialog" aria-modal="true" aria-labelledby="loop-dialog-title">
       <header><h2 id="loop-dialog-title">Make a loop</h2>
         <button class="close" id="loopClose" aria-label="Close">×</button></header>
       <div class="settings-body">
-        <p class="config-help">Words are drawn from what you are looking at, and set to music with
-          their translations.</p>
-        <div class="loop-scope">${ICON.book}<span><b>${esc(where)}</b> · ${eligible} words can be in a loop</span></div>
-        <label class="config-field"><span>How many words</span>
-          <span class="loop-count">
-            <input type="range" id="loopCount" min="4" max="${Math.max(4, Math.min(24, eligible))}" value="${count}">
-            <output for="loopCount" id="loopCountOut">${count} words</output>
-          </span></label>
+        <p class="config-help">Your words, set to music with their translations.</p>
+        ${sourceBlock("loop", from, scope)}
         <div class="config-field"><span>Music</span>
           <div class="music-choices" role="radiogroup" aria-label="Music">
             ${musicChoice("surprise", "Surprise me", "New music, in any style", true)}
@@ -2227,22 +2506,27 @@ function renderLoopDialog() {
           LOOP_SCHEMA.productionBundle ? "sample pack installed" : "no sample pack — beds will be synthesised"}</div>
         <div class="loop-actions">
           <button class="tb-btn" id="loopCancel">Cancel</button>
-          <button class="tb-btn primary" id="loopGo">Make the loop</button>
+          <button class="tb-btn primary make-go" id="loopGo">Make the loop</button>
         </div>
       </div>
     </section>
   </div>`;
 }
 
-function openLoopDialog() {
-  const node = el(renderLoopDialog());
+function openModal(html) {
+  const node = el(html);
   document.body.appendChild(node);
-  const shut = () => node.remove();
-  $("#loopClose", node).onclick = shut;
-  $("#loopCancel", node).onclick = shut;
-  node.onmousedown = (ev) => { if (ev.target === node) shut(); };
-  const onKey = (ev) => { if (ev.key === "Escape") { shut(); document.removeEventListener("keydown", onKey); } };
+  const onKey = (ev) => { if (ev.key === "Escape") shut(); };
+  const shut = () => { node.remove(); document.removeEventListener("keydown", onKey); };
   document.addEventListener("keydown", onKey);
+  node.onmousedown = (ev) => { if (ev.target === node) shut(); };
+  node.querySelectorAll(".close, [data-cancel]").forEach((b) => { b.onclick = shut; });
+  return { node, shut };
+}
+
+function openLoopDialog(from = "scope") {
+  const { node, shut } = openModal(renderLoopDialog(from));
+  $("#loopCancel", node).onclick = shut;
   const range = $("#loopCount", node);
   range.oninput = () => { $("#loopCountOut", node).textContent = `${range.value} words`; };
   $(".music-choices", node).onclick = (ev) => {
@@ -2255,7 +2539,49 @@ function openLoopDialog() {
       one.querySelector("[data-choice]").setAttribute("aria-checked", String(on));
     });
   };
+  wireSource(node, "loop", "Make the loop");
   $("#loopGo", node).onclick = () => { shut(); toast("Asked for a loop — prototype only, nothing was made"); };
+}
+
+/* Make a story — `StoryDialog.tsx`, which the prototype had not drawn until it had a selection to
+   show. The kind and the pictures are the application's two selects; their options here are a
+   sample. */
+function openStoryDialog(from = "scope") {
+  const where = state.topic === "all" ? langOf(state.lang).name : `${langOf(state.lang).name} · ${topicOf(state.topic)?.name || "Inbox"}`;
+  const eligible = visible().length;
+  const scope = `<div class="loop-scope">${ICON.book}<span><b>${esc(where)}</b> · ${eligible} words can be in a story</span></div>
+        <label class="config-field"><span>How many words</span>
+          <span class="loop-count">
+            <input type="range" id="storyCount" min="1" max="${Math.max(1, Math.min(8, eligible))}" value="3">
+            <output for="storyCount" id="storyCountOut">3 words</output>
+          </span></label>`;
+  const { node, shut } = openModal(`<div class="modal-backdrop">
+    <section class="settings loop-dialog" role="dialog" aria-modal="true" aria-labelledby="story-dialog-title">
+      <header><h2 id="story-dialog-title">Make a story</h2>
+        <button class="close" aria-label="Close">×</button></header>
+      <div class="settings-body">
+        <p class="config-help">A few of your words, told back to you as a short illustrated story you
+          can read in a couple of minutes.</p>
+        ${sourceBlock("story", from, scope)}
+        <label class="config-field"><span>Kind of story</span>
+          <select><option>Surprise me</option><option>\u{1F9ED} An adventure</option><option>\u{1F52C} How it was invented</option></select></label>
+        <label class="config-field"><span>Pictures</span>
+          <select><option>To suit the story</option><option>Watercolour</option><option>Photograph</option></select></label>
+        <label class="config-field"><span>Anything else? <em>(optional)</em></span>
+          <textarea rows="3" maxlength="1000" placeholder="Set it on a night train, tell it from the dog’s side, keep it gentle…"></textarea></label>
+        <p class="config-help">Every word you choose has to earn its place in the story, so a few work
+          better than many. All the pictures are drawn in one style, so the story looks like one thing.</p>
+        <div class="loop-actions">
+          <button class="tb-btn" data-cancel>Cancel</button>
+          <button class="tb-btn primary make-go" id="storyGo">Make the story</button>
+        </div>
+      </div>
+    </section>
+  </div>`);
+  const range = $("#storyCount", node);
+  range.oninput = () => { $("#storyCountOut", node).textContent = wordsCount(Number(range.value)); };
+  wireSource(node, "story", "Make the story");
+  $("#storyGo", node).onclick = () => { shut(); toast("Asked for a story — prototype only, nothing was made"); };
 }
 
 /* ── wiring ──
@@ -2337,12 +2663,36 @@ $("#main").addEventListener("click", (ev) => {
     for (let index = LOOP_ITEMS.length - 1; index >= 0; index -= 1) {
       if (items.has(LOOP_ITEMS[index].id)) LOOP_ITEMS.splice(index, 1);
     }
-    state.loopMenu = null;
+    state.rowMenu = null;
     if (state.loopOpen === id) state.loopOpen = null;
     render();
     return;
   }
+  const dropStory = ev.target.closest("[data-story-delete]");
+  if (dropStory) {
+    const id = dropStory.dataset.storyDelete;
+    STORIES.splice(STORIES.findIndex((row) => row.id === id), 1);
+    state.rowMenu = null;
+    render();
+    toast("Deleted everywhere \u2014 the pictures are gone too");
+    return;
+  }
+  /* A word's row actions. Selecting re-renders the list, which also puts a swiped row back where it
+     was, so the mark it now wears is the first thing seen. */
+  const pick = ev.target.closest("[data-pick]");
+  if (pick) { state.rowMenu = null; togglePick(pick.dataset.pick); return; }
+  const dropWord = ev.target.closest("[data-word-delete]");
+  if (dropWord) {
+    const id = dropWord.dataset.wordDelete;
+    LEXEMES.splice(LEXEMES.findIndex((row) => row.id === id), 1);
+    Object.keys(picks).forEach((lang) => { picks[lang] = picks[lang].filter((key) => key !== id); });
+    state.rowMenu = null;
+    render();
+    toast("Deleted everywhere \u2014 the entry is kept as a tombstone");
+    return;
+  }
   if (ev.target.closest("#makeLoop")) { openLoopDialog(); return; }
+  if (ev.target.closest("#makeStory")) { openStoryDialog(); return; }
   if (ev.target.closest("#loopBack")) { state.loopOpen = null; render(); return; }
   if (ev.target.closest("#loopsClose")) { state.loops = false; state.loopOpen = null; render(); }
   if (ev.target.closest("#storiesClose")) { state.stories = false; state.storyOpen = null; render(); return; }
@@ -2360,16 +2710,18 @@ $("#main").addEventListener("click", (ev) => {
     }
     return;
   }
-  if (state.loopMenu) { state.loopMenu = null; render(); }
+  if (state.rowMenu) { state.rowMenu = null; render(); }
 });
 
+/* A right-click on any row with actions — a word, a loop or a story — opens its menu under the
+   pointer. The list is `#pane` and the surfaces are `#composer`; both are inside `#main`. */
 $("#main").addEventListener("contextmenu", (ev) => {
-  const item = ev.target.closest("[data-loop-item]");
+  const item = ev.target.closest("[data-row-menu]");
   if (!item) return;
   ev.preventDefault();
   const box = item.getBoundingClientRect();
-  state.loopMenu = item.dataset.loopItem;
-  state.loopMenuAt = { x: ev.clientX - box.left, y: ev.clientY - box.top };
+  state.rowMenu = item.dataset.rowMenu;
+  state.rowMenuAt = { x: ev.clientX - box.left, y: ev.clientY - box.top };
   render();
 });
 
@@ -2418,6 +2770,7 @@ function render() {
   $(".app").classList.toggle("article-open", Boolean((state.openId || state.openExt) && !state.add));
   $("#loopbar").innerHTML = renderLoopBar();
   $("#loopChip").innerHTML = renderLoopChip();
+  paintSelBar();
   paintLoops();
   $("#paneWrap").style.display = composing ? "none" : "";
   $("#composer").style.display = composing ? "" : "none";
@@ -2485,6 +2838,8 @@ function render() {
       </div>
       ${state.mode === "yaml" ? `<button class="icon-btn" id="editBtn" aria-label="Edit as YAML" title="Edit as YAML">${ICON.pencil}</button>` : ""}
       ${x.status === "inbox" ? `<button class="icon-btn art-file" id="fileBtn" aria-label="File it" title="File it \u2014 out of the Inbox">${ICON.file}</button>` : ""}
+      <button class="icon-btn art-pick${isPicked(x.id) ? " on" : ""}" id="pickBtn" aria-pressed="${isPicked(x.id)}"
+        aria-label="${isPicked(x.id) ? "Remove from selection" : "Add to selection"}" title="${isPicked(x.id) ? "In your selection \u2014 remove it" : "Add to selection"}">${isPicked(x.id) ? ICON.selected : ICON.select}</button>
       <button class="icon-btn art-delete" id="delBtn" aria-label="Delete" title="Delete">${ICON.trash}</button>
       <div class="art-more">
         <button class="icon-btn" id="moreBtn" aria-label="Article menu">${ICON.more}</button>
@@ -2494,6 +2849,7 @@ function render() {
           <button data-mode="yaml" class="${state.mode === "yaml" ? "on" : ""}">YAML</button>
           <div class="menu-sep"></div>
           ${x.status === "inbox" ? '<button id="fileBtn2">File it</button>' : ""}
+          <button id="pickBtn2">${isPicked(x.id) ? "Remove from selection" : "Add to selection"}</button>
           <button id="delBtn2" class="danger">Delete this word</button>
         </div>
       </div>`;
@@ -2688,6 +3044,7 @@ document.addEventListener("click", (ev) => {
   /* Filing is wired up for real, unlike Delete: it is one field, and what it does to the rail and
      the counts is the whole thing worth looking at. */
   if (hit("#fileBtn") || hit("#fileBtn2")) { fileWords([state.openId]); return; }
+  if (hit("#pickBtn") || hit("#pickBtn2")) { togglePick(state.openId); return; }
   if (hit("#fileAllBtn")) { fileWords(visible().map((x) => x.id)); return; }
 
   if (hit("[data-add-picture]")) { toast("Opens the picture dialog — brief, Draw, or your own picture"); return; }
@@ -2756,6 +3113,7 @@ document.addEventListener("keydown", (ev) => {
   }
   // Innermost first: leave what you are composing before leaving the entry it belongs to.
   if (ev.key === "Escape") {
+    if (state.rowMenu || state.selList) { state.rowMenu = null; state.selList = false; render(); return; }
     if (state.add) closeSheet();
     else if (state.mode === "edit") { state.mode = "read"; render(); }
     else if (state.openExt) { state.openExt = null; render(); }
@@ -2889,6 +3247,16 @@ if (params.get("loops") === "1" || params.get("loop") || params.get("t")) {
   if (params.get("play") === "1") loopPlay();
 }
 if (params.get("make") === "1") { state.loops = true; setTimeout(openLoopDialog, 0); }
+/* `select=1` puts eight Spanish words in the selection — one of them, espolvorear, with no single term
+   to say, so the loop dialog has something to leave out — `sellist=1` opens the bar's list of them,
+   and `make=loop-selection` or `make=story-selection` opens a dialog from the bar. */
+if (params.get("select") === "1") {
+  picks.es = ["k3m91xq7d0a2vbe", "q8v53mrb2e7wl4d", "m5r18kts4b9gy2n", "w9h27fjc5d1qx8v",
+    "p2n85gvx7k4rt3c", "f6k39xzb8n2ph7m", "v8j51ctr3x7bn6q", "g3q76mwd9j5fk1z"];
+}
+if (params.get("sellist") === "1") state.selList = true;
+if (params.get("make") === "loop-selection") setTimeout(() => openLoopDialog("selection"), 0);
+if (params.get("make") === "story-selection") setTimeout(() => openStoryDialog("selection"), 0);
 if (params.get("topic")) state.topic = params.get("topic");
 if (params.get("view") === "page" || params.get("view") === "cards") state.view = params.get("view");
 if (params.get("card")) state.card = Number(params.get("card")) || 0;

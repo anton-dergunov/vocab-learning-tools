@@ -300,6 +300,20 @@ input, textarea { font: inherit; color: inherit; }
 .strength i:nth-child(1) { height: 5px; } .strength i:nth-child(2) { height: 8px; }
 .strength i:nth-child(3) { height: 11px; } .strength i:nth-child(4) { height: 13px; }
 .row.inbox .plate { border-style: dashed; border-color: var(--corpus); background: var(--corpus-soft); }
+/* A selected word: its plate is ringed, with a gap of the page's own paper, and wears a check at its
+   lower right — the same badge the map puts on a selected sense. Drawn with `box-shadow` and an
+   absolutely placed badge, so nothing in the row moves: not the word, not the gloss, not its height.
+   It is not the hover tint and not the open row's, because it is neither of those things. */
+.row .plate { position: relative; }
+.row.picked .plate { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--core); }
+.row.picked:hover .plate { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--core); }
+.pick-badge {
+  position: absolute; right: -7px; bottom: -7px; width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--core); color: var(--on-core);
+  box-shadow: 0 0 0 2px var(--paper);
+}
+.row:hover .pick-badge { box-shadow: 0 0 0 2px var(--surface); }
+.pick-badge svg { width: 11px; height: 11px; }
 .empty { padding: 60px 0; text-align: center; color: var(--ink-3); font-family: var(--serif); font-style: italic; }
 
 /* ══════════════════════════ article view ══════════════════════════ */
@@ -313,6 +327,8 @@ input, textarea { font: inherit; color: inherit; }
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--ink); }
 .icon-btn svg { width: 17px; height: 17px; }
+/* A toggle that is on: the article's Select, and anywhere else a pressed icon button means "yes". */
+.icon-btn.on { color: var(--core); border-color: color-mix(in srgb, var(--core) 45%, transparent); background: var(--core-soft); }
 .art-bar .spacer { flex: 1; }
 .seg {
   display: inline-flex; padding: 2px; gap: 2px;
@@ -869,6 +885,72 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
 .madebar-ic svg { width: 16px; height: 16px; }
 .madebar-half .loopbar-sub { margin-top: 1px; }
 
+/* ── the selection bar ──
+   The foot of the window at every width, over the list and the map, whenever this language has a
+   selection: what is selected on the left — as many whole words as fit, then "+N" — and what it is
+   for on the right. On a phone it takes the Made bar's place (`paintSelBar`); a loop that is playing
+   keeps its bar, which sits under this one. Never over an article: that column's foot is the ask
+   dock's (§2.13), and there the article's own Select button says what the bar would. */
+.foot { grid-area: loopbar; min-width: 0; }
+.selbar {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  height: 56px; padding: 0 12px 0 10px;
+  background: var(--surface); border-top: 1px solid var(--rule);
+}
+.foot > .loopbar { border-top-color: var(--rule-soft); }
+.app:not(.selecting) .selbar { display: none; }
+.selbar-what {
+  flex: 1; min-width: 0; height: 46px; display: flex; align-items: center; gap: 11px;
+  padding: 0 8px 0 4px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer;
+  color: inherit; font: inherit;
+}
+.selbar-what:hover, .selbar-what[aria-expanded="true"] { background: var(--surface-2); }
+.selbar-badge {
+  flex: none; width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: 8px; background: var(--core-soft); color: var(--core);
+}
+.selbar-badge svg { width: 19px; height: 19px; }
+.selbar-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.selbar-title { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--core); }
+.selbar-words {
+  position: relative; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font: 600 15px/1.3 var(--serif); color: var(--ink); letter-spacing: -.005em;
+}
+.selbar-more { font: 500 11.5px/1 var(--mono); color: var(--ink-3); letter-spacing: .02em; margin-left: 2px; }
+.selbar-make { flex: none; height: 38px; }
+.selbar-make svg { color: var(--core); }
+.selbar-ic { font-size: 15px; line-height: 1; }
+.selbar-clear { flex: none; border: 0; background: none; color: var(--ink-3); }
+/* A phone keeps the icons and gives the words the width. */
+@container vp (max-width: 480px) {
+  .selbar { gap: 6px; padding-right: 8px; }
+  .selbar-make { width: 40px; padding: 0; justify-content: center; }
+  .selbar-make span:not(.selbar-ic) { display: none; }
+  .selbar-make svg { width: 18px; height: 18px; }
+}
+
+/* The list of every selected word, opened from the bar's text and hanging above it. */
+.menu.sel-menu {
+  top: auto; bottom: calc(100% + 8px); left: 10px; right: auto;
+  width: min(380px, calc(100% - 20px)); max-height: min(60vh, 460px);
+  display: none; flex-direction: column;
+}
+.menu.sel-menu.open { display: flex; }
+.sel-items { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+.sel-item { display: flex; align-items: center; gap: 2px; }
+.menu .sel-open { flex: 1; min-width: 0; gap: 11px; padding: 6px 8px; }
+.sel-open .plate {
+  flex: none; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center;
+  font-size: 17px; background: var(--surface-2); border: 1px solid var(--rule-soft);
+}
+.sel-id { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.sel-word { font: 600 15.5px/1.25 var(--serif); }
+.sel-gloss { font: italic 13px/1.3 var(--serif); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu .sel-drop { flex: none; width: 32px; height: 32px; padding: 0; justify-content: center; color: var(--ink-3); }
+.menu .sel-drop:hover { color: var(--warn); }
+.sel-drop svg { width: 14px; height: 14px; }
+
 /* ── the chip in the top bar ──
    A bar across the foot of a wide window is a lot of furniture for one line of text, and the top bar
    is already where everything reachable from anywhere lives. Idle it is one icon; playing it widens
@@ -994,21 +1076,29 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
                    width: min(380px, calc(100vw - 32px)); max-height: min(60vh, 520px); overflow-y: auto;
                    text-transform: none; letter-spacing: normal; }
 
-/* ── a loop in a list ── */
-/* Two ways to the same Delete, because a pointer and a finger do not have the same gestures. A
-   pointer right-clicks and gets `.loop-menu`. A finger pushes the row aside and finds `.loop-swipe`
+/* ── a row with actions: a word, a loop, a story ── */
+/* Two ways to the same actions, because a pointer and a finger do not have the same gestures. A
+   pointer right-clicks and gets `.row-menu`. A finger pushes the row aside and finds `.swipe-actions`
    behind it — done with scroll-snap rather than touch handlers, the way the cards already swipe, so
-   there is no pointer arithmetic to get wrong and a trackpad gets it for free. */
+   there is no pointer arithmetic to get wrong and a trackpad gets it for free. One component for all
+   three rows (`SwipeRow.tsx`), so a word, a loop and a story answer the same gestures the same way. */
 /* The scroller and the thing the menu hangs off are two elements, not one: `overflow-x` makes the
    vertical axis a scroller too, and a menu positioned inside it would be clipped rather than drawn. */
-.loop-item { position: relative; }
-.loop-item + .loop-item { border-top: 1px solid var(--rule-soft); }
-.loop-shell {
+.swipe-item { position: relative; }
+.loops-list > .swipe-item + .swipe-item { border-top: 1px solid var(--rule-soft); }
+.swipe-shell {
   display: flex; overflow-x: auto; overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory; border-radius: 10px;
   scrollbar-width: none; -ms-overflow-style: none;
 }
-.loop-shell::-webkit-scrollbar { display: none; }
+.swipe-shell::-webkit-scrollbar { display: none; }
+/* A word row keeps its own look inside the shell: the bleed into the margin and the rule under it
+   move to the item, so the rule stays put while the row slides over its actions. */
+.rows > .swipe-item { margin: 0 -12px 0 -8px; border-bottom: 1px solid var(--rule-soft); }
+.swipe-shell > .row {
+  flex: 0 0 100%; min-width: 0; width: auto; margin: 0; border-bottom: 0;
+  scroll-snap-align: start;
+}
 .loop-row {
   /* `min-width: 0`, or a row whose sub-line cannot wrap is as wide as its text: a flex item's
      automatic minimum is its content, so the row outgrew the shell that clips it and pushed
@@ -1021,15 +1111,17 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
 .loop-row:hover { background: var(--surface-2); }
 .loop-row.on { background: var(--core-soft); }
 .loop-row[aria-disabled="true"] { cursor: default; }
-.loop-swipe { flex: 0 0 104px; display: grid; place-items: stretch; scroll-snap-align: end; }
-.loop-delete {
-  border: 0; border-radius: 10px; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 500;
-  background: var(--warn); color: var(--on-core);
+.swipe-actions { flex: none; display: flex; gap: 4px; padding: 4px 0 4px 6px; scroll-snap-align: end; }
+.swipe-act {
+  width: 96px; border: 0; border-radius: 10px; cursor: pointer; font: inherit; font-size: 13.5px;
+  font-weight: 500; color: var(--on-core); background: var(--ink-3);
 }
+.swipe-act.pick { background: var(--core); }
+.swipe-act.danger { background: var(--warn); }
 /* Opens with its corner under the pointer, as a right-click menu does everywhere else: `--menu-x`
    and `--menu-y` are the click's offset within the row. The `min()` keeps a click near the right
    edge from pushing the menu past it. */
-.loop-menu { left: min(var(--menu-x), calc(100% - 190px)); top: var(--menu-y); right: auto; min-width: 180px; }
+.row-menu { left: min(var(--menu-x), calc(100% - 230px)); top: var(--menu-y); right: auto; min-width: 220px; }
 .loop-go { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 999px;
            background: var(--core-soft); color: var(--core); }
 .loop-row.on .loop-go { background: var(--core); color: var(--on-core); }
@@ -1151,6 +1243,19 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
 .loop-count input[type=range] { flex: 1; accent-color: var(--core); }
 .loop-count output { font-family: var(--mono); font-size: 13px; color: var(--ink); min-width: 62px; text-align: right; }
 .loop-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.tb-btn:disabled { opacity: .45; cursor: default; filter: none; }
+/* Where the words come from, and — from the selection — the words themselves, in the order they were
+   chosen. One the kind cannot use is dimmed and struck, and the button counts only the rest. */
+.make-source { align-self: start; max-width: 100%; }
+.make-source button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.make-words { display: flex; flex-wrap: wrap; gap: 6px; }
+.make-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px;
+  border-radius: 999px; background: var(--surface); border: 1px solid var(--rule-soft);
+  font: 500 14px/1 var(--serif); color: var(--ink);
+}
+.make-chip.skip { color: var(--ink-3); background: none; border-style: dashed; text-decoration: line-through; text-decoration-color: var(--rule); }
+.make-skip { margin-top: 8px; }
 .loop-engine { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-soft);
                font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
                text-transform: uppercase; color: var(--ink-3); }
@@ -2453,7 +2558,7 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 /* Phone: the word is the toolbar's title in Cards, the views, File it and Delete fold into a menu,
    and a long phrase steps down in size and balances over two lines rather than being cut off. */
 @container vp (max-width: 720px) {
-  .art-views, .art-delete, .art-file { display: none; }
+  .art-views, .art-delete, .art-file, .art-pick { display: none; }
   .art-more { display: block; }
   .art-bar.carding .spacer { display: none; }
   .art-bar.carding .art-title {
@@ -2826,7 +2931,12 @@ body.framed .map-tool.pointer-only { display: none; }
   font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .peek-chip:hover { border-color: var(--core); }
-.peek-open { width: 100%; justify-content: center; margin-top: 16px; height: 40px; }
+/* Select beside the way on: two things a tap on a sense can lead to, and the article is the larger. */
+.peek-actions { display: flex; gap: 8px; margin-top: 16px; }
+.peek-open { flex: 1; justify-content: center; height: 40px; }
+.peek-pick { flex: none; height: 40px; padding: 0 13px; }
+.peek-pick svg { width: 17px; height: 17px; }
+.tb-btn.on { color: var(--core); border-color: color-mix(in srgb, var(--core) 45%, transparent); background: var(--core-soft); }
 
 /* ── notes: first draw, nothing to show, a young language, words arriving ── */
 .map-note {

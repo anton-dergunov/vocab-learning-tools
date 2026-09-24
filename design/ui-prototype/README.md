@@ -67,6 +67,12 @@ and the closed Cards switch. `fill=searching|none|failed|off` picks how its clip
 cannot be in a loop — a loop has to choose a single meaning, and nothing fills that in later.
 Of the four loops, one has never been rendered and one was made on a server with no sample pack.
 
+The selection (`docs/plans/word-selection.md`): `?select=1` puts eight Spanish words in it, one of
+them `espolvorear` so a loop has something to leave out. `sellist=1` opens the bar's list of them,
+and `make=loop-selection` or `make=story-selection` opens a dialog from the bar. A word row, a loop
+and a story all answer a right-click with a menu and a swipe with their actions. On the map, `Select`
+in the peek marks every sense of the word.
+
 ## The map
 
 `?map=1` opens the meaning map (`docs/plans/meaning-space.md`): one language's senses, laid out

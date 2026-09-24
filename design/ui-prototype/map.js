@@ -38,7 +38,7 @@
     let cloud = null;
     let anim = null;
     let style = "atlas", labelSource = "model";
-    let sel = -1, hover = -1, lit = null;
+    let sel = -1, hover = -1, lit = null, chosen = null;
     let W = 0, H = 0, dpr = 1;
     let cam = { k: 1, tx: 0, ty: 0 }, fitK = 1;
     let insets = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -141,7 +141,7 @@
         return { level, path };
       });
       cloud = null;
-      sel = -1; hover = -1; lit = null;
+      sel = -1; hover = -1; lit = null; chosen = null;
       measureFit();
       if (opts.camera) setCamera(opts.camera);
       else if (first || opts.refit !== false) fit(false);
@@ -201,7 +201,7 @@
       colors = {
         sea: v("--map-sea"), land: v("--map-land"), coast: v("--map-coast"), contour: v("--map-contour"),
         ink: v("--ink"), ink2: v("--ink-2"), ink3: v("--ink-3"), rule: v("--rule"),
-        core: v("--core"), coreSoft: v("--core-soft"), halo: v("--map-halo")
+        core: v("--core"), coreSoft: v("--core-soft"), onCore: v("--on-core"), halo: v("--map-halo")
       };
       colors.dark = luminance(colors.sea) < 0.4;
       cloud = null;
@@ -337,7 +337,9 @@
       const worldIn = growing ? smooth(0, 700, t) : 1;
       const z = zoom();
       const focus = sel >= 0 || (lit && lit.size);
-      const inFocus = (i) => i === sel || (lit && lit.has(i)) ||
+      /* A chosen word is never dimmed: the selection is what you are gathering, and it should stay in
+         view while you look at something else. */
+      const inFocus = (i) => i === sel || (lit && lit.has(i)) || (chosen && chosen.has(i)) ||
         (sel >= 0 && (data.points[sel].w === data.points[i].w || data.points[sel].nb.includes(i)));
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -428,7 +430,7 @@
         const p = data.points[i];
         if (emojiIn < 1) {
           ctx.globalAlpha = PA[i] * dim * (1 - emojiIn * 0.9);
-          ctx.fillStyle = i === sel || (lit && lit.has(i)) ? colors.core : dot || hue(p.r, 1, true);
+          ctx.fillStyle = i === sel || (lit && lit.has(i)) || (chosen && chosen.has(i)) ? colors.core : dot || hue(p.r, 1, true);
           ctx.beginPath(); ctx.arc(x, y, i === sel ? r + 1.5 : r, 0, Math.PI * 2); ctx.fill();
         }
         if (emojiIn > 0 && p.emoji) {
@@ -440,6 +442,29 @@
         }
       }
       ctx.globalAlpha = 1;
+      /* The selection's mark, distinct from Find's filled dots: far out a ring around the dot with a
+         gap of the map's own paper, and once points are emoji the badge a selected row wears in the
+         list — a check on a disc, at the glyph's lower right. */
+      if (chosen) {
+        for (const i of chosen) {
+          if (PA[i] <= 0.01 || i === sel) continue;
+          const x = SX(i), y = SY(i);
+          if (!onScreen(x, y)) continue;
+          if (emojiIn <= 0.5) {
+            ctx.strokeStyle = colors.halo; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.stroke();
+            ctx.strokeStyle = colors.core; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke();
+          } else {
+            const bx = x + 10, by = y + 9;
+            ctx.fillStyle = colors.core; ctx.strokeStyle = colors.halo; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(bx, by, 6.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = colors.onCore; ctx.lineWidth = 1.8; ctx.lineCap = "round"; ctx.lineJoin = "round";
+            ctx.beginPath(); ctx.moveTo(bx - 3, by + 0.1); ctx.lineTo(bx - 0.9, by + 2.2); ctx.lineTo(bx + 3.1, by - 2.1); ctx.stroke();
+            ctx.lineCap = "butt";
+          }
+        }
+      }
       if (sel >= 0) {
         ctx.strokeStyle = colors.core; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(SX(sel), SY(sel), emojiIn > 0.5 ? 14 : 7, 0, Math.PI * 2); ctx.stroke();
@@ -475,6 +500,7 @@
         for (const j of siblings.get(data.points[sel].w) || []) if (j !== sel) forced.push(j);
         forced.push(...data.points[sel].nb);
       }
+      if (chosen) forced.push(...[...chosen].slice(0, 60));
       if (lit) forced.push(...[...lit].slice(0, 40));
       if (hover >= 0) forced.push(hover);
 
@@ -510,7 +536,7 @@
         ctx.font = font;
         ctx.textAlign = "left";
         ctx.strokeStyle = halo; ctx.lineWidth = 3.5;
-        ctx.fillStyle = on || (lit && lit.has(i)) ? colors.core : (data.points[sel] && data.points[sel].w === p.w ? colors.core : colors.ink);
+        ctx.fillStyle = on || (lit && lit.has(i)) || (chosen && chosen.has(i)) ? colors.core : (data.points[sel] && data.points[sel].w === p.w ? colors.core : colors.ink);
         ctx.strokeText(p.headword, box.x + 2, y);
         ctx.fillText(p.headword, box.x + 2, y);
         if (h > 18) {
@@ -851,6 +877,9 @@
       setLabels(s) { labelSource = s; request(); },
       select(i, opts) { select(i, opts); },
       highlight(set) { lit = set && set.size ? set : null; request(); },
+      /* The selected words, as point indices: drawn with the selection's mark, always labelled, never
+         dimmed. Cleared by `setData` like the rest, so the host sets it again after new data. */
+      choose(set) { chosen = set && set.size ? set : null; request(); },
       flyToPoint(i, z) { if (i >= 0) flyTo(X[i], Y[i], Math.max(cam.k, fitK * (z || 5.5)), 560); },
       fitRegion,
       fit,
