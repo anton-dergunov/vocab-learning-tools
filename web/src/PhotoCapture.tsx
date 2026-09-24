@@ -529,7 +529,7 @@ function PhotoSheet({
     </div>
     <label className="label" htmlFor="photoSentence">The sentence, as it will be kept</label>
     <textarea
-      id="photoSentence" className="capture-area photo-sentence-text" lang={reading.language ?? undefined}
+      id="photoSentence" className="capture-area photo-sentence-text" lang={reading.language ?? undefined} rows={3}
       value={sentence} onChange={(event) => onSentence(event.target.value)}
     />
     {current?.truncatedStart && <p className="hint">The start of this sentence is cut off by the edge of the photo.</p>}

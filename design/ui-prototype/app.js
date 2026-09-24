@@ -1230,7 +1230,7 @@ function renderPhotoTab() {
         <div class="photo-sheet">
           <div class="photo-meaning" aria-live="polite"><strong lang="es">${PHOTO.headword}</strong><span> — ${PHOTO.gloss}</span></div>
           <label class="label" for="photoSentence">The sentence, as it will be kept</label>
-          <textarea id="photoSentence" class="capture-area photo-sentence-text" lang="es">${PHOTO.sentence}</textarea>
+          <textarea id="photoSentence" class="capture-area photo-sentence-text" lang="es" rows="3">${PHOTO.sentence}</textarea>
           <div class="photo-options">
             <div class="photo-sources" role="group" aria-label="Where you met it">${chips}</div>
             <label class="config-switch">

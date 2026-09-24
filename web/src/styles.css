@@ -1516,6 +1516,13 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .photo-sources { display: flex; flex-wrap: wrap; gap: 6px; }
 .photo-sources .cards-chip { cursor: pointer; padding: 6px 13px; }
 .composer:has(.photo-window) .composer-buttons { flex-wrap: nowrap; }
+/* The same stray grey rule `.ask-input` hides: Android draws a classic scrollbar track down the right
+   of anything that scrolls, and beside a photo it reads as a border that belongs to nothing. A finger
+   scrolls without it, so it goes wherever the pointer is a finger. */
+@media (pointer: coarse) {
+  .composer-body, .capture-area { scrollbar-width: none; }
+  .composer-body::-webkit-scrollbar, .capture-area::-webkit-scrollbar { display: none; }
+}
 .photo-viewer { width: min(920px, 100%); }
 
 /* The smallest phones: the tabs give up their spacing before the title gives up its words. */
@@ -1902,7 +1909,17 @@ details.fold .fold-body { padding: 4px 0 18px; }
   .composer-head h2 { font-size: 17px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .composer-head .seg { flex: none; }
   .composer-head .seg button { padding: 5px 7px; letter-spacing: .04em; }
-  .photo-meaning { font-size: 17px; }
+  /* A phone's height goes to the photo, the word and the sentence, in that order: every gap around
+     them is tightened so where-you-met-it still fits above the buttons without scrolling. */
+  .composer-head { padding: 10px 0 8px; }
+  .composer-body { padding: 12px 0; }
+  .composer-actions { padding: 10px 0 max(12px, env(safe-area-inset-bottom)); }
+  .photo-sheet { margin-top: 10px; }
+  .photo-meaning { font-size: 17px; margin-bottom: 6px; }
+  .photo-sentence-text { min-height: 0; margin-top: 6px; padding: 9px 12px; font-size: 15.5px; line-height: 1.45; }
+  .photo-options { gap: 8px; margin-top: 10px; }
+  .photo-options .config-switch { padding: 8px 11px; }
+  .photo-options .config-switch > span > span { display: none; }
   .sec { grid-template-columns: minmax(0,1fr); gap: 0; padding: 24px 0 4px; }
   .sec > .rail-l .inner { position: static; }
   .sec .num { display: inline; margin-right: 8px; }
