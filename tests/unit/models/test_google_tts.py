@@ -12,7 +12,7 @@ import base64
 import httpx
 import pytest
 
-from acervo.models import google_tts
+from acervo.models import google_auth, google_tts
 from acervo.models.catalogue import load_catalogue
 from acervo.models.errors import ProviderRefused, ProviderUnavailable
 
@@ -31,11 +31,11 @@ class _Credentials:
 def credentials(monkeypatch):
     import google.auth
 
-    google_tts.forget_credentials()
+    google_auth.forget_credentials()
     monkeypatch.setenv("ACERVO_VERTEX_PROJECT", "a-project-name")
     monkeypatch.setattr(google.auth, "default", lambda **kwargs: (_Credentials(), "a-project-name"))
     yield
-    google_tts.forget_credentials()
+    google_auth.forget_credentials()
 
 
 def transport(monkeypatch, response: httpx.Response, calls: list):
@@ -43,7 +43,7 @@ def transport(monkeypatch, response: httpx.Response, calls: list):
         calls.append({"url": url, **kwargs})
         return response
 
-    monkeypatch.setattr(google_tts.httpx, "post", post)
+    monkeypatch.setattr(google_auth.httpx, "post", post)
 
 
 def audio(content: bytes = b"ID3-an-mp3") -> httpx.Response:
@@ -133,7 +133,7 @@ def test_missing_credentials_say_so_rather_than_failing_somewhere_else(monkeypat
     def absent(**kwargs):
         raise google.auth.exceptions.DefaultCredentialsError("no credentials were found")
 
-    google_tts.forget_credentials()
+    google_auth.forget_credentials()
     monkeypatch.setattr(google.auth, "default", absent)
     with pytest.raises(ProviderRefused) as caught:
         google_tts.speech(ROW, "wavenet", "picar", language="es")

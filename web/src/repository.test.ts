@@ -63,7 +63,8 @@ describe("the Acervo repository", () => {
     }, "sense0000000001");
     const attestation = await repository.saveAttestation({
       lexemeId: lexeme.id, text: "Se desmayó durante la clase.", translation: null, sourceUrl: null,
-      sourceTitle: "Language lesson", sourceKind: "lesson", capturedAt: "2026-08-28T12:00:00.000Z"
+      sourceTitle: "Language lesson", sourceKind: "lesson", capturedAt: "2026-08-28T12:00:00.000Z",
+      photoRef: null, photoRegion: null
     }, "attest000000001");
     await repository.saveExample({
       senseId: sense.id, text: "Se desmayó durante la clase.", textLang: "es", translation: "They fainted during class.",

@@ -43,7 +43,8 @@ describe("Acervo domain", () => {
     value.lexemes.push({ ...value.lexemes[0], id: "lexeme000000002", headword: "mareo", lemma: "mareo" });
     value.attestations.push({
       id: "attest000000001", lexemeId: "lexeme000000002", text: "Tuvo un mareo.", translation: null,
-      sourceUrl: null, sourceTitle: null, sourceKind: "lesson", capturedAt: sync.createdAt, ...sync
+      sourceUrl: null, sourceTitle: null, sourceKind: "lesson", capturedAt: sync.createdAt, photoRef: null,
+      photoRegion: null, ...sync
     });
     value.examples.push({
       id: "example00000001", senseId: value.senses[0].id, text: "Tuvo un mareo.", textLang: "es",
@@ -97,7 +98,8 @@ describe("Acervo domain", () => {
     const sense = base.senses[0];
     const attestation = {
       id: "attest000000001", lexemeId: lexeme.id, text: "Una balsa.", translation: null, sourceUrl: null,
-      sourceTitle: null, sourceKind: "lesson" as const, capturedAt: sync.createdAt, ...sync
+      sourceTitle: null, sourceKind: "lesson" as const, capturedAt: sync.createdAt, photoRef: null,
+      photoRegion: null, ...sync
     };
     const example = {
       id: "example00000001", senseId: sense.id, text: "Una balsa.", textLang: "es", translation: null,

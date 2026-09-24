@@ -124,3 +124,15 @@ export function cachedBytes(): Promise<number> {
 export async function bytesFor(reference: string): Promise<Uint8Array> {
   return new Uint8Array(await (await blobFor(reference)).arrayBuffer());
 }
+
+/**
+ * Put bytes this device already holds into the cache under the reference they will be served at.
+ *
+ * For a photo just taken: the server keeps it pending until a save names it, so the media route
+ * cannot serve it yet — but the device has the very bytes it uploaded, and a reference names
+ * immutable bytes, so caching them now is exactly what a later download would have done. The
+ * article under review then shows the photo it is about to keep.
+ */
+export async function seed(reference: string, blob: Blob): Promise<void> {
+  await store.save(reference, blob).catch(() => undefined);
+}

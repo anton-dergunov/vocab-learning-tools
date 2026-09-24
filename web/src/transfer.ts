@@ -167,6 +167,12 @@ export function stripIds(draft: ArticleDraft): ArticleDraft {
   return {
     ...draft,
     id: null,
+    // A photo is a server path to a file the bundle does not carry, so it goes like a picture's
+    // `imageRef` does — and an attestation that was only a photo, a sign with no sentence, has
+    // nothing left to say without it.
+    attestations: draft.attestations
+      .filter((attestation) => attestation.text.trim())
+      .map((attestation) => ({ ...attestation, photoRef: null, photoRegion: null })),
     senses: draft.senses.map((sense) => ({
       ...sense,
       id: null,

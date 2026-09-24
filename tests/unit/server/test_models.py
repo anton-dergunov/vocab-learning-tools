@@ -54,8 +54,8 @@ def test_both_routes_need_a_signed_in_owner(server):
 def test_with_no_record_every_kind_follows_the_deployment(server):
     readout = models(server)
     assert {kind: chain["source"] for kind, chain in readout["chains"].items()} == {
-        "text": "deployment", "image": "deployment",
-        "audioPlain": "deployment", "audioExpressive": "deployment",
+        "text": "deployment", "quick": "deployment", "image": "deployment",
+        "audioPlain": "deployment", "audioExpressive": "deployment", "ocr": "deployment",
     }
     assert readout["chains"]["text"]["pairs"] == [
         pair("gemini-free", GEMINI), pair("gemini-free", GEMINI_SECOND)
@@ -66,7 +66,8 @@ def test_it_lists_every_row_including_the_ones_this_server_cannot_use(server):
     """"Why can I not pick Cloudflare" is a question the interface should answer without a shell."""
     rows = {row["id"]: row for row in models(server)["providers"]}
     assert set(rows) == {
-        "gemini-free", "vertex", "google-tts", "cloudflare", "openai", "openrouter", "ollama-local"
+        "gemini-free", "vertex", "google-tts", "google-vision", "cloudflare", "openai", "openrouter",
+        "ollama-local",
     }
     assert rows["gemini-free"]["available"] is True and rows["gemini-free"]["reason"] is None
     assert rows["cloudflare"]["available"] is False

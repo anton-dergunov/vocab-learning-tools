@@ -186,6 +186,8 @@ def _project_attestation(row: Mapping[str, Any]) -> dict[str, Any]:
         "sourceTitle": text_or_none(row["source_title"]),
         "sourceKind": row["source_kind"],
         "capturedAt": text_or_none(row["captured_at"]),
+        "photoRef": text_or_none(row["photo_ref"]),
+        "photoRegion": row["photo_region"],
     }
 
 
@@ -198,6 +200,8 @@ def _assign_attestation(value: Mapping[str, Any]) -> dict[str, Any]:
         "source_title": trimmed(value.get("sourceTitle")),
         "source_kind": trimmed(value.get("sourceKind")),
         "captured_at": trimmed(value.get("capturedAt")),
+        "photo_ref": trimmed(value.get("photoRef")),
+        "photo_region": value.get("photoRegion") or None,
     }
 
 

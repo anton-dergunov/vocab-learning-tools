@@ -33,7 +33,9 @@ LEXEME_FIELDS = (
     "emoji", "status", "shortGloss", "primaryGloss", "emotion",
 )
 SENSE_FIELDS = ("definition", "definitionLang", "glosses", "domain", "emoji", "order")
-ATTESTATION_FIELDS = ("text", "translation", "sourceUrl", "sourceTitle", "sourceKind")
+ATTESTATION_FIELDS = (
+    "text", "translation", "sourceUrl", "sourceTitle", "sourceKind", "photoRef", "photoRegion",
+)
 EXAMPLE_FIELDS = (
     "text", "textLang", "translation", "translationLang", "origin", "sourceAttestationId", "modelId",
     "videoRef", "videoTitle", "videoChannel", "videoStart", "videoEnd", "clipRef", "imageRef",
@@ -124,6 +126,7 @@ def save_article(
     enqueue: graph.Enqueue | None = graph.SAVE,
     status: str | None = None,
     base: Any = None,
+    place_photo: graph.PlacePhoto | None = None,
 ) -> dict[str, Any]:
     """Apply one parsed document as one write. Returns the merge's answer and the lexeme id.
 
@@ -345,5 +348,7 @@ def save_article(
         if row["targetKind"] in targets and row["targetId"] not in targets[row["targetKind"]]:
             tombstone("pronunciations", row)
 
-    written = graph.merge_graph(owner, device, work.changes, enqueue=enqueue)
+    written = graph.merge_graph(
+        owner, device, work.changes, enqueue=enqueue, place_photo=place_photo
+    )
     return {**written, "lexemeId": lexeme_id, "jobId": written["enrich"].get(lexeme_id)}

@@ -55,7 +55,8 @@ def attestation(lexeme_id: str, **overrides: Any) -> dict[str, Any]:
     return {
         "id": new_record_id(), "lexemeId": lexeme_id, "text": "Pica la cebolla.",
         "translation": "Chop the onion.", "sourceUrl": None, "sourceTitle": None,
-        "sourceKind": "conversation", "capturedAt": now_instant(), **stamp(), **overrides,
+        "sourceKind": "conversation", "capturedAt": now_instant(), "photoRef": None,
+        "photoRegion": None, **stamp(), **overrides,
     }
 
 

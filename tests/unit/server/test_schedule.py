@@ -190,7 +190,8 @@ def test_a_runner_built_outside_the_application_queues_no_nights(server):
 
 
 def test_the_served_application_carries_the_timer(server):
-    assert len(server.client.app.state.runner.ticks) == 1
+    """The nightly timer, and the sweep of photos nobody added."""
+    assert len(server.client.app.state.runner.ticks) == 2
 
 
 # ── the nightly run ─────────────────────────────────────────────────────────

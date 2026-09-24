@@ -142,6 +142,31 @@ def test_speech_comes_back_as_audio_from_a_real_provider(identifier, model):
           f"bytes {result.mime} in {result.answer.seconds:.1f}s")
 
 
+@pytest.mark.parametrize(("identifier", "model"), pairs("ocr"), ids=lambda v: v.split("/")[-1])
+def test_a_photographed_page_comes_back_as_words_with_outlines(identifier, model):
+    """One fixture photo, at the size the interface sends. One image of the free thousand a month."""
+    from io import BytesIO
+    from pathlib import Path
+
+    from PIL import Image
+
+    row = row_for("ocr", identifier)
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "photo-capture" / "camera-01.jpg"
+    image = Image.open(fixture).convert("RGB")
+    image.thumbnail((2048, 2048))
+    sent = BytesIO()
+    image.save(sent, "JPEG", quality=85)
+    result = reachable(row, "ocr")(
+        lambda: call.ocr(sent.getvalue(), row=row, model=model, language_hints=["es"])
+    )
+    check(result.answer, row)
+    assert len(result.words) > 50, "a page of a book has more words than that"
+    assert result.language and result.language.startswith("es")
+    assert all(len(word.polygon) == 4 for word in result.words)
+    assert len({word.paragraph for word in result.words}) > 1, "the paragraph structure survived"
+    print(f"\n{identifier}: {len(result.words)} words, {result.language}, in {result.answer.seconds:.1f}s")
+
+
 def test_a_wrong_credential_is_refused_rather_than_routed_around(monkeypatch):
     """The locked rule, against the real service: a rejected key must not spend the next provider.
 

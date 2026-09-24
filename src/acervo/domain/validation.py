@@ -10,6 +10,7 @@ The comments mark the ones where that is most true.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -20,7 +21,15 @@ POS_VALUES = ("noun", "verb", "adj", "adv", "phrase", "idiom", "expression")
 GENDER_VALUES = ("masculine", "feminine", "common", "neuter")
 REGISTER_VALUES = ("neutral", "formal", "colloquial", "slang", "vulgar")
 STATUS_VALUES = ("inbox", "active", "learned", "retired", "suppressed")
-SOURCE_KIND_VALUES = ("web", "book", "conversation", "video", "lesson", "unknown")
+# `sign` is text met out in the world rather than read — a street sign, a menu, a label — which a
+# photo is the usual way to keep.
+SOURCE_KIND_VALUES = ("web", "book", "conversation", "video", "lesson", "sign", "unknown")
+# Where a kept photo lives under the media root: the owner's own directory, named by a digest of the
+# bytes, so the reference alone says whose it is and a second word saved from the same photo names
+# the same file. `photos/{owner}/pending/` is where it waits until a save names it.
+PHOTO_REF = re.compile(r"^photos/(?P<owner>[a-z0-9]{15})/(?P<digest>[0-9a-f]{16})\.jpg$")
+# The most polygons a photo region may carry: a sentence of a hundred words, and then some.
+PHOTO_REGION_LIMIT = 400
 ORIGIN_VALUES = ("attestation", "llm", "tatoeba", "subtitle", "wiktionary", "manual")
 # What a pronunciation reads, and the table and field each one names.
 PRONUNCIATION_TARGETS = {
@@ -48,7 +57,9 @@ TEXT_RULES: dict[str, dict[str, tuple[bool, int]]] = {
         "emoji": (False, 32),
     },
     "attestations": {
-        "text": (True, 5000), "translation": (False, 5000), "source_title": (False, 500),
+        # Not required here: an attestation may be a photo alone (below).
+        "text": (False, 5000), "translation": (False, 5000), "source_title": (False, 500),
+        "photo_ref": (False, 500),
     },
     "examples": {
         "text": (True, 5000), "text_lang": (True, 35), "translation": (False, 5000),
@@ -215,6 +226,34 @@ def _audio_segments(value: Any) -> None:
             refuse("A passage's recording is named too long.")
 
 
+def _photo_region(value: Any, has_photo: bool) -> None:
+    """Where on the photo the word and its sentence are: `{words: [...], sentence: [...]}`, each a list
+    of polygons, each polygon a list of `[x, y]` points normalised to the image."""
+    if value is None:
+        return
+    if not has_photo:
+        refuse("A photo region needs a photo.")
+    if not isinstance(value, Mapping) or set(value) - {"words", "sentence"}:
+        refuse("A photo region has words and a sentence, and nothing else.")
+    count = 0
+    for key in ("words", "sentence"):
+        polygons = value.get(key, [])
+        if not isinstance(polygons, list):
+            refuse("A photo region's polygons must be a list.")
+        for polygon in polygons:
+            if not isinstance(polygon, list) or not 3 <= len(polygon) <= 16:
+                refuse("A photo region's polygon must have between three and sixteen points.")
+            for point in polygon:
+                if (
+                    not isinstance(point, list) or len(point) != 2
+                    or not all(isinstance(axis, (int, float)) and 0 <= axis <= 1 for axis in point)
+                ):
+                    refuse("A photo region's points must be [x, y] between 0 and 1.")
+            count += 1
+    if count > PHOTO_REGION_LIMIT:
+        refuse("A photo region has too many polygons.")
+
+
 def _same_owner(row: Mapping[str, Any], parent: Mapping[str, Any], label: str) -> None:
     if row.get("owner") != parent.get("owner"):
         refuse(f"{label} must belong to the same owner.")
@@ -297,6 +336,18 @@ def validate(name: str, row: Mapping[str, Any], lookup: Lookup) -> None:
         _same_owner(row, _related(lookup, "lexemes", _text(row, "lexeme"), "Lexeme"), "Attestation")
         if not is_instant(_text(row, "captured_at")):
             refuse("Capture timestamp must be an ISO-8601 UTC instant with milliseconds.")
+        photo = _text(row, "photo_ref")
+        # A photo with no sentence is a place the word was met — a street sign has no sentence — so
+        # the text may be empty then, and only then.
+        if not _text(row, "text") and not photo:
+            refuse("text is required.")
+        if photo:
+            match = PHOTO_REF.match(photo)
+            if match is None:
+                refuse("An attestation's photo must be a photo this server stored.")
+            if match["owner"] != row.get("owner"):  # type: ignore[index]
+                refuse("An attestation's photo must belong to the same owner.")
+        _photo_region(row.get("photo_region"), bool(photo))
         return
 
     if name == "examples":

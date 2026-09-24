@@ -53,3 +53,34 @@ class AudioResult:
     # The voice that actually spoke. A clip records it, so a voice changed later is detectable on the
     # clips made before the change rather than silently mixed in with them.
     voice: str | None = None
+
+
+@dataclass(frozen=True)
+class OcrWord:
+    """One word as an OCR engine read it, in the engine's own reading order.
+
+    Provider-neutral on purpose: Vision's symbols, and whatever Azure's Read calls a word, both
+    arrive at this shape, so `acervo.ocr` never learns which engine spoke.
+    """
+
+    text: str
+    # The word's outline in the pixels of the image that was sent, clockwise from the top left.
+    polygon: tuple[tuple[float, float], ...]
+    confidence: float
+    # What follows the word: a space, the end of a line, a hyphen that ends a line, or nothing — the
+    # last is how punctuation arrives as a word of its own glued to the one before it.
+    break_after: str | None
+    # Which block and paragraph of the page it belongs to, numbered in reading order. What an engine
+    # without paragraphs reports is one paragraph per block.
+    block: int
+    paragraph: int
+
+
+@dataclass(frozen=True)
+class OcrResult:
+    words: tuple[OcrWord, ...]
+    width: int
+    height: int
+    # The language the engine detected for the page, as a BCP-47 tag, or None.
+    language: str | None
+    answer: Answer

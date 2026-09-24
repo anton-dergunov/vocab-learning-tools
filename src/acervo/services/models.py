@@ -48,13 +48,25 @@ from acervo.models.catalogue import (
 from acervo.repository import model_selection
 from acervo.settings import Settings
 
-KINDS = ("text", "image", "audioPlain", "audioExpressive")
+KINDS = ("text", "quick", "image", "audioPlain", "audioExpressive", "ocr")
 
 # Which catalogue kind each chain draws its pairs from. Two chains share `audio` because they are two
 # answers to one question asked twice: what should read a headword, which wants a clear free voice
 # held stable, and what should read an example, which wants a voice that can take the sentence's
 # emotion. Any speech model is a legitimate answer to either, so the catalogue does not split them.
-CATALOGUE_KINDS = {"text": "text", "image": "image", "audioPlain": "audio", "audioExpressive": "audio"}
+#
+# `quick` shares `text` for the same reason. It is the look-up a photo tap makes while a finger is
+# still on the glass, and the owner's text chain is ordered for writing good entries rather than for
+# answering in a second: measured in `experiments/photo-capture/`, a flash-lite model answered in
+# 1.02 s at the median and the strongest text model took 4.4. Two orders of one set of models.
+CATALOGUE_KINDS = {
+    "text": "text",
+    "quick": "text",
+    "image": "image",
+    "audioPlain": "audio",
+    "audioExpressive": "audio",
+    "ocr": "ocr",
+}
 
 
 def catalogue_kind(kind: str) -> str:
@@ -119,6 +131,8 @@ def deployment_chain(settings: Settings, kind: str = "text") -> list[chain.Choic
     models to the catalogue. The speech chains read the catalogue's `defaultChains` instead, as pairs,
     because catalogue order is wrong for them in a specific way — it would read a headword with a
     paid expressive voice — and that is a fact about the voices rather than about a deployment.
+    Every other chain — `quick`, `image`, `ocr` — is catalogue order until somebody chooses, and for
+    `quick` that is already the order it wants: the free flash-lite models lead the catalogue.
     """
     if kind in ("audioPlain", "audioExpressive"):
         recommended = load_catalogue().default_chains.get(kind)
@@ -201,7 +215,8 @@ def capture_health(settings: Settings) -> dict[str, Any]:
 
 def llm_json(settings: Settings, owner: str | None, system: str, user: str,
              caller: str = "text", hedge_after: float | None = None,
-             params: Mapping[str, Any] | None = None) -> tuple[Any, Answer]:
+             params: Mapping[str, Any] | None = None, kind: str = "text",
+             timeout: float | None = None) -> tuple[Any, Answer]:
     """One constrained call: pass text, get JSON and the model that produced it, or a code saying why not.
 
     Returning the `Answer` rather than a model id is not decoration. The locked contract is that the
@@ -222,11 +237,15 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str,
 
     `params` is what this task wants of the generation — a story hot, its translation cold. It is
     passed straight through to `call.text`, where the row's own settings still win; see there.
+
+    `kind` is which chain is walked, and only text-drawing chains make sense here: `text`, or the
+    `quick` order a photo tap asks. `timeout` bounds each pair when the caller has a tighter budget
+    than a whole article's.
     """
     def ask(candidate: chain.Candidate) -> TextResult:
         result = provider.text(
             user, row=candidate.row, model=candidate.model, system=system, as_json=True,
-            params=params,
+            params=params, **({"timeout": timeout} if timeout is not None else {}),
         )
         # Checked *here*, inside the chain's own callback, rather than after `walk` returns. An
         # answer in the wrong shape used to end the whole chain, so a weak model at the head made
@@ -245,13 +264,13 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str,
 
     try:
         result: TextResult = chain.walk(
-            "text", chain_for(settings, owner), load_catalogue(), ask, chain.stamped,
-            caller=caller, hedge_after=hedge_after,
+            catalogue_kind(kind), chain_for(settings, owner, kind), load_catalogue(), ask,
+            chain.stamped, caller=caller, hedge_after=hedge_after,
         )
     except ChainExhausted as exhausted:
-        raise refusal(exhausted.last) from None
+        raise refusal(exhausted.last, kind) from None
     except ProviderError as error:
-        raise refusal(error) from None
+        raise refusal(error, kind) from None
 
     assert result.parsed is not None  # `ask` refuses anything else, so the chain cannot return one
     return result.parsed, result.answer
@@ -271,6 +290,10 @@ def refusal(error: ProviderError, kind: str = "text") -> ApiError:
         message = message.replace("The language model", "The image model")
     elif catalogue_kind(kind) == "audio":
         message = message.replace("The language model", "The speech model")
+    elif kind == "ocr":
+        message = message.replace("The language model", "The photo reader").replace(
+            "so nothing was created", "so the photo was not read"
+        )
     # "Unconfigured" is the one refusal whose *particular* cause the owner can act on, and it is
     # already safe to show: it names an environment variable or says every model is switched off,
     # never a value. `/health` has shown exactly this string since the route existed.

@@ -11,7 +11,11 @@
  * keeps one quiet tag, and what else is worth keeping is in Details.
  */
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  type ReactNode
+} from "react";
+import { PhotoThumb, PhotoViewer } from "./AttestationPhoto";
 import { ClipDialog } from "./ClipDialog";
 import { storedClipOf, type StoredClip } from "./clips";
 import type { Attestation, Example, Gloss, ImagePrompt, Lexeme, Sense } from "./domain";
@@ -103,14 +107,22 @@ function orderedExamples(examples: Example[]): Example[] {
 
 /**
  * A sentence you supplied is shown once, in its sense. "Where you met it" keeps only the ones no
- * example was drawn from — which is also where a photo of the page will go when photo capture keeps
- * one.
+ * example was drawn from. A photo goes with its sentence wherever that is shown: beside the example
+ * drawn from it, or here — and here alone for a photo that carried no sentence, a street sign.
  */
 export function looseAttestations(article: Article): Attestation[] {
   const used = new Set(article.senses.flatMap(({ examples }) =>
     examples.map((example) => example.sourceAttestationId).filter(Boolean)));
   return article.attestations.filter((attestation) => !used.has(attestation.id));
 }
+
+/** The photos the article's attestations kept, and how to open one. */
+interface PhotoSlot {
+  byId: Map<string, Attestation>;
+  open(attestation: Attestation): void;
+}
+
+const Photos = createContext<PhotoSlot | null>(null);
 
 /* A sense's own emoji and its domain, whichever it has. The emoji used to be shown only beside a
    domain, and most senses have no domain — so nearly every sense was a bare number here while the map
@@ -309,12 +321,15 @@ function ExampleBlock({ example, notesLang, onListen, onPlayClip, marks = null, 
   const mark = marks?.of(example.id) ?? null;
   const own = OWN_ORIGINS.has(example.origin);
   const clip = storedClipOf(example);
+  const photos = useContext(Photos);
+  const photo = example.sourceAttestationId ? photos?.byId.get(example.sourceAttestationId) ?? null : null;
   /* A removed block is drawn where it was so nothing vanishes without being seen going — but its id
      is a real record id, so every control has to go with it. */
   const gone = mark === "removed";
   const moved = (field: string) => marks?.field(example.id, field) ?? null;
-  return <div className={`ex${own ? " own" : ""}${clip ? " clip-ex" : ""}${marked(mark)}`} data-record={example.id}>
+  return <div className={`ex${own ? " own" : ""}${clip ? " clip-ex" : ""}${photo ? " has-photo" : ""}${marked(mark)}`} data-record={example.id}>
     <MarkGlyph mark={mark} />
+    {photo && photos && <PhotoThumb attestation={photo} onOpen={() => photos.open(photo)} />}
     <div className="ex-text">
       <p className="t" lang={example.textLang} data-say={`example:${example.id}`}>
         <Spoken text={example.text} form={example.matchedForm} words={moved("text")?.words ?? null}>
@@ -444,14 +459,17 @@ function AttestationBlock({ attestation, language, glossLang, marks, onListen }:
   attestation: Attestation; language: string; glossLang: string | undefined; marks: MarkSlot | null; onListen: Listen;
 }) {
   const mark = marks?.of(attestation.id) ?? null;
-  return <div className={`att${marked(mark)}`} data-record={attestation.id}>
+  const photos = useContext(Photos);
+  const photo = attestation.photoRef ? attestation : null;
+  return <div className={`att${photo ? " has-photo" : ""}${marked(mark)}`} data-record={attestation.id}>
     <MarkGlyph mark={mark} />
+    {photo && photos && <PhotoThumb attestation={photo} onOpen={() => photos.open(photo)} />}
     <div className="att-text">
-      <p className="t" lang={language} data-say={`attestation:${attestation.id}`}>
+      {attestation.text.trim() ? <p className="t" lang={language} data-say={`attestation:${attestation.id}`}>
         <Spoken text={attestation.text} form={null} words={marks?.field(attestation.id, "text")?.words ?? null}>
           <Say target={{ kind: "attestation", id: attestation.id, text: attestation.text, lang: language }} onListen={onListen} />
         </Spoken>
-      </p>
+      </p> : <p className="t att-photo-only">A photo, with no sentence to keep.</p>}
       {attestation.translation && <p className="tr" lang={glossLang}>
         <DiffText
           text={attestation.translation} form={null}
@@ -882,6 +900,15 @@ export default function LexemeArticle({ article, onNotify, meta = true, view = "
   const playingClip = playing ? storedClipOf(playing) : null;
   /* Every section folds on its own, remembered per word for as long as the article is open. */
   const [folds, setFolds] = useState<Record<string, boolean>>({});
+  /* The photo opened full-frame, which lives here for the clip dialog's reason: it is only shown. */
+  const [viewing, setViewing] = useState<Attestation | null>(null);
+  const photos = useMemo<PhotoSlot>(() => ({
+    byId: new Map(article.attestations.filter((one) => one.photoRef).map((one) => [one.id, one])),
+    open: setViewing
+  }), [article.attestations]);
+  const photoDialog = viewing && <PhotoViewer
+    attestation={viewing} headword={lexeme.headword} onClose={() => setViewing(null)}
+  />;
   /* A stored article's buttons play its stored clips. An unsaved proposal — the Add view's preview,
      or a live proposal's marks — has placeholder ids and words that are not stored yet, so it is read
      aloud as it stands and nothing is kept. */
@@ -930,15 +957,16 @@ export default function LexemeArticle({ article, onNotify, meta = true, view = "
   }, [lexeme.id, focusSense, view]);
 
   if (view === "cards") {
-    return <div className="article-root cards-root" ref={root}>
+    return <Photos.Provider value={photos}><div className="article-root cards-root" ref={root}>
       <ArticleCards article={article} pictures={pictures} onListen={listen} onPlayClip={setPlaying} onReference={onReference}
         focusSense={focusSense} onMap={stored ? onMap : null} />
       <SelectionListen root={root} onListen={listenToSelection} />
       {dialog}
-    </div>;
+      {photoDialog}
+    </div></Photos.Provider>;
   }
 
-  return <div className="article-root" ref={root}>
+  return <Photos.Provider value={photos}><div className="article-root" ref={root}>
     <div className="masthead" data-record={lexeme.id}>
       <div className="head-row">
         <div className={`emoji-plate${tint(head("emoji"))}`}>{lexeme.emoji || "📄"}</div>
@@ -1017,5 +1045,6 @@ export default function LexemeArticle({ article, onNotify, meta = true, view = "
 
     <SelectionListen root={root} onListen={listenToSelection} />
     {dialog}
-  </div>;
+    {photoDialog}
+  </div></Photos.Provider>;
 }

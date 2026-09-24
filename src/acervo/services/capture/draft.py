@@ -74,20 +74,40 @@ def draft_from(
     topic_names = {topic["name"].lower(): topic["name"] for topic in topics}
 
     source_url = trimmed(request.get("sourceUrl")) or None
+    source = {
+        "sourceUrl": source_url,
+        "sourceTitle": trimmed(request.get("sourceTitle")) or None,
+        "sourceKind": pick_choice(
+            request.get("sourceKind"), SOURCE_KIND_VALUES, "web" if source_url else "unknown"
+        ),
+        "capturedAt": captured_at,
+    }
     attestations = [
         {
             "id": new_record_id(),
             "text": sentence["text"],
             "translation": sentence["translation"],
-            "sourceUrl": source_url,
-            "sourceTitle": trimmed(request.get("sourceTitle")) or None,
-            "sourceKind": pick_choice(
-                request.get("sourceKind"), SOURCE_KIND_VALUES, "web" if source_url else "unknown"
-            ),
-            "capturedAt": captured_at,
+            **source,
+            "photoRef": None,
+            "photoRegion": None,
         }
         for sentence in resolution["sentences"]
     ]
+    # Examples may be drawn only from what the learner actually wrote or read, never from a photo
+    # that carried no sentence.
+    sentences = list(attestations)
+    photo = trimmed(request.get("photoRef")) or None
+    if photo:
+        region = request.get("photoRegion") if isinstance(request.get("photoRegion"), dict) else None
+        if attestations:
+            # The photo is where the sentence was read, so it goes with the sentence.
+            attestations[0].update(photoRef=photo, photoRegion=region)
+        else:
+            # A street sign has no sentence: the photo is kept by itself, as the place it was met.
+            attestations.append({
+                "id": new_record_id(), "text": "", "translation": None, **source,
+                "photoRef": photo, "photoRegion": region,
+            })
 
     gloss_langs = vocabulary["glossLangs"]
     senses: list[dict[str, Any]] = []
@@ -122,7 +142,7 @@ def draft_from(
             if not text:
                 continue
             translation = trimmed(example.get("translation")) or None
-            attestation = _from_sentence(example.get("fromSentence"), attestations)
+            attestation = _from_sentence(example.get("fromSentence"), sentences)
             matched_form = trimmed(example.get("matchedForm")) or None
             matched_translation = trimmed(example.get("matchedTranslationForm")) or None
             examples.append(

@@ -15,6 +15,7 @@ Four rules, each of which stops being true silently:
   pipeline instead of writing it twice.
 - `article.py` itself imports nothing of Acervo's at all, which is what makes it safe to be the one
   thing every enrichment shares.
+- `ocr/` turns an OCR engine's words into a page: the provider package and nothing else of Acervo's.
 - `speech/` is the translation seam the corpus calls back through: the provider package and nothing
   else of Acervo's, and nothing at all of the retrieval service's.
 - `repository/` stores; it does not know the catalogue.
@@ -105,6 +106,7 @@ def test_the_rules_below_are_not_vacuous():
     assert modules_under("stories"), "no stories/ modules: the stands-alone rule would be vacuous"
     assert modules_under("pronunciation"), "no pronunciation/ modules: the stands-alone rule would be vacuous"
     assert modules_under("meaning"), "no meaning/ modules: the stands-alone rule would be vacuous"
+    assert modules_under("ocr"), "no ocr/ modules: the stands-alone rule would be vacuous"
     assert (PACKAGE / "article.py").exists(), "no article.py: the shared-view rule would be vacuous"
     assert modules_under("speech"), "no speech/ modules: the stands-alone rule would be vacuous"
     assert modules_under("repository"), "no repository/ modules"
@@ -257,6 +259,17 @@ def test_the_meaning_map_stands_alone(path):
     """
     offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
     assert not offenders, f"{path} imports {sorted(offenders)}; the meaning map stands alone"
+
+
+@pytest.mark.parametrize("path", modules_under("ocr"), ids=identify)
+def test_the_photo_reader_stands_on_the_provider_package_and_nothing_else(path):
+    """An engine's words in, a page to tap out — and no idea whose photo it is or where it is kept.
+
+    `services/photo.py` is the binding layer that reads `Settings`, the owner's `ocr` chain and
+    vocabularies, and stores the photo.
+    """
+    offenders = {name for name in imports_of(path) if name.startswith(STANDS_ALONE)}
+    assert not offenders, f"{path} imports {sorted(offenders)}; the photo reader stands alone"
 
 
 def test_the_article_view_imports_nothing_of_acervos():

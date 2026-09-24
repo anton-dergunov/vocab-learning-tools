@@ -12,7 +12,7 @@ the only thing that stops a client asking for revisions the new database has not
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -175,12 +175,19 @@ def _lookup(connection: Connection):
     return find
 
 
+# Brings the photo an attestation names into place: `(owner, reference) -> undo`. Supplied by the
+# caller, because the files are the service layer's and this module never learns where media lives.
+PlacePhoto = Callable[[str, str], Callable[[], None]]
+
+
 def merge_record(
     connection: Connection,
     collection: Collection,
     owner: str,
     device: str,
     value: Mapping[str, Any],
+    place_photo: PlacePhoto | None = None,
+    undo: list[Callable[[], None]] | None = None,
 ) -> tuple[dict[str, Any], bool]:
     """Apply one client record. Returns it, and whether it has just come into being.
 
@@ -233,6 +240,9 @@ def merge_record(
             400, "invalid_record", f"{collection.key} {identifier}: {refusal}"
         ) from refusal
 
+    if collection.key == "attestations":
+        _photo_in_place(row, stored, place_photo, undo)
+
     row["revision"] = allocate_revision(connection, owner)
     table = collection.table
     if stored is None:
@@ -249,6 +259,29 @@ def merge_record(
         )
     arrived = (stored is None or bool(stored["deleted"])) and not row["deleted"]
     return projected(collection, row), arrived
+
+
+def _photo_in_place(
+    row: Mapping[str, Any],
+    stored: Mapping[str, Any] | None,
+    place_photo: PlacePhoto | None,
+    undo: list[Callable[[], None]] | None,
+) -> None:
+    """A row may not name a photo that is not on disk, so naming a new one is what puts it there.
+
+    The photo is uploaded before any row names it and waits, pending, until a save does; the save is
+    what moves it into place, inside this transaction, so the row and the file land together or not
+    at all (`services/photo.py`). A reference that is already stored is not looked at again, which
+    keeps an edit of the sentence, or a tombstone, from depending on the file system.
+    """
+    reference = str(row.get("photo_ref") or "")
+    if not reference or row.get("deleted") or reference == ((stored or {}).get("photo_ref") or ""):
+        return
+    if place_photo is None:
+        raise ApiError(400, "photo_missing", "This write cannot bring a photo with it.")
+    reverse = place_photo(str(row["owner"]), reference)
+    if undo is not None:
+        undo.append(reverse)
 
 
 @dataclass(frozen=True)
@@ -278,7 +311,12 @@ def _live_lexeme(connection: Connection, owner: str, lexeme_id: str) -> bool:
 
 
 def merge_graph(
-    owner: str, device: str, changes: Mapping[str, Any], *, enqueue: Enqueue | None = SAVE
+    owner: str,
+    device: str,
+    changes: Mapping[str, Any],
+    *,
+    enqueue: Enqueue | None = SAVE,
+    place_photo: PlacePhoto | None = None,
 ) -> dict[str, Any]:
     """Apply a change set in graph order, so a record's relations always resolve before it lands.
 
@@ -286,7 +324,32 @@ def merge_graph(
     `enqueue` is None — which is what an enrichment's own writes pass, and a bundle import that
     restores pictures before it asks for the rest. Editing a sense's text enqueues nothing: a picture
     that no longer fits is the owner's call, through Redraw.
+
+    `place_photo` is what lets an attestation name a newly taken photo; without it such a write is
+    refused. Whatever it moved is moved back if the transaction does not commit.
     """
+    queued: list[dict[str, Any]] = []
+    undo: list[Callable[[], None]] = []
+    try:
+        result, queued = _merged(owner, device, changes, enqueue, place_photo, undo)
+    except BaseException:
+        for reverse in reversed(undo):
+            reverse()
+        raise
+    for job in queued:
+        notify.queued(owner, job)
+    notify.revision(owner, result["cursor"])
+    return result
+
+
+def _merged(
+    owner: str,
+    device: str,
+    changes: Mapping[str, Any],
+    enqueue: Enqueue | None,
+    place_photo: PlacePhoto | None,
+    undo: list[Callable[[], None]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     queued: list[dict[str, Any]] = []
     with transaction() as connection:
         written: dict[str, list[dict[str, Any]]] = {}
@@ -296,7 +359,9 @@ def merge_graph(
             for value in changes.get(collection.key) or []:
                 if not isinstance(value, Mapping):
                     continue
-                record, arrived = merge_record(connection, collection, owner, device, value)
+                record, arrived = merge_record(
+                    connection, collection, owner, device, value, place_photo, undo
+                )
                 rows.append(record)
                 if arrived and collection.key == "lexemes":
                     words[record["id"]] = None
@@ -318,10 +383,7 @@ def merge_graph(
             # Which job will enrich each word this write created, so the caller can follow it.
             "enrich": {job["subject"]["id"]: job["id"] for job in queued},
         }
-    for job in queued:
-        notify.queued(owner, job)
-    notify.revision(owner, result["cursor"])
-    return result
+    return result, queued
 
 
 def tombstone_all_words(owner: str, device: str) -> dict[str, Any]:

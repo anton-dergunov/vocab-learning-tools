@@ -1,4 +1,4 @@
-import type { Loop, PartOfSpeech, Pronunciation, Story, StoryPart, VocabularyGraph } from "./domain";
+import type { Loop, PartOfSpeech, PhotoRegion, Pronunciation, SourceKind, Story, StoryPart, VocabularyGraph } from "./domain";
 import { normalizeServerURL, sessionStore, type StoredSession } from "./session";
 import type { ArticleDraft } from "./yaml";
 
@@ -6,7 +6,7 @@ type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type LoginResponse = { token: string; user: { id: string; email: string } };
 
 /** Shared with the server hook. A mismatch stops synchronisation until the app is updated. */
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 interface SyncEnvelope {
   schemaVersion: number;
@@ -228,6 +228,11 @@ const PRONOUNCE_TIMEOUT = 60_000;
    part of eight passages is close to a minute. Long enough not to give up on a recording the server
    is still making, which would then arrive anyway and be found on the next pull. */
 const STORY_AUDIO_TIMEOUT = 180_000;
+// A photo is ~400 KB up and a page of words down; Vision answers in about a second, and the first
+// photo may also wait for the sentence splitter to load.
+const PHOTO_TIMEOUT = 45_000;
+// The quick look-up: about a second at the median, raced by a second model at 2.5 s on the server.
+const QUICK_TIMEOUT = 20_000;
 
 /* ── capture ────────────────────────────────────────────────────────────
    The ingest endpoint of design §05. What comes back is a *proposal*: a draft the interface renders
@@ -248,6 +253,8 @@ export interface CaptureResolution {
   /** How many leading lines of the submitted text the entry covered. Only meaningful in a stream. */
   consumedLines: number;
   consumedText: string | null;
+  /** What the word means in this sentence, in the vocabulary's first gloss language. Only a quick look-up asks. */
+  gloss?: string | null;
 }
 
 /** An entry this word already has. `foldable` beside it is what a repeat capture can add to it. */
@@ -316,6 +323,83 @@ export interface CaptureRequest {
   reference?: string | null;
   /** How closely to follow it. Absent means the `note` says what to do instead. */
   referenceMode?: "faithful" | "expand" | null;
+  /**
+   * What a quick look-up returned for this same text a moment ago. The server checks it rather than
+   * trusting it, and does not pay for resolve a second time.
+   */
+  resolution?: CaptureResolution | null;
+  /** The photo this was read from, as `readPhoto` named it, and where on it the word and sentence are. */
+  photoRef?: string | null;
+  photoRegion?: PhotoRegion | null;
+  sourceKind?: SourceKind | null;
+}
+
+/* ── photo capture ──────────────────────────────────────────────────────
+   A photo goes up and comes back as a page of tappable words (`POST /photo/read`); a tap asks the
+   quick look-up (`POST /capture/resolve`) what was meant; Add is `captureText` carrying that
+   resolution and the photo. Nothing here writes a record: the photo waits on the server until the
+   save that names it, and is removed after a day if none does. */
+
+/** A point, a polygon: normalised to the photo, 0–1 from its top left. */
+export type PhotoPoint = [number, number];
+
+export interface PhotoWord {
+  id: string;
+  text: string;
+  /** One outline per printed piece: a word hyphenated across a line break has two. */
+  polygons: PhotoPoint[][];
+  confidence: number;
+  lineId: string;
+  /** Offsets into the page's running `text`. */
+  start: number;
+  end: number;
+}
+
+export interface PhotoLine {
+  id: string;
+  polygon: PhotoPoint[];
+  wordIds: string[];
+}
+
+export interface PhotoSentence {
+  id: string;
+  text: string;
+  wordIds: string[];
+  start: number;
+  end: number;
+  /** The frame cut it off: its start, or its end, is not in the photo. */
+  truncatedStart: boolean;
+  truncatedEnd: boolean;
+}
+
+export interface PhotoReading {
+  /** Where the photo will live once a save keeps it. */
+  photoRef: string;
+  width: number;
+  height: number;
+  /** The owner's vocabulary for the detected language, or the detected language itself. */
+  language: string | null;
+  /** Whether the owner keeps a vocabulary for it. */
+  vocabulary: boolean;
+  readBy: { provider: string; model: string };
+  text: string;
+  words: PhotoWord[];
+  lines: PhotoLine[];
+  sentences: PhotoSentence[];
+}
+
+export interface QuickLookUpRequest {
+  /** The sentence, as it stands in the sheet. */
+  text: string;
+  /** The tapped span within it. */
+  selection: { start: number; end: number };
+}
+
+export interface QuickLookUp {
+  resolution: CaptureResolution;
+  duplicates: CaptureDuplicate[];
+  foldable: CaptureFoldable | null;
+  passedOver?: CapturePassedOver[];
 }
 
 /* ── chat ───────────────────────────────────────────────────────────────
@@ -668,6 +752,14 @@ function timeoutSignal(milliseconds: number): AbortSignal | undefined {
   return typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(milliseconds) : undefined;
 }
 
+/** The caller's own signal, if it gave one, and the timeout: whichever fires first. */
+function withTimeout(signal: AbortSignal | null | undefined, milliseconds: number): AbortSignal | undefined {
+  const timeout = timeoutSignal(milliseconds);
+  if (!signal) return timeout;
+  if (!timeout) return signal;
+  return "any" in AbortSignal ? AbortSignal.any([signal, timeout]) : signal;
+}
+
 class ApiClient {
   private session: StoredSession | null = null;
   private onUnauthorized: (() => void) | null = null;
@@ -699,8 +791,12 @@ class ApiClient {
     if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (!anonymous && this.session?.token) headers.set("Authorization", `Bearer ${this.session.token}`);
     let response: Response;
-    try { response = await fetch(`${baseUrl}${API_PATH}${path}`, { ...options, headers, cache: "no-store", signal: timeoutSignal(timeout) }); }
-    catch { throw new AcervoApiError("The Acervo server could not be reached. Local vocabulary remains available.", 0, "offline"); }
+    try { response = await fetch(`${baseUrl}${API_PATH}${path}`, { ...options, headers, cache: "no-store", signal: withTimeout(options.signal, timeout) }); }
+    catch (error) {
+      // The caller changed its mind, which is not the server being unreachable.
+      if (options.signal?.aborted) throw error;
+      throw new AcervoApiError("The Acervo server could not be reached. Local vocabulary remains available.", 0, "offline");
+    }
     let envelope: Envelope<T> = {};
     try { envelope = await response.json() as Envelope<T>; } catch { /* diagnosed below */ }
     if (!response.ok || envelope.error || envelope.data === undefined) {
@@ -964,9 +1060,41 @@ export const backendSession = {
         sourceTitle: request.sourceTitle ?? null,
         note: request.note ?? null,
         reference: request.reference?.trim() || null,
-        referenceMode: request.referenceMode ?? null
+        referenceMode: request.referenceMode ?? null,
+        resolution: request.resolution ?? null,
+        photoRef: request.photoRef ?? null,
+        photoRegion: request.photoRegion ?? null,
+        sourceKind: request.sourceKind ?? null
       })
     }, false, CAPTURE_TIMEOUT);
+  },
+
+  /** Reads a photo into a page of tappable words. The photo is sent as it is — `photoText.encodePhoto` prepares it. */
+  readPhoto(photo: Blob): Promise<PhotoReading> {
+    return client.call<PhotoReading>("/photo/read", {
+      method: "POST",
+      headers: { "Content-Type": photo.type || "image/jpeg" },
+      body: photo
+    }, false, PHOTO_TIMEOUT);
+  },
+  /** The Photo tab opened: the server loads its sentence splitter now rather than on the first photo. */
+  warmPhoto(): Promise<unknown> {
+    return client.call("/photo/warm", { method: "POST", body: "{}" });
+  },
+  /** The quick look-up a tap makes. Aborted by `signal` when the selection moves on. */
+  resolveCapture(deviceId: string, request: QuickLookUpRequest, signal?: AbortSignal): Promise<QuickLookUp> {
+    return client.call<QuickLookUp>("/capture/resolve", {
+      method: "POST",
+      signal,
+      body: JSON.stringify({
+        schemaVersion: SCHEMA_VERSION,
+        deviceId,
+        mode: "single",
+        source: "photo",
+        text: request.text,
+        selection: request.selection
+      })
+    }, false, QUICK_TIMEOUT);
   },
   /* ── external dictionaries ────────────────────────────────────────────
      Two calls and two addresses. The list and an online lookup are ordinary JSON; the artifact

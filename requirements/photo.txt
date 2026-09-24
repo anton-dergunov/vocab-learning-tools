@@ -1,0 +1,8 @@
+# Photo capture (src/acervo/ocr/): splitting what Cloud Vision read into sentences.
+#
+# Segment any Text, through wtpsplit-lite: the ONNX build, so it runs on onnxruntime rather than on
+# torch. Measured in experiments/photo-capture/: on the text a photo actually yields — a status bar,
+# a heading, show-through from the facing page — rules and pySBD found the right boundaries for 69%
+# and 74% of taps, and SaT for 98%. Its weights are pinned in models/segmenter.json and baked into
+# the server image.
+wtpsplit-lite>=0.2

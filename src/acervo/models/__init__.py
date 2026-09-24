@@ -1,4 +1,4 @@
-"""The one way to call a model from Python: a catalogue of rows, and three functions.
+"""The one way to call a model from Python: a catalogue of rows, and four functions.
 
 Four unrelated mechanisms reached a model before this package existed, and the layer that looked
 like the abstraction was dead code. What made it dead is worth stating, because it is the shape this
@@ -8,8 +8,9 @@ returns an `Answer` alongside its payload.
 
 A provider is a row of data in `models/catalogue.json`, never a class. A row declares what it
 supports — `capabilities.jsonMode` is `native` or `prompt` — and this package adapts once, at the
-call boundary. There is no per-provider code except `cloudflare.py`, which exists because LiteLLM
-covers neither Cloudflare images nor Cloudflare audio.
+call boundary. There is no per-provider code except the adapters LiteLLM leaves necessary:
+`cloudflare.py` for Cloudflare images and audio, and `google_tts.py` and `google_vision.py` for
+Google's speech and OCR APIs, which share `google_auth.py`.
 
 **This package stands alone.** It imports no Acervo settings, graph, database or wire vocabulary,
 and `tests/unit/server/test_layering.py` enforces that. It takes a catalogue and a chain and nothing
@@ -38,7 +39,7 @@ from acervo.models.errors import (
     TERMINAL,
 )
 from acervo.models import journal
-from acervo.models.results import Answer, AudioResult, ImageResult, TextResult
+from acervo.models.results import Answer, AudioResult, ImageResult, OcrResult, OcrWord, TextResult
 
 __all__ = [
     "Answer",
@@ -48,6 +49,8 @@ __all__ = [
     "Catalogue",
     "ChainExhausted",
     "ImageResult",
+    "OcrResult",
+    "OcrWord",
     "ProviderError",
     "ProviderRefused",
     "ProviderUnavailable",
@@ -59,6 +62,7 @@ __all__ = [
     "available",
     "image",
     "load_catalogue",
+    "ocr",
     "reason",
     "speech",
     "text",
@@ -66,13 +70,13 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    """`text`, `image` and `speech` arrive only when they are asked for.
+    """`text`, `image`, `speech` and `ocr` arrive only when they are asked for.
 
     Importing them eagerly would import `call.py`, and a reader of this module would then need
     LiteLLM to exist. `scripts/ingest_vocabulary_file.py` imports `acervo.models.pacing` and the
     worker image carries no LiteLLM, so that is not a hypothetical.
     """
-    if name in ("text", "image", "speech"):
+    if name in ("text", "image", "speech", "ocr"):
         from acervo.models import call
 
         return getattr(call, name)

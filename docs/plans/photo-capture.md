@@ -1,11 +1,13 @@
 # Photo capture · tap a word in what you're reading
 
-**Status:** unbuilt. The Spanish spike has run: **the idea survives with Cloud Vision reading the
+**Status:** built, steps 1–4 of the [build order](#build-order-after-the-spike), with Cloud Vision
+as the only reader. The Spanish spike ran first: **the idea survives with Cloud Vision reading the
 photo, and not with RapidOCR on the NAS**. See [Spike results](#spike-results), and the
 experiment write-up in [`experiments/photo-capture/`](../../experiments/photo-capture/README.md). The
 fixtures it measures against are in
 [`tests/fixtures/photo-capture/`](../../tests/fixtures/photo-capture/README.md).
-Several sections below have been corrected by what it measured. Chinese and Japanese are a separate
+Several sections below have been corrected by what it measured, and by what the build decided —
+[What the build decided](#what-the-build-decided) lists those. Chinese and Japanese are a separate
 spike, not yet run.
 
 Today a word reaches Acervo by being typed or pasted into Add. That works for text already on a
@@ -14,8 +16,10 @@ dictionary most wants: the sentence the word was met in, and a memory of where.
 
 ## Outcome
 
-Add opens the camera straight away. The viewfinder fills the top of the screen, leaving room for a
-sheet below it, and a second button chooses an existing image or screenshot instead. The whole
+Add has a **Photo** tab beside Text, Article and YAML. It is never where Add opens, and the camera
+turns on only when "Take a photo" is pressed: photo capture is an occasional way in, and a camera
+that switches itself on is one nobody asked for. The viewfinder fills the top of the screen, leaving
+room for a sheet below it, and a second button chooses an existing image or screenshot instead. The whole
 frame is what gets read: the spike showed a square crop cuts the very sentences worth keeping. Taking the picture freezes the
 frame, and every recognised word on it becomes tappable.
 
@@ -204,36 +208,46 @@ The picture is part of the provenance. For a book, it shows where on the page th
 owner can go back to it. For a sign or a landmark, the picture *is* the memory. The dictionary is
 private, so keeping photos of pages raises no question of sharing.
 
-**Model.** An attestation gains two nullable fields:
+**Model.** An attestation gains two fields, empty for one that was typed or pasted:
 
 - `photoRef`: a path relative to `ACERVO_MEDIA_PATH`, as `imageRef` is for a sense picture.
 - `photoRegion`: the normalised polygons of the selected words and their sentence, so the article
   can draw the same highlight again.
 
-This is a schema change, so it costs a `--reset-database`. `SOURCE_KINDS` probably gains a kind for
-something seen out in the world rather than read; name it during the build.
+This is a schema change, carried across by a throwaway converter (`./deploy.sh --transition`) rather
+than a `--reset-database`, since it only adds two columns. `SOURCE_KINDS` gains `sign`, for text
+seen out in the world rather than read: a street sign, a menu, a label.
 
 **Who writes the file, and who writes the row.** AGENTS.md requires that a media file and the row
 naming it be written by the same party, or one of them is a lie. Here the server writes the file,
 but the row goes through the ordinary `saveArticle`. This design keeps the rule true without adding
 a second writer:
 
-1. `/photo/read` stores the uploaded image, cropped and EXIF-free, content-addressed as
-   `photos/{owner}/pending/{sha256}.jpg`, and returns its ref.
-2. The Add document's attestation names that ref. `merge_graph` **refuses** a `photoRef` with no
-   file under that owner's pending directory, and in the same write moves the file out of
-   `pending/`. The row can never name a missing file, and there is still one writer of the graph.
-3. A sweep deletes pending photos older than a day. A photo nobody added costs nothing.
+1. `/photo/read` stores the uploaded image, EXIF-free, content-addressed as
+   `photos/{owner}/pending/{digest}.jpg`, and returns the ref it will have **once kept**,
+   `photos/{owner}/{digest}.jpg`. Nothing ever rewrites a ref, and a second word saved from the same
+   photo finds it already kept.
+2. The Add document's attestation names that ref. `merge_graph` **refuses** a new `photoRef` whose
+   file is neither kept nor pending under that owner, and in the same write moves it out of
+   `pending/` — back again if the transaction does not commit. The row can never name a missing
+   file, and there is still one writer of the graph.
+3. A runner tick deletes pending photos older than a day. A photo nobody added costs nothing.
+4. The media route serves `photos/{owner}/…` to that owner only, and never a pending one.
+5. A kept photo is not deleted with its attestation: undo restores the tombstone, and one photo may
+   back several words.
 
 **Reading.** A photo is fetched as a blob behind bearer auth and cached in `mediaStore.ts`, exactly
-as sense pictures are, so it works offline once seen. The attestation shows a thumbnail, and tapping
-it opens the full frame with the highlight drawn.
+as sense pictures are, so it works offline once seen. The attestation shows a thumbnail — and so
+does the example drawn from it, because capture shows a sentence you supplied as that example and
+not under "Where you met it" — and tapping it opens the full frame with the highlight drawn. The
+device puts the bytes it uploaded into that cache under the kept ref before review, so the article
+being reviewed shows the photo the server does not serve yet.
 
 **Keeping the photo is a switch** on the sheet, on by default. Adding a word without its picture
 must stay one tap away.
 
-**Export is an open question.** Bundles carry no media today, so the first version leaves photos
-out of them and says so in the export panel.
+**Export leaves photos out**, and the export panel says so: a word file drops `photoRef` and
+`photoRegion`, and an attestation that was only a photo has nothing left to say without it.
 
 ## Where OCR runs
 
@@ -300,6 +314,29 @@ layer is `services/photo.py`, and `test_layering.py` enforces both.
 - **Photos taken offline and kept for later: no.** Writes are online-only, and a photo capture is a
   write. The camera says the server is unreachable.
 
+## What the build decided
+
+- **The quick call is `POST /capture/resolve`.** It is `pipeline.understand` — resolve, the
+  vocabulary checks and the duplicate check — on the `quick` chain, with `prompts/acervo_resolve.md`'s
+  `quick` and `photo` sections switched on. The tap is marked in the text with asterisks, which is
+  how the resolve prompt already reads a pointer. `/capture` takes the `resolution` back, checks
+  every field again and refuses a sentence its own text does not contain.
+- **Two model kinds, not one.** `quick` is the text models in a second order; `ocr` is a catalogue
+  kind of its own with `google-vision` its only row. Both appear in Settings ▸ Models.
+  `models/google_vision.py` answers provider-neutral `OcrWord`s with their block and paragraph, so
+  Azure AI Vision Read is one more row and one more adapter.
+- **SaT on the page's whole text.** Splitting on Vision's paragraphs first was measured and loses
+  (step 7 of the experiment): rules rise from 69% to 81%, and SaT falls from 98% to 87%, because
+  Vision starts paragraphs mid-sentence. SaT is pinned in `models/segmenter.json`, baked into the
+  image, and loaded when the Photo tab opens rather than at startup.
+- **The camera path** is `ImageCapture.takePhoto()` where it exists and the video frame elsewhere;
+  "Choose an image" is the native camera's route. Comparing the three on the owner's phone is still
+  to do.
+- **Folding a sentence in does not keep the photo.** It goes through the article conversation, which
+  carries text; keeping the photo there is future work.
+- **A sign is a photo with no sentence**: an attestation with empty text is allowed when it carries a
+  photo, and no example is drawn from one.
+
 ## Spike results
 
 The Spanish spike ran on 15 September 2026. Its method and every number are in
@@ -340,13 +377,12 @@ The layout format above is character offsets and polygons, so nothing in it assu
 
 ## Build order after the spike
 
-0. The camera-path comparison on the owner's phone, and the owner's decision on the degraded
-   RapidOCR mode (see "Where OCR runs").
-1. The OCR package and `/photo/read`, with Vision as the `ocr` row and unit tests driven by the
-   fixtures.
-2. The capture split and the quick call, with its own fast model kind.
-3. `photoRef` and `photoRegion` on attestations, pending-photo promotion in `merge_graph`, and the
-   sweep. This step needs one `--reset-database`.
-4. `PhotoCapture.tsx`, `photoText.ts` and their styles, with `design/ui-prototype/` changed at the
-   same time.
+0. The camera-path comparison on the owner's phone — still to do. The owner decided against the
+   degraded RapidOCR mode for the first build.
+1. **Built.** The OCR package and `/photo/read`, with Vision as the `ocr` row.
+2. **Built.** The capture split and the quick call, with its own fast model kind.
+3. **Built.** `photoRef` and `photoRegion` on attestations, pending-photo promotion in `merge_graph`,
+   and the sweep — carried across by a throwaway converter rather than a reset.
+4. **Built.** `PhotoCapture.tsx`, `photoText.ts` and their styles, with `design/ui-prototype/`
+   changed at the same time.
 5. The image share target.

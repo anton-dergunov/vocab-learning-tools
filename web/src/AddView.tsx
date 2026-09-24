@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type {
-  CaptureFoldable, CaptureHealth, CaptureRequest, CaptureResult, ChatResult, ChatTurn
+  CaptureFoldable, CaptureHealth, CaptureRequest, CaptureResult, ChatResult, ChatTurn, PhotoReading,
+  QuickLookUp, QuickLookUpRequest
 } from "./api";
 import AskDock from "./AskDock";
 import {
@@ -12,6 +13,8 @@ import { useEditorPreferences } from "./editorPreferences";
 import { CaretIcon, CloseIcon } from "./icons";
 import LexemeArticle, { type MarkSlot } from "./LexemeArticle";
 import { newId } from "./ids";
+import { seed as seedPicture } from "./media";
+import PhotoCapture, { type PhotoAdd } from "./PhotoCapture";
 import { articleFromDraft, type Article } from "./selectors";
 import { ValidationPanel } from "./ValidationPanel";
 import {
@@ -23,7 +26,10 @@ import {
 // actually opened, so it is loaded on demand rather than with everything else.
 const EditorSurface = lazy(() => import("./YamlPane").then((module) => ({ default: module.EditorSurface })));
 
-export type AddTab = "capture" | "article" | "yaml";
+/** `capture` is the Text tab. Photo is never where Add opens: it is an occasional way in, chosen. */
+export type AddTab = "capture" | "photo" | "article" | "yaml";
+
+const noop = () => undefined;
 
 /** Why a provider was passed over, in words rather than in the chain's own vocabulary. */
 const REASONS: Record<string, string> = {
@@ -66,7 +72,8 @@ export interface CaptureSeed {
  */
 export default function AddView({
   tab, onTab, graph, problems, busy, seed, captureHealth,
-  onClose, onCreate, onCapture, onOpenLexeme, onFoldIn, onChat, offline = false, onNotify
+  onClose, onCreate, onCapture, onOpenLexeme, onFoldIn, onChat, onReadPhoto, onLookUp, onWarmPhoto,
+  offline = false, onNotify
 }: {
   tab: AddTab;
   onTab(tab: AddTab): void;
@@ -90,6 +97,10 @@ export default function AddView({
   onFoldIn?(lexemeId: string, foldable: CaptureFoldable): void;
   /** One turn about the unsaved document. Absent when the server has no model, like Capture itself. */
   onChat?(document: string, turns: ChatTurn[]): Promise<ChatResult>;
+  /** Photo capture's three round trips. Without them there is no Photo tab. */
+  onReadPhoto?(photo: Blob): Promise<PhotoReading>;
+  onLookUp?(request: QuickLookUpRequest, signal: AbortSignal): Promise<QuickLookUp>;
+  onWarmPhoto?(): void;
   /** From `syncStatus`: chat is a round trip, and the dock is the only part of this that needs one. */
   offline?: boolean;
   onNotify(message: string, action?: { label: string; run(): void }): void;
@@ -192,25 +203,13 @@ export default function AddView({
     }
   }, [graph, draft, untouched]);
 
-  async function process() {
+  async function submit(request: CaptureRequest) {
     setWorking(true);
     setFailure(null);
     setDuplicates([]);
     setPassedOver([]);
     try {
-      const result = await onCapture({
-        // The word alone is a complete capture. Sending it as the text too keeps that from needing
-        // its own request shape — the server resolves what it is given, and here that is the word.
-        text: capture.trim() || headword.trim(),
-        headword: headword.trim() || null,
-        sourceUrl: sourceUrl.trim() || null,
-        sourceTitle: sourceTitle.trim() || null,
-        note: note.trim() || null,
-        // A dictionary's entry, when there is one. Never `text`: that becomes attestations, and a
-        // dictionary's examples are not sentences this person met.
-        reference: seed?.reference ?? null,
-        referenceMode: seed?.referenceMode ?? null
-      });
+      const result = await onCapture(request);
       setPassedOver(result.passedOver ?? []);
       if (result.duplicates.length) {
         setDuplicates(result.duplicates);
@@ -231,6 +230,39 @@ export default function AddView({
     }
   }
 
+  function process() {
+    return submit({
+      // The word alone is a complete capture. Sending it as the text too keeps that from needing
+      // its own request shape — the server resolves what it is given, and here that is the word.
+      text: capture.trim() || headword.trim(),
+      headword: headword.trim() || null,
+      sourceUrl: sourceUrl.trim() || null,
+      sourceTitle: sourceTitle.trim() || null,
+      note: note.trim() || null,
+      // A dictionary's entry, when there is one. Never `text`: that becomes attestations, and a
+      // dictionary's examples are not sentences this person met.
+      reference: seed?.reference ?? null,
+      referenceMode: seed?.referenceMode ?? null
+    });
+  }
+
+  /**
+   * A word from a photo, through the same capture: the sentence as the text, the look-up it already
+   * had, and the photo. The photo's own bytes go into the picture cache first, under the reference it
+   * will have once kept, so the article under review shows it — the server holds it pending and will
+   * not serve it until the save.
+   */
+  async function addFromPhoto(add: PhotoAdd) {
+    if (add.photoRef && add.photo) await seedPicture(add.photoRef, add.photo);
+    await submit({
+      text: add.text,
+      resolution: add.resolution,
+      photoRef: add.photoRef,
+      photoRegion: add.photoRegion,
+      sourceKind: add.sourceKind
+    });
+  }
+
   /* A seeded composition processes itself. The decision was taken on the article — which word,
      which treatment — and asking for it a second time here would be a form standing between
      someone and the thing they already asked for. */
@@ -248,12 +280,76 @@ export default function AddView({
     <h2>Add a word</h2>
     <span className="spacer" />
     <div className="seg">
-      <button className={tab === "capture" ? "on" : ""} onClick={() => onTab("capture")}>Capture</button>
+      <button className={tab === "capture" ? "on" : ""} onClick={() => onTab("capture")}>Text</button>
+      {onReadPhoto && <button className={tab === "photo" ? "on" : ""} onClick={() => onTab("photo")}>Photo</button>}
       <button className={tab === "article" ? "on" : ""} onClick={() => onTab("article")}>Article</button>
       <button className={tab === "yaml" ? "on" : ""} onClick={() => onTab("yaml")}>YAML</button>
     </div>
     <button className="icon-btn" aria-label="Close" onClick={onClose}><CloseIcon /></button>
   </>;
+
+  // Pinned with the buttons on purpose, on Text and on Photo alike: a refusal you have to go looking
+  // for is one you miss.
+  const notices = <>
+    {duplicates.length > 0 && <div className="validation ok" role="status">
+      <strong>{duplicates.length === 1 ? "You already have this word." : "You already have these."}</strong>
+      <ul>
+        {duplicates.map((duplicate) => <li key={duplicate.id}>
+          <button className="link-btn" onClick={() => onOpenLexeme(duplicate.id)}>{duplicate.headword}</button>
+          {duplicate.shortGloss ? ` — ${duplicate.shortGloss}` : ""}
+        </li>)}
+      </ul>
+      <span>
+        {foldable
+          ? "Nothing was created. Open it to read it, or fold what you just captured into it."
+          : "Nothing was created. Open the entry to see what it already says."}
+      </span>
+      {/* §05: a repeat capture is an addition, not an entry. Folding it in is one ordinary turn
+          of the article conversation producing one ordinary proposal — no merge path, no second
+          writer, and nothing the chat could not already do. */}
+      {foldable && duplicates.length === 1 && <div className="fold-in">
+        <button className="tb-btn primary" onClick={() => onFoldIn?.(duplicates[0].id, foldable)}>
+          Fold in
+        </button>
+      </div>}
+    </div>}
+    {/* A fall-through is silent otherwise. The entry names the model that wrote it, but a
+        provider at the head of the order that is quietly broken looks exactly like one that was
+        never chosen — and the owner goes on believing it built their words. */}
+    {passedOver?.length ? <div className="validation warn" role="status">
+      <strong>{passedOver.length === 1 ? "A provider was passed over." : "Some providers were passed over."}</strong>
+      <ul>{passedOver.map((one) => <li key={`${one.provider} ${one.model}`}>
+        <code>{one.model}</code> — {REASONS[one.reason] ?? one.reason}
+      </li>)}</ul>
+      <span>The next one in your order answered instead.</span>
+    </div> : null}
+    {noVocabularies && <div className="validation bad" role="alert">
+      <strong>There is no vocabulary to add a word to yet.</strong>
+      <span>Add the language you are learning in Settings {"\u25B8"} Vocabularies, then capture
+        this again.</span>
+    </div>}
+    {!noVocabularies && cannotBuild && <div className="validation bad" role="alert">
+      <strong>This server cannot build entries right now.</strong>
+      <span>{cannotBuild.reason}. You can still write the entry yourself.</span>
+    </div>}
+    {failure && <div className="validation bad" role="alert"><strong>{failure}</strong></div>}
+  </>;
+
+  if (tab === "photo" && onReadPhoto && onLookUp) {
+    return <PhotoCapture
+      head={head}
+      notices={notices}
+      offline={offline}
+      unavailable={noVocabularies ? "There is no vocabulary to add a word to yet" : cannotBuild?.reason ?? null}
+      working={working}
+      onRead={onReadPhoto}
+      onLookUp={onLookUp}
+      onAdd={(add) => void addFromPhoto(add)}
+      onOpenLexeme={onOpenLexeme}
+      onFoldIn={(lexemeId, carried) => onFoldIn?.(lexemeId, carried)}
+      onWarm={onWarmPhoto ?? noop}
+    />;
+  }
 
   if (tab === "capture") {
     return <Composer
@@ -261,49 +357,7 @@ export default function AddView({
       head={head}
       fill={false}
       actions={<>
-        {/* Pinned with the buttons on purpose: a refusal you have to go looking for is one you miss. */}
-        {duplicates.length > 0 && <div className="validation ok" role="status">
-          <strong>{duplicates.length === 1 ? "You already have this word." : "You already have these."}</strong>
-          <ul>
-            {duplicates.map((duplicate) => <li key={duplicate.id}>
-              <button className="link-btn" onClick={() => onOpenLexeme(duplicate.id)}>{duplicate.headword}</button>
-              {duplicate.shortGloss ? ` — ${duplicate.shortGloss}` : ""}
-            </li>)}
-          </ul>
-          <span>
-            {foldable
-              ? "Nothing was created. Open it to read it, or fold what you just captured into it."
-              : "Nothing was created. Open the entry to see what it already says."}
-          </span>
-          {/* §05: a repeat capture is an addition, not an entry. Folding it in is one ordinary turn
-              of the article conversation producing one ordinary proposal — no merge path, no second
-              writer, and nothing the chat could not already do. */}
-          {foldable && duplicates.length === 1 && <div className="fold-in">
-            <button className="tb-btn primary" onClick={() => onFoldIn?.(duplicates[0].id, foldable)}>
-              Fold in
-            </button>
-          </div>}
-        </div>}
-        {/* A fall-through is silent otherwise. The entry names the model that wrote it, but a
-            provider at the head of the order that is quietly broken looks exactly like one that was
-            never chosen — and the owner goes on believing it built their words. */}
-        {passedOver?.length ? <div className="validation warn" role="status">
-          <strong>{passedOver.length === 1 ? "A provider was passed over." : "Some providers were passed over."}</strong>
-          <ul>{passedOver.map((one) => <li key={`${one.provider} ${one.model}`}>
-            <code>{one.model}</code> — {REASONS[one.reason] ?? one.reason}
-          </li>)}</ul>
-          <span>The next one in your order answered instead.</span>
-        </div> : null}
-        {noVocabularies && <div className="validation bad" role="alert">
-          <strong>There is no vocabulary to add a word to yet.</strong>
-          <span>Add the language you are learning in Settings {"\u25B8"} Vocabularies, then capture
-            this again.</span>
-        </div>}
-        {!noVocabularies && cannotBuild && <div className="validation bad" role="alert">
-          <strong>This server cannot build entries right now.</strong>
-          <span>{cannotBuild.reason}. You can still write the entry yourself.</span>
-        </div>}
-        {failure && <div className="validation bad" role="alert"><strong>{failure}</strong></div>}
+        {notices}
         <div className="composer-buttons">
           <span className="spacer" />
           <button className="tb-btn" onClick={() => onTab("yaml")}>Write YAML instead</button>

@@ -96,11 +96,12 @@ src/acervo/
   repository/        the only code that touches the database
   api/               FastAPI: routers, the error envelope, auth, the static surfaces
   services/          request-path work with no database concern of its own
-  models/            the provider catalogue, and text() / image() / speech()
+  models/            the provider catalogue, and text() / image() / speech() / ocr()
   article.py         one word and its senses, the view every enrichment reads
   images/            the sense-image pipeline: a brief per lexeme, a picture per sense
   clips/             the clip pipeline: a corpus search and one selection per lexeme
   speech/            the corpus's translation seam, running on the owner's chain
+  ocr/               photo capture's page: an OCR engine's words to lines and sentences
   dictionaries/      the external-dictionary artifact compiler
   jobs/              one-shot batch work, run by acervo-worker
   consumers/anki/    the headless Anki robot
@@ -285,7 +286,9 @@ Frozen. It is reproduced exactly, and `web/` is the conformance suite.
 | `GET /api/acervo/v1/graph?since=` | bearer | Pure read |
 | `POST /api/acervo/v1/graph` | bearer | One transaction, all-or-nothing |
 | `POST /api/acervo/v1/graph/reset` | bearer | Confirmation token `delete-all-words` |
-| `POST /api/acervo/v1/capture` | bearer | Two model calls; no transaction held across them |
+| `POST /api/acervo/v1/capture` | bearer | Two model calls; no transaction held across them. Takes a `resolution` from `/capture/resolve` and then makes one |
+| `POST /api/acervo/v1/capture/resolve` | bearer | The quick look-up a photo tap makes: resolve alone, on the `quick` chain. Writes nothing |
+| `POST /api/acervo/v1/photo/read` | bearer | A raw image body in, a page of words, lines and sentences out. Stores the photo pending; writes no record |
 | `GET /api/acervo/v1/dictionaries`, `/dictionaries/online/{source}` | bearer | |
 | `GET /api/acervo/v1/mac-release` | none | `{"data": null}` when there is no release — the Mac host decodes an optional |
 | `GET /api/acervo/dictionaries/{file}` | **bearer** | Static, Range-capable |
@@ -306,6 +309,9 @@ Four things about that table are load-bearing and easy to unify by accident:
   putting compression in front of these routes, which strips `Content-Length`; and hand-rolling a
   `StreamingResponse` to bolt on auth, which has no Range handling at all. Check the token in the
   route and return a `FileResponse`.
+- **A photo is served to its owner only.** Everything else under the media route is readable by any
+  signed-in account, because a record names it; a photo is a picture of the owner's own world, and
+  `photos/{owner}/…` says whose it is. A pending one is never served at all.
 - **Path containment must be re-implemented.** PocketBase's directory filesystem gave it for free.
 - **CORS must be configured.** PocketBase allowed every origin by default; FastAPI sends nothing. The
   macOS host loads its interface from `acervo://app` and calls the server cross-origin with headers

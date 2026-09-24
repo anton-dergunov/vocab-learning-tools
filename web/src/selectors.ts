@@ -513,7 +513,9 @@ export function articleFromDraft(graph: VocabularyGraph, draft: ArticleDraft): A
       sourceUrl: attestation.sourceUrl,
       sourceTitle: attestation.sourceTitle,
       sourceKind: attestation.sourceKind,
-      capturedAt: attestation.capturedAt
+      capturedAt: attestation.capturedAt,
+      photoRef: attestation.photoRef,
+      photoRegion: attestation.photoRegion
     })),
     images: promptsOf(draft.images, null, "image"),
     // A document cannot carry study state, so a proposal never has any to show.

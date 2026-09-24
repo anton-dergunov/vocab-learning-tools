@@ -92,7 +92,7 @@ export function testGraph(): VocabularyGraph {
       {
         id: "attestpicar0010", lexemeId: "lexemepicar0001", text: "cuidado que esa salsa pica un monton",
         translation: null, sourceUrl: null, sourceTitle: "Course chat", sourceKind: "conversation",
-        capturedAt: stamp("02-11"), ...sync("02-11")
+        capturedAt: stamp("02-11"), photoRef: null, photoRegion: null, ...sync("02-11")
       }
     ],
     examples: [

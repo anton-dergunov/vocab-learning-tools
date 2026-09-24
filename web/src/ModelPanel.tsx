@@ -38,6 +38,15 @@ const KINDS: { id: string; offers: string; label: string; help: string }[] = [
       + "briefs the picture models draw from. The first that answers wins; a rate-limited one hands "
       + "on to the next."
   },
+  /* The same models as Text in a second order, because the two questions want different answers:
+     an entry wants the best writer, and a tap on a photo wants an answer before the finger lifts. */
+  {
+    id: "quick",
+    offers: "text",
+    label: "Quick look-up",
+    help: "Says what a word you tapped on a photo means in its sentence, while you wait. Put the "
+      + "fastest first: the entry itself is still written by the Text order when you add the word."
+  },
   {
     id: "image",
     offers: "image",
@@ -64,6 +73,13 @@ const KINDS: { id: string; offers: string; label: string; help: string }[] = [
     help: "For anything that should sound like somebody saying it. A model here that declares it "
       + "takes directions is given the emotion; one that does not reads plainly, so an order of "
       + "both is a preference rather than a requirement."
+  },
+  {
+    id: "ocr",
+    offers: "ocr",
+    label: "Reading photos",
+    help: "Reads the text on a photo you take or choose, word by word with where each one is, so "
+      + "any word on it can be tapped."
   }
 ];
 

@@ -28,7 +28,9 @@ from typing import Any
 
 CATALOGUE_PATH = Path(__file__).resolve().parents[3] / "models" / "catalogue.json"
 
-KINDS = ("text", "image", "audio")
+KINDS = ("text", "image", "audio", "ocr")
+# `ocr` is reading the text on a photo, with where each word is. Its own kind rather than a use of
+# `text`, because the answer is geometry and no language model gives geometry a reader can trust.
 # Whether a row understands a request for JSON *mode* — `{"type": "json_object"}`, meaning "answer
 # with a JSON object" and nothing more. Not a schema: this package does not send schemas at all (see
 # AGENTS.md, "Constrained decoding is not used"). `native` sends the request, `prompt` leaves the

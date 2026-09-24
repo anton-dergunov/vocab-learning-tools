@@ -375,6 +375,10 @@ attestations = Table(
     Column("source_title", String(500), nullable=False, default=""),
     Column("source_kind", String(32), nullable=False),
     Column("captured_at", String(24), nullable=False),
+    # The photo the word was met in, relative to the media root, and where on it the word and its
+    # sentence are. Empty and null for an attestation that was typed or pasted.
+    Column("photo_ref", String(500), nullable=False, default=""),
+    Column("photo_region", JSON, nullable=True),
     *_sync_fields(),
     Index("idx_attestations_owner_revision", "owner", "revision"),
     Index("idx_attestations_owner_lexeme", "owner", "lexeme"),

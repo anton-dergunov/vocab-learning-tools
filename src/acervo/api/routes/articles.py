@@ -16,6 +16,7 @@ from acervo.api.errors import data
 from acervo.api.payload import json_body
 from acervo.errors import ApiError
 from acervo.repository import graph
+from acervo.services import photo
 from acervo.services.articles import save_article
 
 router = APIRouter()
@@ -35,6 +36,8 @@ async def save(request: Request) -> JSONResponse:
     enqueue = None if body.get("enrich") is False else graph.SAVE
     return data(await run_in_threadpool(
         lambda: save_article(
-            account, device, body.get("draft"), minted, enqueue=enqueue, base=body.get("base")
+            account, device, body.get("draft"), minted, enqueue=enqueue, base=body.get("base"),
+            # A photo taken for this word is kept by the save that names it (`services/photo.py`).
+            place_photo=photo.placer(request.app.state.settings),
         )
     ))

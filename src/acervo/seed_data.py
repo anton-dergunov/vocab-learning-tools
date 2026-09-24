@@ -509,6 +509,7 @@ def demo_records(owner_id: str) -> list[tuple[str, dict]]:
                 "source_url": attestation.get("source_url", ""),
                 "source_title": attestation.get("source_title", ""),
                 "source_kind": attestation["source_kind"], "captured_at": attestation["captured_at"],
+                "photo_ref": "", "photo_region": None,
             }))
 
         for order, sense in enumerate(entry["senses"]):

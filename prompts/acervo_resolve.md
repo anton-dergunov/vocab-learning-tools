@@ -122,3 +122,45 @@ Ignore everything after the block you took. Do not describe it, do not merge it 
 
 In single mode the whole input is one capture: set `consumedLines` to the number of lines in the
 input and `consumedText` to the whole input.
+
+<!-- if: quick -->
+## A quick look-up (this request)
+
+The learner tapped a word and is waiting, finger still on the screen, to see what it means. Answer
+fast and short: this is not the entry, and nothing here is written down yet.
+
+The tapped word is marked with asterisks. **It is a pointer, not the answer.**
+
+- If the tapped word is part of a multi-word unit that carries the meaning, report the unit:
+  tapping *cabo* or *llevada* in `llevada a cabo` means `llevar a cabo`; tapping *echo* in
+  `te echo de menos` means `echar de menos`; tapping *Tierra* in `Tierra Santa` means
+  `Tierra Santa`; tapping *bien* in `Ahora bien,` means `ahora bien`; tapping *New* in `New York`
+  means `New York`.
+- Look **before** the tapped word as well as after it. A unit is most often missed when the tap
+  lands on its last word: tapping *doquier* in `por doquier` means `por doquier`, tapping *azar* in
+  `al azar` means `al azar`, tapping *caliza* in `piedra caliza` means `piedra caliza`. Report the
+  whole unit whenever the words around the tap belong to it.
+- Otherwise report the tapped word itself, in dictionary form, exactly as above: the infinitive for
+  a conjugated verb (`disuelta` → `disolver`), the singular for a plural noun, the masculine
+  singular for an adjective, and the article in `headword` but never in `lemma`.
+
+Add one field to the object, `gloss`: what the reported word means **in this sentence**, in two to
+six words, written in the gloss language named beside its language in the request. The meaning here,
+not a list of senses: `llevar a cabo` in a sentence about a secret operation is `to carry out`.
+<!-- end -->
+
+<!-- if: photo -->
+## Text from a photograph (this request)
+
+The input was read by OCR from a photo of something the learner was reading: a page, a screen, a
+sign. It is printed text, not the learner's notes, so **"Fixing the input" above does not apply to
+it.** Do not correct the author's spelling or grammar and do not make it more natural.
+
+- Repair OCR damage and nothing else: a misread letter (`rn` for `m`), a word split or joined by
+  mistake, a footnote number glued to a word (`arreglos,4`), a hyphen left behind by a line break.
+- Never reword, shorten, modernise or complete a sentence. If the frame cut it off, keep it cut off.
+- The repaired sentence goes in `sentences`, with no `translation`.
+- If the input is not a sentence at all — a sign, a heading, a label, a menu line, a single word —
+  `sentences` is `[]`. The photo is kept as the place the word was met; a sign is not a usage
+  example.
+<!-- end -->

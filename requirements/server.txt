@@ -3,6 +3,7 @@
 # `httpx` is inherited from core.txt, which is where it belongs now that `client.py` needs it too.
 -r core.txt
 -r meaning.txt
+-r photo.txt
 
 # `soundfile` is how a pronunciation is stored: the providers answer with an uncompressed master and
 # `acervo/pronunciation/encode.py` writes Ogg Opus, which libsndfile does and which the wheel carries,

@@ -247,12 +247,48 @@ describe("the new-entry template", () => {
       attestations: [{
         id: "attest000000091", text: "El disfraz de pirata viene con un garfio.", translation: null,
         sourceUrl: null, sourceTitle: null, sourceKind: "unknown",
-        capturedAt: "2026-08-29T12:00:00.000Z"
+        capturedAt: "2026-08-29T12:00:00.000Z", photoRef: null, photoRegion: null
       }],
       images: []
     };
     // The contract that makes review safe: what the model proposed is exactly what a save applies.
     expect(parseArticle(yamlForDraft(generated))).toEqual(generated);
+  });
+
+  it("keeps a photo with its sentence, the region on one line, and lets a photo stand without one", () => {
+    const region = { words: [[[0.1, 0.2], [0.3, 0.2], [0.3, 0.25]]], sentence: [[[0.05, 0.2], [0.9, 0.2], [0.9, 0.25], [0.05, 0.25]]] } as const;
+    const draft = parseArticle(yamlForDraft({
+      ...parseArticle(YAML_TEMPLATE.replace('headword: ""', "headword: salida")
+        .replace('definition: ""', "definition: Lugar por donde se sale.")
+        .replace('terms: [""]', "terms: [exit]")
+        .replace('- text: ""', "- text: La salida está al fondo.")),
+      attestations: [
+        { id: null, text: "La salida está al fondo.", translation: null, sourceUrl: null, sourceTitle: null,
+          sourceKind: "book", capturedAt: "2026-09-20T10:00:00.000Z",
+          photoRef: "photos/owner0000000001/0123456789abcdef.jpg",
+          photoRegion: { words: region.words.map((p) => p.map((q) => [...q] as [number, number])), sentence: region.sentence.map((p) => p.map((q) => [...q] as [number, number])) } },
+        { id: null, text: "", translation: null, sourceUrl: null, sourceTitle: null, sourceKind: "sign",
+          capturedAt: "2026-09-20T10:00:00.000Z", photoRef: "photos/owner0000000001/fedcba9876543210.jpg", photoRegion: null }
+      ]
+    }));
+    expect(draft.attestations[0].photoRef).toBe("photos/owner0000000001/0123456789abcdef.jpg");
+    expect(draft.attestations[0].photoRegion).toEqual(region);
+    expect(draft.attestations[1]).toMatchObject({ text: "", sourceKind: "sign", photoRef: "photos/owner0000000001/fedcba9876543210.jpg" });
+    const document = yamlForDraft(draft);
+    // One line: a few dozen coordinates nobody reads should not bury the sentence above them.
+    expect(document).toMatch(/\n {4}photoRegion: \{words: \[\[\[0\.1, 0\.2\].*\]\]\}\n/);
+  });
+
+  it("still needs text for an attestation with no photo", () => {
+    const document = yamlForDraft({
+      ...parseArticle(YAML_TEMPLATE.replace('headword: ""', "headword: salida")
+        .replace('definition: ""', "definition: Lugar por donde se sale.")
+        .replace('terms: [""]', "terms: [exit]")
+        .replace('- text: ""', "- text: La salida está al fondo.")),
+      attestations: [{ id: null, text: "", translation: null, sourceUrl: null, sourceTitle: null, sourceKind: "book",
+        capturedAt: "2026-09-20T10:00:00.000Z", photoRef: null, photoRegion: null }]
+    });
+    expect(problemsOf(document).some((message) => message.startsWith("attestations[0].text"))).toBe(true);
   });
 
   it("parses once filled in, and creates everything it describes", () => {

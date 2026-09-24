@@ -2,7 +2,8 @@ export const PARTS_OF_SPEECH = ["noun", "verb", "adj", "adv", "phrase", "idiom",
 export const GENDERS = ["masculine", "feminine", "common", "neuter"] as const;
 export const REGISTERS = ["neutral", "formal", "colloquial", "slang", "vulgar"] as const;
 export const LEXEME_STATUSES = ["inbox", "active", "learned", "retired", "suppressed"] as const;
-export const SOURCE_KINDS = ["web", "book", "conversation", "video", "lesson", "unknown"] as const;
+/** `sign` is text met out in the world rather than read — a street sign, a menu, a label — usually kept as a photo. */
+export const SOURCE_KINDS = ["web", "book", "conversation", "video", "lesson", "sign", "unknown"] as const;
 export const EXAMPLE_ORIGINS = ["attestation", "llm", "tatoeba", "subtitle", "wiktionary", "manual"] as const;
 
 export type PartOfSpeech = typeof PARTS_OF_SPEECH[number];
@@ -132,6 +133,19 @@ export interface Attestation extends SyncFields, OwnedFields {
   sourceTitle: string | null;
   sourceKind: SourceKind;
   capturedAt: string;
+  /**
+   * The photo the word was met in, relative to the media root, and where on it the word and its
+   * sentence are. Both null for an attestation that was typed or pasted. With a photo the text may
+   * be empty: a street sign has no sentence, and the photo is kept as the place the word was met.
+   */
+  photoRef: string | null;
+  photoRegion: PhotoRegion | null;
+}
+
+/** Outlines on a photo, normalised to it: the tapped word's pieces and the sentence's lines. */
+export interface PhotoRegion {
+  words: [number, number][][];
+  sentence: [number, number][][];
 }
 
 export interface Example extends SyncFields, OwnedFields {
@@ -462,6 +476,25 @@ function oneOf<T extends string>(value: unknown, values: readonly T[], label: st
   invariant(typeof value === "string" && values.includes(value as T), `${label} is invalid.`);
 }
 
+function photoRegion(value: unknown, hasPhoto: boolean): void {
+  if (value === null || value === undefined) return;
+  invariant(hasPhoto, "A photo region needs a photo.");
+  invariant(typeof value === "object" && !Array.isArray(value), "A photo region must be an object.");
+  for (const key of ["words", "sentence"] as const) {
+    const polygons = (value as Record<string, unknown>)[key] ?? [];
+    invariant(Array.isArray(polygons), "A photo region's polygons must be a list.");
+    for (const polygon of polygons) {
+      invariant(Array.isArray(polygon) && polygon.length >= 3, "A photo region's polygon needs three points.");
+      for (const point of polygon) {
+        invariant(
+          Array.isArray(point) && point.length === 2 && point.every((axis) => typeof axis === "number" && axis >= 0 && axis <= 1),
+          "A photo region's points must be [x, y] between 0 and 1."
+        );
+      }
+    }
+  }
+}
+
 function optionalString(value: unknown, label: string): asserts value is string | null {
   invariant(value === null || (typeof value === "string" && value.trim().length > 0), `${label} must be null or non-empty.`);
 }
@@ -574,7 +607,9 @@ const CHECKS: { [K in EntityKind]: (record: VocabularyGraph[K][number], find: Fi
     const lexeme = find.lexemes(record.lexemeId);
     invariant(lexeme, "Attestation references a missing lexeme.");
     invariant(record.ownerId === lexeme.ownerId, "Attestation and lexeme must have the same owner.");
-    invariant(record.text.trim().length > 0, "Attestation text is required.");
+    invariant(record.text.trim().length > 0 || Boolean(record.photoRef), "Attestation text is required.");
+    optionalString(record.photoRef, "Attestation photo");
+    photoRegion(record.photoRegion, Boolean(record.photoRef));
     optionalString(record.translation, "Attestation translation");
     optionalString(record.sourceUrl, "Source URL");
     optionalString(record.sourceTitle, "Source title");

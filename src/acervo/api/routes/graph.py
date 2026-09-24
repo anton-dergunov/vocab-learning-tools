@@ -11,6 +11,7 @@ from acervo.api.errors import data
 from acervo.api.payload import json_body
 from acervo.errors import ApiError
 from acervo.repository import graph
+from acervo.services import photo
 
 router = APIRouter()
 
@@ -41,7 +42,8 @@ async def write(request: Request) -> JSONResponse:
     return data(
         await run_in_threadpool(
             lambda: graph.merge_graph(
-                account, device, changes if isinstance(changes, dict) else {}, enqueue=enqueue
+                account, device, changes if isinstance(changes, dict) else {}, enqueue=enqueue,
+                place_photo=photo.placer(request.app.state.settings),
             )
         )
     )

@@ -16,7 +16,7 @@ import {
 } from "./articleEdit";
 import { newId } from "./ids";
 import {
-  backendSession, type CaptureFoldable, type CaptureHealth, type CaptureRequest,
+  backendSession, type CaptureFoldable, type CaptureHealth, type CaptureRequest, type QuickLookUpRequest,
   type ChatCapture, type ChatNeighbour,
   type ChatProposal, type ChatSubject, type ChatTurn, type ImageStyle, type LoopMusic
 } from "./api";
@@ -1066,6 +1066,13 @@ export default function App() {
     return backendSession.captureText(deviceId, request);
   }, []);
 
+  /* Photo capture's round trips, which write nothing: a photo read into a page, the quick look-up a
+     tap makes, and the warm-up the Photo tab sends so the first photo is not the one that waits. */
+  const readPhoto = useCallback((photo: Blob) => backendSession.readPhoto(photo), []);
+  const lookUp = useCallback((request: QuickLookUpRequest, signal: AbortSignal) =>
+    backendSession.resolveCapture(repository.state().deviceId, request, signal), []);
+  const warmPhoto = useCallback(() => { void backendSession.warmPhoto().catch(() => undefined); }, []);
+
   /* Asked once for the session, here rather than in the two views that show it: AddView is keyed
      and remounts for every seeded composition, so an effect of its own would re-ask on each one.
      Nothing awaits this and every failure is silence — startup must not depend on the server. */
@@ -1423,6 +1430,9 @@ export default function App() {
             onOpenLexeme={(id) => { closeCapture(); openLexeme(id); }}
             onFoldIn={foldIn}
             onChat={captureHealth?.available === false ? undefined : askAboutDraft}
+            onReadPhoto={readPhoto}
+            onLookUp={lookUp}
+            onWarmPhoto={warmPhoto}
             offline={syncStatus.state === "offline"}
             onNotify={notify}
           /> : article && mode === "edit" ? <Suspense fallback={<p className="empty">Loading the editor…</p>}>

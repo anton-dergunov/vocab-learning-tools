@@ -95,7 +95,8 @@ export function articleChanges(
       ...existing, id, lexemeId, text: attestation.text, translation: attestation.translation,
       sourceUrl: attestation.sourceUrl, sourceTitle: attestation.sourceTitle,
       sourceKind: attestation.sourceKind,
-      capturedAt: attestation.capturedAt.trim() || existing?.capturedAt || at, ...stamp(existing)
+      capturedAt: attestation.capturedAt.trim() || existing?.capturedAt || at,
+      photoRef: attestation.photoRef, photoRegion: attestation.photoRegion, ...stamp(existing)
     } as Attestation);
   });
 

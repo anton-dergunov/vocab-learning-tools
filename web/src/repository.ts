@@ -18,9 +18,9 @@ import type { ArticleDraft } from "./yaml";
  * it**, so a copy stored under the old shape is wiped and pulled again rather than refused at every
  * open. 16: a story part's passages became one recording each (`audioRef`, `audioMime`,
  * `durationSeconds`) instead of times into one joined file, and nothing bumped this. 17: `beds`,
- * the loop music the owner keeps.
+ * the loop music the owner keeps. 18: an attestation's `photoRef` and `photoRegion`.
  */
-export const LOCAL_SCHEMA_VERSION = 17;
+export const LOCAL_SCHEMA_VERSION = 18;
 
 export const EMPTY_GRAPH = (): VocabularyGraph => ({
   vocabularies: [], topics: [], lexemes: [], senses: [], attestations: [], examples: [], imagePrompts: [],

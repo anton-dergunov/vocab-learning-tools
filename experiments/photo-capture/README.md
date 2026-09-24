@@ -115,8 +115,28 @@ cleaner (0.0% sentence CER against 0.4%).
 On clean text any splitter will do. OCR output carries a status bar, a URL, a heading, text showing
 through from the facing page and fragments cut by the frame, none of which ends in punctuation. So
 rules and pySBD glue it onto the next sentence, and SaT does not. SaT costs a **408 MB model** and
-**151 ms per page** at the median on the Mac (1.3 s worst). Untried and worth trying before paying
-that: hard-split on Vision's paragraph and block boundaries, then rules inside each block.
+**151 ms per page** at the median on the Mac (1.3 s worst).
+
+**Splitting on Vision's own paragraphs first does not rescue rules** (step 7, `blocks.py`, run
+24 September 2026 on the cached 2048 px readings, so no new call). The idea was that Vision already
+knows a status bar or a heading is a paragraph of its own, so cutting there would leave rules only
+clean prose to split. It helps, and not enough:
+
+| Splitter | Boundary right, primary taps | Camera | Screenshot | Median time |
+| --- | --- | --- | --- | --- |
+| Rules | 69% | 71% | 65% | 0.0 ms |
+| SaT | **98%** | 100% | 95% | 57 ms |
+| Paragraphs, then rules | 81% | 79% | 85% | 0.1 ms |
+| Paragraphs, then SaT | 87% | 88% | 85% | 85 ms |
+
+Cutting on paragraphs also makes SaT *worse*, because Vision ends a paragraph where a sentence does
+not end. In all six taps SaT had right and the paragraph cut broke, Vision had started a new
+paragraph at an ordinary line break mid-sentence (`…operan simultáneamente` / `confiriendo…`), on
+book photos and on a screenshot alike. SaT on the page's whole running text is therefore what ships.
+A paragraph cut is a cut in the wrong place often enough to cost more than it saves, and rules are
+written for Spanish punctuation where SaT is multilingual. Both of those matter more for Chinese and
+Japanese, where there are no spaces to split on and the punctuation differs. The Chinese and
+Japanese spike still has to measure SaT itself.
 
 ### Tap → meaning
 
@@ -261,6 +281,8 @@ account, or if Google cannot say.
 | `bench_nas.py` | A self-contained RapidOCR timing script, copied to the server. |
 | `spike.py` | `ocr`: fills the engine cache for every fixture and upload size. |
 | `report.py` | Every table, from the cache only, plus the quick call's input file. |
+| `blocks.py` | Step 7: paragraphs-then-rules against SaT, from the cache only. |
+| `record_vision.py` | Records Vision's raw answer for each fixture at 2048 px into `tests/fixtures/photo-capture/vision/`, trimmed to what `acervo.models.google_vision.parse` reads. Thirteen units. |
 
 ### Rerunning
 
@@ -272,6 +294,10 @@ account, or if Google cannot say.
 
 # Tables and runs/taps-vision-full-2048-sat.json, with no network
 .venv/bin/python report.py > runs/report.md
+HF_HUB_OFFLINE=1 .venv/bin/python blocks.py
+
+# Raw Vision answers for the shipped code's tests. Thirteen units, and the credential check above.
+.venv/bin/python record_vision.py
 
 # The quick call, from the repository root, in the application environment
 set -a; . ./.env; set +a

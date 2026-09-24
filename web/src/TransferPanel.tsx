@@ -139,7 +139,7 @@ export function ExportPanel({ snapshot }: { snapshot: ReplicaSnapshot }) {
     <p className="config-help">
       Saves your vocabulary as a zip of YAML files, one per word, with the language settings and
       topics beside them. Built from this device's copy, so it works whether or not the server is
-      reachable.
+      reachable. Photos a word was captured from stay on the server and are not included.
     </p>
     <label className="config-field">
       <span>Vocabulary</span>

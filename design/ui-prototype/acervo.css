@@ -630,6 +630,11 @@ details.fold .fold-body { padding: 4px 0 18px; }
 }
 .att-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .att-text { min-width: 0; }
+.att-photo-only { font-family: var(--sans) !important; font-size: 14px !important; color: var(--ink-3); }
+/* An example drawn from a photographed sentence carries the photo beside it, as the sentence it was
+   drawn from would. The column is the thumbnail's own, so the text does not move to make room. */
+.ex.has-photo { grid-template-columns: 64px minmax(0,1fr) auto; gap: 0 12px; }
+.ex.has-photo .att-photo { width: 64px; }
 
 /* ── details ── */
 .facts { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; }
@@ -1523,6 +1528,70 @@ body.phone .cards-edges, body.tablet .cards-edges { display: none; }
    is 780px and the composer column is 920px. */
 .article-preview { max-width: 780px; margin: 0 auto; }
 .hint { font-size: 14px; color: var(--ink-3); margin: 10px 0 0; max-width: 60ch; }
+
+/* ── photo capture ──
+   The frame above and the sheet below, never side by side: the device this matters most on is a
+   tablet in portrait. The frame shrink-wraps the photo so the SVG laid over it shares its box
+   exactly — one coordinate system, the photo's own — and the highlight is a fill behind nothing, so
+   no mark here moves anything either. */
+.photo-start {
+  border: 1.5px dashed var(--rule); border-radius: 10px; padding: 34px 22px; text-align: center;
+  background: var(--surface);
+}
+.photo-start .hint { margin: 14px auto 0; }
+.photo-start .validation { margin: 16px auto 0; max-width: 60ch; text-align: left; }
+.photo-start-buttons { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.photo-camera { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.photo-viewfinder {
+  display: block; width: 100%; max-height: 58vh; object-fit: contain; border-radius: 10px;
+  background: #000;
+}
+.photo-camera-buttons { display: flex; align-items: center; gap: 22px; }
+.photo-shutter {
+  width: 64px; height: 64px; border-radius: 50%; cursor: pointer;
+  border: 4px solid var(--surface); background: var(--core); box-shadow: 0 0 0 2px var(--core);
+}
+.photo-shutter:active { transform: scale(.94); }
+.photo-stage { display: flex; justify-content: center; }
+.photo-frame {
+  position: relative; display: inline-block; max-width: 100%; line-height: 0;
+  border-radius: 8px; overflow: hidden; box-shadow: var(--shadow);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.photo-frame img { display: block; max-width: 100%; max-height: 54vh; width: auto; height: auto; }
+.photo-frame svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.photo-frame polygon { vector-effect: non-scaling-stroke; }
+.photo-sentence { fill: var(--corpus); fill-opacity: .16; stroke: none; }
+.photo-word { fill: var(--core); fill-opacity: .3; stroke: var(--core); stroke-width: 2; }
+.photo-uncertain { fill: none; stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 3 3; stroke-opacity: .7; }
+.photo-status {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); line-height: 1.4;
+  background: var(--ink); color: var(--paper); padding: 7px 14px; border-radius: 999px; font-size: 13.5px;
+}
+.photo-sheet { max-width: 780px; margin: 18px auto 0; }
+.photo-sheet .validation { margin: 0 0 12px; }
+.photo-meaning { font-family: var(--serif); font-size: 19px; line-height: 1.4; margin: 0 0 12px; min-height: 1.4em; }
+.photo-meaning strong { font-weight: 700; }
+.photo-meaning-pending { color: var(--ink-3); }
+.photo-meaning-failed { font-family: var(--sans); font-size: 14.5px; color: var(--warn); }
+.photo-held { font-family: var(--sans); font-size: 14px; color: var(--ink-3); }
+.photo-sentence-text { min-height: 88px; margin-top: 8px; }
+.photo-options { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.photo-sources { display: flex; flex-wrap: wrap; gap: 6px; }
+.photo-sources .cards-chip { cursor: pointer; padding: 6px 13px; }
+.photo-viewer { width: min(920px, 100%); }
+.photo-viewer .photo-frame { display: block; width: fit-content; margin: 0 auto; }
+.photo-viewer .photo-frame img { max-height: 72vh; }
+/* The application's switch row, which the prototype had not needed before the sheet's "Keep the photo". */
+.config-switch {
+  display: flex; align-items: flex-start; gap: 11px; cursor: pointer;
+  padding: 11px 13px; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface);
+}
+.config-switch:hover { background: var(--surface-2); }
+.config-switch input { margin: 2px 0 0; width: 16px; height: 16px; accent-color: var(--core); flex: none; }
+.config-switch > span { display: grid; gap: 3px; }
+.config-switch strong { font-size: 14.5px; font-weight: 600; }
+.config-switch > span > span { font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
 
 /* ══════════════════════════ toast ══════════════════════════ */
 .toast {

@@ -16,7 +16,7 @@ import { Document, isMap, isNode, isScalar, isSeq, LineCounter, parseDocument, S
 import {
   EXAMPLE_ORIGINS, GENDERS, LEXEME_STATUSES, PARTS_OF_SPEECH, REGISTERS, SOURCE_KINDS,
   type Example, type ExampleOrigin, type Gender, type Gloss, type ImagePrompt,
-  type LexemeStatus, type PartOfSpeech, type Register, type SourceKind, type StudyState
+  type LexemeStatus, type PartOfSpeech, type PhotoRegion, type Register, type SourceKind, type StudyState
 } from "./domain";
 import { languageOf } from "./languages";
 import type { Article } from "./selectors";
@@ -84,12 +84,17 @@ export interface SenseDraft {
 
 export interface AttestationDraft {
   id: string | null;
+  /** May be empty only when there is a photo: a street sign has no sentence. */
   text: string;
   translation: string | null;
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceKind: SourceKind;
   capturedAt: string;
+  /** The photo it was met in. Delete the line to let the photo go. */
+  photoRef: string | null;
+  /** Where on the photo the word and its sentence are: geometry, written on one line. */
+  photoRegion: PhotoRegion | null;
 }
 
 export interface ArticleDraft {
@@ -301,7 +306,9 @@ export function draftFor(article: Article): ArticleDraft {
       sourceUrl: attestation.sourceUrl,
       sourceTitle: attestation.sourceTitle,
       sourceKind: attestation.sourceKind,
-      capturedAt: attestation.capturedAt
+      capturedAt: attestation.capturedAt,
+      photoRef: attestation.photoRef,
+      photoRegion: attestation.photoRegion
     })),
     images: images.map(promptDraft)
   };
@@ -355,7 +362,10 @@ export function yamlForDraft(draft: ArticleDraft, study: StudyState | null = nul
       sourceKind: attestation.sourceKind,
       sourceTitle: attestation.sourceTitle,
       sourceUrl: attestation.sourceUrl,
-      capturedAt: instant(attestation.capturedAt)
+      capturedAt: instant(attestation.capturedAt),
+      photoRef: attestation.photoRef,
+      // Only beside the photo it describes: a region with no photo is refused on save.
+      photoRegion: attestation.photoRef ? attestation.photoRegion : null
     })),
     imagePrompts: draft.images.map(promptFields)
   }));
@@ -398,6 +408,13 @@ export function yamlForDraft(draft: ArticleDraft, study: StudyState | null = nul
     topicsNode.flow = true;
     quoteInFlow(topicsNode);
   }
+  // A photo region is a few dozen coordinates nobody reads: one line, so it does not bury the text.
+  const attestationsNode = document.get("attestations", true);
+  if (isSeq(attestationsNode)) attestationsNode.items.forEach((attestation) => {
+    if (!isMap(attestation)) return;
+    const region = attestation.get("photoRegion", true);
+    if (isMap(region)) region.flow = true;
+  });
 
   return document.toString({ lineWidth: 0, singleQuote: false, flowCollectionPadding: false });
 }
@@ -416,6 +433,24 @@ function pathSteps(path: string): (string | number)[] {
       const [name, ...indices] = part.split("[");
       return [name, ...indices.map((index) => Number(index.replace("]", "")))];
     });
+}
+
+function readPhotoRegion(reader: Reader, value: unknown, path: string): PhotoRegion | null {
+  const region = reader.map(value, path);
+  if (!region) return null;
+  const polygons = (key: "words" | "sentence"): [number, number][][] => reader.list(region[key], `${path}.${key}`)
+    .flatMap((polygon, index) => {
+      const points = reader.list(polygon, `${path}.${key}[${index}]`);
+      const valid = points.length >= 3 && points.every((point) =>
+        Array.isArray(point) && point.length === 2
+        && point.every((axis) => typeof axis === "number" && axis >= 0 && axis <= 1));
+      if (!valid) {
+        reader.fail(`${path}.${key}[${index}]`, "expected a polygon of [x, y] points between 0 and 1.");
+        return [];
+      }
+      return [points as [number, number][]];
+    });
+  return { words: polygons("words"), sentence: polygons("sentence") };
 }
 
 class Reader {
@@ -560,7 +595,8 @@ export const SENSE_KEYS = [
   "id", "order", "definition", "definitionLang", "domain", "emoji", "glosses", "examples", "imagePrompts"
 ];
 export const ATTESTATION_KEYS = [
-  "id", "text", "translation", "sourceKind", "sourceTitle", "sourceUrl", "capturedAt"
+  "id", "text", "translation", "sourceKind", "sourceTitle", "sourceUrl", "capturedAt", "photoRef",
+  "photoRegion"
 ];
 export const ARTICLE_KEYS = [
   "id", "language", "headword", "lemma", "reading", "ipa", "pos", "gender", "register", "dialect",
@@ -697,14 +733,20 @@ export function parseArticle(text: string): ArticleDraft {
       const attestation = reader.map(item, where);
       if (!attestation) return [];
       reader.keys(attestation, where, ATTESTATION_KEYS);
+      const photoRef = reader.optional(attestation.photoRef, `${where}.photoRef`);
       return [{
         id: reader.id(attestation.id, `${where}.id`),
-        text: reader.required(attestation.text, `${where}.text`),
+        // A photo is a place the word was met, with or without a sentence to go with it.
+        text: photoRef
+          ? reader.text(attestation.text, `${where}.text`)
+          : reader.required(attestation.text, `${where}.text`),
         translation: reader.optional(attestation.translation, `${where}.translation`),
         sourceUrl: reader.optional(attestation.sourceUrl, `${where}.sourceUrl`),
         sourceTitle: reader.optional(attestation.sourceTitle, `${where}.sourceTitle`),
         sourceKind: reader.choice(attestation.sourceKind, `${where}.sourceKind`, SOURCE_KINDS, "unknown"),
-        capturedAt: reader.text(attestation.capturedAt, `${where}.capturedAt`)
+        capturedAt: reader.text(attestation.capturedAt, `${where}.capturedAt`),
+        photoRef,
+        photoRegion: photoRef ? readPhotoRegion(reader, attestation.photoRegion, `${where}.photoRegion`) : null
       }];
     }),
     images: reader.list(fields.imagePrompts, "imagePrompts")

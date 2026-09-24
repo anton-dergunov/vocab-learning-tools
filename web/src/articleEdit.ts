@@ -439,7 +439,10 @@ function newAttestation(raw: Record<string, unknown>, id: string): AttestationDr
     /* A document may not assert a clock, and this module has none. `saveArticle` stamps what it
        must; `capturedAt` is the one field a draft carries that has to say something, so it says
        the epoch and the save replaces it. */
-    capturedAt: new Date(0).toISOString().replace(/\.\d+Z$/, ".000Z")
+    capturedAt: new Date(0).toISOString().replace(/\.\d+Z$/, ".000Z"),
+    // A sentence a conversation adds was never photographed.
+    photoRef: null,
+    photoRegion: null
   };
 }
 

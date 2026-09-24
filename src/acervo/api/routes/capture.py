@@ -1,6 +1,7 @@
 """Capture: text in, an entry to review out — or, headless, a job that files entries in the Inbox.
 
-`POST /capture` is synchronous because a person is waiting to review the result. `POST /captures`
+`POST /capture` is synchronous because a person is waiting to review the result. `POST
+/capture/resolve` is its first half alone, for a photo tap, and `/capture` accepts what it returned. `POST /captures`
 is the headless transports' door: it queues a `capture` job and answers at once. Both run
 `services/capture/pipeline.propose`, so there is one pipeline.
 
@@ -21,7 +22,8 @@ from acervo.api.errors import data
 from acervo.api.payload import json_body
 from acervo.errors import ApiError
 from acervo.repository import graph, jobs
-from acervo.services.capture.pipeline import TEXT_LIMIT, propose
+from acervo.services import photo
+from acervo.services.capture.pipeline import TEXT_LIMIT, look_up, propose
 
 router = APIRouter()
 
@@ -34,7 +36,22 @@ async def capture(request: Request) -> JSONResponse:
     graph.require_schema_version(body.get("schemaVersion"))
     graph.require_device(body.get("deviceId"))
     _require_text(body)
+    if body.get("photoRef"):
+        # Refused before two model calls rather than at the save after them.
+        photo.require(request.app.state.settings, account, str(body["photoRef"]))
     return data(await run_in_threadpool(propose, request.app.state.settings, account, body))
+
+
+@router.post("/capture/resolve")
+async def quick(request: Request) -> JSONResponse:
+    """The quick look-up a photo tap makes: which word was meant, what it means here, and whether it
+    is already held. One model call on the `quick` chain; writes nothing."""
+    account = owner_id(request)
+    body = await json_body(request)
+    graph.require_schema_version(body.get("schemaVersion"))
+    graph.require_device(body.get("deviceId"))
+    _require_text(body)
+    return data(await run_in_threadpool(look_up, request.app.state.settings, account, body))
 
 
 def _require_text(body: dict[str, Any]) -> str:

@@ -48,6 +48,11 @@ Stories open the same way: `?story=1&part=0` reads the first written story from 
 translation over. The first part is drawn as if it were being read aloud: its button lit and its
 first sentence tinted, as the application tints the passage that is sounding.
 
+Photo capture is the Add view's Photo tab, never where Add opens: `?add=photo` is the start, with
+nothing switched on, and `?add=photo&photo=read` is the fixture page already read — "llevada a cabo"
+tapped, its sentence banded line by line, a blurred word at the foot marked rather than hidden, and
+the sheet below the frame. The attestation photo on `picar` opens the whole frame.
+
 For loops: `?loops=1&t=12` is the moment the whole design is for — `picar` is
 being said and its translation is still a bar. `t=20` is a few seconds later,
 with the answer given and the mark moved to it. `loop=` picks one by id,

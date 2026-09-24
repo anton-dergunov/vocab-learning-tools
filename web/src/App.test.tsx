@@ -185,7 +185,7 @@ function mockGarfioCapture() {
       attestations: [{
         id: "attest000000091", text: "El disfraz de pirata viene con un garfio.", translation: null,
         sourceUrl: null, sourceTitle: null, sourceKind: "unknown",
-        capturedAt: "2026-08-29T12:00:00.000Z"
+        capturedAt: "2026-08-29T12:00:00.000Z", photoRef: null, photoRegion: null
       }],
       images: []
     }
@@ -801,7 +801,7 @@ describe("Acervo application", () => {
 
     // Going back to the capture keeps what was submitted, so the text can be adjusted and re-run
     // rather than retyped.
-    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
     expect(await screen.findByLabelText(/Paste a word/))
       .toHaveValue("El disfraz de pirata viene con un garfio.");
 

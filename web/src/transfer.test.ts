@@ -113,6 +113,18 @@ describe("exporting a bundle", () => {
     expect(word.senses[0].imagePrompts[0].imageModelId).toBe("demo-painter");
   });
 
+  it("leaves photos behind: a server path the bundle does not carry, and a sign with nothing else to say", () => {
+    const graph = testGraph();
+    const kept = graph.attestations[0];
+    graph.attestations = [
+      { ...kept, photoRef: "photos/owner0000000001/0123456789abcdef.jpg", photoRegion: { words: [], sentence: [] } },
+      { ...kept, id: "attestsign00001", text: "", photoRef: "photos/owner0000000001/fedcba9876543210.jpg", photoRegion: null }
+    ];
+    const document = at(bundle(graph), "es/picar.yaml").text;
+    expect(document).not.toContain("photo");
+    expect(parseArticle(document).attestations.map((one) => one.text)).toEqual([kept.text]);
+  });
+
   it("says what an id-less document means in its own header", () => {
     expect(at(bundle(), "es/picar.yaml").text)
       .toContain("# No ids here: everything in this document is created when you save.");

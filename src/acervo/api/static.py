@@ -63,7 +63,13 @@ def install(app: FastAPI) -> None:
         Being behind auth is also why the interface fetches these as blobs rather than putting the
         URL in an `<img src>`.
         """
-        account_for(app.state.jwt_secret, bearer_token(request))
+        account = account_for(app.state.jwt_secret, bearer_token(request))
+        # A photo is the one medium that is a picture of the owner's own world — a page they were
+        # reading, the street they were on — so it is served to its owner and nobody else, which the
+        # reference makes checkable: `photos/{owner}/…`.
+        parts = relative.split("/")
+        if parts[0] == "photos" and (len(parts) < 3 or parts[1] != account["id"] or parts[2] == "pending"):
+            raise NOT_FOUND
         return FileResponse(within(Path(settings.media_path), relative))
 
     @app.api_route(

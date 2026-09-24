@@ -284,6 +284,35 @@
       "notes": "The Cloud Text-to-Speech API, which is not the Gemini API and not Vertex's generateContent: one route, `text:synthesize`, metered in characters, with a permanent free allowance of 4 M characters a month on Standard voices and 1 M on WaveNet — two orders of magnitude above what pronouncing a vocabulary needs. It authenticates with the same Google credentials as the `vertex` row once `texttospeech.googleapis.com` is enabled on the project, and a user login additionally needs a quota project, which is why the project travels as `x-goog-user-project` (`docs/acervo-vertex-setup.md`). LiteLLM does not cover this API, so it has its own adapter. The \"models\" `standard` and `wavenet` are voice families rather than model ids: the voice name carries the language and the family (`es-ES-Wavenet-F`), exist per language, and take no style. The Gemini models on the same route are named with `voice.modelName`, speak any language with the same named voices, and take a free-text delivery direction in `input.prompt` — the only field that can carry an example's emotion without it being read aloud. Voice lists were read from `voices.list` on 2026-09-15, female first where a language offers both; the first is the default. The `encoding` each model declares is `LINEAR16` — the uncompressed master — because the compression is Acervo's business rather than Google's: measured blind in `experiments/pronunciation-encoding/`, its `MP3` is 32 kbps for a Gemini voice and 64 for a WaveNet one, and the 32 kbps was the one thing a listener could pick out every time. Asking for the master and encoding Opus in `pronunciation/encode.py` costs nothing here — this API meters characters, never bytes — and puts the bitrate in our hands, which `OGG_OPUS` would not: it comes back at 28-35 kbps take it or leave it. `M4A` is not an option and is not a mistake to repeat: for the voices that accept it at all the answer is byte-identical MP3, and the Gemini voices refuse it outright."
     },
     {
+      "id": "google-vision",
+      "label": "Google Cloud Vision",
+      "kinds": [
+        "ocr"
+      ],
+      "adapter": {
+        "ocr": "google-vision"
+      },
+      "models": {
+        "ocr": [
+          "document-text-detection"
+        ]
+      },
+      "auth": "adc",
+      "authEnv": "GOOGLE_APPLICATION_CREDENTIALS",
+      "accountEnv": "ACERVO_VERTEX_ACCOUNT",
+      "requires": [
+        "ACERVO_VERTEX_PROJECT"
+      ],
+      "passes": {
+        "quotaProject": "ACERVO_VERTEX_PROJECT"
+      },
+      "usageUrl": "https://console.cloud.google.com/apis/api/vision.googleapis.com/metrics?project={ACERVO_VERTEX_PROJECT}",
+      "timeouts": {
+        "ocr": 15
+      },
+      "notes": "Reads a photographed page for photo capture: `images:annotate` with `DOCUMENT_TEXT_DETECTION`, which answers word polygons, the block and paragraph structure and a detected language. Measured against RapidOCR on the NAS and chosen in `experiments/photo-capture/`: it hit the tapped word 98% of the time (100% on book photos) with character error 0.4% at 2048 px, in about 0.6 s. The first 1,000 images a month are free, then $1.50 per 1,000. It authenticates with the same Google credentials as `vertex` and `google-tts` once `vision.googleapis.com` is enabled on the project, and a user login needs the project as `x-goog-user-project`. LiteLLM does not cover this API, so it has its own adapter. The one \"model\" is the feature name, since Vision has no model ids to choose between."
+    },
+    {
       "id": "cloudflare",
       "label": "Cloudflare Workers AI",
       "kinds": [

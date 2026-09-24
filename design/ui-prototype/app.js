@@ -508,7 +508,7 @@ function pictureFrame(im) {
 function attestationBlock(a) {
   return `
     <div class="att${a.photo ? " has-photo" : ""}">
-      ${a.photo ? `<button class="att-photo" data-picture aria-label="Open the photo"><img src="${a.photo}" alt=""></button>` : ""}
+      ${a.photo ? `<button class="att-photo" data-photo="${esc(a.photo)}" aria-label="Open the photo"><img src="${a.photo}" alt=""></button>` : ""}
       <div class="att-text">
         <p class="t">${spoken(esc(a.text), say(a.text))}</p>
         ${a.translation ? `<p class="tr">${spoken(esc(a.translation), sayTranslation(a.translation))}</p>` : ""}
@@ -1157,6 +1157,80 @@ let addDraft = null;
    is dead *with a reason* rather than live and failing when it is finally pressed. */
 let captureBlocked = null;
 
+/* Photo capture (docs/plans/photo-capture.md), drawn on the one photo the prototype has. Never where
+   Add opens: the camera turns on only when asked, and here nothing turns on at all — "Take a photo"
+   and "Choose an image" both land on the fixture, already read. `?add=photo&photo=read` opens there. */
+let photoStage = "idle";
+let photoKeep = true;
+let photoSource = "book";
+const PHOTO = {
+  src: "img/met-photo.jpg",
+  sentence: "Esta gigantesca operación, llevada a cabo en el mayor secreto, había sido ordenada por el rey de Francia Felipe IV el Hermoso y dirigida por su consejero Guillermo de Nogaret.",
+  headword: "llevar a cabo",
+  gloss: "to carry out",
+  /* Where "llevada a cabo" and its sentence are on the page, in the photo's own 0–1 coordinates —
+     what the server's reading gives the interface to hit-test and draw. */
+  words: [[[0.205, 0.388], [0.412, 0.388], [0.412, 0.421], [0.205, 0.421]]],
+  bands: [
+    [[0.664, 0.35], [0.94, 0.35], [0.94, 0.384], [0.664, 0.384]],
+    [[0.069, 0.388], [0.94, 0.388], [0.94, 0.421], [0.069, 0.421]],
+    [[0.069, 0.425], [0.94, 0.425], [0.94, 0.459], [0.069, 0.459]],
+    [[0.069, 0.462], [0.475, 0.462], [0.475, 0.495], [0.069, 0.495]]
+  ],
+  /* A blurred word at the bottom edge: kept tappable, and marked as uncertain rather than hidden. */
+  uncertain: [[[0.62, 0.955], [0.8, 0.955], [0.8, 0.985], [0.62, 0.985]]]
+};
+const points = (polygon) => polygon.map(([x, y]) => `${x},${y}`).join(" ");
+
+function photoOverlay(regions) {
+  return `<svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+    ${(regions.uncertain || []).map((p) => `<polygon class="photo-uncertain" points="${points(p)}"/>`).join("")}
+    ${regions.bands.map((p) => `<polygon class="photo-sentence" points="${points(p)}"/>`).join("")}
+    ${regions.words.map((p) => `<polygon class="photo-word" points="${points(p)}"/>`).join("")}
+  </svg>`;
+}
+
+function renderPhotoTab() {
+  if (photoStage === "idle") return `
+      <div class="composer-body">
+        <div class="photo-start">
+          <div class="photo-start-buttons">
+            <button class="tb-btn primary" id="photoTake">Take a photo</button>
+            <button class="tb-btn" id="photoChoose">Choose an image</button>
+          </div>
+          <p class="hint">Or paste or drop a screenshot here. The whole picture is read, and every word on it can be tapped. The camera only turns on when you ask it to.</p>
+        </div>
+      </div>
+      <div class="composer-actions"><div class="composer-buttons"><span class="spacer"></span>
+        <button class="tb-btn primary" disabled>Add</button></div></div>`;
+  const chips = [["book", "Book"], ["sign", "Sign"], ["web", "Screen"], ["unknown", "Other"]]
+    .map(([kind, label]) => `<button class="cards-chip${photoSource === kind ? " on" : ""}" data-photo-source="${kind}" aria-pressed="${photoSource === kind}">${label}</button>`).join("");
+  return `
+      <div class="composer-body">
+        <div class="photo-stage"><div class="photo-frame">
+          <img src="${PHOTO.src}" alt="The photo being read" draggable="false">
+          ${photoOverlay({ words: PHOTO.words, bands: PHOTO.bands, uncertain: PHOTO.uncertain })}
+        </div></div>
+        <div class="photo-sheet">
+          <div class="photo-meaning" aria-live="polite"><strong lang="es">${PHOTO.headword}</strong><span> — ${PHOTO.gloss}</span></div>
+          <label class="label" for="photoSentence">The sentence, as it will be kept</label>
+          <textarea id="photoSentence" class="capture-area photo-sentence-text" lang="es">${PHOTO.sentence}</textarea>
+          <div class="photo-options">
+            <div class="photo-sources" role="group" aria-label="Where you met it">${chips}</div>
+            <label class="config-switch">
+              <input type="checkbox" id="photoKeep" ${photoKeep ? "checked" : ""}>
+              <span><strong>Keep the photo</strong><span>With the sentence, so you can see where on the page you met the word.</span></span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="composer-actions"><div class="composer-buttons">
+        <button class="tb-btn" id="photoAnother">Another photo</button>
+        <span class="spacer"></span>
+        <button class="tb-btn primary" id="photoAdd">Add</button>
+      </div></div>`;
+}
+
 function renderSheet() {
   const host = $("#composer");
   host.innerHTML = `
@@ -1165,7 +1239,8 @@ function renderSheet() {
         <h2>Add a word</h2>
         <span class="spacer"></span>
         <div class="seg">
-          <button data-tab="capture" class="${addTab === "capture" ? "on" : ""}">Capture</button>
+          <button data-tab="capture" class="${addTab === "capture" ? "on" : ""}">Text</button>
+          <button data-tab="photo" class="${addTab === "photo" ? "on" : ""}">Photo</button>
           <button data-tab="article" class="${addTab === "article" ? "on" : ""}">Article</button>
           <button data-tab="yaml" class="${addTab === "yaml" ? "on" : ""}">YAML</button>
         </div>
@@ -1205,6 +1280,7 @@ function renderSheet() {
           <button class="tb-btn primary" id="processBtn" ${captureBlocked ? "disabled" : ""}>Process</button>
         </div>
       </div>`
+        : addTab === "photo" ? renderPhotoTab()
         : addTab === "article" ? `
       <div class="composer-body">
         ${addDraft
@@ -1236,6 +1312,20 @@ function renderSheet() {
       </div>`}
     </section>`;
   wireSheet();
+}
+
+/* The photo an attestation kept, opened whole with the word and its sentence drawn again —
+   `AttestationPhoto.tsx` `PhotoViewer`. */
+function openPhotoViewer(src) {
+  document.body.insertAdjacentHTML("beforeend", `<div class="modal-backdrop" id="photoViewerBackdrop">
+    <section class="settings photo-viewer" role="dialog" aria-modal="true" aria-labelledby="photo-viewer-title">
+      <header><h2 id="photo-viewer-title">Where you met it</h2>
+        <button class="close" id="photoViewerClose" aria-label="Close">×</button></header>
+      <div class="settings-body"><div class="photo-frame">
+        <img src="${esc(src)}" alt="The photo this word was captured from">
+        <!-- The application draws the attestation's photoRegion here; the fixture keeps none. -->
+      </div></div>
+    </section></div>`);
 }
 
 function openSheet(tab) { addTab = tab || "capture"; addDraft = null; state.loops = false; state.map = false; state.add = true; render(); }
@@ -2435,6 +2525,20 @@ function wireSheet() {
   };
   const sd = $("#saveDraft");
   if (sd) sd.onclick = () => { toast("Saved to Inbox — prototype only"); setTimeout(closeSheet, 500); };
+  const read = () => { photoStage = "read"; renderSheet(); };
+  if ($("#photoTake")) $("#photoTake").onclick = () => { read(); toast("The camera is not wired up in this prototype — showing a photo"); };
+  if ($("#photoChoose")) $("#photoChoose").onclick = read;
+  if ($("#photoAnother")) $("#photoAnother").onclick = () => { photoStage = "idle"; renderSheet(); };
+  if ($("#photoKeep")) $("#photoKeep").onchange = (event) => { photoKeep = event.target.checked; };
+  $("#composer").querySelectorAll("[data-photo-source]").forEach((b) => {
+    b.onclick = () => { photoSource = b.dataset.photoSource; renderSheet(); };
+  });
+  if ($("#photoAdd")) $("#photoAdd").onclick = () => {
+    addDraft = LEXEMES[0];
+    addTab = "article";
+    renderSheet();
+    toast("Generation is not wired up in this prototype — showing a stand-in entry");
+  };
   if ($("#newArea")) {
     const na = wireSurface("new");
     $("#saveNew").onclick = () => {
@@ -2467,6 +2571,9 @@ document.addEventListener("click", (ev) => {
   if (goBtn) { goCard(Number(goBtn.dataset.go)); return; }
   const stepBtn = hit("[data-step]");
   if (stepBtn) { goCard(state.card + Number(stepBtn.dataset.step)); return; }
+  const kept = hit("[data-photo]");
+  if (kept) { openPhotoViewer(kept.dataset.photo); return; }
+  if (hit("#photoViewerClose") || (t.id === "photoViewerBackdrop")) { $("#photoViewerBackdrop")?.remove(); return; }
   if (hit("[data-picture]")) { toast("The picture dialog is out of scope for this spike"); return; }
 
   if (hit("[data-map-open]")) { openMap(); return; }
@@ -2775,6 +2882,7 @@ if (params.get("capture") === "off") {
 if (params.get("wrap") === "off") editorWrap = false;
 if (params.get("numbers") === "on") editorNumbers = true;
 if (params.get("theme")) setTheme(params.get("theme"));
+if (params.get("photo") === "read") photoStage = "read";
 if (params.get("add")) openSheet(params.get("add"));
 if (params.get("frame") === "phone" || params.get("frame") === "tablet") {
   const f = params.get("frame");

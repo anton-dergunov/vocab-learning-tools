@@ -1,6 +1,6 @@
-"""One row, one call, over LiteLLM.
+"""One row, one call, over LiteLLM or a row's own adapter.
 
-Three functions, and each returns what it did. The chain lives next door in `chain.py`; this module
+Four functions, and each returns what it did. The chain lives next door in `chain.py`; this module
 knows only how to ask one provider and how to read what came back.
 
 Two things here are contract rather than implementation.
@@ -28,7 +28,7 @@ from typing import Any, Mapping, Sequence
 from acervo.models.catalogue import Row, base_url, key, passed
 from acervo.models.errors import RETRYABLE, ProviderRefused, ProviderUnavailable, Reason
 from acervo.models.redact import redactor
-from acervo.models.results import Answer, AudioResult, ImageResult, TextResult
+from acervo.models.results import Answer, AudioResult, ImageResult, OcrResult, TextResult
 
 # **Both of these are set from the call log, not from feel** — run `python -m acervo.admin calls`
 # and they can be argued with. Across every call that deployment has recorded, the slowest answer of
@@ -406,4 +406,44 @@ def speech(
         mime=audio_mime(response.content),
         answer=_answer(row, model, started, response, warnings),
         voice=voice,
+    )
+
+
+OCR_TIMEOUT_SECONDS = 15
+"""Reading a photo with somebody holding the phone. Measured: 0.5–1.2 s from Vision at 2048 px."""
+
+
+def _ocr_adapter(name: str):
+    """The OCR engines, by the name a row gives in `adapter.ocr`. None of them is in LiteLLM."""
+    if name == "google-vision":
+        from acervo.models import google_vision
+
+        return google_vision.read
+    raise ProviderRefused("configuration", f"no ocr adapter named {name!r}")
+
+
+def ocr(
+    data: bytes,
+    *,
+    row: Row,
+    model: str | None = None,
+    language_hints: Sequence[str] = (),
+    timeout: float = OCR_TIMEOUT_SECONDS,
+) -> OcrResult:
+    """The words on one image, with their outlines, from one row.
+
+    `language_hints` are BCP-47 tags the text is likely to be in — the owner's vocabularies — which an
+    engine may use to choose a script and never has to obey.
+    """
+    model = model or row.models_for("ocr")[0]
+    adapter = row.adapter.get("ocr")
+    if not adapter:
+        raise ProviderRefused("configuration", f"{row.id} names no ocr adapter", provider_id=row.id, model=model)
+    started = time.monotonic()
+    words, width, height, language = _ocr_adapter(adapter)(
+        row, model, data, language_hints=language_hints, timeout=row.timeout_for("ocr", timeout)
+    )
+    return OcrResult(
+        words=tuple(words), width=width, height=height, language=language,
+        answer=_answer(row, model, started, None),
     )

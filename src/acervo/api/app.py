@@ -25,6 +25,7 @@ from acervo.api.routes import (
     mac_release,
     meaning,
     models,
+    photo,
     pronunciations,
     rules,
     session,
@@ -35,7 +36,7 @@ from acervo.repository.session import open_database
 from acervo.services.models import open_call_log
 from acervo.settings import Settings
 from acervo.settings import settings as read_settings
-from acervo.work import nightly
+from acervo.work import nightly, photos
 from acervo.work.runner import Runner
 
 API_ROOT = "/api/acervo/v1"
@@ -44,9 +45,11 @@ API_ROOT = "/api/acervo/v1"
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or read_settings()
     runner = Runner(settings)
-    # The one timed thing the server does. Only the served application ticks it: a runner built by a
+    # The one timed thing the server does for the owner. Only the served application ticks it: a runner built by a
     # test or a script runs jobs without queuing nights.
     runner.ticks.append(nightly.timer(settings, runner.clock))
+    # Not timed work in that sense: file housekeeping for the photos nobody added.
+    runner.ticks.append(photos.timer(settings, runner.clock))
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -86,8 +89,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     api = APIRouter(prefix=API_ROOT)
     for module in (health, session, graph, articles, capture, chat, clips, dictionaries, events, images,
-                   jobs, loops, mac_release, meaning, models, pronunciations, rules, schedule, speech,
-                   stories):
+                   jobs, loops, mac_release, meaning, models, photo, pronunciations, rules, schedule,
+                   speech, stories):
         api.include_router(module.router)
     app.include_router(api)
 

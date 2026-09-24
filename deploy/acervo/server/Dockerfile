@@ -28,6 +28,15 @@ RUN python -c "import json; from huggingface_hub import snapshot_download; \
 pin = json.load(open('/app/models/encoder.json')); \
 snapshot_download(pin['model'], revision=pin['revision'], allow_patterns=pin['files'])" \
     && chmod -R a+rX /opt/huggingface
+# Photo capture's sentence splitter, Segment any Text, at the revisions `models/segmenter.json` pins:
+# the ONNX model and the tokenizer it reads with. ~400 MB, loaded only once somebody opens the Photo
+# tab, and read file by file at run time because the hub is offline by then.
+COPY models/segmenter.json /app/models/segmenter.json
+RUN python -c "import json; from huggingface_hub import hf_hub_download; \
+pin = json.load(open('/app/models/segmenter.json')); \
+[hf_hub_download(one['model'], name, revision=one['revision']) \
+ for one in (pin, pin['tokenizer']) for name in one['files']]" \
+    && chmod -R a+rX /opt/huggingface
 ENV HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
     NUMBA_CACHE_DIR=/tmp/numba
