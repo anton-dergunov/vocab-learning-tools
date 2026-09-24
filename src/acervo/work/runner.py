@@ -72,6 +72,11 @@ class Step:
         delay = pace.delay()
         if delay > 0:
             self.record["state"] = "waiting"
+            if not pace.resting():
+                # Not a refusal: the lane's own allowance, kept to so as not to be refused.
+                self.record["waitingOn"] = (
+                    f"keeping to {pace.per_minute} {LANE_UNITS.get(self.lane, 'call')}"
+                    f"{'' if pace.per_minute == 1 else 's'} a minute")
             raise Requeue(delay)
         pace.try_acquire()
 
@@ -84,6 +89,10 @@ class Step:
         """Anything a step wants the owner to see — per-word outcomes for a capture, say."""
         self.record.setdefault("detail", {}).update(detail)
         self._context.save()
+
+
+# What one call in a paced lane is, for the line that says a step is keeping to its allowance.
+LANE_UNITS = {"image": "picture", "text": "call"}
 
 
 class JobContext:
@@ -142,6 +151,7 @@ class JobContext:
         record = self.record(name)
         if record["state"] in ("done", "skipped", "failed"):
             return record["state"]
+        done_before = int(record.get("done") or 0)
         self.check()
         record["state"] = "running"
         self.save()
@@ -155,12 +165,22 @@ class JobContext:
         except ApiError as refusal:
             if retry.is_transient(refusal.code) and lane is not None:
                 rests = int(record.get("rests", 0)) + 1
-                if rests <= retry.MAX_RESTS:
+                if rests <= self.kind.rests:
                     record["rests"] = rests
                     record["state"] = "waiting"
                     record["error"] = refusal.code
-                    delay = self.runner.lanes[lane].penalise()
+                    # Who is being waited for and why, so the row can say "Gemini is overloaded;
+                    # Cloudflare is out of allowance" rather than "the provider is busy".
+                    record["waitingOn"] = refusal.waiting_on
+                    pace = self.runner.lanes[lane]
+                    if int(record.get("done") or 0) > done_before:
+                        # It got somewhere before it was refused — two pictures, then a 429 — so
+                        # this is an allowance refilling, not a provider failing, and the rest
+                        # starts again from the first rather than doubling towards ten minutes.
+                        pace.succeeded()
+                    delay = pace.penalise()
                     raise Requeue(delay) from refusal
+            record.pop("waitingOn", None)
             record.update(state="failed", error=refusal.code, message=refusal.message[:500])
             self.save()
             journal.step(self.id, self.kind.name, name, "failed", error=refusal.code,
@@ -177,6 +197,7 @@ class JobContext:
             self.runner.lanes[lane].succeeded()
         record["state"] = "skipped" if outcome == "skipped" else "done"
         record.pop("error", None)
+        record.pop("waitingOn", None)
         self.save()
         journal.step(self.id, self.kind.name, name, record["state"], **self._note())
         return record["state"]

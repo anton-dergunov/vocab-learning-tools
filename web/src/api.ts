@@ -588,6 +588,8 @@ export interface JobStep {
   message?: string;
   /** How many times this step has waited out a busy provider. */
   rests?: number;
+  /** While resting: every provider that refused and why, as one phrase the server wrote. */
+  waitingOn?: string;
   /** Whatever a step reports beyond progress: `found` clips, `refused` pictures. */
   detail?: Record<string, unknown>;
 }

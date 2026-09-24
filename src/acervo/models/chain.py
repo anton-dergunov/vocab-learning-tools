@@ -233,7 +233,7 @@ class _Walk:
         assert self.last is not None
         reasons = tuple(reason for _, _, reason in self.passed_over)
         journal.exhausted(self.caller, len(self.attempts), reasons)
-        raise ChainExhausted(tuple(self.attempts), self.last, reasons)
+        raise ChainExhausted(tuple(self.attempts), self.last, reasons, tuple(self.passed_over))
 
 
 def _raced(

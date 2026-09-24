@@ -173,7 +173,7 @@ def find_clips(settings: Settings, owner: str, device: str, lexeme_id: str) -> d
         # a later job will find it again — which is exactly what must happen when no model answered.
         selections, dropped, usage = selector.select(article, candidates, gloss_lang)
     except ChainExhausted as exhausted:
-        raise refusal(exhausted.last) from None
+        raise refusal(exhausted) from None
     except ProviderError as error:
         raise refusal(error) from None
     except ValueError as unusable:

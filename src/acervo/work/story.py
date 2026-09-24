@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from acervo.repository import pronunciation_settings
 from acervo.services import stories, story_audio
+from acervo.work import retry
 from acervo.work.kinds import Kind, register
 from acervo.work.runner import JobContext, Step
 
@@ -100,4 +101,5 @@ def tell(context: JobContext) -> None:
 
 register(Kind(
     "story", ("story.write", "story.translate", "story.brief", "story.draw", "story.audio"), tell,
+    rests=retry.STORY_RESTS,
 ))

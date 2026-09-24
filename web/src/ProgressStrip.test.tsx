@@ -44,6 +44,13 @@ describe("what the strip says", () => {
     ]))?.phases[0].text).toBe("Drawing 1 of 2 (the provider is busy)");
   });
 
+  it("names what a step is waiting for when the server says", () => {
+    expect(stripOf(job("queued", [
+      { name: "pictures", state: "waiting", done: 0, total: 2, rests: 1,
+        waitingOn: "Vertex AI is out of allowance for now" }
+    ]))?.phases[0].text).toBe("Drawing 1 of 2 — Vertex AI is out of allowance for now");
+  });
+
   it("names the steps of the other kinds too", () => {
     expect(stripOf(job("running", [{ name: "draw", state: "running" }], { kind: "image.redraw" }))?.phases)
       .toEqual([{ text: "Drawing", current: true }]);
@@ -186,9 +193,25 @@ describe("a story being made", () => {
   });
 
   it("names the step that is resting rather than claiming it has not begun", () => {
+    const due = new Date(Date.now() + 60_000);
     const line = story(steps(["done", "done", "done", "done", "pending"], {}, { done: 2, total: 4 }),
-                       { notBefore: new Date(Date.now() + 60_000).toISOString() });
-    expect(line?.phases[0].text).toBe("72% · Recording part 3 of 4 (the provider is busy)");
+                       { notBefore: due.toISOString() });
+    const at = due.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    expect(line?.phases[0].text).toBe(`72% · Recording part 3 of 4 (the provider is busy · next try ${at})`);
+  });
+
+  /* The row of twelve stories that said "the provider is busy" for an hour, while Gemini's free tier
+     was overloaded and Cloudflare's daily allowance had gone: the server names both now, and this
+     says them, with when it will ask again. */
+  it("says which providers it is waiting for and when it will ask again", () => {
+    const due = new Date(Date.now() + 600_000);
+    const writing: JobStep[] = steps(["waiting", "pending", "pending", "pending", "pending"]);
+    writing[0] = { ...writing[0], rests: 3,
+      waitingOn: "Gemini (free tier) is overloaded; Cloudflare Workers AI is out of allowance for now" };
+    const at = due.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    expect(story(writing, { notBefore: due.toISOString() })?.phases[0].text).toBe(
+      "0% · Writing the story — Gemini (free tier) is overloaded; Cloudflare Workers AI is out of "
+      + `allowance for now · next try ${at}`);
   });
 
   it("says it is finishing once every step is done and the job is still closing", () => {

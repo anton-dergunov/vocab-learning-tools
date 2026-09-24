@@ -609,3 +609,25 @@ def test_a_refusal_names_what_actually_refused():
     assert "language model" in text.message
     assert "image model" in picture.message and "language model" not in picture.message
     assert "speech model" in speech.message
+
+
+def test_a_walk_that_found_nobody_names_every_provider_and_why():
+    """What twelve stories were waiting for on 24 Sep 2026, said rather than "the provider is busy":
+    both of the free tier's models overloaded, and Cloudflare's allowance gone. One phrase a
+    provider, in chain order, and the code still the last pair's, so the retry contract holds."""
+    from acervo.models.errors import ChainExhausted, ProviderUnavailable
+    from acervo.services.models import refusal
+
+    last = ProviderUnavailable("rate_limited", "", provider_id="cloudflare", model="c")
+    exhausted = ChainExhausted(
+        (("gemini-free", "a"), ("gemini-free", "b"), ("cloudflare", "c")), last,
+        ("unreachable", "unavailable", "rate_limited"),
+        (("gemini-free", "a", "unreachable"), ("gemini-free", "b", "unavailable"),
+         ("cloudflare", "c", "rate_limited")),
+    )
+    refused = refusal(exhausted)
+    assert refused.code == "llm_rate_limited"
+    assert refused.waiting_on == (
+        "Gemini (free tier) is overloaded; Cloudflare Workers AI is out of allowance for now")
+    assert refused.message.startswith("The language model is temporarily rate limited")
+    assert refused.message.endswith("Cloudflare Workers AI is out of allowance for now.")

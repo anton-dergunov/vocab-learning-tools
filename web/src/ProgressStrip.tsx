@@ -18,8 +18,26 @@ export interface StripLine {
 
 const PENDING = new Set(["pending", "running", "waiting"]);
 
-function phase(step: JobStep): string | null {
-  const waiting = step.state === "waiting" ? " (the provider is busy)" : "";
+/**
+ * What a resting step is waiting for, appended to its phrase — or nothing, while it is not resting.
+ *
+ * The server names each provider that refused and why ("Gemini (free tier) is overloaded;
+ * Cloudflare Workers AI is out of allowance for now"), and the job says when it will ask again. Both
+ * are said, because "the provider is busy" was the whole of what a row of twelve stories showed for
+ * an hour while two different things were wrong, one of which would not pass until midnight.
+ */
+function waitingNote(step: JobStep, job: Job | undefined, resting = step.state === "waiting"): string {
+  if (!resting) return "";
+  const due = job?.notBefore ? Date.parse(job.notBefore) : NaN;
+  const next = Number.isFinite(due) && due > Date.now()
+    ? new Date(due).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
+  if (!step.waitingOn) return next ? ` (the provider is busy · next try ${next})` : " (the provider is busy)";
+  return ` — ${step.waitingOn}${next ? ` · next try ${next}` : ""}`;
+}
+
+function phase(step: JobStep, job?: Job): string | null {
+  const waiting = waitingNote(step, job);
   switch (step.name) {
     case "clips":
       return `Finding recorded examples${waiting}`;
@@ -123,8 +141,8 @@ const STORY_COUNTED = new Set(["story.draw", "story.audio"]);
 
 const STORY_FINISHED = new Set(["done", "skipped", "failed"]);
 
-function storyLabel(step: JobStep): string {
-  const waiting = step.state === "waiting" ? " (the provider is busy)" : "";
+function storyLabel(step: JobStep, job: Job, resting = step.state === "waiting"): string {
+  const waiting = waitingNote(step, job, resting);
   switch (step.name) {
     /* One message for the three text steps. They take a few seconds between them, so naming each
        one flashes three phrases past faster than they can be read, and "writing the story" is what
@@ -182,8 +200,7 @@ function storyLine(job: Job): StripLine {
   const resting = Boolean(job.notBefore) && Date.parse(job.notBefore!) > Date.now();
   const text = !started ? "Waiting to start"
     : !current ? "Finishing"
-      : resting && current.state === "pending" ? `${storyLabel(current)} (the provider is busy)`
-        : storyLabel(current);
+      : storyLabel(current, job, current.state === "waiting" || (resting && current.state === "pending"));
   return { phases: [{ text: `${percent}% · ${text}`, current: true }], failure: null };
 }
 
@@ -194,7 +211,7 @@ export function stripOf(job: Job | undefined): StripLine | null {
   if (isOpen(job)) {
     const phases = job.steps
       .filter((step) => PENDING.has(step.state))
-      .map((step) => ({ text: phase(step), current: step.state !== "pending" }))
+      .map((step) => ({ text: phase(step, job), current: step.state !== "pending" }))
       .filter((entry): entry is { text: string; current: boolean } => entry.text !== null);
     if (!phases.length) return { phases: [{ text: "Waiting to start", current: false }], failure: null };
     return { phases, failure: null };

@@ -154,7 +154,7 @@ def _ocr(settings: Settings, owner: str, photo: bytes, hints: list[str]) -> OcrR
             caller="photo-read",
         )
     except ChainExhausted as exhausted:
-        raise refusal(exhausted.last, "ocr") from None
+        raise refusal(exhausted, "ocr") from None
     except ProviderError as error:
         raise refusal(error, "ocr") from None
 

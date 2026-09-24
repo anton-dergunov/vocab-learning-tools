@@ -135,12 +135,17 @@ class ChainExhausted(Exception):
     """
 
     def __init__(self, attempts: tuple[tuple[str, str], ...], last: ProviderUnavailable,
-                 reasons: tuple[str, ...] = ()) -> None:
+                 reasons: tuple[str, ...] = (),
+                 passed_over: tuple[tuple[str, str, str], ...] = ()) -> None:
         listed = ", ".join(f"{provider} {model}" for provider, model in attempts)
         super().__init__(f"every provider was unavailable: {listed}")
         self.attempts = attempts
         self.last = last
         self.reasons = reasons or (last.reason,)
+        # (provider, model, reason) for every pair that did not answer, so the owner can be told
+        # *which* of their models refused and why — "Gemini is overloaded, Cloudflare is out of
+        # allowance" — rather than only the last one's reason as though it were the whole story.
+        self.passed_over = passed_over or ((last.provider_id or "", last.model or "", last.reason),)
 
     @property
     def waited_on_nothing(self) -> bool:

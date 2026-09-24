@@ -463,7 +463,7 @@ def _speak(settings: Settings, owner: str, text: str, language: str, order: str,
             "Add a model that does in Settings ▸ Providers.",
         ) from None
     except ChainExhausted as exhausted:
-        error = refusal(exhausted.last, chain_name)
+        error = refusal(exhausted, chain_name)
         on_failure(f"refused:{error.code}")
         raise error from None
     except ProviderError as failure:

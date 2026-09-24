@@ -19,7 +19,7 @@ from acervo.repository import jobs
 from acervo.repository.session import transaction
 from acervo.work import kinds, retry
 from acervo.work.kinds import Kind
-from acervo.work.runner import Runner
+from acervo.work.runner import Runner, _epoch
 
 
 class Clock:
@@ -161,6 +161,77 @@ def test_a_transient_failure_rests_and_the_job_yields_the_lane(server, runner, s
     finished = jobs.get(server.owner, queued["id"])
     assert finished["state"] == "done"
     assert seen == ["first", "first", "second"]
+
+
+def test_a_resting_step_says_what_it_is_waiting_for_and_forgets_it_once_it_answers(
+        server, runner, script, clock):
+    plan, _ = script
+    plan["first"].append(ApiError(503, "llm_unavailable", "Busy.",
+                                  "Gemini (free tier) is overloaded"))
+    queued = queue(server)
+    runner.run_until_idle()
+    assert jobs.get(server.owner, queued["id"])["steps"][0]["waitingOn"] == \
+        "Gemini (free tier) is overloaded"
+
+    clock.advance(retry.FIRST_REST + 1)
+    runner.run_until_idle()
+    assert "waitingOn" not in jobs.get(server.owner, queued["id"])["steps"][0]
+
+
+def test_a_kind_that_is_nothing_until_its_step_succeeds_waits_longer(server, runner, script, clock):
+    """A story rests twenty times, about three hours, where a word's enrichment rests six: a story
+    that gives up is a Try again button with nothing behind it."""
+    plan, seen = script
+    patient = kinds.find("test.script")
+    kinds.register(Kind("test.script", patient.steps, patient.handler, rests=retry.MAX_RESTS + 3))
+    plan["first"].extend(ApiError(503, "llm_unavailable", "Busy.") for _ in range(retry.MAX_RESTS + 3))
+    queued = queue(server)
+    for _ in range(retry.MAX_RESTS + 4):
+        runner.run_until_idle()
+        clock.advance(retry.LONGEST_REST + 1)
+    finished = jobs.get(server.owner, queued["id"])
+    assert finished["state"] == "done", "the tenth try answered, inside its patience"
+    assert seen.count("first") == retry.MAX_RESTS + 4
+    assert kinds.find("story").rests == retry.STORY_RESTS > retry.MAX_RESTS
+
+
+def test_a_step_that_got_somewhere_before_it_was_refused_rests_from_the_first_rest(
+        server, runner, script, clock):
+    """Two pictures and then a 429 is an allowance refilling, not a provider failing: the lane's
+    rest starts again from thirty seconds instead of doubling towards ten minutes."""
+    plan, _ = script
+
+    def drew_two_then_refused(step):
+        step.progress(2, 4)
+        raise ApiError(503, "llm_rate_limited", "Quota.")
+
+    for _ in range(3):  # a streak, as a lane that kept being refused would have
+        runner.lanes["text"].penalise()
+    plan["first"].append(drew_two_then_refused)
+    queued = queue(server)
+    runner.run_until_idle()
+    resting = jobs.get(server.owner, queued["id"])
+    waited = _epoch(resting["notBefore"]) - clock()
+    assert waited == pytest.approx(retry.FIRST_REST, abs=1)
+
+
+def test_a_paced_lane_says_it_is_keeping_to_its_allowance(server, script, monkeypatch):
+    """One picture a minute is kept to rather than discovered by refusal, and the row says so."""
+    monkeypatch.setitem(retry.LANES, "image", 1)
+    runner = Runner(server.settings)
+    plan, seen = script
+
+    def draw_twice(step):
+        step.gate()
+        step.gate()
+
+    plan["second"].append(draw_twice)
+    queued = queue(server)
+    runner.run_until_idle()
+    waiting = jobs.get(server.owner, queued["id"])
+    assert waiting["state"] == "queued"
+    assert waiting["steps"][1]["state"] == "waiting"
+    assert waiting["steps"][1]["waitingOn"] == "keeping to 1 picture a minute"
 
 
 def test_a_resting_job_does_not_hold_up_the_next_one(server, runner, script):

@@ -26,13 +26,25 @@ FIRST_REST = 30.0
 LONGEST_REST = 600.0
 MAX_RESTS = 6
 
+# A story is nothing at all until its first step succeeds, so giving up is not "leave it usable and
+# let the owner try again" — it is a row of Try again buttons. Twenty rests is about three hours:
+# long enough to outlast an outage like the one on 24 Sep 2026, when Gemini's free tier answered 503
+# for an hour while Cloudflare's daily allowance had already gone, and twelve stories asked for in a
+# row all failed one after another at the 25-minute mark.
+STORY_RESTS = 20
+
 # One gate per lane, shared by every job, because one process now does all the work. A lane is the
 # kind of allowance a step spends: a quota refused for pictures says nothing about clip searches.
 # Zero calls per minute means "no window, only the rest after a refusal".
 LANES: dict[str, int] = {
     "text": 10,
     "clip": 0,
-    "image": 0,
+    # One picture a minute is the allowance measured for the Vertex image model (a median gap of
+    # 60.5 s over a 39-minute run, 5 Sep 2026), and on 24 Sep it answered two in a row and then 429
+    # every time, a bucket of two refilling at one a minute. Discovering that by refusal cost a rest
+    # that doubled towards ten minutes while pictures were in fact being drawn; keeping to it costs a
+    # minute between pictures, and the other jobs in the lane take their turns in between.
+    "image": 1,
     "audio": 0,
     "corpus": 0,
 }

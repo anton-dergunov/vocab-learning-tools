@@ -297,7 +297,7 @@ def _segments(settings: Settings, owner: str, text: str, language: str, order: s
             # part is still worth hearing, so it is read whole, in the voice's own manner.
             journal.outcome("story-narrate", True, result="unusable", reasons=",".join(exhausted.reasons))
             return narrate.chunks(text)
-        raise refusal(exhausted.last, "text") from None
+        raise refusal(exhausted, "text") from None
     except ProviderError as error:
         raise refusal(error, "text") from None
     journal.outcome(

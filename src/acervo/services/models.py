@@ -268,7 +268,7 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str,
             chain.stamped, caller=caller, hedge_after=hedge_after,
         )
     except ChainExhausted as exhausted:
-        raise refusal(exhausted.last, kind) from None
+        raise refusal(exhausted, kind) from None
     except ProviderError as error:
         raise refusal(error, kind) from None
 
@@ -276,7 +276,45 @@ def llm_json(settings: Settings, owner: str | None, system: str, user: str,
     return result.parsed, result.answer
 
 
-def refusal(error: ProviderError, kind: str = "text") -> ApiError:
+# What each passing reason means to the owner, said of a provider. Ordered by how much it tells:
+# when two of one provider's models refused differently, the first reason here is the one said.
+WAITING_ON: dict[str, str] = {
+    "rate_limited": "is out of allowance for now",
+    "unavailable": "is overloaded",
+    "unreachable": "is not answering",
+    "unusable": "answered in a shape that could not be used",
+    "empty": "answered with nothing",
+}
+
+
+def waiting_on(exhausted: ChainExhausted) -> str:
+    """Every provider that refused, by the name the owner knows it by, and why, in chain order.
+
+    One phrase a provider rather than a model, because two models of one free tier refusing alike is
+    one fact. This exists because "the provider is busy" was the whole of what a story said while
+    Gemini's free tier answered 503 and Cloudflare's daily allowance had run out — two causes that
+    pass at very different speeds, and only one of which the owner could have done anything about.
+    """
+    catalogue = load_catalogue()
+    order: list[str] = []
+    reasons: dict[str, list[str]] = {}
+    for provider, _model, reason in exhausted.passed_over:
+        if provider not in reasons:
+            order.append(provider)
+        reasons.setdefault(provider, []).append(reason)
+    phrases = []
+    for provider in order:
+        try:
+            label = catalogue.find(provider).label
+        except KeyError:
+            label = provider or "A model"
+        said = next((WAITING_ON[one] for one in WAITING_ON if one in reasons[provider]),
+                    "is unavailable")
+        phrases.append(f"{label} {said}")
+    return "; ".join(phrases)
+
+
+def refusal(error: ProviderError | ChainExhausted, kind: str = "text") -> ApiError:
     """The same code for every caller, and prose that names what actually refused.
 
     The **code** is shared deliberately — a picture that could not be drawn and an entry that could
@@ -284,7 +322,16 @@ def refusal(error: ProviderError, kind: str = "text") -> ApiError:
     them. The **sentence** is not the code, and saying "the language model is temporarily rate
     limited" over a drawing that an image model refused sent a real debugging session looking at the
     text chain. `kind` is what the chain was walked for, so the sentence can say so.
+
+    Given a whole walk (`ChainExhausted`), the code is still its last pair's — which is what keeps
+    the retry contract — and the sentence goes on to name every provider that refused, and why.
     """
+    if isinstance(error, ChainExhausted):
+        refused = refusal(error.last, kind)
+        summary = waiting_on(error)
+        if not summary:
+            return refused
+        return ApiError(refused.status, refused.code, f"{refused.message} {summary}.", summary)
     status, code, message = REFUSALS[error.reason]
     if kind == "image":
         message = message.replace("The language model", "The image model")

@@ -11,6 +11,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from acervo.work.retry import MAX_RESTS
+
 if TYPE_CHECKING:
     from acervo.work.runner import JobContext
 
@@ -21,6 +23,10 @@ class Kind:
     # Declared up front, so the owner sees every phase from the moment the job starts.
     steps: tuple[str, ...]
     handler: Callable[["JobContext"], None]
+    # How many times a step may rest out a busy provider before the job gives up on it. The default
+    # is `retry.MAX_RESTS`, about 25 minutes, which suits work whose subject is usable without it —
+    # a word with no clip yet. A kind that is *nothing* until its step succeeds says otherwise.
+    rests: int = MAX_RESTS
 
 
 _registry: dict[str, Kind] = {}

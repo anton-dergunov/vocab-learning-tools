@@ -200,7 +200,7 @@ def brief_lexeme(settings: Settings, owner: str, device: str, lexeme_id: str,
             raise ApiError(
                 502, "llm_unusable", "The language model did not describe a usable picture."
             ) from None
-        raise refusal(exhausted.last) from None
+        raise refusal(exhausted) from None
     except ProviderError as error:
         raise refusal(error) from None
     except ValueError as unusable:
@@ -370,7 +370,7 @@ def render_prompt(settings: Settings, owner: str, device: str, prompt_id: str,
         # against the sense: an allowance that ran out must not use up a sense's retries, and the
         # row is left exactly as it was. The interface re-reads what is still drawable after it
         # rests, which is what turns that into a retry rather than a word left one picture short.
-        raise refusal(exhausted.last, "image") from None
+        raise refusal(exhausted, "image") from None
     except ProviderError as error:
         raise refusal(error, "image") from None
 

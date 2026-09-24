@@ -249,6 +249,16 @@ def no_remembered_refusals():
     rests.forget_all()
 
 
+@pytest.fixture(autouse=True)
+def no_lane_windows(monkeypatch):
+    """The lanes' calls-a-minute windows run on real time, and a test draws four pictures in a
+    millisecond — so every picture after the first would wait out a real minute. The window is what
+    `test_jobs.py` pins on purpose; everywhere else it would only turn each test into a test of it."""
+    from acervo.work import retry
+
+    monkeypatch.setitem(retry.LANES, "image", 0)
+
+
 @pytest.fixture
 def server(tmp_path, monkeypatch) -> Server:
     downloads = tmp_path / "downloads"

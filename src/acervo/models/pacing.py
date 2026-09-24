@@ -60,6 +60,11 @@ class Pace:
         with self._lock:
             return self._delay_locked(time.time())
 
+    def resting(self) -> bool:
+        """True while a refusal's rest is in force, as opposed to the window being full."""
+        with self._lock:
+            return time.time() < self._until
+
     def acquire(self) -> None:
         """Block until this thread may call. Never holds the lock while sleeping."""
         while True:

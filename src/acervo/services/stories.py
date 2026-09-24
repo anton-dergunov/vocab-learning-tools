@@ -283,7 +283,7 @@ def write_story(settings: Settings, owner: str, device: str, story_id: str) -> d
         # `services/loops.refusal` states: the code is ours, the sentence is theirs.
         raise ApiError(422, "story_refused", refused.reason) from None
     except ChainExhausted as exhausted:
-        raise refusal(exhausted.last, "text") from None
+        raise refusal(exhausted, "text") from None
     except ProviderError as error:
         raise refusal(error, "text") from None
 
@@ -348,7 +348,7 @@ def translate_story(settings: Settings, owner: str, device: str, story_id: str) 
             parts,
         )
     except ChainExhausted as exhausted:
-        raise refusal(exhausted.last, "text") from None
+        raise refusal(exhausted, "text") from None
     except ProviderError as error:
         raise refusal(error, "text") from None
 
@@ -391,7 +391,7 @@ def brief_story(settings: Settings, owner: str, device: str, story_id: str) -> d
             parts,
         )
     except ChainExhausted as exhausted:
-        raise refusal(exhausted.last, "text") from None
+        raise refusal(exhausted, "text") from None
     except ProviderError as error:
         raise refusal(error, "text") from None
 
@@ -484,7 +484,7 @@ def draw_pictures(settings: Settings, owner: str, device: str, story_id: str,
             # it must not use up the part's retries. The second half is this loop's own — every
             # remaining part would walk the same exhausted chain, so drawing them is spending time
             # to collect the same refusal four times.
-            raise refusal(exhausted.last, "image") from None
+            raise refusal(exhausted, "image") from None
         except ProviderRefused as declined:
             # This brief, refused. Recorded on its own row and the loop carries on: one part that
             # could not be drawn must not cost the other three. Try again picks up exactly these.
