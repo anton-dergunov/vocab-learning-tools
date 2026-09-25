@@ -403,7 +403,8 @@ The interface samples N lexeme ids from the scope on screen — this language, t
 route takes ids rather than a query.
 
 That is what made the next step cheap: **choosing words by hand is the same route with a different
-list** — the device's word selection, built with no server change. Difficulty, newest-first and
+list** — the device's word selection ([`word-selection.md`](word-selection.md)), built with no
+server change. Difficulty, newest-first and
 "words with no loop yet" would be further options on the same dialog, one selector each.
 
 **The style and pattern catalogues are LexiBeat's**, read from its `schema` route and never copied here

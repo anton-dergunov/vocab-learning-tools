@@ -85,18 +85,21 @@ Even **10,000 fully structured words** with no media are only tens of megabytes.
 
 **Features** — what the owner uses, and the design behind each.
 
+- [`features/articles.md`](features/articles.md) — reading a word, and editing it as a YAML document.
 - [`features/capture.md`](features/capture.md) — getting a word in: resolve, compose, review.
 - [`features/photo-capture.md`](features/photo-capture.md) — tap a word in a photographed page.
 - [`features/article-chat.md`](features/article-chat.md) — ask about an article; its answer is a proposed revision.
 - [`features/sense-images.md`](features/sense-images.md) — one picture per sense, briefed together per word.
 - [`features/pronunciation.md`](features/pronunciation.md) — every spoken field, recorded and replicated.
 - [`features/spoken-clips.md`](features/spoken-clips.md) — real native speech for a word, chosen by a model.
+- [`features/word-selection.md`](features/word-selection.md) — a working pile of words to make something from.
 - [`features/loops.md`](features/loops.md) — words and their translations over music, with LexiBeat.
 - [`features/stories.md`](features/stories.md) — a short illustrated story from a handful of words, read aloud.
 - [`features/meaning-map.md`](features/meaning-map.md) — a language's senses laid out by meaning.
 - [`features/dictionaries.md`](features/dictionaries.md) — external dictionaries, compiled and read in place.
 - [`features/anki.md`](features/anki.md) — cards out, review state back.
 - [`features/export.md`](features/export.md) — the bundle, the Obsidian mirror, and import.
+- [`features/standing-rules.md`](features/standing-rules.md) — telling every prompt something once.
 - [`ml.md`](ml.md) — a tour of the machine-learning decisions across all of the above.
 
 **Operations** — running it.

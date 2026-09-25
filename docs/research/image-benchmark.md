@@ -239,9 +239,9 @@ change therefore creates a distinct result instead of silently reusing media.
 Compile and run the diagnostic without installing a LaunchAgent:
 
 ```bash
-swiftc tools/macos_idle_probe.swift -o /tmp/vocabgen-macos-idle-probe
-/tmp/vocabgen-macos-idle-probe
-/tmp/vocabgen-macos-idle-probe --watch --interval 1
+swiftc tools/macos_idle_probe.swift -o /tmp/acervo-macos-idle-probe
+/tmp/acervo-macos-idle-probe
+/tmp/acervo-macos-idle-probe --watch --interval 1
 ```
 
 If a restricted environment prevents Swift from writing its module cache, set

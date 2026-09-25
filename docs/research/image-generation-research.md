@@ -216,7 +216,7 @@ and [Quartz display capture](https://developer.apple.com/documentation/coregraph
 
 ## Deferred until blind review
 
-- Production `vocabgen.vision` providers and `config/defaults.yaml` changes.
+- Production image providers and their configuration.
 - Media-cache provenance migration and automatic fallback orchestration.
 - NAS/Raspberry Pi queue service and the Mac LaunchAgent.
 - Video generation.

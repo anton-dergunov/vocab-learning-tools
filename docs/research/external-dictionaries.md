@@ -503,7 +503,7 @@ tiering affordable:
 
 The Chinese subsystem ([`../plans/chinese-subsystem.md`](../plans/chinese-subsystem.md)); any scraper; bundling BKRS or anything else of unclear provenance;
 per-entry caching of dictionary data; bespoke connectors for APIs beyond the two Wiktionary-shaped
-ones; and anything that puts a dictionary row in PocketBase.
+ones; and anything that puts a dictionary row in the database.
 
 ---
 

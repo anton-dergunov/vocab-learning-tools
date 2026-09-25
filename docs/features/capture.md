@@ -45,9 +45,9 @@ Two model calls, assembled on the server from tracked prompts (`prompts/acervo_r
    corrects, not a bypass of it.
 2. **Compose** writes the article from the definition and the learner's own sentences, choosing from
    the owner's real topics and glossing into the languages the vocabulary asks for. Every prose field in
-   its prompt states which language it is written in. The owner's standing rules (Settings ▸ Rules)
-   are appended to it, and an optional request in Add ("Anything to ask the generator") travels with
-   it.
+   its prompt states which language it is written in. The owner's standing rules (Settings ▸ Rules,
+   [`standing-rules.md`](standing-rules.md)) are appended to it, and an optional request in Add
+   ("Anything to ask the generator") travels with it.
 
 The model answers in JSON mode and the shape is checked by Acervo's own parser — no schema is ever
 sent ([`../architecture/models.md`](../architecture/models.md)). Resolve and compose run on the
