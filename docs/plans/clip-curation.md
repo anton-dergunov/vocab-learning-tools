@@ -19,7 +19,14 @@ A growing list of booleans is the wrong shape for that. "Advanced and authentic"
 simple" is one question, and every future answer to it would be another checkbox that interacts with
 the others in ways nobody can predict from the labels.
 
-> **Proposed: an owner-scoped selection prompt, with the shipped one as its starting text.**
+**Partly answered since.** Settings ▸ Rules appends the owner's standing rules, in their own words,
+to the clip selector's prompt as to every prompt that writes something the owner reads — so "clear
+and simple" or "as messy as a real room" can already be said once and apply to every search. Try
+that first. A full override is worth building only if a rule cannot express what the owner wants,
+or the rules start fighting the shipped wording.
+
+> **If rules are not enough: an owner-scoped selection prompt, with the shipped one as its starting
+> text.**
 
 What that has to settle:
 
@@ -28,16 +35,16 @@ What that has to settle:
   and "reset to the default" is always available.
 - **The contract is not negotiable.** Whatever the wording, the reply is still `{senses: [{senseId,
   segmentId, translation, matchedTranslationForm}]}`, ids still come from the offered set, and the
-  passage is still quoted verbatim (§2.6). So the shape block and the id rule are appended by the
-  server rather than typed by the owner — the same split `acervo_image_brief` already has between
-  what the writer decides and what the frame enforces.
+  passage is still quoted verbatim (`docs/spoken-clips.md` §2.6). So the shape block and the id rule
+  are appended by the server rather than typed by the owner — the same split `acervo_image_brief`
+  already has between what the writer decides and what the frame enforces.
 - **A custom prompt is not replicated.** It is owner-scoped server state like `clip_settings` and
   `model_selection`, for the same reason: the searching happens on the server.
 - `selfContainedOnly` then becomes a section of the default text rather than a column, and
   `services/prompts.py`'s markers are how it survives the move.
 
-Do not build this before there is a second taste knob asking for it. One is a setting; three are a
-prompt.
+Do not build this before there is a second taste knob asking for it, and rules have been tried.
+One is a setting; three are a prompt.
 
 ## 2 · A dialog for the clips a word already has
 
@@ -69,8 +76,9 @@ candidate set means storing text the owner never chose.
 
 **Passage boundaries.** Half of what looks like a bad clip is a good passage cut badly, and the fix
 is upstream: `spoken-usage-retrieval`'s own experiment on where a shown passage should start and end.
-Nothing in this plan should compensate for that by trimming text — §2.6 is what stops the corpus's
-own measurements from being invalidated, and it holds however tempting the trimming looks.
+Nothing in this plan should compensate for that by trimming text — `spoken-clips.md` §2.6 is what
+stops the corpus's own measurements from being invalidated, and it holds however tempting the
+trimming looks.
 
 **Tuning the default prompt.** `docs/plans/clip-selection-experiment.md`, with
 `docs/clip-selection-rounds.md` as its starting point.

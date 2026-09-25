@@ -14,10 +14,12 @@ feature earns its place.
 Seven stories, read once, by the person who wrote the prompt, is not a measurement. Three things
 make this harder than it looks:
 
-- **A story you just watched being generated reads better than it is.** `compose-lesson-line/` found
-  a **50% false-positive rate on same-arm controls** — readers confidently identified a difference
-  between two outputs of the *identical* prompt half the time (κ = −0.10 against a Pro judge). Any
-  method here has to carry same-arm controls or it is measuring nothing.
+- **Pairwise "which is better" may not resolve anything.** `compose-lesson-line/` found that
+  pairwise judging — human or model — could not resolve differences of that size: agreement with a
+  Pro judge was at chance (κ ≈ −0.10), and its same-arm controls could not reliably return "no
+  preference" even when there was none to have, partly because its option set had no *differ,
+  neither better* answer (since added). Any method here needs same-arm controls and that fourth
+  answer, and a story you just watched being generated probably reads better than it is.
 - **The temperature is 1.0**, so run-to-run variance is the highest of any call in Acervo. A prompt
   change has to beat that noise, not just differ from one sample.
 - **"Good" is not one thing.** A story can be funny and teach nothing, or use every word perfectly
@@ -29,8 +31,9 @@ A first decomposition, to be argued with rather than adopted:
 
 1. **Did I finish it?** The only measure that matters on its own. A story abandoned halfway taught
    nothing, whatever else was true of it.
-2. **Did the ending land?** Round 2 of the experiment showed the failure clearly: stories that stop
-   rather than end. This is the most improvable axis and probably the highest-value one.
+2. **Did the ending land?** A story that stops rather than ends is the failure to watch for, and the
+   writing prompt already carries a rule against it; whether the rule works is untested. Probably the
+   most improvable axis and the highest-value one.
 3. **Are the words load-bearing?** Not just present — attached to what is happening, in a situation
    that shows what they mean. `empezar a susurrar un gruñido bajo` passes the mechanical check and
    fails this one.
@@ -44,10 +47,10 @@ A first decomposition, to be argued with rather than adopted:
 ## Things worth trying
 
 - **Read them after a delay.** Recall a week later is closer to what the feature is for than an
-  opinion on the day. It also breaks the same-arm false-positive effect, which depends on knowing
-  the two arms exist.
+  opinion on the day, and it does not depend on a reader telling two similar texts apart.
 - **A/B on the ending alone.** Cheapest high-value test: hold the story fixed and generate several
-  final parts. Endings are separable in a way tone is not.
+  final parts, with and without the prompt's ending rule. Endings are separable in a way tone is
+  not.
 - **A judge model, calibrated against same-arm controls first.** If it cannot tell two samples of
   one prompt apart at chance, it is not a judge.
 - **Does the word count change the quality?** The default is three. Nobody has checked whether five

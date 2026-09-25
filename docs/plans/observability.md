@@ -1,8 +1,9 @@
 # Observability · what Acervo should be able to tell you
 
-**Status:** Open, and deliberately a stub. It holds the question rather than a schedule; nothing here
-blocks anything. Written after a loop render failed on the deployed server and the server said
-nothing at all — not in `docker logs`, not in `admin`, nowhere a person would look.
+**Status:** Open. It holds the question rather than a schedule; nothing here blocks anything. The
+most useful single change is §3's request id. Written after a loop render failed on the deployed
+server and the server said nothing at all — not in `docker logs`, not in `admin`, nowhere a person
+would look.
 
 Acervo is a single-owner system with no operations team, which changes what this is for. There is no
 alerting to build and no dashboard anybody will watch. The whole question is narrower and harder:
@@ -11,24 +12,15 @@ source?**
 
 ---
 
-## §1 · What exists
+## §1 · What exists, and the shape to copy
 
-**The model-call log** (`src/acervo/models/journal.py`, `ACERVO_CALL_LOG_PATH`, read back by
-`python -m acervo.admin calls`). One line per model call: which pair answered, how long it took, and
-an `outcome` line saying what the caller did with the answer. It is the reason timeouts in this
-repository are measured rather than guessed.
-
-**The job log** (`src/acervo/work/journal.py`, `ACERVO_JOB_LOG_PATH`). One line when a job starts,
-one per step outcome, one when it ends, with the error and the sentence. Added by the step this file
-came from, for a reason worth keeping written down: a job's failure was recorded **only** in the job
-row's JSON, reachable through Settings ▸ Activity and nothing else. `docker logs` showed an
-access-log status code and `admin jobs list` showed open jobs alone, so a four-minute render that
-failed was invisible from the command line.
-
-Both share a shape that later logs should copy: `key=value` pairs so a `grep` is a question with an
-answer; the emitting package **never configures**, so the file and the rotation belong to the
-deployment; and **a log that cannot be opened warns and is dropped**, because a server that cannot
-write its log should still do its work.
+Two logs, both built: the model-call log (`models/journal.py`, read back by
+`python -m acervo.admin calls`) and the job log (`work/journal.py`), which exists because a job's
+failure was once recorded only in its row's JSON and was invisible from the command line. Both
+share a shape any later log should copy: `key=value` pairs so a `grep` is a question with an answer;
+the emitting package **never configures**, so the file and the rotation belong to the deployment;
+and **a log that cannot be opened warns and is dropped**, because a server that cannot write its
+log should still do its work.
 
 ## §2 · What is still silent
 

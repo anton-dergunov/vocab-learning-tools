@@ -654,6 +654,14 @@ first.
 | 4 | **Web Share Target** | Android phone, Android tablet | Direct, native-feeling, cheap once the endpoint exists. |
 | 5 | info-triage `lang` route | anywhere | **Optional backfill.** Useful where Acervo isn't installed. Not the path. |
 
+**§05 REVISED — row 3 does not exist as described.** An iOS Shortcut cannot end in Acervo's review
+screen: iOS has no deep link into an installed home-screen web app, the installed app's storage is
+separate from Safari's so a URL opens a different, signed-out copy, and iOS offers a web app no share
+target at all (WebKit bug 194593). What a Shortcut *can* do is post and walk away into the Inbox, or
+resolve, confirm in a Shortcuts menu, then post. The full survey of transports per device, with the
+experiments that decide between them, is [`plans/capture-transports.md`](plans/capture-transports.md).
+Photo capture has since become a transport of its own ([`photo-capture.md`](photo-capture.md)).
+
 ### Why info-triage is demoted
 
 Rev. B made the `lang` route the primary path on the grounds that it already existed. That was the

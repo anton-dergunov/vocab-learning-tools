@@ -162,9 +162,18 @@ this job, which is exactly what a chain of alternatives is for."*
 
 Applied to `ipa`, this closes the register's issue 1 without a second call, a vote, or a stronger
 model: gemini's `/ˈaska/` fails the check, gemini is demoted, and Vertex — correct 6 of 6 — answers.
-**The architecture already implements quality-triggered model routing; it is only missing the
-checks.** And it does so without touching the locked contract that a record names the model that did
-the work, because exactly one model still produces the field.
+**The architecture already implements quality-triggered model routing** — and it does so without
+touching the locked contract that a record names the model that did the work, because exactly one
+model still produces the field.
+
+**But not for compose yet, which is where these fields are written.** Routing works where the
+caller parses inside the `ask` callback: `clips/select.py` and `images/brief.py`. Compose goes
+through `services/models.llm_json`, which raises `unusable` only when a reply is not JSON and takes
+no validation hook; compose's own refusals — no senses, a Chinese entry with no reading, a reply
+that is not an object — are raised as `ApiError` after the chain has finished, so they are terminal
+and no stronger model is asked. **An in-chain compose check first needs `llm_json` to accept a
+validation callback**; with that, the gloss-script check (backlog row 3) is the first check to add
+and the template for the IPA one.
 
 ### The rule-decidable checks not yet written
 
@@ -393,8 +402,7 @@ half the price, keeping the cheap model's 1.8 s median.
 
 ## §6 · Grounding — shipped, disliked, and unevaluated
 
-`docs/grounding-spike.md` says *"planned, not built"*. **That is stale.** Grounding shipped as
-the user-initiated reference path:
+Grounding shipped as the user-initiated reference path (`docs/grounding-spike.md` records it):
 
 - `services/capture/coerce.py:reference_of` — `REFERENCE_LIMIT = 8000`, and a docstring that states
   the modelling rule: *"Grounding, and nothing else. It never reaches `resolution.sentences`, so it
@@ -550,45 +558,15 @@ omitting** `ipa` for languages whose orthography determines it; validating again
 dictionary (§3); or the in-chain check that demotes the model (§2). The last two are the only ones
 that close it.
 
-### 2 · The `emotion: null` boundary was too conservative — closed, 21 Sep 2026
+### 2 · The `emotion: null` boundary was too conservative — closed, 21–22 Sep 2026
 
-`primaryGloss` and a lexeme-level `emotion` shipped on 18 September 2026
-([`compose-lesson-line`](../../experiments/compose-lesson-line/README.md): adding them doesn't thin
-the rest of the article). That experiment measured the boundary below from its own candidate prompt
-and flagged wording quality as separate, unfinished work — this is that work, done in
-[`primary-gloss-emotion-tuning`](../../experiments/primary-gloss-emotion-tuning/README.md).
-
-The original rule was coherent but too timid. Nulls clustered exactly where the shipped wording's own
-carve-outs pointed — a weekday, a preposition, a piece of furniture — and measured coverage on
-ordinary words sat at 57–89%, against the owner's own target of roughly 90%: a loop repeats one word
-six times over a beat, and a flat reading defeats half the point of the feature even when nothing is
-technically wrong with it.
-
-The fix was not one sentence added beside the old carve-outs — a pilot draft that tried that landed
-coverage around 100%, but **at the cost of firing on every null control too**: a number, a
-conjunction, a Chinese grammatical particle all got an invented feeling, some of them decorative
-near-nulls ("neutral and matter-of-fact, connecting ideas together smoothly" for the word *of*). The
-shipped wording instead removes the carve-outs, replaces them with "picture the single most ordinary
-situation this word comes up in," and adds the rule that a description of flatness — "neutral,"
-"matter-of-fact" — **is** `null` and must be written as `null`, not as a sentence. That combination
-measured 88.6–100% coverage on ordinary words with **0% false positives** on the null-control set,
-across both the tuning round and a holdout of words never used while iterating the wording. Full
-numbers, the over-correction failure and how it was found are in the experiment's README.
-
-`primaryGloss`'s companion defect — too short for a multi-word headword (`encender la computadora` →
-`turn`) — closed in the same pass: auto-fail rate on a mechanical word-count check fell from 15.6% to
-4.4% on the synthetic tuning set and from 20% to 0% on the holdout.
-
-**Confirmed on the real vocabulary, 22 Sep 2026.** The owner ran the database extraction himself once
-the direct path proved blocked (see the experiment README's "Data access" section). Against the 72
-headwords the live database currently gets wrong, a fresh call under the *old* wording reproduces the
-failure only 43.1% of the time (real generation is noisier than a single stored sample), and the new
-wording brings that to an effectively-zero-on-inspection rate — every one of the 6 mechanically
-flagged replies that remained was a genuinely correct one-word translation (`el cepillo de dientes` →
-`toothbrush`, `manos de manteca` → `butterfingers`). On a genuinely random sample of 40 real
-headwords, fresh `emotion` coverage went 82.5% → 100%. The *stored* `emotion` field across the whole
-1,720-word export reads only 36.8% non-null, but that conflates "the model said null" with "this
-record predates the field," so it is not the number to trust — the fresh-call figure above is.
+Nulls clustered where the old wording's carve-outs pointed, and a too-short `primaryGloss` for
+multi-word headwords (`encender la computadora` → `turn`). Both were fixed by a rewording measured in
+[`primary-gloss-emotion-tuning`](../../experiments/primary-gloss-emotion-tuning/README.md) —
+88.6–100% `emotion` coverage on ordinary words with 0% false positives on null controls, holdout
+included — and confirmed on the real vocabulary on 22 September (fresh `emotion` coverage 82.5% →
+100% on a random 40). The numbers, the over-correction a first draft made, and why the stored field's
+36.8% is not the figure to trust are in that README.
 
 ### 3 · A pinyin tone error, not reproducibly
 

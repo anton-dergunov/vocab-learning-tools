@@ -1,13 +1,15 @@
 # Capture transports · getting a word in from wherever you met it
 
-**Status:** research. Nothing here is built and nothing here is decided. This document enumerates
+**Status:** research. Nothing here is built and nothing here is decided. Refreshed 25 Sep 2026 for
+the capture routes that exist now: headless capture is `POST /captures`, and resolve can be called
+alone as `POST /capture/resolve`. This document enumerates
 every realistic way a word or a sentence can reach Acervo on each device, says what each costs and
 what it buys, records the options that do not work and why, and ends in a recommendation and a set of
 experiments that can be run today without writing any code.
 
-It is scoped to **text**. Photo capture is designed in [`photo-capture.md`](../photo-capture.md) and is
+It is scoped to **text**. Photo capture is built ([`photo-capture.md`](../photo-capture.md)) and is
 not re-litigated here; this document touches it only where a transport happens to *deliver* an image,
-which is that plan's step 5.
+which that document lists as not built.
 
 It **supersedes the transport ranking in [`../design.md`](../design.md) §05** in one
 place. §05 ranks "iOS Shortcut → POST → open app" third and describes it as "one gesture from the
@@ -193,8 +195,8 @@ and needs no credential, no native code and no store account.
 **The gesture.** Take a screenshot → Share → Acervo → the image opens in the photo-capture surface and
 you tap the word.
 
-This is [`photo-capture.md`](../photo-capture.md) step 5 and belongs to that plan, not this one. Noted
-here only so the map is complete, and for one fact worth knowing in advance: a **file** share must be
+This is listed as not built in [`photo-capture.md`](../photo-capture.md). Noted here so the map is
+complete, and for one fact worth knowing in advance: a **file** share must be
 `method: "POST"` with `enctype: "multipart/form-data"`, which means the service worker has to
 intercept the POST, stash the file, and redirect the app to a URL that picks it up. That is real work,
 and it is a different mechanism from A1 rather than a bigger version of it. Both MIME type *and* file
@@ -274,11 +276,12 @@ Apple's Shortcuts app, with "Show in Share Sheet" turned on) → a moment later 
 *añoranza — longing*. You carry on reading. Two taps, no app switch at all.
 
 **What happens.** The shortcut does one `Get Contents of URL` action: a POST to
-`https://acervo.example.com/api/acervo/v1/capture` with a bearer token and a JSON body carrying the
-shared text and `apply: true`. The server resolves what the text is about, composes the article, and
-writes it — this is the existing `apply_draft` path, the same `merge_graph` every other writer uses,
-and the record lands with `status: "inbox"`. The shortcut can display the resolved headword and gloss
-from the response, so you *see* what it decided even though you never left the app you were reading.
+`https://acervo.example.com/api/acervo/v1/captures` with a bearer token and a JSON body carrying the
+shared text. The server answers `202` with a `capture` job, which resolves what the text is about,
+composes each word and saves it through the ordinary save — the same `merge_graph` every other writer
+uses — with the record landing in the Inbox and its enrichment queued. The answer is the job, not the
+word, so a banner saying *añoranza — longing* needs a second action that asks `GET /jobs/{id}` once the
+job has finished and reads the word from its steps.
 
 **Where the word goes.** Acervo's **Inbox** tab, which already exists for precisely this: entries
 built by automation that a person has not yet read. Next time you open Acervo, the 📥 tab carries a
@@ -291,9 +294,9 @@ make it — if it picks the wrong word out of your sentence, you find out later.
 non-negotiable" is satisfied in the sense that review still happens before the word is yours; it is
 not satisfied in the sense of happening *now*.
 
-**What it needs.** No server changes to capture at all — `apply: true` already works, and AGENTS.md
-explicitly names headless transports as the ones permitted to ask the route to apply, so this is a
-sanctioned transport and not a bypass. What it needs is a **credential**, which is the blocker
+**What it needs.** No server changes to capture at all — `POST /captures` is exactly the headless
+door, already used by the notes-file ingestion, so this is a sanctioned transport and not a
+bypass. What it needs is a **credential**, which is the blocker
 discussed in [The second thing several options need](#the-second-thing-several-options-need). Two
 smaller frictions belong to this option specifically: the shortcut must hardcode `schemaVersion`, so a
 schema bump silently breaks every shortcut in the field until you edit them by hand; and it must carry
@@ -313,14 +316,14 @@ headword is caught immediately rather than in the Inbox a week later.
 
 **What stands in the way.** A shortcut can hold a response in a variable and post it back, so the
 Shortcuts side is straightforward. The server side is not: composing an article is two model calls,
-and there is currently no way to say "apply *this* draft you already built". Posting twice would
-generate the entry twice — slow and wasteful. Making this work means either a route that applies a
-draft the client hands back, or splitting capture so the resolve half can be called alone. The latter
-is already on the table: `photo-capture.md` proposes splitting `run_capture` at the duplicate check
-for its tap-to-mean quick call, and this option would reuse that split rather than ask for its own.
+and posting twice would generate the entry twice. **The split that avoids this now exists**: photo
+capture made resolve callable alone as `POST /capture/resolve` — resolve, the vocabulary checks and
+the duplicate check, on the fast `quick` chain — and `/capture` accepts that resolution back and
+checks it again rather than trusting it. So B2 is resolve → confirm → capture with the resolution,
+with no new server work; the headless half would still want a job-shaped equivalent, since `/capture`
+itself does not save.
 
-**Verdict: the right shape for iOS, waiting on work that is already planned elsewhere.** Not first,
-but the natural successor to B1, and cheaper once photo capture has split the route.
+**Verdict: the right shape for iOS, and unblocked on the server side.** The natural successor to B1.
 
 ### B3 · A Paste button in Add
 
@@ -557,7 +560,7 @@ app switch**.
 | A4 | TWA + text-selection action | Android | **2** | **both** | yes | **yes** | large | trial T1 first |
 | A2 | Share target, POST (image) | Android | 3 | via OCR | yes | no | large | photo capture's |
 | B1 | Shortcut → post → Inbox | iOS, iPadOS | **2** | sentence only | no, later | no | credential | strongest on iOS |
-| B2 | Shortcut → confirm → post | iOS, iPadOS | 3 | sentence only | **yes** | no | route split | successor to B1 |
+| B2 | Shortcut → confirm → post | iOS, iPadOS | 3 | sentence only | **yes** | no | resolve route (built) | successor to B1 |
 | B3 | Paste button in Add | **all** | 4 | whatever you copied | yes | **yes** | tiny | **take regardless** |
 | B5 | Native iOS share extension | iOS, iPadOS | 2 | sentence only | yes | no | very large | not now |
 | C1 | Browser extension | desktop | **2** | **both, plus URL and title** | either | no | medium | best quality |
