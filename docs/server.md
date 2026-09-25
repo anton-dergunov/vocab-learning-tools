@@ -580,7 +580,7 @@ its own repository instead, with its own release cadence, and Acervo consumes on
 it over HTTP. What landed in `src/acervo/` is `clips/` — about *choosing* which recorded utterance
 illustrates a sense, holding no corpus at all: a narrow HTTP client, the selection call, and the
 derived id that keeps two writers on one row. The design is
-[`docs/plans/spoken-clips.md`](plans/spoken-clips.md).
+[`docs/spoken-clips.md`](spoken-clips.md).
 
 `article.py` arrived with it, and is the seventh rule in all but name: **an enrichment pipeline may
 import the provider package and the article view, and nothing else of Acervo's.** `images/` and

@@ -1,6 +1,6 @@
 # Experiment · the clip-selection prompt
 
-**Status:** Unstarted. Step 3 of [`spoken-clips.md`](spoken-clips.md) has shipped the first version
+**Status:** Unstarted. Step 3 of [`spoken-clips.md`](../spoken-clips.md) has shipped the first version
 of the prompt this experiment tunes, and a first reading of it — three runs over eight words, read
 by eye — is [`clip-selection-rounds.md`](../clip-selection-rounds.md). That was enough to find one
 real failure, fix it, and discover that the first fix was aimed at the wrong thing; it is **not**
@@ -88,7 +88,7 @@ In roughly this order, one at a time:
 
 ## Constraints the prompt may not break
 
-These are not tuning parameters. They come from [`spoken-clips.md`](spoken-clips.md) §2 and hold
+These are not tuning parameters. They come from [`spoken-clips.md`](../spoken-clips.md) §2 and hold
 whatever the measurements say:
 
 - The selected text is the corpus's sentence **verbatim**. No trimming, joining or rewriting.

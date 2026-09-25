@@ -3,7 +3,7 @@
 **Status:** Planned, unstarted. Depends on nothing; wanted once there are enough clips to be annoyed
 by the ones that are wrong.
 
-`docs/plans/spoken-clips.md` shipped the pipeline: a word is searched once, a model picks at most one
+`docs/spoken-clips.md` shipped the pipeline: a word is searched once, a model picks at most one
 passage per sense, and the only control afterwards is a remove button. That is the right first shape
 — most words get nothing, and most of what they get is fine. This plan is the two things reading the
 first real output made obvious.
@@ -56,7 +56,7 @@ Shaped on that dialog, it would offer:
 a clip example's id is derived from `(senseId, clipRef)`. A re-search that chose the same segment
 would write at the tombstone's id and bring the clip back — and nothing would fail. That is exactly
 the failure `imagePrompt.suppressed` exists to prevent, and the same answer applies: **a suppression
-field has to exist before anything re-searches.** `docs/plans/spoken-clips.md` §2.4a says so in as
+field has to exist before anything re-searches.** `docs/spoken-clips.md` §2.4a says so in as
 many words; this is the feature that makes it due.
 
 Showing the other candidates also implies keeping them, which the pipeline currently does not: the

@@ -208,7 +208,7 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
   corpus's own stable `segment_id`, so the stored sentence can be audited against the segment it
   names at any time. **`videoRef` is what they all hang on**: any of them without it is refused on
   the way in and hidden on the way out. A clip is an example with `origin: "subtitle"` and no ninth
-  table; `docs/plans/spoken-clips.md` is the whole design.
+  table; `docs/spoken-clips.md` is the whole design.
 
   **`matchedForm` and `matchedTranslationForm`** hold the inflected surface form the corpus or the
   generator actually matched — `pica` for the lexeme `picar`, `itches` in the translation. The
@@ -832,6 +832,16 @@ interactive, confirmed, revision-checked batch against one article.
 ---
 
 ## §07 · Corpus · v1
+
+**§07 REVISED — the corpus is its own project, and Acervo only chooses from it.** Harvesting,
+segmenting, lemmatising and indexing became
+[`spoken-usage-retrieval`](https://github.com/anton-dergunov/spoken-usage-retrieval), a separate
+repository that Acervo runs as one pinned service. It answered the engine question with SQLite, not
+Meilisearch, and reversed the authored-only rule below: measured there, YouTube's automatic captions
+are more verbatim and better aligned to the speech than creator-authored ones, and most of the
+corpus is automatic. What Acervo does — one search and one model call per saved word, at most one
+clip per sense, stored as an ordinary example — is [`spoken-clips.md`](spoken-clips.md). The rest of
+this section is the original reasoning, kept because the inversion it starts from still holds.
 
 ### Invert the video problem and it disappears
 
@@ -1476,7 +1486,7 @@ public repository with its own release cadence, and Acervo runs one pinned versi
 container beside the server. The argument against won: a research project whose index is
 regenerable by definition should not share a release cycle with the thing holding irreplaceable
 data, and separating them makes "regenerable" structurally true rather than merely intended. See
-[`docs/plans/spoken-clips.md`](plans/spoken-clips.md).
+[`docs/spoken-clips.md`](spoken-clips.md).
 
 **Is the review UI in Acervo or in Anki?**
 Anki is a better scheduler; a web UI is a better place for LLM grading and clip playback. Likely both
@@ -1715,9 +1725,15 @@ one.
 
 ### What is not backed up
 
-The corpus (§07), by definition — it is regenerable, and that is the invariant that earns it a
-separate database in the first place. **But the harvest list** — which channels, which video ids —
-**goes in git.** It is tiny and it encodes curation decisions that would be painful to reconstruct.
+The corpus's index (§07) — it is rebuilt from the captions whenever the service updates, which is
+what earns it a separate store in the first place.
+
+**Two corpus stores are not regenerable, and the deploy's backups do not cover them.** The caption
+cache (`data/speech-cache`) is what cost bandwidth to download and cannot politely be fetched again
+at will; nothing in either repository deletes it, and its backup is the operator's. The channel
+catalogue is a mount the retrieval service seeded once and the owner has edited since — it is not in
+git, because Acervo ships no channel list (`spoken-clips.md` §2.10). Both are small next to what
+they would cost to reconstruct.
 
 ---
 

@@ -22,7 +22,7 @@ it, and read every field aloud. What none of that does is get a word *stuck in y
 translation, each spoken three times on a bar grid over a procedurally synthesised bed, with a
 silence in the middle to recall the answer in. This document is how the two projects meet.
 
-It is the **second** companion repository, after [`spoken-usage-retrieval`](spoken-clips.md), and a
+It is the **second** companion repository, after [`spoken-usage-retrieval`](../spoken-clips.md), and a
 third is expected. So the shape matters more than the feature: this is the template's second use, and
 where it departs from the first it says why.
 
