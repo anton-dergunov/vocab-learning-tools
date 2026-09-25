@@ -1,6 +1,6 @@
 # Experiment · sense image briefs
 
-Iteration on the brief-writing prompt behind [`docs/acervo-sense-images.md`](../../docs/acervo-sense-images.md).
+Iteration on the brief-writing prompt behind [`docs/sense-images.md`](../../docs/sense-images.md).
 The apparatus is `scripts/generate_images.py`; this directory holds the review of each round and the
 prompt change it argued for. Findings that survive get written back into the design document.
 

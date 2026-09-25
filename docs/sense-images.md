@@ -1,6 +1,6 @@
 # Acervo · Sense images
 
-Design for the stage that gives a sense a picture. It refines `acervo-design.md` §09 rather than
+Design for the stage that gives a sense a picture. It refines `design.md` §09 rather than
 replacing it: §09 already decided that image prompts are their own LLM call against the validated
 article, that style variety is pedagogical, that a master is 1024×1024 WebP, and that a lexeme with
 no image is complete. What was missing was *what the picture is of*, *how the prompt is written*,

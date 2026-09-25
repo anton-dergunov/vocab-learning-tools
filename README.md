@@ -26,9 +26,9 @@ Every record uses a client-generated 15-character ID, belongs to one account, an
 replication-ready edit metadata. Markdown vocabulary files and extended-article JSON are not
 application storage formats.
 
-See [the design document](docs/acervo-design.md) for the product decisions,
-[the server design](docs/acervo-server.md) for what runs on the always-on machine, and
-[the application guide](docs/acervo-app.md) for deployment details.
+See [the design document](docs/design.md) for the product decisions,
+[the server design](docs/server.md) for what runs on the always-on machine, and
+[the application guide](docs/app.md) for deployment details.
 
 ## Development
 
@@ -83,7 +83,7 @@ generated examples, prompts, study statistics, and a Chinese reading.
 - `web/src/localDatabase.ts` — IndexedDB replica and atomic storage operations.
 - `web/src/repository.ts` — offline CRUD, tombstones, and pending markers.
 - `src/acervo/` — the server: the canonical schema, the graph routes, capture, the dictionary
-  routes, auth and the static surfaces. See [the server design](docs/acervo-server.md).
+  routes, auth and the static surfaces. See [the server design](docs/server.md).
 - `deploy/acervo/server/` — the image it ships in.
 - `src/acervo/client.py` — the one HTTP client against the API; every job and script goes through it.
 - `src/acervo/dictionaries/` — the external-dictionary compiler.

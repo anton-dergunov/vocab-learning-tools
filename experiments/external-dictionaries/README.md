@@ -1,6 +1,6 @@
 # Experiment · external dictionary storage and representation
 
-Spike 0 for [`docs/acervo-external-dictionaries.md`](../../docs/acervo-external-dictionaries.md) §10.
+Spike 0 for [`docs/external-dictionaries.md`](../../docs/external-dictionaries.md) §10.
 Results are written back into that document; this directory holds the apparatus and the raw
 numbers.
 

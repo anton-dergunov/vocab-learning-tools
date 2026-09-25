@@ -1,6 +1,6 @@
 """The one way to draw a sense image: an article in, a brief and a WebP master out.
 
-Two calls, in the order `docs/acervo-sense-images.md` §03 fixes them: one text call per *lexeme*
+Two calls, in the order `docs/sense-images.md` §03 fixes them: one text call per *lexeme*
 that writes a scene brief for every one of its senses at once, then one image call per sense. The
 batching is load-bearing rather than an optimisation — a writer that sees both senses of *venom* can
 deliberately make them look nothing alike, which is the entire reason per-sense images beat one

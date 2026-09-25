@@ -3,7 +3,7 @@
 **Status:** researched, measured, and Stage 1 built. Design §08 defines the storage stance and closes
 with "out of scope for this iteration"; this document is the survey that brought it into scope, the
 decisions that survived a first review, and in §11 the measurements that settled them. The catalogue
-and the compiler now exist — see [acervo-dictionaries-stage1.md](acervo-dictionaries-stage1.md) for
+and the compiler now exist — see [dictionaries-stage1.md](dictionaries-stage1.md) for
 what was built and what it changed.
 
 Two separate needs push toward published dictionaries:
@@ -13,7 +13,7 @@ Two separate needs push toward published dictionaries:
    independently valuable to check a generated article against a human-compiled one. **This is the
    need that justifies the feature.**
 2. **Grounding.** Design §09 names this "the highest-leverage change to the existing pipeline".
-   [acervo-grounding-spike.md](acervo-grounding-spike.md) owns that experiment and it is
+   [grounding-spike.md](grounding-spike.md) owns that experiment and it is
    **postponed** — too much else is unbuilt, and §1 below argues the expected benefit is narrower
    than §09 assumes. Grounding is a later, optional consumer of whatever this document produces, not
    its motivation.
@@ -472,7 +472,7 @@ the decision in §7 is a hypothesis, not a commitment.
   a dozen languages) and `scripts/build_dictionary.py` over `src/acervo/dictionaries/`, reduced to
   what the spike proved: one converter for the wiktextract shape, four small ones for the other
   field-structured formats, and PyGlossary for everything opaque. No per-source schemas.
-  [acervo-dictionaries-stage1.md](acervo-dictionaries-stage1.md) records what was built.
+  [dictionaries-stage1.md](dictionaries-stage1.md) records what was built.
 - **Stage 2 · the reader and the server route. Built, and the route turned out to be unnecessary.**
   `web/src/dictionary.ts` is the reader — `lookup` / `search` over a `ByteSource`, with
   `web/src/dictionaries.ts` owning the transports and the resolution order, mirroring how `sync.ts`
@@ -488,7 +488,7 @@ the decision in §7 is a hypothesis, not a commitment.
   headword up only when opened; and "Add to my words" on a dictionary entry. §12 records what was
   built and the three findings that changed the plan.
 - **Stage 4 · grounding.** Postponed indefinitely, gated on
-  [acervo-grounding-spike.md](acervo-grounding-spike.md), and re-scoped by §1: the question is
+  [grounding-spike.md](grounding-spike.md), and re-scoped by §1: the question is
   whether the *shown* senses improve, not whether coverage increases.
 
 ### The interface may flex to fit the data

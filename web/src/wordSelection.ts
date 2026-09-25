@@ -16,8 +16,7 @@ import { useSyncExternalStore } from "react";
  *
  * An entry is a lexeme id and nothing else. What it is — its headword, whether it still exists — is
  * read from the replica when it is drawn (`selectedWords` in `selectors.ts`), so a word deleted
- * since simply stops appearing and nothing here ever needs repairing. Design:
- * `docs/plans/word-selection.md`.
+ * since simply stops appearing and nothing here ever needs repairing.
  */
 
 const KEY = "acervo-word-selection";

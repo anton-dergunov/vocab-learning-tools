@@ -1,6 +1,6 @@
 """The tracked list of dictionaries Acervo knows about.
 
-`docs/acervo-external-dictionaries.md` §9: Acervo ships the *catalogue*, never the data. This file
+`docs/external-dictionaries.md` §9: Acervo ships the *catalogue*, never the data. This file
 is a set of facts and URLs; the download happens between the owner and the source, and the compiled
 artifact never enters the repository.
 

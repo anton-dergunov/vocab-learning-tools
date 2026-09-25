@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Acervo ships this list, never the data (docs/acervo-external-dictionaries.md §9). Every row is a set of facts and a URL; the download happens between you and the source, and a compiled dictionary is never committed to this repository.",
+  "note": "Acervo ships this list, never the data (docs/external-dictionaries.md §9). Every row is a set of facts and a URL; the download happens between you and the source, and a compiled dictionary is never committed to this repository.",
   "dictionaries": [
     {
       "id": "kaikki-es-en",

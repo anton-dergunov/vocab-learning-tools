@@ -781,7 +781,7 @@ records. It does not get its own storage, its own article format, or a private h
 the transcript is a convenience, and losing it costs nothing, which is precisely the test §01 sets
 for whether something belongs in the core. It does not.
 
-**Built.** The working design is [`acervo-llm-editing.md`](acervo-llm-editing.md), which settled the
+**Built.** The working design is [`llm-editing.md`](llm-editing.md), which settled the
 four things this section left open: how the model returns an edit, how the edit is shown, where the
 conversation sits on a phone, and which places in the interface open one. Two decisions above were
 revised there, and both are marked **§06 REVISED** in that document:
@@ -1592,7 +1592,7 @@ iterations, and both will reach the store through the same YAML reader and the s
 rather than a second path. Merging a repeat capture into the entry it belongs to waits for §06,
 which is why capture stops at the duplicate rather than guessing. Whether generation should be
 grounded on external sources at all is an open question with a spike planned for it
-(`docs/acervo-grounding-spike.md`), not a settled part of §09. Markdown may return only as a
+(`docs/grounding-spike.md`), not a settled part of §09. Markdown may return only as a
 generated export (§12), never as application storage.
 
 ---

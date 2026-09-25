@@ -24,7 +24,7 @@ examples are a reminder of what a style can do.
 
 **Both modes are keepers**, which is the finding that matters for the product. Round 6 without hints
 was *"on point, and not uniform"*; round 7 with them is less predictable and equally apt. That is a
-matter of taste, so it becomes a setting — see `docs/acervo-sense-images.md` §05.
+matter of taste, so it becomes a setting — see `docs/sense-images.md` §05.
 
 ## 16 · A bystander outranks the subject
 

@@ -10,7 +10,7 @@
  * article, never over Add, the loops or the stories. Over an article only on a wide window and only
  * while the ask dock rests — on a phone the word has the whole screen, and its foot is the dock's.
  * On a phone, over the list, it takes the Made bar's place; a loop that is playing keeps its bar,
- * under this one. `docs/plans/word-selection.md`, and `renderSelBar` in the prototype.
+ * under this one. The prototype draws the same bar in `renderSelBar`.
  */
 
 import { useEffect, useRef, useState } from "react";

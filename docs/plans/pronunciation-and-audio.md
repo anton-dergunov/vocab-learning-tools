@@ -81,7 +81,7 @@ kept and declare the same things, so choosing one is a settings change rather th
 
 Credentials are the `vertex` row's: application default credentials plus `ACERVO_VERTEX_PROJECT`,
 which also travels as the quota-project header Cloud TTS requires of a user login. Enabling the API is
-in [`../acervo-vertex-setup.md`](../acervo-vertex-setup.md).
+in [`../vertex-setup.md`](../vertex-setup.md).
 
 ## On the device
 

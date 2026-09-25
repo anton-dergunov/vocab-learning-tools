@@ -2,7 +2,7 @@
 
 **Status:** Built. This records what using the feature on macOS, iOS and Android exposed, the ten
 decisions taken in response, and what was deliberately left alone. The settled parts are folded into
-[`acervo-llm-editing.md`](../acervo-llm-editing.md); this document is the reasoning, which does not
+[`llm-editing.md`](../llm-editing.md); this document is the reasoning, which does not
 survive a diff.
 
 ---

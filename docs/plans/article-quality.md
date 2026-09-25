@@ -393,7 +393,7 @@ half the price, keeping the cheap model's 1.8 s median.
 
 ## §6 · Grounding — shipped, disliked, and unevaluated
 
-`docs/acervo-grounding-spike.md` says *"planned, not built"*. **That is stale.** Grounding shipped as
+`docs/grounding-spike.md` says *"planned, not built"*. **That is stale.** Grounding shipped as
 the user-initiated reference path:
 
 - `services/capture/coerce.py:reference_of` — `REFERENCE_LIMIT = 8000`, and a docstring that states

@@ -24,9 +24,9 @@ design had not:
 This plan supersedes three things:
 
 - the "flows are sweeps, not event consumers" rule in
-  [`../acervo-design.md`](../acervo-design.md) §09 and
-  [`../acervo-server.md`](../acervo-server.md) "Synchronous and asynchronous";
-- the "two engines" decision in [`../acervo-sense-images.md`](../acervo-sense-images.md) §09;
+  [`../design.md`](../design.md) §09 and
+  [`../server.md`](../server.md) "Synchronous and asynchronous";
+- the "two engines" decision in [`../sense-images.md`](../sense-images.md) §09;
 - the shared client queue in [`spoken-clips.md`](spoken-clips.md) §2.11.
 
 [`nas-to-mac-job-queue.md`](nas-to-mac-job-queue.md) stays a sketch. The jobs table introduced here
@@ -234,8 +234,8 @@ depends on the application still being open.
 
 ## §3 · Why the no-queue rule is retired
 
-The rule was written into `acervo-design.md` §09 at Rev. C and copied into
-`acervo-sense-images.md` §09 when pictures were built. It was written for an architecture that no
+The rule was written into `design.md` §09 at Rev. C and copied into
+`sense-images.md` §09 when pictures were built. It was written for an architecture that no
 longer exists: Prefect as an *optional* orchestrator, and image generation on an idle-gated MacBook
 that could be away for a week. In that world, "derive the work from a query" was a reasonable hedge
 against an orchestrator that might not be there.
@@ -638,8 +638,8 @@ The rule for this section is that the interface **shows** work and never **does*
   - the `saveArticle` sentence;
   - the "sweep, not a watcher" wording;
   - the commands block.
-- `docs/acervo-design.md` §09 and `docs/acervo-server.md` "Synchronous and asynchronous".
-- `docs/acervo-sense-images.md` §09.
+- `docs/design.md` §09 and `docs/server.md` "Synchronous and asynchronous".
+- `docs/sense-images.md` §09.
 - `docs/plans/spoken-clips.md` §2.11 and Step 6.
 - `docs/plans/pronunciation-and-audio.md`: its planned pronunciation sweep becomes the `enrich`
   step.

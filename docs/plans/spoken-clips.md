@@ -91,12 +91,12 @@ rather than structurally true.
 > that changes nothing here.
 
 Upgrading is then one command and one edited file, and a build that cannot reach the pinned version
-fails loudly instead of silently taking a newer one. This answers `acervo-design.md`'s standing open
+fails loudly instead of silently taking a newer one. This answers `design.md`'s standing open
 question — *"Does the corpus service live in the same repo?"* — with **no**.
 
 ### 2 · A service beside Acervo, not a package inside it
 
-`acervo-design.md` §02 already forbids sharing: *the core and the corpus do not share a database, a
+`design.md` §02 already forbids sharing: *the core and the corpus do not share a database, a
 container, or a backup policy.* The retrieval service holds gigabytes of disposable read-only text
 that must be full-text searched; the core holds tens of megabytes of precious relational data that
 must sync to a phone.
@@ -442,14 +442,14 @@ chosen for neither, and read worse.
 
 ## §3 · What this retires
 
-- `docs/acervo-server.md` §3 reserves `src/acervo/corpus/` — *"a separate store with a separate
+- `docs/server.md` §3 reserves `src/acervo/corpus/` — *"a separate store with a separate
   database"* — and §7 notes it *"still has no code to put a boundary around"*. It never will: the
   corpus is a separate repository and a separate service. Delete the reservation and say where the
   corpus actually lives. What lands in Acervo is `src/acervo/clips/`, which is about *choosing* a
   clip and holds no corpus at all.
-- `acervo-design.md`'s *Still open* question **"Does the corpus service live in the same repo?"** is
+- `design.md`'s *Still open* question **"Does the corpus service live in the same repo?"** is
   answered: no, and §1 above says why.
-- `acervo-design.md` §07's engine choice (Meilisearch vs FTS5) is moot — the other repository made
+- `design.md` §07's engine choice (Meilisearch vs FTS5) is moot — the other repository made
   it, and it is SQLite.
 - `LexemeArticle.tsx`'s `"Clip playback is not wired up yet"` placeholder.
 

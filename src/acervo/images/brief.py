@@ -1,6 +1,6 @@
 """The first of the two calls: one text call per lexeme, covering all of its senses at once.
 
-Batched per lexeme on purpose (design §09, and `docs/acervo-sense-images.md` §03). A call that sees
+Batched per lexeme on purpose (design §09, and `docs/sense-images.md` §03). A call that sees
 every sense of `venom` at once can deliberately make the two pictures look nothing alike, which is
 the only reason per-sense images beat one picture per word.
 """

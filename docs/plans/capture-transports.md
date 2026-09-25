@@ -9,7 +9,7 @@ It is scoped to **text**. Photo capture is designed in [`photo-capture.md`](phot
 not re-litigated here; this document touches it only where a transport happens to *deliver* an image,
 which is that plan's step 5.
 
-It **supersedes the transport ranking in [`../acervo-design.md`](../acervo-design.md) §05** in one
+It **supersedes the transport ranking in [`../design.md`](../design.md) §05** in one
 place. §05 ranks "iOS Shortcut → POST → open app" third and describes it as "one gesture from the
 share sheet that *ends in the review screen*." That transport does not exist. See
 [Three facts that decide everything](#three-facts-that-decide-everything).

@@ -912,5 +912,5 @@ Manual, on the devices this is for:
 - **Approving what chat adds.** A generated example lands `approved: false`, as it should. Whether
   reviewing a proposal should also approve what it adds, or whether that stays a separate gesture,
   is a question about the approval flow rather than about chat.
-- **`docs/acervo-design.md` §06** should lose its "out of scope for this iteration" close and gain a
+- **`docs/design.md` §06** should lose its "out of scope for this iteration" close and gain a
   pointer here, plus the two revisions marked above.

@@ -3,9 +3,9 @@
 **Design document · 9 Sep 2026 · Rev. D · the port has landed, and `models/` with it**
 
 What runs on the always-on machine, in what language, and how it is arranged so that the features
-in `acervo-design.md` §05–§12 can be added to it rather than squeezed into it.
+in `design.md` §05–§12 can be added to it rather than squeezed into it.
 
-This is a companion to the product design, not a restatement of it. `acervo-design.md` says what
+This is a companion to the product design, not a restatement of it. `design.md` says what
 Acervo is and what the sync protocol guarantees; this says where the code that keeps those promises
 lives.
 

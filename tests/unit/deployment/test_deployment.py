@@ -1760,7 +1760,7 @@ def test_app_and_anki_ports_are_distinct_and_collisions_are_rejected(tmp_path: P
 
 def test_shared_host_guardrails_are_documented_and_global_serve_mutations_are_absent() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    docs = (REPO_ROOT / "docs/acervo-app.md").read_text(encoding="utf-8")
+    docs = (REPO_ROOT / "docs/app.md").read_text(encoding="utf-8")
     helper = (REPO_ROOT / "deploy/acervo/remote-helper.sh").read_text(encoding="utf-8")
     combined = readme + docs
 
