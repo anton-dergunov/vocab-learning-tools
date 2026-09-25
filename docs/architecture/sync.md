@@ -86,6 +86,13 @@ interval is the retry.
 
 ## The replica on the device
 
+**Who talks to the server.** Interface code reads and writes only through `AcervoRepository`
+(`repository.ts`), never directly against the server. `domain.ts` is the canonical client model and
+`localDatabase.ts` persists the replica. `sync.ts` owns every call to the graph routes — the cursor pull,
+the write route and the reset — and the sync schedule and status; the repository reaches the write
+route only through the transport `sync.ts` attaches to it. `selectors.ts` derives every view model from
+the graph and is pure, so the interface is testable without a replica.
+
 - **It is immutable and shared.** A merge replaces the records and collections it changes and shares
   the rest; `snapshot()` hands out the same object until something changes; a merge validates only the
   incoming records, falling back to the whole graph only when a record another depends on moved.
@@ -93,7 +100,8 @@ interval is the retry.
   whole replica on a save, a pull or a repaint: at 1,700 words that costs ~190 ms per saved word and
   grows with every word ([`performance.md`](performance.md)).
 - **The interface is not drawn until the replica has been read.** A cold start shows the launch screen
-  rather than a shell reporting an empty vocabulary, then reopens the place the device last showed;
+  (`Launch.tsx`, with the same markup in `index.html`) rather than a shell reporting an empty
+  vocabulary — "All 0" about a vocabulary of 1,700 — then reopens the place `lastPlace.ts` remembered;
   Settings ▸ Sync says how long that took.
 - **A replica belonging to another account or another `LOCAL_SCHEMA_VERSION` is wiped and pulled
   again**, into storage — never kept in memory instead, or every cold start would download the whole

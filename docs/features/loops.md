@@ -174,6 +174,19 @@ said, appends the take's prosody words to it, and puts the result in the directo
 for what it is on the far side keeps the two vocabularies from being confused for one, and the
 mapping is one line in `src/acervo/loops/`.
 
+**What the generator sends as a direction is its whole director note** for that repetition, pace and
+pitch included, and the take route frames it with `prompts/acervo_pronounce_take.md` rather than the
+example template. It has to be a prompt of its own: the example template inserts a bare adjective
+after "sounding" and then tells the voice to keep a natural pace, which cancels the one clause that
+makes a word's three takes differ. **Nothing in that prompt may say how many repetitions there are**:
+how often a line is said, and how each saying differs, is the generator's.
+
+**The chosen delivery travels with the render** as `speech.delivery`, because the generator declares
+what its injected voice can do when it builds it and cannot find that out on its own. That is what
+makes the clear voice worth what it says: one recording a line, varied locally by pitch and speed,
+rather than three identical calls — and what makes a dropped direction reachable at all. The route
+reports `X-Acervo-Direction: sent`, `dropped` or `none`.
+
 ### 5 · The take cache, and why `take` is in the key
 
 Behind the route sits a content-addressed store of **FLAC masters**, keyed by a digest of

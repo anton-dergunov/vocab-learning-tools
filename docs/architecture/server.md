@@ -43,6 +43,12 @@ src/acervo/
 experiments/         experiments and benchmark tooling; never imported by the service
 ```
 
+**Prompts are content, not code.** `prompts/` holds every prompt as tracked text, copied into the image
+and read at request time, so changing what an entry says never means changing the code that builds a
+request. **`experiments/` is outside the distribution**: one directory per experiment, holding its
+apparatus and its write-up, with heavy dependencies in the experiment's own environment; nothing that
+ships imports it.
+
 ### The rules
 
 `tests/unit/server/test_layering.py` asserts every one of these, because each can be broken with one

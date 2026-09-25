@@ -301,6 +301,24 @@ deployment.env, secrets.env, llm.env   the deployment's settings and credentials
 `web/dist/` and `deploy/acervo/server/web/` on the laptop are generated staging directories that the
 build repopulates; they are never committed.
 
+## The containers
+
+- **`acervo-server`** packages `src/acervo/`, the prompts and the built interface, and serves `/` and
+  the whole API on one port. **Its healthcheck asserts an HTTP 200**, not a TCP connect, and the command
+  it runs must be one the image actually has: a container whose healthcheck binary is missing reports
+  unhealthy forever while serving perfectly, and the installer then fails a working deployment.
+- **The companions** — the Anki sync server, the spoken-usage corpus and the loop generator — each have
+  no published port and a **liveness** healthcheck. Readiness would fail the install of a working
+  service: the corpus is unready until it has built an index, and the generator until its samples are
+  installed. Whether they are ready is a question for Settings, not for the installer. The loop generator
+  holds **no provider credential at all**; it is handed a voice per render instead
+  ([`../features/loops.md`](../features/loops.md) §2.3).
+- **`acervo-worker` is not a service.** It is `profiles: ["tools"]`, with no ports, started by
+  `docker compose run --rm` for one job, so a new job is a new subcommand of `scripts/acervo_worker.py`,
+  never a new compose service. It writes through the owner's own account, is deliberately not given
+  `ACERVO_JWT_SECRET` (which signs every account's tokens), and does not depend on the server, which
+  would build and start the whole API to compile a dictionary.
+
 ## Deploying a change
 
 ```bash

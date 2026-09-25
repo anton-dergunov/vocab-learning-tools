@@ -76,9 +76,16 @@ affects the next step, and a failed step is recorded and the job goes on.
 
 **Retry and pacing live in the runner**, and a route makes one attempt. The chain decides *which* pair
 answers — fall-through, hedging, cooldowns — and the runner decides *whether to ask again*: only on
-the three transient codes, resting rather than sleeping inside a request, with one limiter per lane
-now that one process does all the work. Exhaustion is recorded where the owner will look — a
-picture's `failureReason`, a step's error — and the word stays usable.
+the transient codes — `llm_rate_limited`, `llm_unavailable`, `llm_unreachable`, and the loop
+generator's busy and unreachable —, resting rather than sleeping inside a request. A rest is 30 s
+doubling to ten minutes, and starts again from 30 s when the step got somewhere before it was refused,
+since that is an allowance refilling rather than a provider failing. Patience is per kind — six rests,
+about 25 minutes, for most; twenty for a story, which is nothing until it is written. Each lane keeps a
+calls-a-minute window where the allowance is known — pictures at one a minute, kept to rather than
+discovered by 429 — and **a resting step's `waitingOn` names every provider that refused and why**, so
+the row says "Gemini is overloaded; Cloudflare is out of allowance", never only "the provider is busy".
+Exhaustion is recorded where the owner will look — a picture's `failureReason`, a step's error — and
+the word stays usable.
 
 **The runner** (`src/acervo/work/`) is a thread started from the application's lifespan, running one
 job at a time because the allowances are the owner's own; a job that must wait gives up its turn.
@@ -106,7 +113,8 @@ saves each word to the Inbox through the same save, records each word's outcome,
 child `enrich` per saved word. Interactive capture stays synchronous, because someone is reviewing
 it.
 
-**One timed run.** Settings ▸ Schedule holds one hour and a switch per step; at that hour one
+**One timed run.** Settings ▸ Schedule holds one hour, read in `ACERVO_TIMEZONE`, and a switch per
+step; at that hour one
 `nightly` job runs its steps in order, so they can never compete for an allowance. A failed step does
 not stop the next, a night the server missed runs once when it comes back, and missed nights do not
 accumulate. There is no cron and no host scheduler.
@@ -116,6 +124,22 @@ lexeme, a set of ids, or none), its steps and its output — always a record or 
 through `merge_graph` — and inherits queuing, retry, pacing, cancellation, the event stream and the
 interface's progress for free. That is how loops and stories were added. A kind may do light CPU
 work, an encode or a composite; anything heavy is out of scope for the runner.
+
+## What a job leaves behind
+
+**A job says what it did in a log as well as in its row.** `work/journal.py` writes one `key=value` line
+when a job starts, one per step outcome and one when it ends, with the error and its sentence, to a
+rotating file beside the database (`ACERVO_JOB_LOG_PATH`) — shaped like the model-call log, never
+configured by the package that emits it, and dropped with a warning if it cannot be opened. It carries
+`operationId`, the one id shared with the loop generator's container and the only thing that joins the
+two trails. It exists because a failure recorded only in a job row's JSON is invisible from the command
+line; `admin jobs list` shows recent jobs with their error and message.
+
+**A failure's sentence must survive every hand-off.** The service keeps a provider's or generator's own
+words beside Acervo's code, the runner copies the failed step's message onto the job, and the progress
+line appends it rather than replacing it with a constant. Each of those three once threw it away, and
+between them turned *"No samples cached for 'salamander'"* into *"the loop could not be made"*. What is
+still silent is [`../plans/observability.md`](../plans/observability.md).
 
 ## A second machine
 
