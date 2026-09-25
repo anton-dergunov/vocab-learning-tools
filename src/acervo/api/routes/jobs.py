@@ -1,4 +1,4 @@
-"""Reading the work the server is doing, and asking for more (`docs/server.md`, "Jobs").
+"""Reading the work the server is doing, and asking for more (`docs/architecture/server.md`, "Jobs").
 
 A route queues a job and reads its record; it never runs one. That is `acervo.work`'s, which this
 package reaches only through `repository.jobs`.

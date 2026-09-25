@@ -1,6 +1,6 @@
 """The notes-file walk, against a stubbed server that speaks `/captures` and `/jobs`.
 
-The server does the work now (`docs/server.md`, "Jobs"). What is left to pin here is the transport:
+The server does the work now (`docs/architecture/server.md`, "Jobs"). What is left to pin here is the transport:
 what each submission carries, how far a checkpoint advances on the server's word, and that nothing
 in the script paces or retries.
 """

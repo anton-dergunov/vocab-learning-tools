@@ -1,6 +1,6 @@
 # Experiment · does adding two fields to the compose prompt thin the article?
 
-Spike for [`docs/loops.md`](../../docs/loops.md) §2.8. The
+Spike for [`docs/features/loops.md`](../../docs/features/loops.md) §2.8. The
 plan keeps the decision; this document holds the question, the method and every number.
 
 **Run:** 18 September 2026 · 20 words · four languages · three (provider, model) pairs · three
@@ -9,7 +9,7 @@ repeats · two arms.
 ## The question
 
 A loop needs one term to speak and one direction for how the word sounds, so
-`docs/loops.md` puts `primaryGloss` and `emotion` on the lexeme and has the
+`docs/features/loops.md` puts `primaryGloss` and `emotion` on the lexeme and has the
 **existing** compose prompt write them, rather than adding a second model call.
 
 The risk is not that the two fields come out wrong. It is that a longer prompt **thins everything
@@ -321,7 +321,7 @@ reason given above.
 
 So the plan's condition is met: `primaryGloss` and `emotion` go into `prompts/acervo_compose.md` and
 the data model, and `acervo_compose.md` is **not** split. That decision is recorded in
-[`docs/loops.md`](../../docs/loops.md) §2.8.
+[`docs/features/loops.md`](../../docs/features/loops.md) §2.8.
 
 Two bars were missed and neither changes it: note characters at 89.4% and 89.5% against a 90% bar, on
 a metric whose paired difference is a quarter of its own noise; and the gloss-language script, failed

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Draw one picture for each sense of each word, on this laptop.
 
-Phase A of `docs/sense-images.md`. It reads the vocabulary graph from the server and writes
+Phase A of `docs/features/sense-images.md`. It reads the vocabulary graph from the server and writes
 nothing back: the output is a local directory of JSON records and WebP masters that a later import
 turns into `imagePrompt` rows. That separation is deliberate — the point of this phase is to iterate
 on the prompt and spend the Vertex credits while they exist, not to change the database.

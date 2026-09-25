@@ -28,7 +28,7 @@ personal, multilingual, sense-level graph that every kind of enrichment hangs of
   records, so an enrichment added later works on every word already held.
 - **Decisions are measured.** Constrained decoding, audio encoding, caption quality and clip
   selection were each settled by an experiment with numbers, and the write-ups are in
-  [`experiments/`](../experiments/README.md). That is rare in hobby projects and uncommon in
+  [`experiments/`](../../experiments/README.md). That is rare in hobby projects and uncommon in
   commercial ones.
 - **Offline-first and self-hosted.** Every read works without a network, and the data is the
   learner's own.
@@ -60,7 +60,7 @@ waits for a scrap of text to be brought to it.
 **Planned, in two directions.**
 
 - **More ways in.** Capture from a photo — tap a word in a picture of a page and it is added — is
-  built ([`photo-capture.md`](photo-capture.md)). Capture from speech may follow,
+  built ([`photo-capture.md`](../features/photo-capture.md)). Capture from speech may follow,
   as a secondary goal.
 - **Immersion inside Acervo itself.** Generated stories and examples already contain words the
   learner does not know. Tapping one should show a short translation and, if the word looks worth
@@ -71,7 +71,7 @@ waits for a scrap of text to be brought to it.
 
 Today the vocabulary is a list, sortable and grouped into topics, and a **meaning map**: one
 language's senses laid out by what they mean, with named regions, built in September 2026
-([`server.md`](server.md), "The meaning map"). Neither shows how words relate across languages, to
+([`server.md`](../architecture/server.md), "The meaning map"). Neither shows how words relate across languages, to
 what the learner knows well and badly, or to what is missing.
 
 **Planned, as ideas rather than specifications.** The unifying idea is that **every view with slots

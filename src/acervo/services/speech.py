@@ -3,7 +3,7 @@
 The alternative — exposing the retrieval service to the browser directly — means a second hostname,
 a second CORS configuration, an unauthenticated read API on the network, and the operator token for
 channel mutations somewhere near a browser. The proxy costs one router and removes all four
-(`docs/spoken-clips.md` §2.9). The retrieval service stays bound to the internal compose
+(`docs/features/spoken-clips.md` §2.9). The retrieval service stays bound to the internal compose
 network and is never published.
 
 **The body is passed through verbatim**, which is the one place Acervo's `{"data": …}` envelope does

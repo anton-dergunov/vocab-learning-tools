@@ -8,7 +8,7 @@
  * **On a phone it is a bar at the foot of the window**, split in three — Loops, Stories and the Map — which is
  * where these belong on a device held in one hand. It is drawn over the list and nowhere else: the
  * article column already carries the view segments, the delete control, the progress strip and the
- * ask dock, and a second dock there is prohibited (`docs/loops.md` §2.13). There is deliberately no
+ * ask dock, and a second dock there is prohibited (`docs/features/loops.md` §2.13). There is deliberately no
  * mini-player over an article. The **+ is gone**: both surfaces carry their own Make button in
  * their own header, and a bar whose job is to be a way in should not also be a way to start
  * something.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spike 0 for docs/external-dictionaries.md §10 — measure, then choose.
+"""Spike 0 for docs/research/external-dictionaries.md §10 — measure, then choose.
 
 Answers two questions with numbers rather than assertion:
 

@@ -3,7 +3,7 @@
 # The image is Acervo's rather than that repository's, which is what its own contract asks for: the
 # package never self-daemonizes, and process supervision, volumes, the URL and credentials are the
 # host's. That also keeps the base image, the user and the healthcheck under the rules this
-# deployment already lives by. See docs/spoken-clips.md §2.1–§2.3.
+# deployment already lives by. See docs/features/spoken-clips.md §2.1–§2.3.
 #
 # The wheel reaches the build context through vendor/speech/, which scripts/fetch_speech.sh fills
 # and scripts/package_acervo_server.sh carries into the release archive — the server builds from
@@ -32,7 +32,7 @@ RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
 # this image carries `acervo.models` and the catalogue that names the providers — and nothing else
 # of Acervo's. `create_app` takes both providers as arguments, which is a public entry point of that
 # package, so the retrieval repository changes nothing: no LiteLLM dependency, no schema-dialect
-# port, no error-taxonomy mapping. See docs/spoken-clips.md §2.13.
+# port, no error-taxonomy mapping. See docs/features/spoken-clips.md §2.13.
 #
 # Acervo's *server* image still never imports `speech_retrieval`, and this one never imports
 # Acervo's graph, settings or database.

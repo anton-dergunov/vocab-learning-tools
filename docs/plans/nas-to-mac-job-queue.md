@@ -5,7 +5,7 @@ built until something concretely needs it — but local models are a real possib
 ([`provider-management.md`](provider-management.md)), and some of them only run well on the Mac.
 
 **The job record it asked for now exists**: a `jobs` table beside `sync_state`, owner-scoped and
-never replicated, with a runner inside the server ([`../server.md`](../server.md), "Jobs"). So the
+never replicated, with a runner inside the server ([`../architecture/server.md`](../architecture/server.md), "Jobs"). So the
 question this plan once declined to answer — *where does the record of outstanding work live* — has
 an answer, and it is not a queue a phone would carry. What is still only a sketch is the rest: a
 second machine doing the work.
@@ -40,7 +40,7 @@ premature — it would look easy and then not be:
 - **A store that is already a queue.** `jobs/images/run.py`'s `Store` is filesystem-as-state:
   `records/`, `images/`, `briefs/`, `refusals/`. `plan()` computes what is missing, which is
   the only queue read anything needs. A sweep is already idempotent and already resumable.
-- **Idle gating, already specified.** `docs/image-generation-research.md:186-215` sets out the rules
+- **Idle gating, already specified.** `docs/research/image-generation-research.md:186-215` sets out the rules
   for a macOS background worker in detail — five minutes of input idle, on AC power, thermal and
   memory nominal, no microphone or camera in use, one image per child process, fail closed — against
   `tools/macos_idle_probe.swift`.
@@ -57,7 +57,7 @@ premature — it would look easy and then not be:
 ### It is not built yet, and the reason is that nothing needs it
 
 The research the queue would exist to serve concluded **against** a local default. The chosen
-hierarchy in `docs/image-generation-research.md:6-25` runs emoji, icon scene, Cloudflare FLUX.2 Klein,
+hierarchy in `docs/research/image-generation-research.md:6-25` runs emoji, icon scene, Cloudflare FLUX.2 Klein,
 then Gemini Flash Lite for the bulk import — and no local diffusion. The finalist scores support that:
 the best local candidate reached 3.81 against Cloudflare's 4.54, and the cheapest hosted option costs
 nothing inside a daily allocation that stops rather than bills.

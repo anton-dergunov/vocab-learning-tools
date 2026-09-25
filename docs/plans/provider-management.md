@@ -33,7 +33,7 @@ rather than a branch; this plan makes a row something the interface can create.
   key's first and last four characters, and nothing more.
 - **Keys arrive by deploy.** `--configure-llm --llm-key NAME --llm-api-key-stdin` writes `llm.env`;
   Vertex additionally needs a credentials *file* mounted and named by `authEnv`
-  ([`../vertex-setup.md`](../vertex-setup.md)).
+  ([`../operations/vertex-setup.md`](../operations/vertex-setup.md)).
 - **Related open defect:** [`expressive-voice-chain.md`](expressive-voice-chain.md) — the expressive
   order offers voices that cannot take a direction. Whatever the Settings form for audio looks like,
   it should make that impossible to configure.
@@ -49,7 +49,7 @@ exists, not read off a pricing page:
 | Task | Existing apparatus |
 |---|---|
 | Compose, resolve, chat, clip selection, story write/translate/brief | `experiments/compose-lesson-line/`, `story-quality/`, `clip-translation/`, `tests/integration/test_models_live.py` |
-| Sense and story pictures | `experiments/image_benchmark/`, [`../image-benchmark.md`](../image-benchmark.md) |
+| Sense and story pictures | `experiments/image_benchmark/`, [`../research/image-benchmark.md`](../research/image-benchmark.md) |
 | Voices, plain and directed | `experiments/pronunciation-encoding/` (blind listening) |
 | OCR | `experiments/photo-capture/` |
 | Embedding for the map | `experiments/meaning-space/` |
@@ -146,7 +146,7 @@ Questions to answer before building:
   either goes or becomes the way to seed the table.
 - **Vertex's file credential.** Uploading a service-account JSON through the interface, or keeping
   that one provider a deployment fact. The organisation policy that blocks creating keys
-  ([`../vertex-setup.md`](../vertex-setup.md)) means a user login may be the only option some people
+  ([`../operations/vertex-setup.md`](../operations/vertex-setup.md)) means a user login may be the only option some people
   have.
 - **Local models as rows.** Whether the encoder and segmenter become choosable at all, or stay pinned
   because a changed encoder means a recomputed map.
@@ -156,7 +156,7 @@ Questions to answer before building:
 For each provider the audit recommends: how to sign up, what the free allowance covers in Acervo
 terms (words a day, pictures a day), which key to create with which permissions, and where to paste
 it. A recommended starter set — the fewest accounts that cover every kind — with a no-cost path
-first. [`../vertex-setup.md`](../vertex-setup.md) is the existing example of one provider's page;
+first. [`../operations/vertex-setup.md`](../operations/vertex-setup.md) is the existing example of one provider's page;
 the guide should read like that, for someone who has never deployed Acervo.
 
 ## Order

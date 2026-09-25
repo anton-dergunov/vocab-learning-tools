@@ -1,6 +1,6 @@
 """Brief + style -> the prompt the image model sees, and the version that identifies both.
 
-The full prompt is composed, never stored. `docs/sense-images.md` §04: what is recorded is
+The full prompt is composed, never stored. `docs/features/sense-images.md` §04: what is recorded is
 the brief, the style id and the prompt version, and those three plus the tracked files reproduce
 this string exactly.
 """

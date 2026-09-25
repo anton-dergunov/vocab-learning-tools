@@ -1,6 +1,6 @@
 """The packed-blob artifact: how a compiled dictionary is laid out on disk.
 
-Chosen by measurement in `docs/external-dictionaries.md` §11 — a packed blob plus a sidecar
+Chosen by measurement in `docs/research/external-dictionaries.md` §11 — a packed blob plus a sidecar
 index beat SQLite by 1.53x on total device bytes for the same corpus, and DEFLATE in frames of 256
 entries beats per-entry compression by 57 % while keeping a lookup to one ~65 KiB frame decode.
 

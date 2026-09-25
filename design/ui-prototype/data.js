@@ -121,7 +121,7 @@ const LEXEMES = [
         sourceKind: "conversation", sourceTitle: "WhatsApp — grupo del curso", sourceUrl: null, capturedAt: "11 Feb 2026" },
       { text: "Se pican las verduras en dados de un centimetro y se reservan.", translation: "The vegetables are diced into one-centimetre cubes and set aside.",
         sourceKind: "web", sourceTitle: "Receta — pisto manchego, El Comidista", sourceUrl: "https://example.com/pisto", capturedAt: "3 Mar 2026",
-        /* Photo capture (docs/photo-capture.md) keeps the square photo a sentence was read
+        /* Photo capture (docs/features/photo-capture.md) keeps the square photo a sentence was read
            from. Drawn here so the section is designed with room for one. */
         photo: "img/met-photo-square.jpg" }
     ],
@@ -624,7 +624,7 @@ const EXTERNAL = [
 ];
 
 /* Loops — a rendered track over some of your words, and the words it says (design
-   `docs/loops.md` §2.9). Two flat arrays, exactly the two collections
+   `docs/features/loops.md` §2.9). Two flat arrays, exactly the two collections
    `web/src/domain.ts` declares: there is no title column, no status column and no stored bed, so
    the prototype derives all three the way `selectors.ts` does.
 

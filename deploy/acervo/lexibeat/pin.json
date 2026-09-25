@@ -1,5 +1,5 @@
 {
-  "note": "The one version of lexibeat this deployment runs. Acervo names a version and upgrades deliberately; the two repositories do not share a release cadence. See docs/loops.md §2.1.",
+  "note": "The one version of lexibeat this deployment runs. Acervo names a version and upgrades deliberately; the two repositories do not share a release cadence. See docs/features/loops.md §2.1.",
   "repository": "https://github.com/anton-dergunov/lexibeat",
   "version": "0.6.1",
   "tag": "v0.6.1",

@@ -11,7 +11,7 @@ dislikes the articles it produces, which is an impression rather than a finding,
 evaluate it rather than to close this.
 
 The re-scoped experiment — three arms, and *sense inflation* as the failure mode rather than recall —
-is [`plans/article-quality.md`](plans/article-quality.md) §6. The design below still applies; only
+is [`article-quality.md`](article-quality.md) §6. The design below still applies; only
 its premise that nothing consults an external source is out of date.
 
 ## The question

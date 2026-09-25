@@ -208,7 +208,7 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
   corpus's own stable `segment_id`, so the stored sentence can be audited against the segment it
   names at any time. **`videoRef` is what they all hang on**: any of them without it is refused on
   the way in and hidden on the way out. A clip is an example with `origin: "subtitle"` and no ninth
-  table; `docs/spoken-clips.md` is the whole design.
+  table; `docs/features/spoken-clips.md` is the whole design.
 
   **`matchedForm` and `matchedTranslationForm`** hold the inflected surface form the corpus or the
   generator actually matched — `pica` for the lexeme `picar`, `itches` in the translation. The
@@ -660,7 +660,7 @@ separate from Safari's so a URL opens a different, signed-out copy, and iOS offe
 target at all (WebKit bug 194593). What a Shortcut *can* do is post and walk away into the Inbox, or
 resolve, confirm in a Shortcuts menu, then post. The full survey of transports per device, with the
 experiments that decide between them, is [`plans/capture-transports.md`](plans/capture-transports.md).
-Photo capture has since become a transport of its own ([`photo-capture.md`](photo-capture.md)).
+Photo capture has since become a transport of its own ([`photo-capture.md`](features/photo-capture.md)).
 
 ### Why info-triage is demoted
 
@@ -818,7 +818,7 @@ records. It does not get its own storage, its own article format, or a private h
 the transcript is a convenience, and losing it costs nothing, which is precisely the test §01 sets
 for whether something belongs in the core. It does not.
 
-**Built.** The working design is [`llm-editing.md`](llm-editing.md), which settled the
+**Built.** The working design is [`features/article-chat.md`](features/article-chat.md), which settled the
 four things this section left open: how the model returns an edit, how the edit is shown, where the
 conversation sits on a phone, and which places in the interface open one. Two decisions above were
 revised there, and both are marked **§06 REVISED** in that document:
@@ -848,7 +848,7 @@ repository that Acervo runs as one pinned service. It answered the engine questi
 Meilisearch, and reversed the authored-only rule below: measured there, YouTube's automatic captions
 are more verbatim and better aligned to the speech than creator-authored ones, and most of the
 corpus is automatic. What Acervo does — one search and one model call per saved word, at most one
-clip per sense, stored as an ordinary example — is [`spoken-clips.md`](spoken-clips.md). The rest of
+clip per sense, stored as an ordinary example — is [`spoken-clips.md`](features/spoken-clips.md). The rest of
 this section is the original reasoning, kept because the inversion it starts from still holds.
 
 ### Invert the video problem and it disappears
@@ -1081,7 +1081,7 @@ Seeding from the lexeme id matters: the deck does not visually reshuffle every t
 
 ### Resolution
 
-The 192–384 px figure in `docs/image-generation-research.md` reads as though the image were a small
+The 192–384 px figure in `docs/research/image-generation-research.md` reads as though the image were a small
 inline anchor. For a card illustration on the devices actually used it is about a quarter of what is
 needed:
 
@@ -1116,7 +1116,7 @@ Consequences:
 > ### DECISION
 > **Everything runs in one server process on the NAS, against hosted providers.** A save queues its
 > enrichment in the same transaction as the word, and a runner inside the server does the work; the
-> interface shows it and never does it. The mechanism is `docs/server.md`, "Jobs".
+> interface shows it and never does it. The mechanism is `docs/architecture/server.md`, "Jobs".
 
 This replaced a two-machine design. Rev. C put image generation on an idle-gated Mac worker under a
 Prefect control plane, with the NAS doing everything else, and made every flow a sweep — *derive the
@@ -1494,7 +1494,7 @@ public repository with its own release cadence, and Acervo runs one pinned versi
 container beside the server. The argument against won: a research project whose index is
 regenerable by definition should not share a release cycle with the thing holding irreplaceable
 data, and separating them makes "regenerable" structurally true rather than merely intended. See
-[`docs/spoken-clips.md`](spoken-clips.md).
+[`docs/features/spoken-clips.md`](features/spoken-clips.md).
 
 **Is the review UI in Acervo or in Anki?**
 Anki is a better scheduler; a web UI is a better place for LLM grading and clip playback. Likely both
@@ -1609,7 +1609,7 @@ iterations, and both will reach the store through the same YAML reader and the s
 rather than a second path. Merging a repeat capture into the entry it belongs to waits for §06,
 which is why capture stops at the duplicate rather than guessing. Whether generation should be
 grounded on external sources at all is an open question with a spike planned for it
-(`docs/grounding-spike.md`), not a settled part of §09. Markdown may return only as a
+(`docs/plans/grounding-spike.md`), not a settled part of §09. Markdown may return only as a
 generated export (§12), never as application storage.
 
 ---

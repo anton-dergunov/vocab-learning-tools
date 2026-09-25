@@ -3,7 +3,7 @@
 #
 # Acervo names one version of the loop generator in deploy/acervo/lexibeat/pin.json and upgrades it
 # deliberately; the two repositories keep their own release cadences
-# (docs/loops.md §2.1). This script is what turns that pin into a file on disk:
+# (docs/features/loops.md §2.1). This script is what turns that pin into a file on disk:
 # the wheel the lexibeat image installs.
 #
 # **The sample bundle is not fetched here, and that is the point.** It is ~3.1 GB of audio, it

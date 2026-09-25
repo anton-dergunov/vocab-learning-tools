@@ -1,4 +1,4 @@
-"""Job reads, job requests, and the event stream (`docs/server.md`, "Jobs").
+"""Job reads, job requests, and the event stream (`docs/architecture/server.md`, "Jobs").
 
 The stream is driven directly rather than through the test client, which buffers a whole response
 before returning it and so cannot read one that is meant never to end. The route around it is a

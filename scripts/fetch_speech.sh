@@ -2,7 +2,7 @@
 # Fetch the pinned spoken-usage-retrieval artifacts into vendor/speech/.
 #
 # Acervo names one version of the retrieval service in deploy/acervo/speech/pin.json and upgrades
-# it deliberately; the two repositories keep their own release cadences (docs/spoken-clips.md
+# it deliberately; the two repositories keep their own release cadences (docs/features/spoken-clips.md
 # §2.1). This script is what turns that pin into files on disk: the wheel the speech image installs
 # and the npm tarball web/ imports.
 #

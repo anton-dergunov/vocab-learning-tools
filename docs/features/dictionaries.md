@@ -2,8 +2,8 @@
 
 **Status:** built. Written as requirements after Spike 0, and rewritten here to record what was
 actually made and which of the requirements' assumptions did not survive contact with the sources.
-The measurements behind it are [`external-dictionaries.md`](external-dictionaries.md)
-§11; the apparatus is [`experiments/external-dictionaries/`](../experiments/external-dictionaries/).
+The measurements behind it are [`external-dictionaries.md`](../research/external-dictionaries.md)
+§11; the apparatus is [`experiments/external-dictionaries/`](../../experiments/external-dictionaries).
 
 What landed: the catalogue, the compiler, the artifact format, the reader, the server surface, and
 the Dictionaries pane in Settings. **Rendering an external entry did not** — no search integration,

@@ -1,4 +1,4 @@
-# External dictionary compilation (docs/dictionaries-stage1.md).
+# External dictionary compilation (docs/features/dictionaries.md).
 #
 # PyGlossary is pinned: 5.4.2 renamed `Glossary.read` to `directRead`, and it *silently* disables
 # seven plugins when lxml is absent — including EDICT2, the CC-CEDICT reader — warning rather than

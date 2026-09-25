@@ -1,5 +1,5 @@
 {
-  "note": "The one version of spoken-usage-retrieval this deployment runs. Acervo names a version and upgrades deliberately; the two repositories do not share a release cadence. See docs/spoken-clips.md 2.1. Digests are the RELEASE's, taken from its SHA256SUMS asset - the wheel is byte-reproducible but `npm pack` is not, because its gzip output follows the Node version that built it.",
+  "note": "The one version of spoken-usage-retrieval this deployment runs. Acervo names a version and upgrades deliberately; the two repositories do not share a release cadence. See docs/features/spoken-clips.md 2.1. Digests are the RELEASE's, taken from its SHA256SUMS asset - the wheel is byte-reproducible but `npm pack` is not, because its gzip output follows the Node version that built it.",
   "repository": "https://github.com/anton-dergunov/spoken-usage-retrieval",
   "version": "0.4.0",
   "tag": "v0.4.0",

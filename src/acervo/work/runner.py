@@ -1,4 +1,4 @@
-"""The runner: one thread, one job at a time, in the server process (`docs/server.md`, "Jobs").
+"""The runner: one thread, one job at a time, in the server process (`docs/architecture/server.md`, "Jobs").
 
 It is a thread rather than a task because everything it calls is synchronous — the same service
 functions a route hands to the thread pool — and the work is a socket waiting on a remote API, not

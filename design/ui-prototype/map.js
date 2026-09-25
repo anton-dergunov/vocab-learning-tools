@@ -1,6 +1,6 @@
 /* Acervo — the meaning map, as a component.
 
-   This file is the boundary `web/src/meaningMap/` has (docs/server.md): it is
+   This file is the boundary `web/src/meaningMap/` has (docs/architecture/server.md): it is
    handed its data and its callbacks, and reads nothing of `app.js` — no state, no fixtures, no
    helpers. What it knows about is points, regions and a camera. That is what lets it move to the
    discovery repository later and come back as a package, the way the clip player did.

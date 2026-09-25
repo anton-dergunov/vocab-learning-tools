@@ -1,9 +1,9 @@
 # Photo capture · tap a word in what you're reading
 
 **Built**, for languages that put spaces between words, with Google Cloud Vision as the only reader. Every number a
-choice below was made by is in [`experiments/photo-capture/`](../experiments/photo-capture/README.md),
+choice below was made by is in [`experiments/photo-capture/`](../../experiments/photo-capture/README.md),
 scored against the fixtures in
-[`tests/fixtures/photo-capture/`](../tests/fixtures/photo-capture/README.md). Chinese and Japanese
+[`tests/fixtures/photo-capture/`](../../tests/fixtures/photo-capture/README.md). Chinese and Japanese
 are a separate spike, not yet run.
 
 A word typed or pasted into Add works for text already on a screen. It is awkward for a word met in
@@ -217,7 +217,7 @@ beyond `acervo.models`; `services/photo.py` is the binding layer, and `test_laye
 - **An image share target** — the Web Share Target API, sending a screenshot from any app into this
   screen. Android only for a PWA, since iOS offers PWAs no share target; the macOS host could accept a
   dropped image instead. It shares its manifest work with the text share target in
-  [`plans/capture-transports.md`](plans/capture-transports.md).
+  [`../plans/capture-transports.md`](../plans/capture-transports.md).
 - **Keeping the photo when a sentence is folded into a held word.** Folding goes through the article
   conversation, which carries text.
 - **A second OCR row.** If access to Vision changes: measure Azure AI Vision Read first (5,000 free

@@ -158,7 +158,7 @@ checks the configured paid list-price projection before starting any runner:
 
 Credential creation, safe shell configuration, verification, and
 troubleshooting are documented in
-[Cloudflare Workers AI setup](cloudflare-workers-ai.md).
+[Cloudflare Workers AI setup](../operations/cloudflare-workers-ai.md).
 
 ```bash
 export CLOUDFLARE_ACCOUNT_ID="..."

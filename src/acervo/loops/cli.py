@@ -1,7 +1,7 @@
 """`acervo_worker.py loop render` — make one loop by hand, and say how long each part took.
 
 This exists to be run once on a fresh deployment, and its output is what sets the poll interval and
-the timeout in `work/loop.py`. `docs/loops.md` §3 is explicit that those are
+the timeout in `work/loop.py`. `docs/features/loops.md` §3 is explicit that those are
 read from a measurement rather than picked from feel, which is the same rule
 `python -m acervo.admin calls` exists for.
 

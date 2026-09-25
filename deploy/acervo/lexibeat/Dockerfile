@@ -2,7 +2,7 @@
 #
 # The image is Acervo's rather than that repository's, which is what its own contract asks for: the
 # package never self-daemonizes, and process supervision, volumes, the URL and credentials are the
-# host's. See docs/loops.md §2.1–§2.3.
+# host's. See docs/features/loops.md §2.1–§2.3.
 #
 # **This is the one companion image that carries no provider credential at all**, and its absence is
 # the design rather than an oversight. LexiBeat is handed a voice: `serve.py` implements its

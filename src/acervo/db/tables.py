@@ -232,7 +232,7 @@ schedule_settings = Table(
 
 # Work the server does on this owner's behalf, one row per request for it. Server state for
 # `sync_state`'s reason — never replicated, no `revision`/`deleted`/`edited_by` — and the durable
-# record the runner in `acervo/work/` reads (`docs/server.md`, "Jobs").
+# record the runner in `acervo/work/` reads (`docs/architecture/server.md`, "Jobs").
 #
 # The row is written in the **same transaction** as the write that makes the work necessary, which
 # is what retires "never let a queue be the only record that work is needed": either both exist or

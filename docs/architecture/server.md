@@ -321,7 +321,7 @@ The meaning map keeps:
 One language's senses laid out by what they mean, with named regions, drawn by
 `GET /map/{language}`. The package is `src/acervo/meaning/`; the look and the interaction are the
 prototype's (`design/ui-prototype/README.md`, "The map"); the measurements are
-[`experiments/meaning-space/`](../experiments/meaning-space/README.md).
+[`experiments/meaning-space/`](../../experiments/meaning-space/README.md).
 
 **One map per language, one point per sense.** A single multilingual space was the first idea and
 was dropped: a learner's languages serve different purposes, so the words held in each are a
@@ -393,7 +393,7 @@ component, `web/src/meaningMap/`, imports nothing of Acervo's (`boundary.test.ts
 and come back as a package.
 
 What the map may become — ghosts, other layers — is in
-[`similar-projects.md`](similar-projects.md), "Exploring the vocabulary".
+[`similar-projects.md`](../research/similar-projects.md), "Exploring the vocabulary".
 
 ### Write-path performance, measured
 
@@ -580,7 +580,7 @@ its own repository instead, with its own release cadence, and Acervo consumes on
 it over HTTP. What landed in `src/acervo/` is `clips/` — about *choosing* which recorded utterance
 illustrates a sense, holding no corpus at all: a narrow HTTP client, the selection call, and the
 derived id that keeps two writers on one row. The design is
-[`docs/spoken-clips.md`](spoken-clips.md).
+[`docs/features/spoken-clips.md`](../features/spoken-clips.md).
 
 `article.py` arrived with it, and is the seventh rule in all but name: **an enrichment pipeline may
 import the provider package and the article view, and nothing else of Acervo's.** `images/` and

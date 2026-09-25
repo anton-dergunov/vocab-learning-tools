@@ -1,7 +1,7 @@
 # Experiment · catching a translation that stopped early
 
 **Status:** Unstarted, and deliberately so. The prompt half of this shipped first — the translation
-section of [`prompts/acervo_clip_select.md`](../../prompts/acervo_clip_select.md) was rewritten to
+section of [`../../prompts/acervo_clip_select.md`](../../prompts/acervo_clip_select.md) was rewritten to
 demand every clause, and the rewrite is measured in
 [`experiments/clip-translation/`](../../experiments/clip-translation/README.md). What has **not**
 shipped is any code that refuses an incomplete translation, and this document exists because the

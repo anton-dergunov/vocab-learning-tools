@@ -7,7 +7,7 @@ creation would have to invent a value, and snapshotting today's default would fr
 instant the account was made.
 
 Two fields, and deliberately not more. Which channels the corpus harvests is the retrieval
-service's own catalogue (`docs/spoken-clips.md` §2.10) and Acervo ships no copy of it; how many
+service's own catalogue (`docs/features/spoken-clips.md` §2.10) and Acervo ships no copy of it; how many
 candidates a call sees is a research knob that belongs in
 `docs/plans/clip-selection-experiment.md`, not in a settings screen.
 

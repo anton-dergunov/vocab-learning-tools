@@ -283,7 +283,7 @@ is too small a piece to justify a second prompt. It is to split `acervo_compose.
 parts, considered whole, as its own task. The write-up records which way it went.
 
 **Measured on 18 September 2026, and it does not degrade:**
-[`experiments/compose-lesson-line/`](../experiments/compose-lesson-line/README.md).
+[`experiments/compose-lesson-line/`](../../experiments/compose-lesson-line/README.md).
 315 calls over 20 words, four languages, three (provider, model) pairs and three repeats.
 **All ten substance metrics move less than their own run-to-run variance** — senses +0.04 against a
 noise floor of 0.13, note characters −15.7 against 58.4 — gloss completeness is 100% in both arms,
@@ -299,7 +299,7 @@ So **the fields ship as worded and `acervo_compose.md` is not split.** Two bars 
 neither bears on it: note characters at 89.4% on a metric whose difference is a quarter of its noise,
 and the gloss-language rule, failed only by `llama-3.3-70b` and only on a rule that predates these
 fields. Article quality itself is untouched by this run and has its own register,
-[`plans/article-quality.md`](plans/article-quality.md) — both arms wrote `/ˈaska/` for `el asco`, which is simply
+[`../plans/article-quality.md`](../plans/article-quality.md) — both arms wrote `/ˈaska/` for `el asco`, which is simply
 wrong, and a comparison of two arms is blind to a defect they share.
 
 ### 9 · A loop is two collections, and its state is derived
@@ -337,7 +337,7 @@ operation id, and the job polls it, marking the step `waiting` and raising `Requ
 multi-minute blocking call inside the runner.
 
 The CPU work happens in the companion container, which is what keeps the runner's rule
-([`server.md`](server.md), "Jobs") — *"anything heavy is out of scope for the runner"* — true rather
+([`server.md`](../architecture/server.md), "Jobs") — *"anything heavy is out of scope for the runner"* — true rather
 than merely restated. The job holds the **`audio` lane**, because that is the allowance a render
 spends: every line is a call home to the take route. Nothing is held in memory between its two
 steps — `loop.render` writes the operation id down and `loop.store` reads it back — so a retried step
@@ -506,7 +506,7 @@ second kind of lesson exists, and a loop is a thing that repeats, which is both 
 ### 17 · What is deliberately not built
 
 - **No Chatterbox, no local model, no GPU** in this integration. A local voice is its own question
-  ([`plans/provider-management.md`](plans/provider-management.md)), and the injected-provider seam
+  ([`../plans/provider-management.md`](../plans/provider-management.md)), and the injected-provider seam
   means trying one later changes nothing here: it would be one more row in the owner's chain.
 - **No second provider layer, credential set, rate limiter or cooldown store** — the whole point of
   §2.3.
@@ -569,7 +569,7 @@ What the first deployment found, each a fault worth not repeating:
 - **A failure's sentence was thrown away three times** — by `services/loops.refusal`, by the runner's
   rollup, and by `ProgressStrip` — and between them they turned "No samples cached for 'salamander'"
   into "the loop could not be made". Each keeps the message now, and `work/journal.py` logs it
-  ([`plans/observability.md`](plans/observability.md) is the wider question).
+  ([`../plans/observability.md`](../plans/observability.md) is the wider question).
 - **The Loops surface could not be left.** Every obvious exit was a dead end; §2.13's rules are the
   fix.
 - **The Music selector was a no-op** until the family was validated, carried on the job and passed to

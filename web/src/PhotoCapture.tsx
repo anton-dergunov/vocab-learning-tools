@@ -54,7 +54,7 @@ const SLOP = 8;
 const keyOf = (text: string, at: { start: number; end: number }) => `${at.start}:${at.end}\u0000${text}`;
 
 /**
- * Photo capture (docs/photo-capture.md): take or choose a picture, tap a word on it, read what
+ * Photo capture (docs/features/photo-capture.md): take or choose a picture, tap a word on it, read what
  * it means in that sentence, and add it — or fold the sentence into the word you already have.
  *
  * **Never the default and never on its own.** The camera starts only when "Take a photo" is pressed:

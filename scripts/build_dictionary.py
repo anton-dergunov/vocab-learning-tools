@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile an external dictionary. See docs/dictionaries-stage1.md."""
+"""Compile an external dictionary. See docs/features/dictionaries.md."""
 
 from __future__ import annotations
 

@@ -402,7 +402,7 @@ half the price, keeping the cheap model's 1.8 s median.
 
 ## §6 · Grounding — shipped, disliked, and unevaluated
 
-Grounding shipped as the user-initiated reference path (`docs/grounding-spike.md` records it):
+Grounding shipped as the user-initiated reference path (`docs/plans/grounding-spike.md` records it):
 
 - `services/capture/coerce.py:reference_of` — `REFERENCE_LIMIT = 8000`, and a docstring that states
   the modelling rule: *"Grounding, and nothing else. It never reaches `resolution.sentences`, so it

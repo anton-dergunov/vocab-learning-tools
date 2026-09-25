@@ -1,8 +1,8 @@
 # Spoken clips · how Acervo uses the retrieval corpus
 
-**Built.** How the tuning went is [`clip-selection-rounds.md`](clip-selection-rounds.md) and
-[`experiments/clip-translation/`](../experiments/clip-translation/README.md); what might come next
-is [`plans/clip-curation.md`](plans/clip-curation.md).
+**Built.** How the tuning went is [`clip-selection-rounds.md`](../research/clip-selection-rounds.md) and
+[`experiments/clip-translation/`](../../experiments/clip-translation/README.md); what might come next
+is [`../plans/clip-curation.md`](../plans/clip-curation.md).
 
 A word's article can show what a word means, how it is used, and a picture of it. This is how it
 also shows a native speaker saying it. The corpus is
@@ -88,7 +88,7 @@ client from it.
 
 **The corpus is kept fresh by asking it over HTTP.** The server's nightly `corpus.update` step, or
 Update now in Settings ▸ Clips, starts an update in the service and follows it
-([`server.md`](server.md), "Jobs"). The service is designed for this — it builds into a temporary
+([`server.md`](../architecture/server.md), "Jobs"). The service is designed for this — it builds into a temporary
 file and swaps it in with an atomic rename, while readers open a fresh read-only connection per
 query — so an update adds videos without a restart, and a query that straddles the swap still sees
 a consistent snapshot.
@@ -232,10 +232,10 @@ Three things follow, and all three are the point:
   would be a knob invented before a need.
 
 The prompt itself is a research question of its own. Five informal readings of it are
-[`clip-selection-rounds.md`](clip-selection-rounds.md), the translation rewrite is measured in
-[`experiments/clip-translation/`](../experiments/clip-translation/README.md), and a labelled
+[`clip-selection-rounds.md`](../research/clip-selection-rounds.md), the translation rewrite is measured in
+[`experiments/clip-translation/`](../../experiments/clip-translation/README.md), and a labelled
 experiment is designed and not yet run
-([`plans/clip-selection-experiment.md`](plans/clip-selection-experiment.md)).
+([`../plans/clip-selection-experiment.md`](../plans/clip-selection-experiment.md)).
 
 ### 8 · The marker is a date, not a flag
 
@@ -303,7 +303,7 @@ Settings; that is a limitation to fix in the retrieval repository rather than to
 
 ### 11 · A step of the word's enrichment, not a second engine
 
-A clip search is the first step of the server's `enrich` job ([`server.md`](server.md), "Jobs"):
+A clip search is the first step of the server's `enrich` job ([`server.md`](../architecture/server.md), "Jobs"):
 one job per word, its steps in one order, showing in one place. It comes before pictures because it
 is the faster of the two and the owner is looking at the page. **Its rests are its own.** A picture
 is one image call metered by an image provider at roughly one a minute; a clip search is one text

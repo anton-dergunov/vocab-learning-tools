@@ -10,6 +10,6 @@ hit-tests.
 and `tests/unit/server/test_layering.py` enforces that. `services/photo.py` is the binding layer —
 settings, storage, the owner's vocabularies — and this package never learns any of them exist.
 
-The design is `docs/photo-capture.md`; every number it was chosen by is in
+The design is `docs/features/photo-capture.md`; every number it was chosen by is in
 `experiments/photo-capture/`.
 """

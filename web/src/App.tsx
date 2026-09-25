@@ -1665,7 +1665,7 @@ export default function App() {
           />}
           {/* The Made bar is drawn over the list and nowhere else: the article column already
               carries the view segments, the delete control, the progress strip and the ask dock,
-              and `docs/loops.md` §2.13 forbids a second one there. Narrow windows only — a wide one
+              and `docs/features/loops.md` §2.13 forbids a second one there. Narrow windows only — a wide one
               has the chip in the top bar instead, and `styles.css` is what picks. With a selection
               it gives the selection bar its place and draws only a loop that is playing. */}
           {!article && !external && !addTab && !loops && !stories && !map && <MadeBar

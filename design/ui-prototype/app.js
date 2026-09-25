@@ -1253,7 +1253,7 @@ let addDraft = null;
    is dead *with a reason* rather than live and failing when it is finally pressed. */
 let captureBlocked = null;
 
-/* Photo capture (docs/photo-capture.md), drawn on the one photo the prototype has. Never where
+/* Photo capture (docs/features/photo-capture.md), drawn on the one photo the prototype has. Never where
    Add opens: the camera turns on only when asked, and here nothing turns on at all — "Take a photo"
    and "Choose an image" both land on the fixture, already read. `?add=photo&photo=read` opens there. */
 let photoStage = "idle";
@@ -1850,7 +1850,7 @@ function openStories() {
 }
 
 /* ── the map ──────────────────────────────────────────────────────────────
-   One language's senses, laid out by meaning (docs/server.md). `map.js` is the
+   One language's senses, laid out by meaning (docs/architecture/server.md). `map.js` is the
    component and knows nothing of this file; what is here is the host: which data, the header, the
    peek, find, and the way back from an article. The data is the owner's real map when
    `map-data.local.js` has been generated, and the committed sample otherwise (see README). */

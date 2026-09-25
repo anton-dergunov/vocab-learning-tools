@@ -2841,7 +2841,7 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 
 
 /* ══════════════════════════ the meaning map ══════════════════════════
-   One language's senses laid out by meaning (docs/server.md). The canvas is the whole
+   One language's senses laid out by meaning (docs/architecture/server.md). The canvas is the whole
    surface and everything else floats over it: a map that gives up a band of itself to a header is a
    smaller map, and on a tablet in portrait there is not much to give. Every floating piece keeps to
    an edge, so the middle — where the camera centres what you asked for — is never covered. */

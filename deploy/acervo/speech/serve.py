@@ -3,7 +3,7 @@
 `speech_retrieval.create_app` takes a `TranslationProvider` and a `WordAlignmentProvider` as
 constructor arguments — a public entry point of that package — so the player's target text runs on
 the owner's own chain without that repository gaining a LiteLLM dependency, a schema-dialect port or
-an error-taxonomy mapping. It changes nothing at all (`docs/spoken-clips.md` §2.13).
+an error-taxonomy mapping. It changes nothing at all (`docs/features/spoken-clips.md` §2.13).
 
 This file is the only place the two projects' vocabularies meet, and it is deliberately thin: the
 call itself is `acervo.speech.provider.ChainGenerator`, which imports nothing of this service's and
