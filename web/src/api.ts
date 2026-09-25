@@ -242,7 +242,7 @@ const PHOTO_TIMEOUT = 45_000;
 const QUICK_TIMEOUT = 20_000;
 
 /* ── capture ────────────────────────────────────────────────────────────
-   The ingest endpoint of design §05. What comes back is a *proposal*: a draft the interface renders
+   The capture route (`docs/features/capture.md`). What comes back is a *proposal*: a draft the interface renders
    for review and then saves through the repository like any other article. Nothing here writes. */
 
 export interface CaptureSentence {
@@ -317,7 +317,7 @@ export interface CaptureRequest {
   headword?: string | null;
   sourceUrl?: string | null;
   sourceTitle?: string | null;
-  /** A free-text nudge for the generator — §05's "regenerate with a note". */
+  /** A free-text request for the generator, sent with the capture. */
   note?: string | null;
   /**
    * An external dictionary's entry for this word, as the reader saw it.
@@ -410,7 +410,7 @@ export interface QuickLookUp {
 }
 
 /* ── chat ───────────────────────────────────────────────────────────────
-   Design §06: chat lives inside the article, and its output is a proposed revision of that record.
+   `docs/features/article-chat.md`: chat lives inside the article, and its output is a proposed revision of that record.
    The route writes nothing. A turn returns prose and, only when the turn implies a change, a set of
    small edit operations — applied to a draft on this device by `articleEdit.ts`, reviewed as an
    ordinary article, and saved through `repository.saveArticle` like every other write.

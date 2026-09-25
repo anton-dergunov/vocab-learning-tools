@@ -64,8 +64,8 @@ rather than structurally true.
 > that changes nothing here.
 
 Upgrading is then one command and one edited file, and a build that cannot reach the pinned version
-fails loudly instead of silently taking a newer one. This answers `design.md`'s standing open
-question — *"Does the corpus service live in the same repo?"* — with **no**.
+fails loudly instead of silently taking a newer one. The corpus therefore does not live in this
+repository.
 
 ### 2 · A service beside Acervo, not a package inside it
 
@@ -314,7 +314,7 @@ The article's empty states differ from pictures, deliberately. A picture's absen
 so it keeps a frame; a clip's absence is the expected outcome for most words. A sense whose search
 is pending shows a quiet skeleton row; one whose search found nothing settles into *No recorded
 example* while the word stays open, so nothing jumps, and shows **nothing at all** the next time it
-is opened (`design.md` §09, "What the interface shows").
+is opened ([`../architecture/jobs.md`](../architecture/jobs.md), "What the interface shows").
 
 ### 12 · What is deliberately not built
 

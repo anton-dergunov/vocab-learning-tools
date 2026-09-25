@@ -1,18 +1,26 @@
-# Article chat and LLM editing
+# Article chat · the article is the thing you argue with
 
-**Status:** built, and this is its design. Everything below describes what ships, except where a
-**SUPERSEDED** note says otherwise — four of those, all because the codebase moved after this was
-written and before it was built. This is the working design for design `§06`, which fixed the
-stance — *"chat lives inside the article, and its output is a proposed revision of that record"* —
-and then declared itself out of scope. Everything `§06` decided still holds. What follows is the
-part it did not settle: how the model returns an edit, how the edit is shown, where the
-conversation sits on a phone, and which four places in the interface open one.
+Capture builds an entry. What it cannot do is everything after you read it and find it not quite
+right: you want another example, the definition explained further, or the one thing no dictionary
+gives you — **how this word differs from the neighbouring one you keep confusing it with.**
 
-It also closes a loose end `§05` left open. The capture route's duplicate branch used to say, in a
-comment, that merging a repeat capture into the entry it belongs to *"needs the article conversation
-to do it well."* This design is that job, and `§8.3` is now built.
+> **DECISION: chat lives inside the article, and its output is a proposed revision of that record.**
+> The value is entirely in the conditioning: a model handed the canonical record, its shape and the
+> owner's related words answers a different class of question than one handed a block of text, and
+> can return something structurally valid rather than something you transcribe.
 
-Two deliberate revisions to `§06` are marked **§06 REVISED** where they occur.
+- **A proposed change is shown, never applied.** The model answers in prose and, when the answer
+  implies an edit, offers one. You review it on the article itself and save it or not.
+- **Approving is an ordinary save**, at the record's current revision, refused if the entry moved
+  underneath. A chat-driven edit is indistinguishable downstream from a typed one.
+- **The YAML editor stays**, and chat is why: it is the review surface's escape hatch for the case the
+  chat gets wrong. A generated store you cannot open and correct directly is one you have to trust
+  blindly.
+- **Chat is a consumer of the core**: no storage of its own, no article format of its own, and a
+  transcript that costs nothing to lose.
+
+What follows is how the model returns an edit, how the edit is shown, where the conversation sits on a
+phone, and the four places in the interface that open one.
 
 ---
 
@@ -37,7 +45,7 @@ Four situations, all of them ordinary, none of them served:
    keep it?* The only action available is the one that already exists: capture it.
 
 The workaround for all four needs no software — copy the article into a chat, ask, paste back —
-and `§06` already says why that is the wrong shape: the model does not know the schema, so the
+and it is the wrong shape: the model does not know the schema, so the
 answer is prose you re-key by hand; it does not know the rest of the store, so it cannot say *"you
 already have `mareo`, and here is the contrast"*; and the round trip is long enough that you stop.
 
@@ -114,14 +122,9 @@ learner's store*, *search the external dictionary*, *fetch the sibling sense*.
 
 Against it, specifically here:
 
-- **SUPERSEDED — the runtime argument is void; the conclusion is not.** The PocketBase JS hooks are
-  gone, replaced by one Python service, and `api/routes/capture.py` already runs *two* sequential
-  120-second model calls inside `run_in_threadpool`. A loop would cost nothing structurally. Three
-  reasons hold in its place: `acervo/models/` stands alone and has no tool-call shape, so `text()`,
-  `chain.walk`, `chain.stamped` and `cooldown` would all need a second path; requiring tool support
-  would make every `prompt`-tier row in `models/catalogue.json` unusable for chat, against a chain
-  design whose whole point is that the owner picks; and the retrieval a tool would perform is the
-  next point, which was always the real argument.
+- **The provider package has no tool-call shape.** `text()`, `chain.walk`, `chain.stamped` and
+  `cooldown` would all need a second path, and requiring tool support would make every row without it
+  unusable for chat — against a chain design whose whole point is that the owner picks.
 - **The retrieval a tool would perform is already local.** The replica is complete and on the
   device. The client can select the twenty neighbouring entries worth sending before the request is
   made, for free and offline. A tool call would fetch, slowly and over the network, something the
@@ -137,7 +140,7 @@ Against it, specifically here:
 > support would also narrow which models this can run against, which is a cost with no matching
 > benefit today.
 >
-> **Revisit when** a question genuinely needs the *corpus* (`§07`) rather than the replica — that
+> **Revisit when** a question genuinely needs the *spoken-usage corpus* rather than the replica — that
 > lives on the server, is too large to preload, and is the first real argument for a second hop.
 
 ### §3.3 · Where the conversation lives
@@ -149,7 +152,7 @@ Against it, specifically here:
 > **Because** the core's test for whether something belongs in it is whether losing it would
 > hurt, and losing a transcript costs nothing — the *article* is where the value landed. This also
 > keeps the route stateless: no chat collection, no session store, nothing to synchronise, nothing
-> to tombstone. `§06` already committed to this and it survives contact with the design.
+> to tombstone.
 >
 > The last **eight** turns are resent, and the article document is resent every turn — so after a
 > proposal is applied, the model sees the applied article, not the one it was asked about.
@@ -181,11 +184,10 @@ dictionary text already are.
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**§06 REVISED.** `§06` says *"the PWA sends the lexeme id and the question; the server attaches the
-record."* It cannot, and should not. `AGENTS.md` fixes `yaml.ts` as the only place the projection is
-understood; a server-side serialiser would be a second implementation of it, drifting from the first
-the moment a field is added. So the device sends the document it already has. Nothing is lost by
-this: the server still holds the credentials, still owns the prompt, still shapes the answer, and
+**The document is assembled on the device, not the server.** `yaml.ts` is the only place the
+projection is understood; a server-side serialiser would be a second implementation of it, drifting
+from the first the moment a field is added. So the device sends the document it already has. Nothing
+is lost by this: the server still holds the credentials, still owns the prompt, still shapes the answer, and
 still writes nothing — the document it receives came from that owner's own replica and goes nowhere
 but into their own prompt.
 
@@ -237,9 +239,8 @@ One JSON object. No prose outside it, same as every other prompt in `prompts/`.
 A target is a flat token — `lexeme`, or `<kind>:<id>` — because a flat string is what models get
 right. Every id must already occur in the document that was sent.
 
-**REVISED in round two** — the operation names were repetitive, and `add` encoded in three names
-what a `target` already says. Every operation is now an `op` and a `target`, and the parent is a
-named field rather than part of the operation's name:
+Every operation is an `op` and a `target`, and the parent is a named field rather than part of the
+operation's name, because a `target` already says what a family of operation names would repeat:
 
 ```ts
 type Target = "lexeme" | `sense:${string}` | `example:${string}` | `attestation:${string}`;
@@ -271,7 +272,8 @@ Settable fields, and nothing else:
 `language` and `id` are not settable. `revision`, `editedAt`, `editedBy`, `deleted` and `ownerId` do
 not appear in the projection at all and therefore cannot be addressed. Study state is written into
 the YAML as comments (`yaml.ts`) precisely so it cannot be saved back by accident, and it is
-likewise invisible here. Image prompts are their own stage (`§09`) and are out of scope for chat.
+likewise invisible here. Pictures are their own stage ([`sense-images.md`](sense-images.md)) and
+are out of scope for chat.
 
 ### §5.2 · Two rules the data model imposes
 
@@ -426,11 +428,12 @@ say so in the margin — Notion's approach, in Acervo's marks and Acervo's palet
 
 - `┃+` added · `┃~` changed · `┃−` removed · `┃↕` moved. A removed block is **drawn where it was**,
   struck through — nothing vanishes without being seen going.
-- **REVISED in round two.** `✂` is a smudge at 11px in the mono face; `−` pairs with `+`. The glyph
-  is absolutely positioned in the gutter the block already owns and is never inside a paragraph:
-  **no mark may change where body text sits**, a rule the first version broke in three places.
-  `moved` is a fourth mark, because a reorder previously produced no marks and a count of zero over
-  an article that had silently renumbered itself.
+- `−` rather than a scissor glyph, which is a smudge at 11px in the mono face and does not pair with
+  `+`. The glyph is absolutely positioned in the gutter the block already owns and is never inside a
+  paragraph: **no mark may change where body text sits**, and jsdom does no layout, so no test can
+  catch a regression. `moved` is its own mark, because otherwise a reorder produces no marks and a
+  count of zero over an article that has visibly renumbered itself; which senses moved is the
+  complement of the longest increasing subsequence, so rotating three senses is one change.
 - **A changed field carries a word-level diff**, computed on the device: the words that went struck
   through in `--warn`, the words that arrived in `--core`. Without it `changed` said only that
   something moved, and a reworded note — matched by text — read as a deletion beside an addition
@@ -474,8 +477,7 @@ missed — but not first.)
 
 - **Saving** is `saveArticle(parseArticle(text'))`. Identical to saving a hand-edited document:
   same validation, same id diffing, same online-only synchronous round trip, same revision check.
-  A chat-driven edit is indistinguishable downstream from a typed one, which is what `§06` asked
-  for and what keeps the core's regeneration promise honest.
+  A chat-driven edit is indistinguishable downstream from a typed one, which is what keeps the core's regeneration promise honest.
 - **A stale entry is refused, not merged.** If sync moved the record while the conversation was
   open, the write is refused by the server exactly as any other stale write is. The message says the
   entry changed elsewhere and the proposal is dropped.
@@ -581,13 +583,11 @@ applies it to the draft, collapses the sheet to the dock, and scrolls the articl
 Three detents: **dock** (the bar alone) → **open** → **full** (the thread alone, with the masthead
 pinned above it as a context strip so the word being discussed is never off screen).
 
-**REVISED in round two.** `open` was "about 45% of the pane", which reserved a large empty box the
-moment you focused the composer; it is now content-sized with a cap, so a fresh conversation is one
-line and it grows turn by turn. `full` was `100dvh - 96px`, whose magic number left a useless
-one-line strip of article above the sheet — it now takes the pane and the article is not drawn at
-all, at every width, because that strip was a desktop defect too. The focus chip sits on its own row
-above the composer rather than inside it, at every width: inline, it left an Android field about
-180px wide.
+`open` is content-sized with a cap, so a fresh conversation is one line and grows turn by turn rather
+than reserving a large empty box the moment the composer is focused. `full` takes the pane and the
+article is not drawn at all, at every width: a sheet that stops short of the top leaves a useless
+strip of article above it, on a desktop as much as a phone. The focus chip sits on its own row above
+the composer, at every width, because inline it left an Android field about 180px wide.
 
 `full` uses `.main.composing`, which already existed for the YAML editor and the Add view — *a surface
 that owns the height and scrolls itself must not sit inside a region that also scrolls.* `overflow:
@@ -668,9 +668,8 @@ lands under the keyboard on exactly the device this feature is for.
 
 `AGENTS.md` binds `web/src/styles.css` to `design/ui-prototype/`: they change together, never one
 alone. The dock, the three detents, the proposal card, the diff marks and the review bar all land in
-`acervo.css` and in the prototype in the same change. **SUPERSEDED in one detail:** there is no
-"static article page" — the prototype is a shell plus `app.js`, whose `renderArticle` paints the
-article, so `renderAsk` lands there beside it. The one legitimate
+`acervo.css` and in the prototype in the same change — `renderAsk` beside `app.js`'s `renderArticle`.
+The one legitimate
 divergence stays where it is — the prototype has no bundler, so its editor pane remains a picture.
 
 One new mark is needed in `icons.tsx` for the dock and the anchor affordance. `✳` is already the
@@ -708,18 +707,10 @@ attestations.
 
 ### §8.3 · A capture that is already held — the fold-in
 
-Today `captureRoute` finds a duplicate and stops:
-
-```js
-// Merging a repeat capture into the entry it belongs to is §06's job, and it needs the article
-// conversation to do it well. Until then, say so plainly rather than making a near-duplicate.
-```
-
-**§06 REVISED — this is now buildable, and it needs no extra model call.** The resolve step already
-returns `resolution.sentences`: the learner's own sentences, corrected and separated from anything a
-dictionary supplied. So at the duplicate branch the server already knows whether the capture carried
-anything the stored entry does not have. No pipeline change is required — the call it would need
-has already happened.
+A capture of a word already held stops at the duplicate, and **folding it in needs no extra model
+call.** The resolve step has already returned `resolution.sentences`: the learner's own sentences,
+corrected and separated from anything a dictionary supplied. So at the duplicate branch the server
+already knows whether the capture carried anything the stored entry does not have.
 
 ```
         capture text
@@ -747,21 +738,19 @@ has already happened.
                           any other.
 ```
 
-The capture response grows one field — `foldable: { sentences, reference }` or null — and the
-duplicate panel in `AddView` grows one button. Two model calls total, exactly as composing a new
-entry costs. `§05`'s decision — *a repeat capture is an addition, not an entry* — is implemented
-without a merge path, a second writer, or anything the chat did not already do.
+The capture response carries `foldable: { sentences, reference }` or null, and the duplicate panel in
+`AddView` has one button for it. Two model calls in all, exactly what composing a new entry costs. *A
+repeat capture is an addition, not an entry* ([`capture.md`](capture.md)), and it needs no merge path,
+no second writer, and nothing the chat does not already do.
 
 ### §8.4 · A proposal under review, before it is saved
 
 The same dock on `AddView`'s Article tab. The draft carries the ids `draftFrom` minted, so the
 operations address it exactly as they address a stored one; the ops are applied to the draft, the
-YAML is regenerated, and the tab re-derives as it already does on every keystroke. This makes
-`§05`'s "regenerate with a note" obsolete in the good direction: instead of re-running generation
-with a nudge and losing what was right, one sentence changes one thing.
-
-**Deliberately last** in the build order (`§11`). It is the least valuable of the four and the one
-most likely to want a different diff treatment, since everything in a fresh proposal is new.
+YAML is regenerated, and the tab re-derives as it already does on every keystroke. Instead of
+re-running generation and losing what was right, one sentence changes one thing. It is the least
+valuable of the four entry points and the one most likely to want a different diff treatment, since
+everything in a fresh proposal is new.
 
 ---
 
@@ -803,18 +792,14 @@ export interface ChatResult {
 - Errors reuse the existing codes exactly: `capture_unavailable` when no model is configured,
   `llm_unreachable`, `llm_failed`, `llm_empty`, `llm_unusable`. Every message ends in *"so nothing
   was changed"*, matching the capture route's *"so nothing was created"*.
-- Model: **SUPERSEDED** — neither `ACERVO_CHAT_MODEL` nor `ACERVO_LLM_MODEL` exists, and adding one
-  would cut against the design: model choice is `models/catalogue.json` plus the owner's chain, and
-  `deploy/acervo/install.sh` validates every environment name against the catalogue. Chat is a text
-  call and answers on the owner's **text** chain — `chain_for(settings, owner, "text")`, resolved per
+- Model: chat is a text call and answers on the owner's **text** chain — `chain_for(settings, owner, "text")`, resolved per
   request, so Settings ▸ Models takes effect on the next turn with nothing restarted. If chat later
-  proves to want a different model, the shape is a fourth `kind` beside text/image/audio, and that
-  should be justified by a measurement rather than assumed.
-- Rate: **SUPERSEDED** — there is no rate-limiting machinery anywhere in the server, and building it
-  means a store, which only `repository/` may own. Shipped without one: the route is authenticated
-  and owner-scoped, one model call per turn, and a provider's own limit already surfaces as
-  `llm_rate_limited` with `models/cooldown.py` resting the row. If a floor is wanted it belongs
-  beside `model_selection` as an unreplicated table, not in the route.
+  proves to want a different model, the shape is another `kind` in the catalogue, justified by a
+  measurement rather than assumed. There is no per-feature model variable.
+- Rate: no per-owner floor. The route is authenticated and owner-scoped, one model call per turn,
+  and a provider's own limit surfaces as `llm_rate_limited` with `models/cooldown.py` resting the
+  row. If a floor is ever wanted it belongs beside `model_selection` as an unreplicated table, not in
+  the route.
 
 ### Prompts
 
@@ -846,63 +831,39 @@ Chat is a **consumer of the core** ([`../README.md`](../README.md). Concretely, 
 - **Agency.** Nothing is applied without a press, nothing is written without a second press, and
   every write is undoable with a third.
 - **The whole vocabulary.** *"Which of my words are like this one"* across the entire store is a
-  different feature with a different shape, and `§05` already argues why the interesting version of
-  it — set difference against what you actually hold — is worth waiting for. Chat sends at most
+  different feature with a different shape — the set difference against what you actually hold
+  ([`../plans/learning-modes.md`](../plans/learning-modes.md)). Chat sends at most
   twenty neighbours and says so.
 - **Offline anything.** A turn is a server round trip; reading the article never is. The dock is the
   only part of the article view that ever reports the server being down.
 
 ---
 
-## §11 · Build order
+## §11 · What a real model does
 
-All five stages are built, and a second round on the review surface followed real use on macOS, iOS
-and Android. Its decisions are folded into the sections above and marked **REVISED in round two**:
-no mark moves body text, a word-level diff, only the changed field tinted, `moved` as its own mark,
-one uniform operation vocabulary, the focus chip on its own row, a review bar that never wraps, and
-the largest detent at every width.
-
-Two things only a live run against a real model could have told us in the first round, both now
-closed:
+Three behaviours only a live run shows, each now handled in the prompt or the code:
 
 - **`fromAttestation` arrives in two shapes.** A real model puts it inside `example` about half the
-  time. Missing it is *silent*: the applier derives `origin: "llm"` for a sentence the learner
-  actually met, and nothing downstream ever notices the entry has lied about where it came from.
-  `services/chat.py` lifts it from either place, and the prompt says which one is right and why it
-  matters.
-- **A question was answered with a proposal.** "What is the difference between X and Y?" came back
-  with an edit to the notes — over-eager, and what `§5.3` exists to prevent. The prompt says in as
-  many words that a question gets prose and a `followUp`, and that proposing needs a request.
+  time. Missing it is *silent*: the applier would derive `origin: "llm"` for a sentence the learner
+  actually met, and nothing downstream would notice the entry lying about where it came from.
+  `services/chat.py` lifts it from either place, and the prompt says which one is right and why.
+- **A comparison question reliably proposes.** Asked "what is the difference between X and Y?", a model
+  offers to add the contrast to the notes, however firmly the prompt says a question gets prose. So the
+  contract held is not "never volunteer" — a proposal is **offered**, not applied, and nothing is
+  written without a press on *Review* and a second on *Save*, so an unasked-for proposal is a
+  pre-computed follow-up. It is **never rewrite what is already there unasked**:
+  `test_it_answers_a_question_without_rewriting_anything` allows at most two operations, no invented
+  ids, and only additions to the notes that keep every line already there. The prompt still asks for the
+  stricter behaviour, because the guidance is right where the model is unreliable, and a coin-flip
+  assertion is worse than an honest one.
+- **Over-correcting loses volunteered sentences.** Pushed too hard, *"I heard this on the radio: «…»"*
+  stops being proposed. The prompt carries an explicit two-column gate — the turn on the left,
+  `proposal` or none on the right — with volunteered sentences marked **yes**, *because they went to
+  the trouble of typing it*.
 
-**The second round revised that contract.** Three prompt revisions later, a comparison question
-still reliably came back with an offer to add the contrast to the notes. The honest conclusion was
-that "never volunteer" is the wrong thing to assert: a proposal is **offered**, not applied — nothing
-is written without a press on *Review* and a second on *Save* — so an unasked-for proposal is a
-pre-computed follow-up. The contract held is **never rewrite what is already there unasked**:
-`test_it_answers_a_question_without_rewriting_anything` allows at most two operations, no invented
-ids, and only additions to the notes that keep every line already there. The prompt still asks for
-the stricter behaviour, because the guidance is right where the model is unreliable, and a
-coin-flip assertion is worse than an honest one.
-
-Strengthening that guidance first over-corrected: *"I heard this on the radio: «…»"* stopped being
-proposed. The prompt now carries an explicit two-column gate — the turn on the left, `proposal` or
-none on the right — with volunteered sentences marked **yes**, *because they went to the trouble of
-typing it*. And acknowledgements are banned as follow-ups: *"Looks good"* spent the one one-tap slot a
-phone has on nothing. The prompt forbids them and `_shaped` drops one whose whole string, casefolded
-and stripped of punctuation, is in a fixed set — whole-string only, so *"Thanks, now add an example"*
-survives.
-
-Each stage was useful on its own and shipped on its own.
-
-1. **Explain only.** The route, both prompts' first halves, the dock, the sheet with its three
-   detents, the keyboard work in `§7.3`, `followUps`, the focus chip. Returns prose and nothing
-   else — `proposal` is not read yet. No write risk at all, and it is already most of the value.
-2. **Proposals.** `articleEdit.ts` (`applyOps` + `diffDrafts`), the proposal card, the diff marks,
-   the review bar, save and undo. This is the substance.
-3. **External articles.** The reference subject, the `capture` card, the seed into `AddView`.
-4. **The fold-in.** `foldable` on the capture response, the second button on the duplicate panel,
-   the seeded turn. Closes `§05`'s open comment.
-5. **The Add view.** The dock over an unsaved proposal.
+**Acknowledgements are banned as follow-ups**: *"Looks good"* spends the one one-tap slot a phone has on
+nothing. The prompt forbids them and `_shaped` drops one whose whole string, casefolded and stripped of
+punctuation, is in a fixed set — whole-string only, so *"Thanks, now add an example"* survives.
 
 ### Verification
 
@@ -937,30 +898,4 @@ Manual, on the devices this is for:
 
 ---
 
-## §12 · Still open
-
-- **Which neighbours to send.** Topic-mates is the obvious rule and probably enough. Same-lemma and
-  headword-similar entries are cheap to add off the replica; whether they help is a question for
-  after stage 1.
-- **Whether the reply should stream.** **SUPERSEDED** — it *can* now; FastAPI streams. It still does
-  not, and the reasons moved: the answer is one JSON object whose most valuable field is last, so
-  streaming it needs a streaming JSON parser to show anything; it would fork
-  `provider.text(…, as_json=True)`'s complete-`TextResult` contract, and `chain.walk` cannot decide
-  a 429 fall-through until enough has arrived to know it is not an error; and it would be the first
-  route outside `api/errors.py`'s `{"data": …}` envelope, so the first client path that does not get
-  `AcervoApiError` handling for free. A three-second wait under a quiet "thinking" line may well be
-  fine. Measure before building anything.
-- **Whether `followUps` should be model-written or fixed presets.** Model-written costs nothing and
-  is more relevant; fixed presets are predictable and always sensible. Start with model-written and
-  fall back if they turn out bland.
-- **Approving what chat adds.** A generated example lands `approved: false`, as it should. Whether
-  reviewing a proposal should also approve what it adds, or whether that stays a separate gesture,
-  is a question about the approval flow rather than about chat.
-- **Whether the review count should count fields or records.** A sense whose definition *and*
-  glosses moved is one change today — right for accepting, arguable for stepping, since `‹ ›` then
-  cannot reach the second field. Nobody has wanted it yet.
-- **The note-pairing constants**, a similarity of 0.5 and a three-token floor, are argued in
-  `articleEdit.ts` and tuned only against the fixtures, never against real edits.
-- **The prototype paints the review state by position.** `reviewMark` marks the first example and the
-  second sense because it is a picture of the design, not a diff; if the marks grow much more
-  structure, that picture will start to lie.
+What is still open is [`../plans/article-chat.md`](../plans/article-chat.md).

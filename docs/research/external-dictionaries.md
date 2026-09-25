@@ -1,10 +1,8 @@
 # External dictionaries — source research
 
-**Status:** researched, measured, and Stage 1 built. Design §08 defines the storage stance and closes
-with "out of scope for this iteration"; this document is the survey that brought it into scope, the
-decisions that survived a first review, and in §11 the measurements that settled them. The catalogue
-and the compiler now exist — see [`features/dictionaries.md`](../features/dictionaries.md) for
-what was built and what it changed.
+**Research.** The survey of which dictionaries exist per language and under what licences, and in
+§11 the measurements that chose the artifact format. The design as built is
+[`../features/dictionaries.md`](../features/dictionaries.md).
 
 Two separate needs push toward published dictionaries:
 
@@ -12,14 +10,14 @@ Two separate needs push toward published dictionaries:
    Looking a word up to *peek* at it should be instant and should work offline — and it is
    independently valuable to check a generated article against a human-compiled one. **This is the
    need that justifies the feature.**
-2. **Grounding.** Design §09 names this "the highest-leverage change to the existing pipeline".
+2. **Grounding** — conditioning composition on a real entry.
    [grounding-spike.md](../plans/grounding-spike.md) owns that experiment and it is
    **postponed** — too much else is unbuilt, and §1 below argues the expected benefit is narrower
    than §09 assumes. Grounding is a later, optional consumer of whatever this document produces, not
    its motivation.
 
-Design §08 already fixed the storage stance: external dictionaries are **read-only files, read
-directly, never ingested into PocketBase, never in the replica**, and the unit of installation is
+The storage stance is fixed ([`../features/dictionaries.md`](../features/dictionaries.md)): external dictionaries are **read-only files, read
+directly, never ingested into the database, never in the replica**, and the unit of installation is
 "this dictionary on this device". Nothing below contradicts that.
 
 Directions surveyed: `en → en/ru`, `es → es/en/ru`, `zh-Hans → zh/en/ru`, plus German, French and
@@ -66,8 +64,8 @@ smaller and more honest question than the one §09 implies, and it is a reason t
 The same "condense, don't enumerate" instinct points at where generated imagery is worth investing:
 **images per sense and per example sentence, not per headword.** A sentence already carries the
 action and the context, so the image prompt has something to draw; a bare headword usually does not,
-and for concrete nouns the emoji already in the model does the job. This belongs in design §09's
-`imagePrompt` staging rather than here, but it came out of the same reasoning and should not be lost.
+and for concrete nouns the emoji already in the model does the job. This belongs in the picture design
+([`../features/sense-images.md`](../features/sense-images.md)) rather than here, but it came out of the same reasoning and should not be lost.
 
 ---
 
@@ -503,7 +501,7 @@ tiering affordable:
 
 ### Explicitly out of scope
 
-The Chinese subsystem (§07); any scraper; bundling BKRS or anything else of unclear provenance;
+The Chinese subsystem ([`../plans/chinese-subsystem.md`](../plans/chinese-subsystem.md)); any scraper; bundling BKRS or anything else of unclear provenance;
 per-entry caching of dictionary data; bespoke connectors for APIs beyond the two Wiktionary-shaped
 ones; and anything that puts a dictionary row in PocketBase.
 
@@ -955,195 +953,3 @@ is not.
 `persist()` is requested once after an install succeeds.
 
 ---
-
-## §12 · Stage 3 — the reading surfaces, as built
-
-Three modules and one rule. `web/src/dictionaries.ts` gained the search transports beside the lookup
-it already had; `externalEntries.ts` merges and ranks what they answer and is pure, the way
-`selectors.ts` is; `externalHtml.ts` turns an `html`-tier payload into Acervo's own marks;
-`ExternalArticle.tsx` renders both tiers through `LexemeArticle.tsx`'s classes. The rule is that
-**your own words answer first, always, and external results sit below a rule and say whose they
-are.** This is a personal vocabulary store that can consult a dictionary, not a dictionary browser
-that remembers some words.
-
-### Three speeds, because the tiers cost different amounts
-
-| Tier | When it runs | Why |
-|---|---|---|
-| your words | every keystroke | in memory |
-| dictionaries on this device | 120 ms debounce | 0.00–1.40 ms per read (§11.7) |
-| dictionaries on your server | 450 ms debounce | a prefix search is ~17 sequential range reads; the reader's restart-key cache makes repeats far cheaper |
-| online sources | **⏎ only** | §9's no-prefetch rule, and a rate limit should not be spent on a word someone was passing through |
-
-Under that sits a per-source result cache and a one-second floor between calls to the same online
-source, in the module that owns the transport rather than in the interface that happens to call it.
-
-### Results merge by word, not by dictionary
-
-Three dictionaries holding `casa` is one row naming three sources, not three rows of `casa`.
-Grouping by dictionary was the alternative and it floods the section: the reader is looking for a
-word, and which books carry it is a fact *about* the word. Opening one gives a single page with a
-section per source in resolution order, and sticky jump chips to move between them — comparing what
-two dictionaries say is most of the reason for having two, so a tab hiding one behind the other
-would work against the feature.
-
-### What rendering the `html` tier actually took
-
-§11.4 said these payloads "need restyling, not merely sanitising", and building it confirmed that
-with more force than expected. There are **three distinct source shapes**, all three measured off
-the compiled artifacts rather than assumed:
-
-1. **WikDict / PyGlossary** — clean, and semantically almost empty. A bare `<div>` is the part of
-   speech at one depth and a translation at another; position is the only signal. The reader
-   resolves it positionally, with a list of part-of-speech words for the case where position is
-   ambiguous.
-2. **Yomitan-derived (`wty-*`)** — the good case, and the surprise. Every node carries a `content=`
-   attribute naming what it *is*: `glosses`, `tags`, `example-sentence-a`/`-b`, `bold-text`,
-   `details-entry-Etymology`, `backlink`. Most of the mapper is reading those names.
-3. **ECDICT** — one list item of preformatted plain text with newlines, which renders as a wall
-   unless split.
-
-Three bugs came out of rendering real entries rather than fixtures, and none would have been found
-by reading the markup:
-
-- **Renaming the Yomitan `<summary>` destroyed the fold.** Mapping `content="summary-entry"` onto a
-  styled `<span>` left the `<details>` with no summary, so the browser drew its own "Details" where
-  the source said "Grammar", "Etymology" or "3 examples".
-- **Half the definitions grew a translation arrow.** A text-only `<div>` that is the *whole* of its
-  list item is that item's content — Yomitan wraps every gloss that way — not a translation of it.
-- **A list of one is a wrapper, not a list.** Every source nests the entry inside `<ol><li>` before
-  the senses begin, which put a meaningless "01." in front of the word.
-
-`tests/../web/src/externalHtml.test.ts` runs over real payloads from five dictionaries
-(`web/src/testFixtures/dictionaryHtml.json`), because every one of the above passed a synthetic
-fixture.
-
-### "Add to my words" is a capture, not a second writer
-
-Three treatments — keep it close to the source, fill in the gaps, or say what you want — and all
-three go through the existing capture route. The request gained `reference` and `referenceMode`;
-the two canned treatments are wordings in `prompts/acervo_compose.md`, because prompts are content
-and a treatment is a thing to say, not a branch to write.
-
-> ### DECISION
-> **A dictionary entry is sent as `reference`, never as `text`.**
->
-> **Because** the resolver reads `text` as sentences the learner supplied, and every one of them
-> becomes an attestation. A dictionary's own examples arriving as attestations would be a claim
-> about where this person met the word, forged out of a book they were only reading. Provenance is
-> modelled here, never flagged (`§ Data rules`), and this separation *is* the modelling: two
-> fields, two doors, and the compose prompt says out loud that an example drawn from the reference
-> carries `fromSentence: null` like any other invented one.
-
-### What is deliberately not here
-
-No caching of dictionary entries in the replica, no dictionary row in PocketBase, and no path by
-which an external entry becomes a record without passing through `parseArticle` and
-`repository.saveArticle`. An external entry stays render-only: it carries `posLabel` as free text
-and never meets Acervo's part-of-speech enum (§11.3).
-
-### §12.1 · What a survey of all 45 compiled dictionaries changed
-
-The first pass was checked against six entries from five dictionaries. That was not enough: sampling
-six random headwords from **every** compiled artifact — 270 entries, 45 dictionaries — and rendering
-them through the real components found faults on the sixth of them that six entries could not.
-The apparatus is a throwaway script, and the value was in *reading the output*, not in the script.
-
-**Faults the survey found, all now fixed and all counted before and after:**
-
-| | before | after |
-|---|---:|---:|
-| Senses printed twice, one copy carrying the examples | 6 | 0 |
-| `«««` form-of stubs, one titled block each | 9 | 0 |
-| A domain written into the definition as `Química\| …` | 6 | 2 |
-| Numbered items with nothing in them | yes | 0 |
-| Wiki-link syntax `[[учебный]]` reaching the page | yes | 0 |
-
-The two remaining pipes are real CC-CEDICT cross-references — `涼山彝族自治州|凉山彝族自治州[…]` — which
-is that dictionary's own notation and not an artefact.
-
-**The rendering decisions those findings produced**, each of them a removal rather than an addition:
-
-- **A sense that appears twice is one sense.** Deduplicated on a key that strips combining acute, so
-  the Russian habit of listing a word once with stress marks and once without collapses too; the
-  examples from both copies merge into the survivor.
-- **A label the source wrote belongs in the field that exists for it.** `Química| Compuesto…` becomes
-  a domain chip, which is what the mapped tier already does with `domain`.
-- **A list of one is not a list**, and neither is a list item that holds only another list. Both were
-  putting an empty `01.` in front of the thing they held. A single sense now reads as a statement.
-- **A nested level counts differently** — `a. b. c.` under `01 02 03` — because two identical columns
-  of numbers at different indents read as one broken list.
-- **A section says only what the masthead has not.** `n · ja` under a masthead reading
-  `n · Japanese · external dictionary` was on almost every entry of every single-source dictionary.
-- **Numbered pinyin is a storage format, not a word.** `Fang1 shan1 Xian4` renders as `Fāng shān Xiàn`
-  (`web/src/pinyin.ts`), in the reading and in the cross-references CC-CEDICT writes inside a
-  definition. Syllables are not joined: CC-CEDICT does not record where words begin, and joining
-  would be a guess.
-
-### §12.2 · Three bugs that were not about dictionaries at all
-
-- **Online sources could never answer.** A dictionary was searched only if its id was in a set of
-  *switched-on* ids, and the only thing that ever added an id was installing one — which an online
-  source cannot be. So the interface offered "press ⏎ to look this up online" and then had nothing
-  to ask. The store now holds what is switched **off**: anything Acervo can reach is on until someone
-  says otherwise. The search section also now says *why* a tier was empty — switched off, unreachable,
-  or genuinely not holding the word are three different answers and only one is about the word.
-- **Russian was set in a CJK face.** `--sans` listed `PingFang SC` ahead of `system-ui`, and the
-  Cyrillic subset of IBM Plex Sans was imported at weights 400 and 500 but not 600 — which is the
-  weight a gloss term is set in. A stack is consulted per character, so every bold Russian gloss fell
-  out of the family and onto the first face that had the glyphs, set on CJK metrics. Both halves are
-  fixed: the subsets now cover every weight and style the interface uses, and the CJK faces sit after
-  `system-ui` so they can never capture Cyrillic or Greek again.
-- **The reference fold missed every gendered noun.** It looked up `headword`, and Acervo stores
-  `la azafata` there because that is how a learner needs to see the word — while a dictionary is keyed
-  on `azafata`. `lemma` is already defined as "the dictionary form", so a lookup now takes both.
-  Deliberately not a rule about articles: nothing knows that `la` is one, and the same field answers
-  for a verb stored conjugated or a noun stored with a classifier.
-
-### §12.3 · What the survey did not fix, and will not
-
-Several sources are simply thin — a Wiktionary inflection entry says "inflection of lastimar" because
-that is all it knows, and no amount of rendering makes it say more. The rule applied throughout was
-to remove what the source never meant to publish and to promote what it did, and to stop there. A
-poor dictionary should look plain; it should not look broken, and it should not be dressed up.
-Choosing which dictionaries are worth carrying is a separate job from rendering them well.
-
-### §12.4 · Two faults that only a long result list showed
-
-Both were invisible on a short search and obvious on `casa`, which seven Spanish dictionaries answer.
-
-- **The list showed more rows than it could describe.** Merging across seven dictionaries produced
-  thirty-four rows; only the first fourteen were given a meaning, and the rest rendered as a column
-  of em-dashes — which reads as a search that found nothing, not as one that found plenty. Reading a
-  row's meaning costs a lookup in the dictionary holding it, and several byte-range requests when
-  that dictionary is on the server, so the cap and the hydration limit have to be the same number.
-  The list now shows the closest twelve, describes all twelve, and says how many matched.
-- **A gloss was taken from whichever source sorted first.** Alphabetical order put an `html` source
-  ahead of a mapped one, and reading a meaning back out of a rendered fragment gave
-  `nounbrothelwhorehouselupanar` where the mapped source had `brothel; whorehouse`. Candidates are
-  now tried mapped-first, the first non-empty answer wins, and an `html` gloss is assembled block by
-  block with the parts that describe the word rather than define it — its part of speech, its tags,
-  its backlinks — left out.
-
-The jump chips also stopped landing on their headings again once a word was held by six sources: the
-nav is sticky and wraps to two or three rows, so no fixed `scroll-margin-top` can be right for every
-entry. It is measured from the nav and re-measured when it resizes.
-
-### §12.5 · Prefix search was case-sensitive, and only prefix search
-
-`lookup` folded case from the beginning — the compiler stores a case-folded alias beside every key
-that needs one, and the reader falls back to it. `search` did not, because a prefix scan walks the
-sorted key bytes: `Mejor` looked for keys beginning `Mejor` and there are none, while `mejor` found
-the word. The two halves of the same reader disagreed, and a phone capitalises the first letter of
-everything typed into a search box, so the common case was the broken one.
-
-Both spellings are now scanned, and each gets the **full** result budget rather than a share of one.
-That second part matters as much as the first: letting the as-typed scan fill the list is how `Casa`
-came back as `Casa Blanca · Casablanca · Casadevante` and never `casa`. When the pool has to be
-trimmed, the word actually typed leads it. Results are deduplicated by *entry*, not by spelling, so
-a key and its folded alias are one row rather than the same word listed twice.
-
-The online tier folds the same way, and in the same order — as typed first, because a proper noun
-may only be held capitalised — which costs one extra request only on a miss, behind the ⏎ that was
-already required.
-

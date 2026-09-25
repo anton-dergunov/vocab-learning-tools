@@ -206,7 +206,7 @@ def propose(settings: Settings, account: str, body: dict[str, Any]) -> dict[str,
     understood = understand(settings, account, body)
     resolution = understood.resolution
     if understood.duplicates:
-        # A repeat capture is an addition, not an entry (design §05). Merging it into the word it
+        # A repeat capture is an addition, not an entry (`docs/features/capture.md`). Merging it into the word it
         # belongs to is the article conversation's job, and this branch already knows everything
         # that job needs: resolve has run, so the learner's own sentences are in hand, separated
         # from anything a dictionary supplied. No second model call, and no merge path here — the

@@ -16,7 +16,7 @@ its premise that nothing consults an external source is out of date.
 
 ## The question
 
-Design §09 makes a confident claim:
+A confident claim, and the reason grounding was built:
 
 > **Pass the Wiktextract sense inventory and 2–3 real attestations into the generation prompt as
 > grounding.** That demotes the model from *knowledge source* to *selector and formatter*, where

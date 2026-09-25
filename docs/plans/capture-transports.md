@@ -11,9 +11,9 @@ It is scoped to **text**. Photo capture is built ([`photo-capture.md`](../featur
 not re-litigated here; this document touches it only where a transport happens to *deliver* an image,
 which that document lists as not built.
 
-It **supersedes the transport ranking in [`../design.md`](../design.md) §05** in one
-place. §05 ranks "iOS Shortcut → POST → open app" third and describes it as "one gesture from the
-share sheet that *ends in the review screen*." That transport does not exist. See
+The capture design itself is [`../features/capture.md`](../features/capture.md). One transport that
+looks obvious — "iOS Shortcut → POST → open app", one gesture from the share sheet that *ends in the
+review screen* — does not exist. See
 [Three facts that decide everything](#three-facts-that-decide-everything).
 
 ## Where we are today
@@ -72,9 +72,8 @@ document look nothing alike.
 
 ### 1. iOS cannot open the app from a share. §05 is wrong about this
 
-§05's third-ranked transport is an iOS Shortcut that "can POST *and then open a URL*, so it is one
-gesture from the same share sheet that lands you on the review screen." A Shortcut can indeed POST
-and then open a URL. The problem is where that URL opens.
+The obvious iOS transport is a Shortcut that POSTs *and then opens a URL*, one gesture from the share
+sheet that lands on the review screen. A Shortcut can indeed POST and then open a URL. The problem is where that URL opens.
 
 **There is no deep link into an installed home-screen web app on iOS.** A URL handed to the system
 opens in Safari, as a tab, even when it is inside the installed app's scope. Android does the
@@ -290,8 +289,8 @@ queue — it is the one the file-ingestion script has been feeding all along.
 
 **The honest trade.** This is a *post-and-walk-away* transport, so per fact 2: if the phone is off the
 tailnet, the capture is lost. And the model's choice of headword is not reviewed at the moment you
-make it — if it picks the wrong word out of your sentence, you find out later. §05's "review is
-non-negotiable" is satisfied in the sense that review still happens before the word is yours; it is
+make it — if it picks the wrong word out of your sentence, you find out later. The rule that review is
+non-negotiable is satisfied in the sense that review still happens before the word is yours; it is
 not satisfied in the sense of happening *now*.
 
 **What it needs.** No server changes to capture at all — `POST /captures` is exactly the headless
@@ -519,7 +518,7 @@ that buys nothing at the end of it — you still open Acervo to review, and now 
 between you and a word you wanted to keep. The user's own account of the experience confirms it: by
 the time the queue is reached, the reason for capturing is forgotten.
 
-Two facts to add to §05's argument. info-triage has **no outbound push** — no webhook, no forwarding,
+Two facts about info-triage as a transport. info-triage has **no outbound push** — no webhook, no forwarding,
 no per-route destination adapter; "routing to an external system" there means the item lands in a
 directory and a separate downstream tool picks it up. So this option means *building* that push. And
 its route names are a closed tuple validated at startup, so a dedicated Acervo route would mean

@@ -16,7 +16,7 @@ const state = {
   onlineDone: false,
   scope: { device: true, server: true, online: true },
   /* How far the ask dock is open, and which block a question is bounded to. Three detents and no
-     intermediate state: dock | half | full (design §06 §7.3). */
+     intermediate state: dock | half | full (article-chat §7.3). */
   ask: "dock",   // dock | open | full
   askFocus: null,
   /* A proposal under review. Painted rather than applied — the prototype has no applier — so the
@@ -753,7 +753,7 @@ function masthead(x) {
 }
 
 /* ── the ask dock ─────────────────────────────────────────────────────
-   Design §06 §7. Pinned to the bottom of the article pane and growing upward into a sheet; one
+   `docs/features/article-chat.md` §7. Pinned to the bottom of the article pane and growing upward into a sheet; one
    component and one set of states at every width, because a side pane would cut the 780 px article
    column to about 400 px on the tablet this is mostly read on.
 

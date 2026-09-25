@@ -2,7 +2,7 @@
  * Export and import of a whole vocabulary as a bundle of files.
  *
  * Three needs, one mechanism: surviving a schema change without losing curation, mirroring the
- * vocabulary into Obsidian (§12), and handing a vocabulary to someone else. All three want the same
+ * vocabulary into Obsidian (`docs/features/export.md`), and handing a vocabulary to someone else. All three want the same
  * thing — the words as files, in a representation that outlives the database that produced them.
  *
  * A word file is exactly the document `yaml.ts` already writes, with its ids stripped. There is no

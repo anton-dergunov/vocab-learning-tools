@@ -991,7 +991,7 @@ export default function App() {
         summary
       });
       /* No scroll to the top: `ReviewBar` brings the *first change* into view instead, which is
-         what design §6.2 asked for and what makes an edit to the third sense of a long entry
+         what article-chat §6.2 asks for and what makes an edit to the third sense of a long entry
          something you can see rather than something you have to go looking for. */
     } catch (error) {
       notify(error instanceof EditRefused ? error.message

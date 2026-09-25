@@ -1,7 +1,7 @@
 """One turn of conversation about one word.
 
 The device assembles what is discussed and sends it; this layer holds the credentials, owns the
-prompt, and writes nothing. That split is deliberate (design `§06`, revised): `web/src/yaml.ts` is
+prompt, and writes nothing. That split is deliberate (`docs/features/article-chat.md` §4): `web/src/yaml.ts` is
 the only place the article projection is understood, so a server-side serialiser would be a second
 implementation of it, drifting from the first the moment a field is added. The document that arrives
 came from that owner's own replica and goes nowhere but into their own prompt.

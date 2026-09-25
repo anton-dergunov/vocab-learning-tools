@@ -370,7 +370,7 @@ export function articleReader(graph: VocabularyGraph): (lexemeId: string) => Art
 /* ── the second feeder ──────────────────────────────────────────────────
    An article the store has never seen — what capture proposes, or what you have typed into the
    editor and not saved — assembled into the same view model a stored one produces, so there is one
-   renderer rather than a second surface for reviewing a proposal (design §16).
+   renderer rather than a second surface for reviewing a proposal (`docs/features/capture.md`).
 
    The output is RENDER-ONLY. It is not a graph, it is not validated, and it must never be written:
    the one writer is `repository.saveArticle(parseArticle(text))`, which reads the document again

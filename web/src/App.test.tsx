@@ -1484,7 +1484,7 @@ describe("Acervo application", () => {
   });
 });
 
-/* ── the article conversation (design §06) ──────────────────────────────
+/* ── the article conversation (`docs/features/article-chat.md`) ──────────────────────────────
    Chat is a consumer of the core: no storage, no second writer, and every change goes through
    `repository.saveArticle` at the entry's own revision. What is asserted here is that shape — that
    a proposal reaches the article as marks and nothing else, that saving is one ordinary write, and

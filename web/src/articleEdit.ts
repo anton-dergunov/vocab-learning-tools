@@ -1,5 +1,5 @@
 /* ── applying a proposal, and showing what it did ────────────────────────
-   Design §06. A turn of conversation returns prose and, when it implies a change, a small set of
+   `docs/features/article-chat.md`. A turn of conversation returns prose and, when it implies a change, a small set of
    operations addressed by record id. This module applies them to a draft and compares the two
    drafts; nothing else in the interface knows the operation language exists.
 

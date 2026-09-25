@@ -577,7 +577,7 @@ const LEXEMES = [
   }
 ];
 
-/* External dictionaries — what a search finds that is NOT yours (design §08, Stage 3).
+/* External dictionaries — what a search finds that is NOT yours (`docs/features/dictionaries.md`).
    Never mixed into LEXEMES: an external entry has no id, no study state and no owner, and the
    whole point of the section below the rule is that the difference is visible. */
 const EXTERNAL = [

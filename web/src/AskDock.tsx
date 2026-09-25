@@ -1,6 +1,6 @@
 /* ── the ask dock ────────────────────────────────────────────────────────
    One surface at every width: a bar pinned to the bottom of the article pane, which grows upward
-   into a sheet. No side pane, ever (design `§06`, `§7.1`). The article column is 780 px and a tablet
+   into a sheet. No side pane, ever (`docs/features/article-chat.md` §7.1). The article column is 780 px and a tablet
    in portrait is about 834 px, so a docked side pane would cut the article to roughly 400 px to make
    room for a conversation that is usually two turns long. The dock costs the article nothing
    horizontally at any width, and on a phone it *is* the mobile design rather than a degraded

@@ -18,6 +18,21 @@ personal, multilingual, sense-level graph that every kind of enrichment hangs of
 | **LLM vocabulary knowledge graphs** | DIY-MKG (EMNLP 2025 demo track): a personal graph grown by LLM-suggested related words, plus LLM-generated quizzes | The nearest research analogue to discovery by expansion. | Far deeper as a system — a durable store, sync, enrichment, media. DIY-MKG has almost no community around it, so the idea has a paper and the product space is still open. |
 | **Visual lexicon explorers** | Visual Thesaurus, Visuwords, word2vec-graph, word-galaxy | Beautiful exploration of a *general* lexicon. | None of these is personal or multilingual. Acervo's meaning map is both: one learner's senses, per language (built September 2026; see below). |
 
+## Open-source tools considered as a base
+
+Before building, the closest open-source tools were read as candidate foundations. None was adopted:
+each treats the word list as scaffolding for its one output, so adopting it means adopting its centre
+of gravity. The distinctive part — a synced, offline-capable, personally curated store of words as the
+system of record, with pluggable consumers — is precisely what none of them is.
+
+| Project | What it is | Why not | Worth stealing |
+|---|---|---|---|
+| [VocabSieve](https://github.com/FreeLanguageTools/vocabsieve) | Sentence mining → Anki. Local StarDict/MDX/DSL dictionaries, lemmatization, frequency lists, EPUB reader. | Desktop Qt. No sync, no phone, no LLM, no server. Anki is the only output. | **Its dictionary-format parsers** — the best prior art you'll find. |
+| [Lute v3](https://github.com/LuteOrg/lute-v3) | Self-hosted Flask. Learn by reading; per-word status New → Known; multi-word and parent terms. | Reading-centric — vocabulary is a byproduct of imported texts, not a curated list you own. Online dictionaries only. | Its multi-word term handling and status model. |
+| [anki-llm](https://github.com/raine/anki-llm) | CLI/TUI for bulk LLM processing of Anki notes; a JSON-oriented AnkiConnect wrapper. | A tool *for* Anki, not a vocabulary store. No durable core. | Its AnkiConnect usage as a reference. |
+| [playphrase](https://github.com/kelciour/playphrase) | Self-hosted subtitle search that plays the matching video fragment. | Local media files, not embedded YouTube. | Proof the clip feature is a solved shape. |
+| [Obsidian → Anki](https://github.com/ObsidianToAnki/Obsidian_to_Anki) family | Markdown → Anki, some LLM-assisted. | One-directional pipes from notes to cards. | Nothing. |
+
 ## How Acervo differs
 
 - **Personal and sense-level.** One owner, several languages at different levels, and senses as

@@ -56,7 +56,7 @@ export interface CaptureSeed {
 }
 
 /**
- * Capture (§05), the rendered proposal, and the YAML escape hatch — one view, because they are three
+ * Capture (`docs/features/capture.md`), the rendered proposal, and the YAML escape hatch — one view, because they are three
  * views of one thing.
  *
  * A view rather than a dialog: composing an entry is work, not an interruption, and it wants the
@@ -168,9 +168,8 @@ export default function AddView({
    * The document is the editor text, which already carries the ids the server minted for its
    * children, so operations address it exactly as they address a stored entry. What comes back is
    * written straight back into the editor, and the preview re-derives on the next render as it does
-   * on every keystroke — so this makes §05's "regenerate with a note" obsolete in the good
-   * direction: one sentence changes one thing, instead of re-running generation and losing what was
-   * already right.
+   * on every keystroke — so one sentence changes one thing, instead of re-running generation and
+   * losing what was already right.
    */
   const askAboutDraft = (turns: ChatTurn[]) => onChat!(draft, turns);
 
