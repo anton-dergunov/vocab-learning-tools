@@ -199,12 +199,12 @@ half way — a rate limit, a restart, a deploy — resumes against the takes tha
 what makes §2.10's retry cheap rather than a second bill.
 
 **`take` is in the key deliberately, and this is the subtle part.** `delivery_instruction` quantises a
-continuous `Prosody` into a 3×3 grid of adjectives, so two takes of the same word can produce
-*byte-identical* instructions — they do for an `emphatic` word today. Without the take index the cache
-would hand back one recording for both, and the repetition would sound **more** mechanical, not less.
-Today nothing has noticed because there is no persistent cache and the provider is nondeterministic:
-Gemini does not honour seeds, so two identical prompts happen to give two different readings. A cache
-turns that accident into a guarantee in the wrong direction.
+continuous `Prosody` into a grid of adjectives, so two takes of the same word can produce
+*byte-identical* instructions — at a low prosody strength the takes converge by design. Without the take
+index the cache would hand back one recording for both, and the repetition would sound **more**
+mechanical, not less. A provider that ignores seeds hides this without a cache, since two identical
+prompts happen to give two different readings; a cache turns that accident into a guarantee in the wrong
+direction.
 
 **A stored pronunciation is deliberately not read through.** It is tempting: a plain headword take has
 the same text, language, model and voice as the clip the article already holds. But that clip is Opus
@@ -246,14 +246,13 @@ the gain, then hold the result under the ceiling — and a test asserts two take
 
 ### 7 · Two orders named for what they are; three uses pick one
 
-Today the two speech chains are labelled by use — *words and definitions*, *example sentences* — and an
-example is **always** read by the expressive order. The `Speak examples with their emotion` switch only
-decides whether a direction is *sent*, so turning it off still spends the expensive voice on every
-sentence. With loops there would be three uses and two orders, and a third chain would make it worse.
+Labelling the voice chains by use — *words and definitions*, *example sentences* — with a switch deciding
+only whether a direction is *sent* would mean switching emotion off still spends the expensive voice on
+every sentence, and each new use would want a chain of its own.
 
-So the orders are named for their capability — *a clear, even voice* and *a voice
-that takes a direction* — and Settings ▸ Pronunciation ▸ Delivery gives each of the three uses a choice
-between them. **Choosing the directed order is asking for emotion**, which is why
+So there are two orders named for their capability — *a clear, even voice* and *a voice that takes a
+direction* — and each use picks one: words and examples in Settings ▸ Pronunciation, loops in Settings ▸
+Loops, stories in Settings ▸ Stories. **Choosing the directed order is asking for emotion**, which is why
 the old `expressive` switch was deleted rather than left beside the new control: one mechanism
 where there were two, and the cheap voice finally reachable for examples as well as loops.
 
@@ -286,6 +285,14 @@ that has just read every sense.
 is deliberately no setting for it. A vocabulary's gloss languages are already ordered most preferred
 first, so reordering them *is* the control. A setting over a single stored string could only end up
 naming a language the stored text is not in.
+
+**The wording that decides them is measured.** `emotion` is written for most words rather than kept for
+the vivid ones: the compose prompt asks the writer to picture the single most ordinary situation the word
+comes up in, and treats a description of flatness — "neutral", "matter-of-fact" — as `null` rather than a
+sentence; `primaryGloss` is long enough for a multi-word headword (`encender la computadora` is not
+`turn`). That wording measured 88.6–100% `emotion` coverage on ordinary words with 0% false positives on
+null controls, holdout included, and was confirmed on the real vocabulary
+([`experiments/primary-gloss-emotion-tuning/`](../../experiments/primary-gloss-emotion-tuning/README.md)).
 
 **And this is measured before it is trusted.** The risk is not that the fields are wrong but that a
 larger prompt thins the *rest* of the article — fewer senses, shorter notes, a `primaryGloss` that is
@@ -417,8 +424,7 @@ route takes ids rather than a query.
 
 That is what made the next step cheap: **choosing words by hand is the same route with a different
 list** — the device's word selection ([`word-selection.md`](word-selection.md)), built with no
-server change. Difficulty, newest-first and
-"words with no loop yet" would be further options on the same dialog, one selector each.
+server change.
 
 **The style and pattern catalogues are LexiBeat's**, read from its `schema` route and never copied here
 — the rule [`spoken-clips.md`](spoken-clips.md) §2.10 settled for channels. The dialog offers *Surprise me* or a family
@@ -428,25 +434,29 @@ and whether it has a recall gap), `families`, `energy`, `rhythm`, `palette`, the
 the `audio` format, plus `production_bundle`. A pattern's shape is described there rather than
 assumed here, which is what keeps three repetitions becoming four from being a change on this side.
 
-### 13 · A bottom bar, and only over the list
+### 13 · The way in, and no second bar over an article
 
-Loops get their own surface, reached from a bar pinned to the bottom — and `.app` grows that third grid
-row **only when no article, external entry or Add view is open.**
+Loops have their own surface, and the way in is **one component in two skins** (`MadeBar.tsx`, shared
+with stories and the map), so what the two say cannot disagree:
 
-The article pane is 780 px of column already carrying the view segments, the delete control, the
-progress strip and `AskDock`; a second dock there is prohibited. It cannot collide by accident either,
-since `AskDock` renders only when an article is open and the bar only when one is not. The top bar is
-left alone: it holds search, scope, Add, sync, settings and the language menu, which on a phone is
-already everything that fits.
+- **On a phone, a bar at the foot of the window, split in three — Loops, Stories and the Map** — where
+  these belong on a device held in one hand. `.app` grows that third grid row **only when no article,
+  external entry or Add view is open**.
+- **On a desktop, a button at the foot of the topic rail, beside Stories**, and a chip in the top bar
+  **only while something is sounding**. The top bar already holds search, scope, Add, sync, settings and
+  the language menu, and a way in to every learning method would crowd it.
+
+**No second bar over an article.** The article pane is 780 px of column already carrying the view
+segments, the delete control, the progress strip and `AskDock`, and a second dock there is prohibited.
+It cannot collide by accident: `AskDock` renders only when an article is open and the bar only when one
+is not. The bar has no **+**: each surface carries its own Make button in its own header, and a bar whose
+job is to be a way in should not also be a way to start something.
 
 A loop keeps playing while you read a word — the audio element is not the surface — and the now-playing
-row is on the bar when you come back. **There is no mini-player over an article**, and a finished render
-announces itself as a toast with an action.
+row is on the bar when you come back. **There is no mini-player over an article.**
 
-The way in is **the chip in the top bar on a desktop and the bar at the foot on a phone**: one
-component in two skins (`MadeBar.tsx`, shared with stories), so what they say cannot disagree. The
-word selection's bar is the one deliberate exception to this rule, and only on a wide window while
-the ask dock rests. The topic rail stays wherever there is room for it and goes only on a phone,
+The word selection's bar is the one deliberate exception to the no-second-bar rule, and only on a wide
+window while the ask dock rests. The topic rail stays wherever there is room for it and goes only on a phone,
 because a surface you leave running is one you come back from, and the way back has to be somewhere;
 one back arrow, search, ⌘K and Escape all leave it.
 
@@ -462,12 +472,12 @@ running and glanced at.
 ### 14 · The track plays from memory
 
 The media route is behind bearer auth, so its URL cannot go in an `<audio src>` — the same reason a
-picture is fetched as a blob, and the reason `LexemeArticle.tsx` once displayed none at all.
+picture is fetched as a blob.
 
 The constraint is the better design. A whole track in memory means **nothing touches the network during
-playback**, which is what a locked screen and a lift need. `mediaStore.ts` gains a third kind, `loops`,
+playback**, which is what a locked screen and a lift need. `mediaStore.ts` keeps loops as a kind of their own,
 so a device can keep or forget loops without touching a picture or a pronunciation; `loops.ts` sets
-MediaSession metadata and action handlers — the first in this codebase — and drives the word display
+MediaSession metadata and action handlers, and drives the word display
 from `loopItems`.
 
 One rule: **players stop each other.** Each registers its pause with

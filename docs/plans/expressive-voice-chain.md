@@ -42,7 +42,9 @@ expressive through the other one.
   capability stays: that is a different thing and it works.) `vertex`'s audio row is the same case and
   should be looked at with it.
 - **The expressive order lists only pairs that declare `style: instruction`.** Settings ▸ Providers
-  should not offer any other pair there, and the readout should say so.
+  should not offer any other pair there, and the readout should say so. **The shipped default breaks this
+  rule itself**: `defaultChains.audioExpressive` ends with `google-tts/wavenet`, which is `style: none`.
+  That entry goes, and the fall-back-to-plain rule below takes its place.
 - **Not enforced — backfilled.** A saved order is a preference and must not be refused or rewritten.
   When no expressive pair can be reached, the caller falls back to the **plain** order (`audioPlain`)
   and records without a direction, rather than failing. That is the one place a clear voice may read

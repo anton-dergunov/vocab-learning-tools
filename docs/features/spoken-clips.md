@@ -134,10 +134,6 @@ remaining work is three fields.
 > **DECISION: a clip is an example with `origin: "subtitle"`.** It gains `videoEnd`, `videoChannel`
 > and `clipRef` — the corpus's stable `segment_id` — and nothing else. No ninth table.
 
-It arrives `approved: false`, like every other example a model produced. That is the smaller change —
-the badge already renders — and it keeps clips out of the way of the approved/unapproved surface,
-which is due a redesign of its own and should not have to inherit a special case from here.
-
 Provenance stays modelled rather than flagged, exactly as with attestations: the origin says where
 the sentence came from and `clipRef` says which segment it is, so the stored text can be audited
 against the corpus at any time. `videoRef` remains the field the invariants hang on — a title, a
@@ -300,6 +296,13 @@ than the file being found only because it sits in that repository's working tree
 Two costs, both honest. A channel newly shipped by a later retrieval version does not appear on its
 own — the owner's list is the owner's. And a language the seed does not cover cannot be added from
 Settings; that is a limitation to fix in the retrieval repository rather than to work around here.
+
+**Settings ▸ Clips** shows whether the service answers and what its corpus holds, lists the channels with
+enable, disable and add, offers Update now, and has two switches: `searchEnabled`, which stops the search
+a save queues while a person's own request still searches, and `selfContainedOnly`, a matter of taste —
+speech tidy enough to follow cold, or as messy as a real room. **Disabling a channel stops new downloads
+and removes its clips from search at the next update**; clips already stored in articles stay, being
+records the owner kept rather than a live query.
 
 ### 11 · A step of the word's enrichment, not a second engine
 

@@ -1,7 +1,7 @@
 # Experiment · the clip-selection prompt
 
-**Status:** Unstarted. Step 3 of [`spoken-clips.md`](../features/spoken-clips.md) has shipped the first version
-of the prompt this experiment tunes, and a first reading of it — three runs over eight words, read
+**Status:** Unstarted. The selection prompt this experiment tunes is built
+([`../features/spoken-clips.md`](../features/spoken-clips.md) §2.7), and a first reading of it — three runs over eight words, read
 by eye — is [`clip-selection-rounds.md`](../research/clip-selection-rounds.md). That was enough to find one
 real failure, fix it, and discover that the first fix was aimed at the wrong thing; it is **not**
 this experiment, which nobody has run. Its starting point is the prompt as round 4 left it.
@@ -99,7 +99,7 @@ whatever the measurements say:
 
 ## What to write down
 
-A report under `docs/`, in the shape the other repository's `AGENTS.md` asks for and for the same
+A write-up in `experiments/clip-selection/README.md`, in the shape the other repository's `AGENTS.md` asks for and for the same
 reason: the evidence has to be auditable rather than asserted. The hypothesis and its success
 criterion; the exact model, prompt version and candidate configuration for every run; the language
 and the word set with its selection method; per-example diagnostics kept, not just averages; the

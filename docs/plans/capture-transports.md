@@ -20,20 +20,18 @@ review screen* — does not exist. See
 
 One production path: open Acervo, go to Add, type or paste the text, press Process, read the article
 it proposes, save. Plus `scripts/ingest_vocabulary_file.py`, which walks a notes file into the Inbox
-through the same route — the right tool for a backlog, useless for a word met in the wild.
+through `POST /captures` — the right tool for a backlog, useless for a word met in the wild.
 
-§05 already settled the shape, and nothing here disturbs it:
-
-> **Build one ingest endpoint. Every capture path is a thin client against it.**
-
-`POST /api/acervo/v1/capture` is that endpoint, and it already accepts everything any transport below
-would want to send: `text`, an optional `headword` hint, `language`, `sourceUrl`/`sourceTitle`/
-`sourceKind`, `note`, `topics`, and an `apply` flag that writes the result straight to the Inbox. So
-this document is not about the server. **Every option below is a question about the last hundred
+The shape is settled ([`../features/capture.md`](../features/capture.md)), and nothing here disturbs it:
+**one capture pipeline, and every capture path a thin client against it.** `POST /capture` returns a
+draft to review and `POST /captures` files a submission straight into the Inbox as a job; between them
+they accept everything any transport below would want to send: `text`, an optional `headword` hint,
+`language`, `sourceUrl`/`sourceTitle`/`sourceKind`, `note` and `topics`. So this document is not about
+the server. **Every option below is a question about the last hundred
 metres — how a fragment of text gets from the app you met it in onto that one POST.**
 
-Line 1565 of the design document is still accurate: "the share-sheet and browser transports of §05
-are the same single POST and **remain unbuilt**." The code agrees — there is no `share_target` in the
+The share-sheet and browser transports are the same single POST and **remain unbuilt**. The code
+agrees — there is no `share_target` in the
 generated manifest, no URL-parameter handling anywhere in `web/src`, no `CFBundleURLTypes`,
 `NSServices` or share extension in `macos/`, and no credential a headless caller could hold that is
 not the account password.
@@ -59,8 +57,7 @@ that registering on each platform.
 string of plain text, or a URL, or a file. A selected sentence arrives as a string. A shared web page
 arrives as a URL plus a title, with no text. A screenshot arrives as an image file. There is no
 standard way for an app to say "here is the word *and* the sentence *and* the page it came from" —
-§05 calls this the **selection dilemma**, and its answer stands: share the sentence, pick the word in
-the app.
+This is the **selection dilemma**, and its answer stands: share the sentence, pick the word in the app.
 
 **The split that decides this document:** on **Android**, a progressive web app can register itself
 through its own manifest — a `share_target` entry — and nothing native is required. On **iOS and
@@ -70,7 +67,7 @@ document look nothing alike.
 
 ## Three facts that decide everything
 
-### 1. iOS cannot open the app from a share. §05 is wrong about this
+### 1. iOS cannot open the app from a share
 
 The obvious iOS transport is a Shortcut that POSTs *and then opens a URL*, one gesture from the share
 sheet that lands on the review screen. A Shortcut can indeed POST and then open a URL. The problem is where that URL opens.
@@ -86,8 +83,8 @@ different installation of Acervo: not signed in, no replica, no sync cursor. The
 you on a sign-in screen, and signing in there would build a *second* replica in Safari's storage that
 the installed app never sees.
 
-So the transport ranked third in §05 has to be replaced by something else, and the iOS section below
-is mostly about what.
+So the obvious iOS transport has to be replaced by something else, and the iOS section below is mostly
+about what.
 
 ### 2. Capture is a write, so every transport needs the tailnet — and that splits them in two
 
@@ -202,8 +199,8 @@ and it is a different mechanism from A1 rather than a bigger version of it. Both
 extension must be listed in the manifest, or the app appears in the share sheet and then fails to
 receive the file.
 
-**Verdict: correct, and deferred.** It is worth nothing until photo capture exists, and it is
-strictly downstream of it.
+**Verdict: correct, and now unblocked.** Photo capture exists, so a shared screenshot has a screen to
+land on; what is left is the service-worker handling above, and it is Android only for a PWA.
 
 ### A3 · Manifest `shortcuts` — long-press the icon → "Add a word"
 
@@ -399,7 +396,7 @@ and switching to a menu-bar app is cheap. Everything here is a refinement rather
 **The gesture.** Select a sentence on any page → ⌘⇧K → a small dialogue appears *in the page* → press
 Enter.
 
-**Why it ranks highest on quality.** §05 makes the argument and it holds: an extension is the only
+**Why it ranks highest on quality.** An extension is the only
 transport with no selection dilemma. It reads the DOM *around* your selection, so one gesture yields
 the word, the sentence it sits in, the page URL and the page title — the two fields that make an
 attestation memorable years later, and the two that every share-sheet transport throws away.
@@ -480,7 +477,7 @@ B5, this comes nearly free with it and is the better half of the purchase.
 
 ### D1 · Acervo's own Telegram bot
 
-Underrated in §05, and it deserves a second look — particularly for iOS, where every other option is
+Underrated, and it deserves a second look — particularly for iOS, where every other option is
 either blocked or expensive.
 
 **The gesture.** Select anything, anywhere, on any device → Share → **Acervo** (the bot) → the bot
@@ -511,7 +508,7 @@ answer even if it does not.** Worth a serious look before buying an Apple develo
 The status quo option: share to the existing `lang` bot, and let something downstream move it into
 Acervo.
 
-§05 already argued this down, and the argument stands: info-triage is asynchronous **by necessity**,
+The argument against it stands: info-triage is asynchronous **by necessity**,
 because deciding where information belongs needs context you lack at capture time. Vocabulary's
 decision is immediate. Routing an immediate thing through infrastructure built for deferral adds a hop
 that buys nothing at the end of it — you still open Acervo to review, and now two systems can fail
@@ -557,7 +554,7 @@ app switch**.
 | A1 | Share target, GET | Android | **3** | sentence, word picked in app | yes | **yes** | small | **build first** |
 | A3 | Manifest shortcuts | Android | 5 | n/a | yes | yes | tiny | take with A1 |
 | A4 | TWA + text-selection action | Android | **2** | **both** | yes | **yes** | large | trial T1 first |
-| A2 | Share target, POST (image) | Android | 3 | via OCR | yes | no | large | photo capture's |
+| A2 | Share target, POST (image) | Android | 3 | via OCR | yes | no | large | unblocked; photo capture is built |
 | B1 | Shortcut → post → Inbox | iOS, iPadOS | **2** | sentence only | no, later | no | credential | strongest on iOS |
 | B2 | Shortcut → confirm → post | iOS, iPadOS | 3 | sentence only | **yes** | no | resolve route (built) | successor to B1 |
 | B3 | Paste button in Add | **all** | 4 | whatever you copied | yes | **yes** | tiny | **take regardless** |
@@ -657,8 +654,7 @@ Assuming the trials do not overturn anything:
 6. **C1 and C2 whenever the desktop starts to annoy.** They are quality improvements to a flow that
    already works, not rescues.
 
-Not now: B5 and B6 (Apple's fee, and B1/D1 should be tried first), A2 (photo capture's, and downstream
-of it), D2 (rejected), D3 (the Inbox already is it).
+Not now: B5 and B6 (Apple's fee, and B1/D1 should be tried first), D2 (rejected), D3 (the Inbox already is it).
 
 ## The one thing nearly everything needs
 
@@ -711,3 +707,12 @@ Platform behaviour changes, so every claim above that is not about this reposito
 - [Request your first API in Shortcuts — Apple Support](https://support.apple.com/guide/shortcuts/request-your-first-api-apd58d46713f/ios)
 - [Custom text selection actions with ACTION_PROCESS_TEXT — Android Developers](https://medium.com/androiddevelopers/custom-text-selection-actions-with-action-process-text-191f792d2999)
 - [Meet Safari Web Extensions on iOS — WWDC21](https://developer.apple.com/videos/play/wwdc2021/10104/)
+
+## Also worth recording
+
+- **A command-line client** would need no server work at all: `POST /capture`, `POST /articles`,
+  `POST /captures`, `GET /jobs` and `GET /events` are the whole surface, and the job design deliberately
+  made it complete.
+- **The credential several options need has a shape to copy.** `src/acervo/tokens.py` already mints
+  audienced, time-limited tokens (a loop render's), signed with the per-user key; a deliberate
+  long-lived capture token would be the same shape with a different audience and lifetime.

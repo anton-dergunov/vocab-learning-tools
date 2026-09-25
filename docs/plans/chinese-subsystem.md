@@ -22,6 +22,6 @@ in Chinese; it lives *inside* the character rather than across languages.
 
 To do, when Chinese is being learned in earnest: the composition relation, component modelling,
 measure words, a corpus for Chinese in the retrieval service, photo capture's tap-on-a-character
-([`../features/photo-capture.md`](../features/photo-capture.md), "Chinese and Japanese"), and the
+([`photo-capture.md`](photo-capture.md), "Chinese and Japanese"), and the
 Chinese views — a character network, a tone-pair grid, a syllable table
 ([`../research/similar-projects.md`](../research/similar-projects.md)).

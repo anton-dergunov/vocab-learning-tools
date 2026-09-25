@@ -58,7 +58,7 @@ downloaded before it can be heard.
 
 ## Two orders, four uses
 
-Two voice orders are chosen in Settings ▸ Models, named for their capability:
+Two voice orders are chosen in Settings ▸ Providers, named for their capability:
 
 - **`audioPlain`** — a clear, even voice. The default is Cloud TTS WaveNet, then Standard.
 - **`audioExpressive`** — a voice that takes a direction. The default is Gemini voices on Cloud TTS,
@@ -73,6 +73,11 @@ The split is not "plain versus expressive" for its own sake. **A headword's reco
 reference**: one per word, offline, correct, and read by one voice held stable per language, so a
 deviation is audible. **An example's recording is a reading**, where prosody carries meaning and a
 voice that takes a direction earns its cost.
+
+**Which voice reads each language is the owner's choice**, per model and language, in Settings ▸
+Pronunciation (`pronunciation_settings.voices`), held to what the catalogue declares: each choice is checked against the
+catalogue, and a voice a model does not offer for the language is dropped rather than sent. That is what holds a
+headword to one stable voice per language, and the voice is recorded on every clip.
 
 Both orders draw from the catalogue's one `audio` kind, because any voice can read either. Audio
 capabilities are declared **per model** (`capabilities.audio.models`: style, languages, locales,

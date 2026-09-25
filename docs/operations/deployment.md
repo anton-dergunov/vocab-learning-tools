@@ -372,7 +372,7 @@ from the terminal and never placed on a command line:
 
 Which providers the server can call is deployment configuration, kept in `llm.env` separately from the
 server and Anki credentials; which of them answer, and in what order, is the owner's choice in
-Settings ▸ Models ([`../architecture/models.md`](../architecture/models.md)).
+Settings ▸ Providers ([`../architecture/models.md`](../architecture/models.md)).
 
 ```bash
 # The deployment's default order, as ids from models/catalogue.json. Empty means every provider this

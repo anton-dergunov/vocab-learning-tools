@@ -194,7 +194,7 @@ Each needs nothing but the reply and the request:
 
 | home | reach | constraint |
 | --- | --- | --- |
-| `domain/validation.py`, called at `repository/graph.py:229` | **every** writer — typed YAML, capture, the headless job, imports, Anki | pure by design, runs inside the SQLite transaction, so no network, no dictionary, no model call — and it is mirrored in `web/src/domain.ts`, so every new refusal is two implementations |
+| `domain/validation.py`, called from `repository/graph.py` | **every** writer — typed YAML, capture, the headless job, imports, Anki | pure by design, runs inside the SQLite transaction, so no network, no dictionary, no model call — and it is mirrored in `web/src/domain.ts`, so every new refusal is two implementations |
 | `services/articles.py:save_article` | articles only | has the vocabulary's configuration, as the `unknown_topic` refusal already uses — but `POST /graph` bypasses it, so an import skips it |
 | a chain callback | one field, one call | demotes the model (above); the only home that improves the answer rather than refusing it |
 | a job step | anything | may do I/O, so it is the only home for §3 — but it runs after the record is stored |
@@ -502,7 +502,6 @@ Wide on purpose. Nothing here is scheduled.
 | 8 | Does decontextualised verification beat in-context review? | CoVe-style independent questions versus "is this right?" | ~$2 | Tests the mechanism, not just the outcome. |
 | 9 | What does the grounding we shipped do? | §6, three arms, sense-count negative check | ~$3 | Evaluates a shipped, disliked, unmeasured feature. |
 | 10 | Is a judge measuring correctness or fluency? | Judge scores versus ground-truth field accuracy on the same articles | ~$2 | Tests [2410.21819](https://arxiv.org/abs/2410.21819)'s perplexity explanation where truth is known. |
-| 11 | ~~Where should the `emotion: null` boundary sit?~~ | [`primary-gloss-emotion-tuning`](../../experiments/primary-gloss-emotion-tuning/README.md), gemini-free, 44 words × 3 rounds | free | **Closed 21 Sep 2026.** See defect register §2. |
 | 12 | Does a per-field rubric agree with itself across raters? | The same articles scored twice, by a model and by hand | time | Establishes whether §0's rubric is usable before it is relied on. |
 
 ---
@@ -558,17 +557,7 @@ omitting** `ipa` for languages whose orthography determines it; validating again
 dictionary (§3); or the in-chain check that demotes the model (§2). The last two are the only ones
 that close it.
 
-### 2 · The `emotion: null` boundary was too conservative — closed, 21–22 Sep 2026
-
-Nulls clustered where the old wording's carve-outs pointed, and a too-short `primaryGloss` for
-multi-word headwords (`encender la computadora` → `turn`). Both were fixed by a rewording measured in
-[`primary-gloss-emotion-tuning`](../../experiments/primary-gloss-emotion-tuning/README.md) —
-88.6–100% `emotion` coverage on ordinary words with 0% false positives on null controls, holdout
-included — and confirmed on the real vocabulary on 22 September (fresh `emotion` coverage 82.5% →
-100% on a random 40). The numbers, the over-correction a first draft made, and why the stored field's
-36.8% is not the figure to trust are in that README.
-
-### 3 · A pinyin tone error, not reproducibly
+### 2 · A pinyin tone error, not reproducibly
 
 `麻烦` is `máfan` — second tone then neutral. `gemini-free` wrote `máfán` once in six calls, two second
 tones. Cloudflare and Vertex were correct every time, and so was gemini in its other five.

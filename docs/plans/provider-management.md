@@ -28,7 +28,7 @@ rather than a branch; this plan makes a row something the interface can create.
   style, languages and voices per model, image references), `params`, `timeouts`, `passes`, and the
   environment variables it needs (`keyEnv`, `requires`, `authEnv`, `accountEnv`). Every one of those
   facts was discovered by calling the provider and getting it wrong first.
-- **The owner already chooses the order.** Settings ▸ Models edits `model_selection`, per kind,
+- **The owner already chooses the order.** Settings ▸ Providers edits `model_selection`, per kind,
   among pairs whose provider has a credential; `GET /models` reports which credentials exist and a
   key's first and last four characters, and nothing more.
 - **Keys arrive by deploy.** `--configure-llm --llm-key NAME --llm-api-key-stdin` writes `llm.env`;

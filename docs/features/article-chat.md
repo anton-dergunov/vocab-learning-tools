@@ -277,13 +277,13 @@ are out of scope for chat.
 
 ### §5.2 · Two rules the data model imposes
 
-**Ids are minted by the device, never by the model.** `AGENTS.md`: *a document editing a stored entry
-may not carry ids its producer minted, and an unknown id there is refused.* So `addSense`,
-`addExample` and `addAttestation` carry **no id**. The applier leaves the id null and `saveArticle`
-mints it, exactly as it does for a hand-written block with no id. Where a new example must name a
-new attestation, `addAttestation` carries a **`ref`** — an arbitrary short label — and the matching
-`addExample` carries `fromAttestation: "<ref>"`. The applier resolves the ref locally and mints both
-ids together.
+**Ids are minted by the device, never by the model.** A document editing a stored entry may not carry ids
+its producer minted, and an unknown id there is refused
+([`../architecture/data-model.md`](../architecture/data-model.md)). So an `add` carries **no id**: the
+applier leaves it null and `saveArticle` mints it, exactly as for a hand-written block with no id. Where
+a new example must name a new attestation, the attestation's `add` carries a **`ref`** — an arbitrary
+short label — and the example's `add` carries `fromAttestation: "<ref>"`. The applier resolves the ref
+locally and mints both ids together, which is what the `minted` argument to `saveArticle` exists for.
 
 **Provenance is modelled, not flagged.** An example the model wrote gets `origin: "llm"` and the
 `modelId` of the model that wrote it. A sentence the *owner* supplied in the conversation is an
@@ -294,14 +294,14 @@ no field meaning "a person wrote this", and chat does not get one.
 ```jsonc
 // "I heard this on the radio: «Se disfrazó de médico para entrar.»"
 [
-  { "op": "addAttestation", "ref": "a1",
-    "attestation": { "text": "Se disfrazó de médico para entrar.",
-                     "translation": "He dressed up as a doctor to get in.",
-                     "sourceKind": "video", "sourceTitle": "Radio" } },
-  { "op": "addExample", "senseId": "kq2m7x1p4vd9r0s", "fromAttestation": "a1",
-    "example": { "text": "Se disfrazó de médico para entrar.",
-                 "translation": "He dressed up as a doctor to get in.",
-                 "matchedForm": "disfrazó", "matchedTranslationForm": "dressed up" } }
+  { "op": "add", "target": "attestation", "ref": "a1",
+    "value": { "text": "Se disfrazó de médico para entrar.",
+               "translation": "He dressed up as a doctor to get in.",
+               "sourceKind": "video", "sourceTitle": "Radio" } },
+  { "op": "add", "target": "example", "in": "kq2m7x1p4vd9r0s", "fromAttestation": "a1",
+    "value": { "text": "Se disfrazó de médico para entrar.",
+               "translation": "He dressed up as a doctor to get in.",
+               "matchedForm": "disfrazó", "matchedTranslationForm": "dressed up" } }
 ]
 ```
 
@@ -793,7 +793,7 @@ export interface ChatResult {
   `llm_unreachable`, `llm_failed`, `llm_empty`, `llm_unusable`. Every message ends in *"so nothing
   was changed"*, matching the capture route's *"so nothing was created"*.
 - Model: chat is a text call and answers on the owner's **text** chain — `chain_for(settings, owner, "text")`, resolved per
-  request, so Settings ▸ Models takes effect on the next turn with nothing restarted. If chat later
+  request, so Settings ▸ Providers takes effect on the next turn with nothing restarted. If chat later
   proves to want a different model, the shape is another `kind` in the catalogue, justified by a
   measurement rather than assumed. There is no per-feature model variable.
 - Rate: no per-owner floor. The route is authenticated and owner-scoped, one model call per turn,

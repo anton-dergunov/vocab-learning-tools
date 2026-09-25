@@ -7,8 +7,7 @@ the words and then what each means. Tapping a word peeks at it, and the peek ope
 The package is `src/acervo/meaning/`, drawn by `GET /map/{language}`; the look and the interaction are
 the prototype's (`design/ui-prototype/README.md`, "The map"); the measurements are
 [`experiments/meaning-space/`](../../experiments/meaning-space/README.md). What the map might become
-— ghosts, other layers — is in [`../research/similar-projects.md`](../research/similar-projects.md),
-"The vocabulary is seen one way at a time".
+— ghosts, other layers — is [`../plans/vocabulary-views.md`](../plans/vocabulary-views.md).
 
 ---
 
@@ -162,7 +161,9 @@ cannot finish.
 **The surface.** It is entered from the rail and, on a phone, the foot bar, and it replaces the list.
 On the map the top bar carries the map's own row — Back, the name, the counts, Find, its own language
 switcher — drawn by `MapView` through a portal into the bar's slot, so it is the top bar and not a card
-over the map. ⌘ + scroll and ⌘= / ⌘− / ⌘0 zoom it. Each sense of an article has a button that opens the
+over the map. ⌘ + scroll and ⌘= / ⌘− / ⌘0 zoom it — taking over the browser's page zoom while the map
+is open, which works in the macOS host only because it binds no View ▸ Zoom item; adding one would
+silently take those keys from the map. Each sense of an article has a button that opens the
 map flown to that sense; *Open the article* from a peek lands on the peeked sense; Back returns either
 way. The look is an atlas: a paper ground, region names in spaced Literata italic, words in Plex Sans,
 faint density contours, and teal kept for the selection.
@@ -170,5 +171,6 @@ faint density contours, and teal kept for the selection.
 **Built so it can move out.** `web/src/meaningMap/` imports nothing of Acervo's (`boundary.test.ts`)
 and takes its own `MapData`; `selectors.ts`'s adapter joins the artifact to the replica. On the server
 `src/acervo/meaning/` stands alone like `images/`, with `services/meaning.py` as the binding layer and
-`admin map export` giving texts and vectors to the discovery experiment. Either half can move to the
+`admin map export` giving texts and vectors to the discovery experiment (`admin map show` prints a
+language's map as last drawn). Either half can move to the
 discovery repository and come back as a package.

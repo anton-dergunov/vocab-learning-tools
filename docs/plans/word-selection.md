@@ -19,6 +19,8 @@ selection mechanism.
 - **Send them to Anki first**, or mark them to study, once the Anki loop exists
   ([`anki-loop.md`](anki-loop.md)).
 - **Export just these** — a bundle of the pile, for handing a set of words to someone.
+- **A collage.** One picture made from the selected words, the way a story is made from them: a new job
+  kind whose output is a media file and a record naming it.
 - **Suppress or delete them in bulk.** Useful, and the most dangerous; it wants the same live counts and
   typed confirmation "Delete all words" has, and undo.
 

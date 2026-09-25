@@ -63,7 +63,7 @@ connection, and an answer the caller declares unusable — and on nothing else.*
 
 ## Whose chain it is
 
-**Which pairs answer is the owner's choice**, per kind, in Settings ▸ Models. `services/models.py`
+**Which pairs answer is the owner's choice**, per kind, in Settings ▸ Providers. `services/models.py`
 resolves the owner's `model_selection` row, then the deployment's default — `ACERVO_TEXT_CHAIN` for
 text, the catalogue's `defaultChains` for the two voice orders — then catalogue order — re-read on
 every request, so a change takes effect on the next call with nothing restarted. The row is

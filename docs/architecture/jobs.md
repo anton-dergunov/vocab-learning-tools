@@ -39,7 +39,9 @@ chain's fall-through still happens inside the request.
 sense to one, queues an `enrich` job inside `repository.graph`, in the same transaction as the
 record — so every writer is covered (`POST /articles`, `POST /graph`, a capture job's save, an
 approved chat edit) and a client never asks for enrichment. A job's own writes create no lexemes or
-senses, so they queue nothing. Editing a sense's text does not re-enrich: a picture that no longer
+senses, so they queue nothing. **Inbox words are enriched on arrival**, before anyone has reviewed
+them, so the owner opens a complete entry; the calls spent on a word later rejected are the accepted
+cost. Editing a sense's text does not re-enrich: a picture that no longer
 fits is the owner's call, through Redraw. A bundle import saves without enrichment, restores its
 pictures, and then queues `enrich`, which skips what the restore put back.
 
@@ -103,9 +105,7 @@ queued between the check and the stop comes back interrupted — an accepted rac
 and "the owner's revision moved". On the second the device pulls; on the first it updates its map of
 open jobs, rebuilt from `GET /jobs?open=true` after a reconnect. It is read with `fetch`, because
 `EventSource` cannot send a bearer header. It carries notifications and never records, so a replica
-still changes one way only, and without it the 60-second pull still converges. Whether a long-lived
-stream passes through the macOS host's web view and Tailscale Serve unbuffered has not been checked;
-the pull is the fallback either way.
+still changes one way only, and without it the 60-second pull still converges.
 
 **Headless capture is one job per submission**, because the caller cannot know how many words a text
 holds — resolving discovers that. The `capture` job resolves, stops at a duplicate or composes and
@@ -159,7 +159,7 @@ none of it.
 
 It stays on the table for two reasons. Orchestrating ML pipelines is a skill worth practising, and
 this project is a natural place to do it. And a second machine, or pipelines that outgrow one lane,
-would change the arithmetic. If it is adopted, the cautions written for it still hold:
+would change the arithmetic ([`../plans/jobs.md`](../plans/jobs.md)). If it is adopted, the cautions written for it still hold:
 
 - **It wraps the same functions.** Stages are ordinary Python in `services/`, already idempotent by
   derivation; Prefect would schedule them and never own their logic.
