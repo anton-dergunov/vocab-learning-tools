@@ -434,7 +434,18 @@ say so in the margin — Notion's approach, in Acervo's marks and Acervo's palet
 - **A changed field carries a word-level diff**, computed on the device: the words that went struck
   through in `--warn`, the words that arrived in `--core`. Without it `changed` said only that
   something moved, and a reworded note — matched by text — read as a deletion beside an addition
-  rather than as one change.
+  rather than as one change. No model is asked what it did: a model's account of its own edit is one
+  more thing that can be wrong. **Word level, not character level, and hand-written** (`wordDiff.ts`)
+  rather than a dependency, because the same `lcs` also finds the minimal set a reorder moved — the
+  complement of the longest increasing subsequence, so rotating three senses is one change — and
+  measures how alike two notes are. The tokeniser is `Intl.Segmenter`, because `\p{L}+` makes a Han
+  sentence one token and the diff would report "everything replaced" for exactly the languages a
+  learner needs it in most.
+- **Where a block has no spare gutter** — a note, whose 15px holds an em-dash — it borrows 14px from
+  the pane with an equal negative margin and pins the dash back, so the content edge does not move.
+  *Rejected:* replacing a marked note's em-dash with the mark; the note stops looking like a member
+  of its own list, and 3px of bar plus 7px of glyph does not fit in 15px anyway. The rule lives in
+  the stylesheet above the `.mark` block, because jsdom does no layout and no test can catch it.
 - **Only the field that changed is tinted** on a large block. A changed definition tints the
   definition and the sense keeps its rail bar; tinting the whole section would claim its untouched
   examples had changed. Small blocks — an example, an attestation, a note — tint whole.
@@ -446,6 +457,12 @@ say so in the margin — Notion's approach, in Acervo's marks and Acervo's palet
   scrolls to the first mark when one arrives, and `‹ 1/3 ›` steps through the rest in the order the
   article draws them. It never wraps: on a phone the sentence shortens rather than taking a second
   row of a screen that has none to spare.
+
+Deliberately left unmarked: **`matchedForm`**, because `realign()` may drop it as a side effect of
+setting `text`, so marking it would report a change nobody asked for; and a marked example's
+**`.ex.own` teal**, which gives way to the mark for the length of the review — the `origin` chip still
+says `attestation`, and one signal per gutter is the limit. There are no keyboard shortcuts for next
+and previous: they would fight the composer, which is where the hands already are.
 
 **The YAML tab shows the proposed document and does not mark it.** The reason is that the YAML tab
 is the escape hatch, not the review surface: someone who opens it wants to edit the text, and
@@ -571,6 +588,14 @@ one-line strip of article above the sheet — it now takes the pane and the arti
 all, at every width, because that strip was a desktop defect too. The focus chip sits on its own row
 above the composer rather than inside it, at every width: inline, it left an Android field about
 180px wide.
+
+`full` uses `.main.composing`, which already existed for the YAML editor and the Add view — *a surface
+that owns the height and scrolls itself must not sit inside a region that also scrolls.* `overflow:
+hidden` clamps `scrollTop` to zero, so the article's offset is parked on the way in and restored on
+the way out. *Rejected:* `position: fixed` with insets, because `.viewport` sets `container-type:
+inline-size` and so becomes the containing block for fixed descendants, and the insets would have to
+clear a top bar on one layout and a top bar plus a rail of changing height on the other. The Add view
+has no `full` detent: that surface is itself a review, and its composer already owns the height.
 
 ```
 ┌───────────────────────────┐   ┌───────────────────────────┐
@@ -832,8 +857,10 @@ Chat is a **consumer of the core**, exactly as `§06` and `§01` place it. Concr
 ## §11 · Build order
 
 All five stages are built, and a second round on the review surface followed real use on macOS, iOS
-and Android — [`plans/llm-editing-review.md`](plans/llm-editing-review.md) records what it exposed
-and the ten decisions it took.
+and Android. Its decisions are folded into the sections above and marked **REVISED in round two**:
+no mark moves body text, a word-level diff, only the changed field tinted, `moved` as its own mark,
+one uniform operation vocabulary, the focus chip on its own row, a review bar that never wraps, and
+the largest detent at every width.
 
 Two things only a live run against a real model could have told us in the first round, both now
 closed:
@@ -844,9 +871,26 @@ closed:
   `services/chat.py` lifts it from either place, and the prompt says which one is right and why it
   matters.
 - **A question was answered with a proposal.** "What is the difference between X and Y?" came back
-  with an edit to the notes — over-eager, and exactly what `§5.3` exists to prevent. The prompt now
-  says in as many words that a question gets prose and a `followUp`, and that proposing needs an
-  actual request. `tests/integration/test_chat_live.py` pins it.
+  with an edit to the notes — over-eager, and what `§5.3` exists to prevent. The prompt says in as
+  many words that a question gets prose and a `followUp`, and that proposing needs a request.
+
+**The second round revised that contract.** Three prompt revisions later, a comparison question
+still reliably came back with an offer to add the contrast to the notes. The honest conclusion was
+that "never volunteer" is the wrong thing to assert: a proposal is **offered**, not applied — nothing
+is written without a press on *Review* and a second on *Save* — so an unasked-for proposal is a
+pre-computed follow-up. The contract held is **never rewrite what is already there unasked**:
+`test_it_answers_a_question_without_rewriting_anything` allows at most two operations, no invented
+ids, and only additions to the notes that keep every line already there. The prompt still asks for
+the stricter behaviour, because the guidance is right where the model is unreliable, and a
+coin-flip assertion is worse than an honest one.
+
+Strengthening that guidance first over-corrected: *"I heard this on the radio: «…»"* stopped being
+proposed. The prompt now carries an explicit two-column gate — the turn on the left, `proposal` or
+none on the right — with volunteered sentences marked **yes**, *because they went to the trouble of
+typing it*. And acknowledgements are banned as follow-ups: *"Looks good"* spent the one one-tap slot a
+phone has on nothing. The prompt forbids them and `_shaped` drops one whose whole string, casefolded
+and stripped of punctuation, is in a fixed set — whole-string only, so *"Thanks, now add an example"*
+survives.
 
 Each stage was useful on its own and shipped on its own.
 
@@ -912,5 +956,11 @@ Manual, on the devices this is for:
 - **Approving what chat adds.** A generated example lands `approved: false`, as it should. Whether
   reviewing a proposal should also approve what it adds, or whether that stays a separate gesture,
   is a question about the approval flow rather than about chat.
-- **`docs/design.md` §06** should lose its "out of scope for this iteration" close and gain a
-  pointer here, plus the two revisions marked above.
+- **Whether the review count should count fields or records.** A sense whose definition *and*
+  glosses moved is one change today — right for accepting, arguable for stepping, since `‹ ›` then
+  cannot reach the second field. Nobody has wanted it yet.
+- **The note-pairing constants**, a similarity of 0.5 and a three-token floor, are argued in
+  `articleEdit.ts` and tuned only against the fixtures, never against real edits.
+- **The prototype paints the review state by position.** `reviewMark` marks the first example and the
+  second sense because it is a picture of the design, not a diff; if the marks grow much more
+  structure, that picture will start to lie.

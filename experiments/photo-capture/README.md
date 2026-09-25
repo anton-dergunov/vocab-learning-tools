@@ -1,6 +1,6 @@
 # Experiment · photo capture: OCR, sentences and tap → meaning
 
-Spike for [`docs/plans/photo-capture.md`](../../docs/plans/photo-capture.md): photograph a page,
+Spike for [`docs/photo-capture.md`](../../docs/photo-capture.md): photograph a page,
 tap a word, see its sentence and its meaning in context. The plan keeps the decisions; this document
 holds the question, the method and every number. The photos and the hand-written truth are in
 [`tests/fixtures/photo-capture/`](../../tests/fixtures/photo-capture/README.md).

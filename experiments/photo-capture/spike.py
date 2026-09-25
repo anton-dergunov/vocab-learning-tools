@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The photo-capture spike. See README.md; results go to docs/plans/photo-capture.md.
+"""The photo-capture spike. See README.md; its decisions are in docs/photo-capture.md.
 
     .venv/bin/python spike.py ocr [--engine rapidocr|vision|all] [--only camera-01.jpg]
     .venv/bin/python spike.py report

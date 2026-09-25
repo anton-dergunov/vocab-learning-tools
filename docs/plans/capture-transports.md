@@ -5,7 +5,7 @@ every realistic way a word or a sentence can reach Acervo on each device, says w
 what it buys, records the options that do not work and why, and ends in a recommendation and a set of
 experiments that can be run today without writing any code.
 
-It is scoped to **text**. Photo capture is designed in [`photo-capture.md`](photo-capture.md) and is
+It is scoped to **text**. Photo capture is designed in [`photo-capture.md`](../photo-capture.md) and is
 not re-litigated here; this document touches it only where a transport happens to *deliver* an image,
 which is that plan's step 5.
 
@@ -193,7 +193,7 @@ and needs no credential, no native code and no store account.
 **The gesture.** Take a screenshot → Share → Acervo → the image opens in the photo-capture surface and
 you tap the word.
 
-This is [`photo-capture.md`](photo-capture.md) step 5 and belongs to that plan, not this one. Noted
+This is [`photo-capture.md`](../photo-capture.md) step 5 and belongs to that plan, not this one. Noted
 here only so the map is complete, and for one fact worth knowing in advance: a **file** share must be
 `method: "POST"` with `enctype: "multipart/form-data"`, which means the service worker has to
 intercept the POST, stash the file, and redirect the app to a URL that picks it up. That is real work,

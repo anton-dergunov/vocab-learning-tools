@@ -60,7 +60,7 @@ waits for a scrap of text to be brought to it.
 **Planned, in two directions.**
 
 - **More ways in.** Capture from a photo — tap a word in a picture of a page and it is added — is
-  specified in [`plans/photo-capture.md`](plans/photo-capture.md). Capture from speech may follow,
+  built ([`photo-capture.md`](photo-capture.md)). Capture from speech may follow,
   as a secondary goal.
 - **Immersion inside Acervo itself.** Generated stories and examples already contain words the
   learner does not know. Tapping one should show a short translation and, if the word looks worth

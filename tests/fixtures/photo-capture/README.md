@@ -1,7 +1,7 @@
 # Photo capture fixtures
 
 Real pictures for the photo-capture spike in
-[`docs/plans/photo-capture.md`](../../../docs/plans/photo-capture.md): what OCR is scored against,
+[`docs/photo-capture.md`](../../../docs/photo-capture.md): what OCR is scored against,
 what resolution and cropping are measured on, and where tap points are placed.
 
 **The camera photos are imperfect on purpose.** They come from an ordinary Android phone, whose

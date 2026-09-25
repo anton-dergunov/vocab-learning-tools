@@ -1253,7 +1253,7 @@ let addDraft = null;
    is dead *with a reason* rather than live and failing when it is finally pressed. */
 let captureBlocked = null;
 
-/* Photo capture (docs/plans/photo-capture.md), drawn on the one photo the prototype has. Never where
+/* Photo capture (docs/photo-capture.md), drawn on the one photo the prototype has. Never where
    Add opens: the camera turns on only when asked, and here nothing turns on at all — "Take a photo"
    and "Choose an image" both land on the fixture, already read. `?add=photo&photo=read` opens there. */
 let photoStage = "idle";
