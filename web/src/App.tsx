@@ -175,11 +175,12 @@ export default function App() {
   const [problems, setProblems] = useState<YamlProblem[]>([]);
   const [saving, setSaving] = useState(false);
 
-  /* The conversation, in memory and keyed by what is being discussed. `docs/features/article-chat.md` §3.3:
-     the core's test for whether something belongs in it is whether losing it would hurt, and losing a
-     transcript costs nothing — the *article* is where the value landed. So no collection, no sync
-     state, nothing to tombstone, and it is gone on reload on purpose. A ref holds it across the
-     dock unmounting; the state beside it is only what makes the dock re-render. */
+  /* The conversation, in memory and keyed by what is being discussed.
+     `docs/features/article-chat.md` §3.3: the core's test for whether something belongs in it is
+     whether losing it would hurt, and losing a transcript costs nothing — the *article* is where
+     the value landed. So no collection, no sync state, nothing to tombstone, and it is gone on
+     reload on purpose. A ref holds it across the dock unmounting; the state beside it is only what
+     makes the dock re-render. */
   const threads = useRef(new Map<string, ChatTurn[]>());
   const [thread, setThread] = useState<ChatTurn[]>([]);
   const [askFocus, setAskFocus] = useState<AskTarget | null>(null);
@@ -1665,9 +1666,10 @@ export default function App() {
           />}
           {/* The Made bar is drawn over the list and nowhere else: the article column already
               carries the view segments, the delete control, the progress strip and the ask dock,
-              and `docs/features/loops.md` §2.13 forbids a second one there. Narrow windows only — a wide one
-              has the chip in the top bar instead, and `styles.css` is what picks. With a selection
-              it gives the selection bar its place and draws only a loop that is playing. */}
+              and `docs/features/loops.md` §2.13 forbids a second one there. Narrow windows only — a
+              wide one has the chip in the top bar instead, and `styles.css` is what picks. With a
+              selection it gives the selection bar its place and draws only a loop that is playing.
+              */}
           {!article && !external && !addTab && !loops && !stories && !map && <MadeBar
             graph={snapshot} language={language} chip={false} playerOnly={showSelection}
             onLoops={openLoops} onStories={openStories} onMap={openMap}

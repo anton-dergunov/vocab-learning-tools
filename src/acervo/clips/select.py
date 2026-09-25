@@ -1,10 +1,10 @@
 """The one model call: which recorded utterance, if any, is a good example of which sense.
 
 One call per *lexeme*, covering all of its senses against one bounded candidate set. The model is
-the last and best quality gate, not the retrieval mechanism (`docs/features/spoken-clips.md` §2.7): the
-corpus does IR over millions of segments because it must, and Acervo spends one frontier call per
-word on the judgement a feature cannot make — reading a messy fragment and deciding whether it is
-really an instance of *this* sense.
+the last and best quality gate, not the retrieval mechanism (`docs/features/spoken-clips.md` §2.7):
+the corpus does IR over millions of segments because it must, and Acervo spends one frontier call
+per word on the judgement a feature cannot make — reading a messy fragment and deciding whether it
+is really an instance of *this* sense.
 
 Three things follow, and all three are the point.
 

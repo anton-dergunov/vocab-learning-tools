@@ -1,7 +1,7 @@
 /* ── applying a proposal, and showing what it did ────────────────────────
-   `docs/features/article-chat.md`. A turn of conversation returns prose and, when it implies a change, a small set of
-   operations addressed by record id. This module applies them to a draft and compares the two
-   drafts; nothing else in the interface knows the operation language exists.
+   `docs/features/article-chat.md`. A turn of conversation returns prose and, when it implies a
+   change, a small set of operations addressed by record id. This module applies them to a draft and
+   compares the two drafts; nothing else in the interface knows the operation language exists.
 
    Pure, like `selectors.ts` and `yaml.ts` beside it: no storage, no network, no DOM, no clock. The
    one thing it cannot compute — a new record id — is handed in, so the module stays testable and

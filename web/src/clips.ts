@@ -7,7 +7,8 @@
  *
  * The corpus is reached through Acervo's own allow-listed proxy, never directly: that is what keeps
  * the retrieval service on the internal network with no second hostname, no second CORS
- * configuration, and its operator token nowhere near a browser (`docs/features/spoken-clips.md` §2.9).
+ * configuration, and its operator token nowhere near a browser (`docs/features/spoken-clips.md`
+ * §2.9).
  *
  * **The packaged client is used unchanged.** `createSpeechRetrievalClient` is given Acervo's proxy
  * as its base URL and a `fetch` that carries the session token, so the client the retrieval

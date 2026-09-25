@@ -6,8 +6,7 @@ server job and a laptop run share it; `services/images.py` binds it to Acervo; t
 for a word that was just saved and the `image.redraw` and `image.rebrief` jobs for a picture somebody
 asked for ([`../architecture/jobs.md`](../architecture/jobs.md)); `api/routes/images.py` keeps what a
 person does directly — the settings, the readout, attaching their own picture, ruling a sense out. The
-prompt iteration that settled the brief is [`experiments/sense-images/`](../../experiments/sense-images/README.md),
-and what is still to do is [`../plans/sense-images.md`](../plans/sense-images.md).
+prompt iteration that settled the brief is [`experiments/sense-images/`](../../experiments/sense-images/README.md).
 
 Four rules come before everything below:
 

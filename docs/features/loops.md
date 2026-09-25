@@ -19,7 +19,7 @@ voice. It is the **second** companion service, after the spoken-usage corpus
 
 ## §1 · What the other repository gives
 
-Its own `README.md`, `docs/design.md`, `docs/music-generation.md` and `docs/service.md` are the
+LexiBeat's own `README.md`, `design.md`, `music-generation.md` and `service.md` are the
 detail; in short:
 
 - **A procedural music engine, not a model.** Four stems — `pad`, `bass`, `drums`, `lead` —

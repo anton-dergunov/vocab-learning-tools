@@ -2,8 +2,9 @@
  * The Obsidian projection: a generated, read-only mirror of the vocabulary as markdown.
  *
  * A second projection alongside `yaml.ts`, and the same rule applies — this is the only place
- * markdown is written. It is export-only by design (`docs/features/export.md`): reconciling free-form markdown against a
- * structured store is the coupling this application exists to escape, so nothing reads it back.
+ * markdown is written. It is export-only by design (`docs/features/export.md`): reconciling
+ * free-form markdown against a structured store is the coupling this application exists to escape,
+ * so nothing reads it back.
  *
  * The shape is the convention the vault already uses, because a generated file that does not look
  * like the hand-written ones beside it is a file nobody reads:

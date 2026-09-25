@@ -1844,10 +1844,11 @@ body.tablet .viewport { width: 834px; height: 1000px; }
 
 
 /* ══════════════════════════ the ask dock ══════════════════════════
-   `docs/features/article-chat.md` §7. One surface at every width: a bar pinned to the bottom of the article pane which
-   grows upward into a sheet. It lives *inside* `.pane`, so the 780 px article measure and the
-   centring are inherited rather than measured, and `.main` — the scroll container — is what the
-   sticky bottom resolves against. `.pane`'s existing 120 px bottom padding is the room it needs.
+   `docs/features/article-chat.md` §7. One surface at every width: a bar pinned to the bottom of the
+   article pane which grows upward into a sheet. It lives *inside* `.pane`, so the 780 px article
+   measure and the centring are inherited rather than measured, and `.main` — the scroll container —
+   is what the sticky bottom resolves against. `.pane`'s existing 120 px bottom padding is the room
+   it needs.
 
    `--kb` is the height of whatever covers the bottom of the window, written by `visualViewport.ts`.
    It is 0 everywhere the layout viewport already shrinks for the keyboard, and the keyboard's

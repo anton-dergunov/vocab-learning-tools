@@ -56,8 +56,8 @@ export interface CaptureSeed {
 }
 
 /**
- * Capture (`docs/features/capture.md`), the rendered proposal, and the YAML escape hatch — one view, because they are three
- * views of one thing.
+ * Capture (`docs/features/capture.md`), the rendered proposal, and the YAML escape hatch — one
+ * view, because they are three views of one thing.
  *
  * A view rather than a dialog: composing an entry is work, not an interruption, and it wants the
  * whole content area — which is also the only shape that survives a phone, where a centred overlay

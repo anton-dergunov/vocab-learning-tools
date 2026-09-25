@@ -378,8 +378,9 @@ export function yamlForDraft(draft: ArticleDraft, study: StudyState | null = nul
       ? "Every record keeps its id. Delete a block to remove it; omit an id to add something new."
       : "No ids here: everything in this document is created when you save.");
 
-  // Study state flows in from the scheduler and is never edited here (`docs/features/anki.md`), so it is written as
-  // comments: visible where you would look for it, and impossible to save back by accident.
+  // Study state flows in from the scheduler and is never edited here (`docs/features/anki.md`), so
+  // it is written as comments: visible where you would look for it, and impossible to save back by
+  // accident.
   const notes = study
     ? [
       "",

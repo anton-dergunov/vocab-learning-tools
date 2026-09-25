@@ -1,7 +1,9 @@
 """`POST /articles`: a parsed document in, one atomic write out.
 
-Ported from the device's `saveArticle` suite when the diff moved to the server (`docs/architecture/jobs.md`). A document is the `ArticleDraft` `web/src/yaml.ts` parses into; the tests build one from
-the stored records the way that parser would, then edit it the way a person editing YAML would.
+Ported from the device's `saveArticle` suite when the diff moved to the server
+(`docs/architecture/jobs.md`). A document is the `ArticleDraft` `web/src/yaml.ts` parses into; the
+tests build one from the stored records the way that parser would, then edit it the way a person
+editing YAML would.
 """
 
 from __future__ import annotations

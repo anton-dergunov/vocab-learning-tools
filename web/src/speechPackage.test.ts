@@ -2,9 +2,9 @@
  * The pinned retrieval package is installable, typed, and the version Acervo says it is.
  *
  * This exists so a version bump that breaks the contract fails here, beside the pin, rather than
- * in the clip dialog that imports the player (`docs/features/spoken-clips.md` §2.1). It is deliberately a
- * *type* and *identity* check rather than a render: the component's own behaviour is that
- * repository's to test.
+ * in the clip dialog that imports the player (`docs/features/spoken-clips.md` §2.1). It is
+ * deliberately a *type* and *identity* check rather than a render: the component's own behaviour is
+ * that repository's to test.
  */
 
 import { describe, expect, it } from "vitest";

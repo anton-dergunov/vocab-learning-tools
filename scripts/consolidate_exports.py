@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fold eleven old exports, and two laptop image runs, into one importable bundle.
 
-**A throwaway, deliberately outside the pipeline**, in the spirit of `rekey_image_runs.py`. It
+**A throwaway, deliberately outside the pipeline.** It
 exists because of one accident of history: `~/__acervo_data` holds eleven exports taken while the
 data model was still moving, across schema versions 5 to 10. They overlap heavily, the old ones lack
 fields the current schema carries, and the ~2,286 sense pictures drawn in early September live

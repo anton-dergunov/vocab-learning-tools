@@ -1,10 +1,11 @@
 """One turn of conversation about one word.
 
 The device assembles what is discussed and sends it; this layer holds the credentials, owns the
-prompt, and writes nothing. That split is deliberate (`docs/features/article-chat.md` §4): `web/src/yaml.ts` is
-the only place the article projection is understood, so a server-side serialiser would be a second
-implementation of it, drifting from the first the moment a field is added. The document that arrives
-came from that owner's own replica and goes nowhere but into their own prompt.
+prompt, and writes nothing. That split is deliberate (`docs/features/article-chat.md` §4):
+`web/src/yaml.ts` is the only place the article projection is understood, so a server-side
+serialiser would be a second implementation of it, drifting from the first the moment a field is
+added. The document that arrives came from that owner's own replica and goes nowhere but into their
+own prompt.
 
 Two subject kinds, two prompts, and they differ in exactly two places: which file is read, and which
 of `proposal` / `capture` survives. An article subject may be proposed against; a dictionary entry

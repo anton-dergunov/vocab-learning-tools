@@ -3,8 +3,8 @@ import { isOpen } from "./jobs";
 
 /**
  * One quiet line under an article's header, saying what the server is still doing to this word
- * (`docs/architecture/jobs.md`, "What the interface shows"). It shows work and never does it: the only
- * thing it can ask for is a new job, through Try again.
+ * (`docs/architecture/jobs.md`, "What the interface shows"). It shows work and never does it: the
+ * only thing it can ask for is a new job, through Try again.
  *
  * It collapses when the job finishes. A failed step leaves one line until the owner dismisses it
  * or leaves the word.

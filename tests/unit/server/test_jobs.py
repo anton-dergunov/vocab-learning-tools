@@ -1,7 +1,8 @@
 """The job record and the runner, with a test kind standing in for real work.
 
-What is pinned here is the machinery every kind inherits (`docs/architecture/jobs.md`): queue, run, rest, cancel, interrupted-on-restart, one open `enrich` per word, and
-nothing kept past its retention except a failure nobody has dismissed.
+What is pinned here is the machinery every kind inherits (`docs/architecture/jobs.md`): queue, run,
+rest, cancel, interrupted-on-restart, one open `enrich` per word, and nothing kept past its
+retention except a failure nobody has dismissed.
 """
 
 from __future__ import annotations

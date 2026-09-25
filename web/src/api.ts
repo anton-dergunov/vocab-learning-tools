@@ -242,8 +242,9 @@ const PHOTO_TIMEOUT = 45_000;
 const QUICK_TIMEOUT = 20_000;
 
 /* ── capture ────────────────────────────────────────────────────────────
-   The capture route (`docs/features/capture.md`). What comes back is a *proposal*: a draft the interface renders
-   for review and then saves through the repository like any other article. Nothing here writes. */
+   The capture route (`docs/features/capture.md`). What comes back is a *proposal*: a draft the
+   interface renders for review and then saves through the repository like any other article.
+   Nothing here writes. */
 
 export interface CaptureSentence {
   text: string;
@@ -410,10 +411,11 @@ export interface QuickLookUp {
 }
 
 /* ── chat ───────────────────────────────────────────────────────────────
-   `docs/features/article-chat.md`: chat lives inside the article, and its output is a proposed revision of that record.
-   The route writes nothing. A turn returns prose and, only when the turn implies a change, a set of
-   small edit operations — applied to a draft on this device by `articleEdit.ts`, reviewed as an
-   ordinary article, and saved through `repository.saveArticle` like every other write.
+   `docs/features/article-chat.md`: chat lives inside the article, and its output is a proposed
+   revision of that record. The route writes nothing. A turn returns prose and, only when the turn
+   implies a change, a set of small edit operations — applied to a draft on this device by
+   `articleEdit.ts`, reviewed as an ordinary article, and saved through `repository.saveArticle`
+   like every other write.
 
    The document is assembled here rather than on the server on purpose: `yaml.ts` is the only place
    the projection is understood, so a server-side serialiser would be a second implementation of it,
@@ -634,9 +636,9 @@ export interface ScheduleSettings {
    What the generator can be asked for, as `GET /loops/schema` reports it. Its catalogues are its
    own and are never copied here: a family or a second pattern added in a later version of it
    appears in the dialog with nothing changing on this side. */
-/* The meaning map of one language, as the server draws it (docs/features/meaning-map.md). Positions,
-   ids and region labels — never vectors and never a sense's text, which the device joins from its
-   own replica. */
+/* The meaning map of one language, as the server draws it (docs/features/meaning-map.md).
+   Positions, ids and region labels — never vectors and never a sense's text, which the device joins
+   from its own replica. */
 export interface ServerMapPoint {
   sense: string;
   lexeme: string;

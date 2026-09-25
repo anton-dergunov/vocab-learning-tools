@@ -80,9 +80,10 @@ class Store:
     def is_refused(self, prompt_id: str) -> bool:
         """A refusal is a finished outcome, not a gap.
 
-        A sense the writer declines (`docs/features/sense-images.md` §04) gets no picture and is not retried. Without this
-        every later run spends a text call rediscovering the same refusal — `joder` was re-planned
-        on every Spanish pass. Delete the file under `refusals/` to ask again.
+        A sense the writer declines (`docs/features/sense-images.md` §04) gets no picture and is not
+        retried. Without this every later run spends a text call rediscovering the same refusal —
+        `joder` was re-planned on every Spanish pass. Delete the file under `refusals/` to ask
+        again.
         """
         return self.refusal_path(prompt_id).exists()
 

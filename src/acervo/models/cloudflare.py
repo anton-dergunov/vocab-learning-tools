@@ -4,8 +4,8 @@ LiteLLM covers Cloudflare *text* and neither of the other two, and this is the w
 logic is lifted from `experiments/image_benchmark/image_benchmark_runner.py`'s `run_cloudflare`, which already works
 against the live service — including the awkward part: FLUX.2 Klein requires `multipart/form-data`
 even for a text-only prompt, and a JSON body comes back as a 400 naming a required property
-`multipart` (`docs/operations/cloudflare-workers-ai.md`). The `(None, value)` field tuples are what make an
-HTTP client send a multipart boundary without claiming the scalars are uploaded files.
+`multipart` (`docs/operations/cloudflare-workers-ai.md`). The `(None, value)` field tuples are what
+make an HTTP client send a multipart boundary without claiming the scalars are uploaded files.
 
 It is copied rather than imported: `experiments/` is outside the distribution, and
 `test_layering.py` enforces that nothing shipping reaches into it. It is on httpx rather than

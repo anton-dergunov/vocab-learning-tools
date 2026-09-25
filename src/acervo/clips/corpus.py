@@ -1,8 +1,8 @@
 """The narrow client against the spoken-usage corpus, and the only place its wire shape is read.
 
-The corpus is a **separate repository and a separate service** (`docs/features/spoken-clips.md` §2.2):
-Acervo does not hold it, does not import `speech_retrieval` and never opens its database. It talks
-to one pinned `/api/v1` contract over HTTP, and the version it talks to is
+The corpus is a **separate repository and a separate service** (`docs/features/spoken-clips.md`
+§2.2): Acervo does not hold it, does not import `speech_retrieval` and never opens its database. It
+talks to one pinned `/api/v1` contract over HTTP, and the version it talks to is
 `deploy/acervo/speech/pin.json`.
 
 Written by hand rather than taken from the wheel, deliberately. Installing that package to reach it
@@ -215,10 +215,10 @@ class Corpus:
         and must not be marked as though it had.
 
         `translation` is about the *player's* target text, not the article's — a different surface
-        with a different owner (`docs/features/spoken-clips.md` §2.13). It is carried because it is the
-        one thing about this service that can be switched off without anything saying so: the player
-        renders one grey sentence whether no provider is configured, the chain has no credential
-        here, or a model answered badly, and there was nowhere to read which.
+        with a different owner (`docs/features/spoken-clips.md` §2.13). It is carried because it is
+        the one thing about this service that can be switched off without anything saying so: the
+        player renders one grey sentence whether no provider is configured, the chain has no
+        credential here, or a model answered badly, and there was nowhere to read which.
         """
         payload = self._get("/status")
         if not isinstance(payload, dict):

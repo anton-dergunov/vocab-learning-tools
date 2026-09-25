@@ -753,9 +753,9 @@ function masthead(x) {
 }
 
 /* ── the ask dock ─────────────────────────────────────────────────────
-   `docs/features/article-chat.md` §7. Pinned to the bottom of the article pane and growing upward into a sheet; one
-   component and one set of states at every width, because a side pane would cut the 780 px article
-   column to about 400 px on the tablet this is mostly read on.
+   `docs/features/article-chat.md` §7. Pinned to the bottom of the article pane and growing upward
+   into a sheet; one component and one set of states at every width, because a side pane would cut
+   the 780 px article column to about 400 px on the tablet this is mostly read on.
 
    Painted here at whichever detent `state.ask` names, the way the editor pane is painted rather
    than run: the prototype has no bundler and nothing here talks to a server. The application's
@@ -1253,9 +1253,10 @@ let addDraft = null;
    is dead *with a reason* rather than live and failing when it is finally pressed. */
 let captureBlocked = null;
 
-/* Photo capture (docs/features/photo-capture.md), drawn on the one photo the prototype has. Never where
-   Add opens: the camera turns on only when asked, and here nothing turns on at all — "Take a photo"
-   and "Choose an image" both land on the fixture, already read. `?add=photo&photo=read` opens there. */
+/* Photo capture (docs/features/photo-capture.md), drawn on the one photo the prototype has. Never
+   where Add opens: the camera turns on only when asked, and here nothing turns on at all — "Take a
+   photo" and "Choose an image" both land on the fixture, already read. `?add=photo&photo=read`
+   opens there. */
 let photoStage = "idle";
 let photoKeep = true;
 let photoSource = "book";

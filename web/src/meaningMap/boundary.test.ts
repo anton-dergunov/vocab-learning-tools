@@ -1,8 +1,9 @@
 /* The meaning map imports nothing of Acervo's.
 
    That is what lets it move to the discovery repository and come back as a package, the way the
-   clip player did (docs/features/meaning-map.md). React is allowed, and its own files; anything else
-   — the replica, the repository, the styles, a helper that happens to be convenient — is not. */
+   clip player did (docs/features/meaning-map.md). React is allowed, and its own files; anything
+   else — the replica, the repository, the styles, a helper that happens to be convenient — is not.
+   */
 
 import { describe, expect, it } from "vitest";
 
