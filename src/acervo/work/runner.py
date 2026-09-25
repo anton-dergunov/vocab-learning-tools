@@ -1,4 +1,4 @@
-"""The runner: one thread, one job at a time, in the server process (§4.6).
+"""The runner: one thread, one job at a time, in the server process (`docs/server.md`, "Jobs").
 
 It is a thread rather than a task because everything it calls is synchronous — the same service
 functions a route hands to the thread pool — and the work is a socket waiting on a remote API, not
@@ -27,7 +27,7 @@ from acervo.work import journal, kinds, retry
 
 log = logging.getLogger("acervo.work")
 
-# Finished jobs are kept this long; a failure is kept until it is dismissed (§9, question 1).
+# Finished jobs are kept this long; a failure is kept until it is dismissed.
 RETENTION = timedelta(days=14)
 # How often the runner looks at the table when nothing woke it — which is how it finds a job queued
 # or cancelled by another process.

@@ -180,7 +180,7 @@ same sentence, so this holds by construction — and a candidate where it does n
 
 There are two writers here and they do not coordinate: the `enrich` job of the word you just saved,
 and a backfill walking words that predate it. (When this was written they were the interface and a
-worker sweep; [`processing-flow.md`](processing-flow.md) made both the server's, which does not
+worker sweep; the job runner ([`../server.md`](../server.md), "Jobs") made both the server's, which does not
 change the argument.) That is the same pair that draws pictures, and it is exactly why an `imagePrompt`'s id is a namespaced hash of its sense rather
 than a random 15 characters — the lesson written into the data rules after a client that minted a
 random one gave an imported sense two rows and *nothing failed*.
@@ -336,7 +336,7 @@ Settings; that is a limitation to fix in the retrieval repository rather than to
 
 Audio was already a second *kind* rather than a second engine, and clips are the third: one job per
 word, its steps in one order, showing in one place. (Written when that queue was
-`web/src/enrichment.ts`; [`processing-flow.md`](processing-flow.md) moved it into the server's
+`web/src/enrichment.ts`; the job runner ([`../server.md`](../server.md), "Jobs") moved it into the server's
 `enrich` job, which changes where it runs and not the shape.)
 
 One change is needed and it is worth writing down. **The rest timer becomes per kind.** A picture is
@@ -483,7 +483,7 @@ The version contract and nothing about words yet.
   the cache. Keeping the corpus fresh is the server's nightly `corpus.update` step, or Update now in
   Settings ▸ Clips: both ask that service to update itself over HTTP, so the analyzer recorded in the
   index always matches the one serving it. (It was `run-worker.sh index-clips` through `exec` until
-  [`processing-flow.md`](processing-flow.md) §4.12.)
+  [`../server.md`](../server.md), "Jobs".)
 - `vendor/speech/` ships in the release archive the way compiled dictionaries do, because
   `compose.yaml` builds from the extracted release root.
 - The web build installs the pinned tarball, imported through `lazy()`.
@@ -562,7 +562,7 @@ the activity panel.
 - The pane, shaped like Settings ▸ Dictionaries: does the service answer, what does its corpus hold,
   the channel list with enable/disable/add/remove through the proxy, and the switch that turns
   save-time searching off.
-- The backlog. *(Built as [`processing-flow.md`](processing-flow.md) Step 10 rather than as a sweep:
+- The backlog. *(Built as the server's `enrich` job ([`../server.md`](../server.md), "Jobs") rather than as a sweep:
   `admin jobs enqueue enrich --missing`, behind `run-worker.sh backfill`, queues the ordinary
   `enrich` job for every word with a null `clipsSearchedAt` — the same pipeline, bounded by
   `--limit`, and not a second one.)*

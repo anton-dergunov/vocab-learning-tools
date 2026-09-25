@@ -11,7 +11,7 @@ Status: **In the product.** Pictures are drawn on the server and shown in the ar
 `src/acervo/models/` so that a job and a laptop run can share it; `src/acervo/services/images.py`
 binds it to Acervo; `src/acervo/work/enrich.py` draws for a word that was just saved and
 `src/acervo/work/images.py` for a redraw or a new brief somebody asked for
-([`plans/processing-flow.md`](plans/processing-flow.md) revises §09 below). `api/routes/images.py`
+([`server.md`](server.md), "Jobs", revises §09 below). `api/routes/images.py`
 keeps what a person does directly: the settings, the readout, attaching your own picture, and ruling
 a sense out.
 
@@ -512,7 +512,7 @@ same reason it keeps its own text — an import must never cost you what you did
 ### It is a sweep, not a watcher
 
 **§09 REVISED — the work starts from the write, and there is no sweep.**
-[`plans/processing-flow.md`](plans/processing-flow.md) replaces the two engines below with one: a
+[`server.md`](server.md), "Jobs", replaces the two engines below with one: a
 save queues an `enrich` job in the same transaction as the word, and `src/acervo/work/` runs it in
 the server. The half of the rule that mattered is kept — each step still asks the graph what the word
 lacks, so a job run twice draws nothing — while the half that cost is gone: the interface carries no

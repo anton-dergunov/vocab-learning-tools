@@ -1,7 +1,7 @@
 """The job record and the runner, with a test kind standing in for real work.
 
-What is pinned here is the machinery every kind inherits (`docs/plans/processing-flow.md` §4.2,
-§4.5, §4.6): queue, run, rest, cancel, interrupted-on-restart, one open `enrich` per word, and
+What is pinned here is the machinery every kind inherits (`docs/server.md`,
+"Jobs"): queue, run, rest, cancel, interrupted-on-restart, one open `enrich` per word, and
 nothing kept past its retention except a failure nobody has dismissed.
 """
 

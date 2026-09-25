@@ -72,7 +72,7 @@ CAPTURE_FIELDS = (
 
 @router.post("/captures")
 async def submit(request: Request) -> JSONResponse:
-    """Capture without anyone reviewing it: one submission, one job (processing-flow §4.10).
+    """Capture without anyone reviewing it: one submission, one job (`docs/server.md`, "Jobs").
 
     The caller cannot know how many words a text holds — stream-mode resolve discovers that while it
     runs — so the submission is the unit and the words are its output. Each saved word lands in the

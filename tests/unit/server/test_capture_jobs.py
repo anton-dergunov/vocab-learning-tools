@@ -1,4 +1,6 @@
-"""Headless capture as a job: one submission in, Inbox entries and their enrichment out (§4.10).
+"""Headless capture as a job: one submission in, Inbox entries and their enrichment out.
+
+See `docs/server.md`, "Jobs".
 
 The end-to-end case runs the real pipeline over the stubbed provider. The walk itself — where each
 entry ends, what a duplicate or an unreadable block does, how a rest resumes — is driven with a

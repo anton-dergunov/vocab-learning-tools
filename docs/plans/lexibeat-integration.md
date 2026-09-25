@@ -387,7 +387,7 @@ operation id, and the job polls it, marking the step `waiting` and raising `Requ
 multi-minute blocking call inside the runner.
 
 The CPU work happens in the companion container, which is what keeps
-[`processing-flow.md`](processing-flow.md) §4.14's *"anything heavy is out of scope for the runner"*
+[`../server.md`](../server.md) "Jobs"'s *"anything heavy is out of scope for the runner"*
 true rather than merely restated. The runner holds a lane and a poll timer.
 
 A rate limit surfaces as one of the three transient codes and rests as usual; the take cache is why

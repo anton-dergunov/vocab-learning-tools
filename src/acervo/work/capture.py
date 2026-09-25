@@ -1,4 +1,6 @@
-"""`capture`: a submission of text turned into Inbox entries, with nobody reviewing (§4.10).
+"""`capture`: a submission of text turned into Inbox entries, with nobody reviewing.
+
+See `docs/server.md`, "Jobs".
 
 The submission is the unit, and the words are its output: stream-mode resolve discovers where each
 entry ends while it runs. For each one the job stops at a word the owner already holds, or composes

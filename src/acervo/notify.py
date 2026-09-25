@@ -1,6 +1,6 @@
 """Something changed: the one in-process signal between the writers and whoever is listening.
 
-Two messages, and neither carries a record (`docs/plans/processing-flow.md` §4.8):
+Two messages, and neither carries a record (`docs/server.md`, "Jobs"):
 
 - `revision`: this owner's counter moved, so a client should pull;
 - `job`: a job's state or steps changed, so a client can show it.

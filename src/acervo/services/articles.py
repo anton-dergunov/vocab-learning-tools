@@ -1,4 +1,4 @@
-"""Saving an article: a parsed document in, one atomic write out (`processing-flow.md` §4.9).
+"""Saving an article: a parsed document in, one atomic write out (`docs/server.md`, "Jobs").
 
 The one writer of articles. The device parses the YAML — `web/src/yaml.ts` stays the only place the
 projection is understood — and sends the resulting `ArticleDraft` as JSON; everything from there on

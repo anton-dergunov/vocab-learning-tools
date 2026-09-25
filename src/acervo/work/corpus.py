@@ -1,4 +1,4 @@
-"""`corpus.update`: ask the corpus to fetch and reindex, and follow it (processing-flow §4.12).
+"""`corpus.update`: ask the corpus to fetch and reindex, and follow it (`docs/server.md`, "Jobs").
 
 The work happens in the retrieval service. This job starts it — or joins the one already running —
 and checks on it every so often, putting itself back to wait in between rather than holding the

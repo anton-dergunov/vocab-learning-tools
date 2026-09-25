@@ -10,9 +10,6 @@ usage() {
   echo "       run-worker.sh [--root PATH] build-dictionary <compiler arguments...>" >&2
   echo "         e.g. build-dictionary --id cc-cedict" >&2
   echo "              build-dictionary --all --language es,en,zh" >&2
-  echo "       run-worker.sh [--root PATH] draw-pictures <sweep arguments...>" >&2
-  echo "         e.g. draw-pictures sweep --limit 50" >&2
-  echo "              draw-pictures plan --language es" >&2
   echo "       run-worker.sh [--root PATH] backfill <arguments...>" >&2
   echo "         e.g. backfill --owner-email learner@account.example.com --limit 50" >&2
   echo "              backfill --owner-email learner@account.example.com --language es --dry-run" >&2

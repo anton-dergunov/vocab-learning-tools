@@ -1,4 +1,4 @@
-"""`enrich`: what a saved word gets, whoever saved it (`docs/plans/processing-flow.md` §4.4).
+"""`enrich`: what a saved word gets, whoever saved it (`docs/server.md`, "Jobs").
 
 Three steps, in this order: clips, then pictures (a brief, then one draw per sense), then
 pronunciations. Clips first because one call covers every sense and it is the step that changes the

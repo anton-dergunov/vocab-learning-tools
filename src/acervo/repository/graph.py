@@ -290,7 +290,7 @@ class Enqueue:
 
     `merge_graph` enqueues `enrich` in the **same transaction** as the write, which is what lets a
     save start enrichment without a queue ever being the only record that work is needed
-    (`docs/plans/processing-flow.md` §4.3). A client never asks for enrichment; it saves.
+    (`docs/server.md`, "Jobs"). A client never asks for enrichment; it saves.
     """
 
     trigger: str = "save"

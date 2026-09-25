@@ -1096,111 +1096,76 @@ Consequences:
 ### Where the work runs
 
 > ### DECISION
-> **Everything runs on the NAS except image generation, which is dispatched to an opportunistic Mac
-> worker.**
->
-> The NAS handles LLM calls (plain HTTP), Kokoro TTS (82M parameters, fine on CPU), OCR, corpus
-> harvest and indexing, and the whole capture→article path. Diffusion is the only thing it cannot do.
+> **Everything runs in one server process on the NAS, against hosted providers.** A save queues its
+> enrichment in the same transaction as the word, and a runner inside the server does the work; the
+> interface shows it and never does it. The mechanism is `docs/server.md`, "Jobs".
 
-```
-                    Prefect control plane + Acervo API
-                          Synology NAS, always on
-                                    │
-                 ┌──────────────────┴──────────────────┐
-                 │                                     │
-      CPU / API / network work                  MPS image work
-      - capture → article                       - MFLUX / local models
-      - LLM calls, TTS, OCR                     - MacBook, when idle
-      - corpus harvest + index                  - worker runs only while
-      - Anki sync                                 you are away from it
-```
+This replaced a two-machine design. Rev. C put image generation on an idle-gated Mac worker under a
+Prefect control plane, with the NAS doing everything else, and made every flow a sweep — *derive the
+work from a query, never from a queue* — as a hedge against an orchestrator that might be down and a
+laptop that might be away for a week. Once the chosen providers were hosted, nothing needed the Mac,
+and the sweeps' cost showed: the browser carried a pipeline, a word added by a script waited on a
+timer nobody could see, and there were four retry layers that did not know about each other. The
+half of the sweep rule that mattered survives — each step still asks the graph what a word lacks.
 
-The Mac worker is not always on and is not supposed to be. A launchd agent starts it when
-`ioreg -c IOHIDSystem` reports idle beyond a threshold — plus on-AC-power and no thermal pressure —
-and stops it on input. Jobs it abandons are requeued by the orchestrator, which is safe because
-generation is content-hash keyed and therefore idempotent. Two priority bands are enough: the word
-captured ten minutes ago must jump ahead of a 900-entry backfill.
+**A second machine is still a possibility.** The always-on machine has no GPU and the machine with
+one is not always on; if a local model becomes worth running on the Mac, the sketch of how it would
+claim work is [`plans/nas-to-mac-job-queue.md`](plans/nas-to-mac-job-queue.md), and which models
+are worth it is the audit in [`plans/provider-management.md`](plans/provider-management.md).
 
 ### Provider chain
 
-Per job, from configuration, tried in order:
-
-```yaml
-image:
-  chain:
-    - provider: gemini          # burn the expiring Vertex credits on the bulk backfill
-      priority_bands: [backfill]
-    - provider: cloudflare      # free daily quota carries the steady state
-    - provider: mflux           # local M1 fallback, idle-gated
-    - provider: none            # ← a success, not a failure
-```
+Per kind of work — text, pictures, voices, OCR — the owner chooses an ordered chain of (provider,
+model) pairs in Settings, and a call walks it, falling through on a transient failure and never on a
+misconfiguration. The mechanism is `src/acervo/models/` and the tracked catalogue; today's rows lean
+on Google while a trial lasts, and nothing is designed as if that will continue.
 
 > **`none` IS A SUCCESSFUL OUTCOME.** A lexeme with no image is complete (§01). This is what makes
-> the whole dispatch safe to be lazy about: if images were required, the queue becomes a critical
-> path and your MacBook becomes a hard dependency of your vocabulary. The emoji already carries a
-> visual anchor at zero cost.
+> enrichment safe to be lazy about: if images were required, the queue would be a critical path and
+> a provider's outage a hole in the vocabulary. The emoji already carries a visual anchor at zero
+> cost.
 
 ### Prefect
 
-> ### DECISION
-> **Synchronous means making the entry exist and be correct. Everything that enriches it afterwards
-> is asynchronous, and Prefect owns all of it.**
->
-> **Synchronous, Prefect never involved:** capture → cleaned article → review / edit / approve; the
-> sync API; regenerate-with-a-note; corpus *lookups* when displaying a word.
->
-> **Asynchronous, all Prefect:** image-prompt generation, image generation, TTS, YouTube harvest and
-> subtitle indexing, Wiktextract ingest, story and comic generation, Anki push and FSRS pull,
-> Obsidian export, and the sweeps — dedup, re-topicking, mass regeneration when a better model lands.
->
-> **The line to hold:** capture → article → review must work with the orchestrator down, and the sync
-> API must not know Prefect exists. If Prefect is down you lose enrichment, not your vocabulary.
+**Considered, and not used — deliberately kept in view.** Earlier revisions made Prefect the owner of
+everything asynchronous. The runner in `src/acervo/work/` does that job instead, because at this
+scale an orchestrator costs more than it returns: a Prefect server and its database are a few
+hundred megabytes resident on a shared Synology, one more service for every deploy to start and
+check, and one more thing a new user would have to run. One owner, one process and one lane need
+none of it.
 
-Two things fall out of broadening it this far.
+It stays on the table for two reasons. Orchestrating ML pipelines is a skill worth practising, and
+this project is a natural place to do it. And a second machine, or pipelines that outgrow one lane,
+would change the arithmetic. If it is adopted, the cautions written for it still hold:
 
-**The Mac needs exactly one work pool.** Earlier revisions gave it two, the second for AnkiConnect —
-that is gone now that §10 runs Anki on the NAS.
+- **It wraps the same functions.** Stages are ordinary Python in `services/`, already idempotent by
+  derivation; Prefect would schedule them and never own their logic.
+- **The request path must not know it exists.** Capture, review and the sync API work with the
+  orchestrator down, as they work today with the runner stopped.
+- **Measure the footprint first**, on the NAS, beside everything else that runs there.
 
-| Pool | Gate | Runs |
-|---|---|---|
-| `mac-idle` | `HIDIdleTime` > threshold, on AC, no thermal pressure | MFLUX image generation, local models |
+### What the interface shows
 
-Only one, because §10 moves Anki onto the NAS entirely. The Mac does exactly one job, and only while
-you are away from it.
+The rule is that the interface **shows** work and never **does** it.
 
-> ### FLOWS ARE SWEEPS, NOT EVENT CONSUMERS
-> If Prefect owns everything asynchronous, its availability starts to matter. The fix is to derive
-> work from the data rather than from a queue: **"which lexemes lack an image" is a query against the
-> core**, not a queue entry.
->
-> Then a lost enqueue cannot lose work, Prefect being down for a week costs latency and nothing else,
-> and every flow is idempotent by construction rather than by discipline. Never let the queue be the
-> only record that work is needed.
-
-**§09 REVISED — enrichment is event-driven, from a durable job record, and runs in the server.**
-[`plans/processing-flow.md`](plans/processing-flow.md) retires the rule above. It was written for an
-architecture that no longer exists: Prefect as an *optional* orchestrator, and image generation on an
-idle-gated MacBook that could be away for a week. There is no orchestrator and no second machine; one
-Python process serves and works.
-
-What the rule protected against is gone: the job is written in the **same transaction** as the word
-that needs it, so either both exist or neither does. What it got right is kept — a job says *which
-word* and each step re-derives what that word still lacks, the derived ids make two writers converge,
-and "none" is a successful outcome. What it cost is gone too: the interface no longer carries a
-pipeline, a headless capture no longer waits for a sweep, and nothing runs on a schedule except one
-nightly corpus update.
-
-Two cautions carried forward from that document, both still right:
-
-- **Phase 1 discipline.** Ordinary Python stages first, Prefect as an optional wrapper over the same
-  functions. The risk was never Prefect; it is Prefect becoming load-bearing before the stages are
-  idempotent.
-- **Footprint.** A Prefect server plus SQLite is a few hundred megabytes resident, queueing behind
-  PocketBase, the corpus service and info-triage on the same Synology. Measure before committing —
-  and if the box gets tight, that is an argument for SQLite FTS5 over Meilisearch in §07.
-
-The existing provider-factory pattern survives intact. Future flows will derive work from canonical
-PocketBase records and write results back as canonical records.
+- **After Add or Save the word opens in page view**, whatever the device's default, because that is
+  where reserved slots keep the layout still.
+- **Cards are disabled while the word is enriching**, with the hint "Cards open when pictures and
+  clips are ready", and re-enable however the job ends. There is no held snapshot and nothing
+  re-flows under the reader.
+- **One quiet progress line** under the article header, driven by the word's open job. It collapses
+  when the job finishes; if a step failed it leaves one line — *2 of 3 pictures drawn · Try again* —
+  until dismissed.
+- **A clip has a reserved slot** while the search is pending, drawn as a quiet skeleton row. Found,
+  the clip takes its place; nothing found, it settles into *No recorded example* for as long as the
+  word stays open, so nothing jumps, and is absent next time, because for most words no clip is the
+  expected answer; failed, *Couldn't search recorded speech · Try again*.
+- **A picture keeps its reserved frame**; a failed draw shows its reason, Try again and
+  use-my-own-picture; a redraw shows over the old picture and survives leaving the word.
+- **Pronunciations get no slot.** They are a phase of the progress line, and press-to-record still
+  works when one fails.
+- **Settings ▸ Activity** lists open, queued and recently failed jobs with Cancel and Try again, and
+  the word list marks a word that is still filling in.
 
 ---
 

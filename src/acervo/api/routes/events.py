@@ -1,4 +1,4 @@
-"""`GET /events`: one authenticated stream that says *something changed* (§4.8).
+"""`GET /events`: one authenticated stream that says *something changed* (`docs/server.md`, "Jobs").
 
 Two message types, `job` and `revision`, and never a record: a replica still changes only through
 the cursor pull, so there is exactly one way it does. A client that loses the stream loses nothing

@@ -1,13 +1,14 @@
 # The NAS → MacBook job queue
 
-**Status:** A sketch, deliberately. Nothing waits on it, and it should not be built until something
-concretely needs it.
+**Status:** A sketch, deliberately, and kept on purpose. Nothing waits on it, and it should not be
+built until something concretely needs it — but local models are a real possibility
+([`provider-management.md`](provider-management.md)), and some of them only run well on the Mac.
 
-**The job record it asked for now exists**, built by
-[`processing-flow.md`](processing-flow.md): a `jobs` table beside `sync_state`, owner-scoped and
-never replicated, with a runner inside the server. So the question this plan declined to answer —
-*where does the record of outstanding work live* — has an answer, and it is not a queue a phone
-would carry. What is still only a sketch is the rest: a second machine doing the work.
+**The job record it asked for now exists**: a `jobs` table beside `sync_state`, owner-scoped and
+never replicated, with a runner inside the server ([`../server.md`](../server.md), "Jobs"). So the
+question this plan once declined to answer — *where does the record of outstanding work live* — has
+an answer, and it is not a queue a phone would carry. What is still only a sketch is the rest: a
+second machine doing the work.
 
 The provider roadmap this began as plan 07 of is finished — one catalogue, one
 `src/acervo/models/` package, one place in Settings where the owner chooses. The provider surface a
@@ -27,9 +28,8 @@ well, and is closed for most of the day.
 
 Nothing queues anything. Every generation path is a foreground command run by a person:
 
-- `scripts/generate_images.py run` — a laptop sweep, and specifically a laptop one, because
-  `images/preflight.py:37` shells out to `gcloud auth application-default print-access-token` and
-  there is no `gcloud` in the server image
+- `scripts/generate_images.py run` — a laptop run, because that is where the prompt work happened;
+  the server's own runner draws every newly saved word with hosted providers
 - `experiments/image_benchmark/benchmark_image_models.py` — a research harness, one subprocess per job
 - `acervo-worker` — a one-shot container, `profiles: ["tools"]`, no ports, started by
   `docker compose run --rm` to do one job and exit
@@ -37,8 +37,8 @@ Nothing queues anything. Every generation path is a foreground command run by a 
 The pieces a queue would need mostly exist already, which is part of why building it now would be
 premature — it would look easy and then not be:
 
-- **A store that is already a queue.** `images/run.py:41`'s `Store` is filesystem-as-state:
-  `records/`, `images/`, `briefs/`, `refusals/`. `plan()` at `:100` computes what is missing, which is
+- **A store that is already a queue.** `jobs/images/run.py`'s `Store` is filesystem-as-state:
+  `records/`, `images/`, `briefs/`, `refusals/`. `plan()` computes what is missing, which is
   the only queue read anything needs. A sweep is already idempotent and already resumable.
 - **Idle gating, already specified.** `docs/image-generation-research.md:186-215` sets out the rules
   for a macOS background worker in detail — five minutes of input idle, on AC power, thermal and
@@ -87,19 +87,20 @@ Build this when one of these is true, and not before:
 
 Enough to start from, deliberately not enough to implement without thinking.
 
-**A job is a record, not a message.** The graph is already a replicated store with server-allocated
-revisions and optimistic concurrency, and PocketBase is already the durable state. A separate broker —
-Redis, a queue service, anything with its own uptime — would be a second source of truth about work
-that the graph can hold. A job record names what to make, for which sense, with which chain, and
-carries a claim.
+**A job is a record, not a message** — and the record now exists. The server's `jobs` table already
+holds every piece of outstanding work; a separate broker — Redis, a queue service, anything with its
+own uptime — would be a second source of truth about it. A Mac job would be a row there with a kind
+the server's runner skips, naming what to make, for which sense, with which chain, and carrying a
+claim.
 
 **The worker claims, it is not assigned.** The NAS does not know when the Mac is awake, so pushing is
 wrong. The Mac polls: claim the oldest unclaimed job by writing its own device id and a lease, do it,
 post the result, release. A lease that expires is reclaimable, which is the whole of the failure
 handling — a Mac that closes mid-job loses one job, and the sweep is already idempotent.
 
-**It is the same `acervo-worker`, on a different machine.** Not new code: the laptop image run
-already exists, and a claiming loop is a wrapper around it. It runs
+**It is the same pipeline, on a different machine.** Not new code: the laptop image run already
+exists, and a claiming loop is a wrapper around it, reaching the jobs through a route with
+`client.py` the way every batch tool reaches the graph. It runs
 on the Mac under a LaunchAgent, gated by the rules already specified at
 `image-generation-research.md:186-215`, and it must fail closed — no AC power, no work.
 
@@ -128,31 +129,10 @@ shape, a claim protocol and a lease duration. Then implement that.
 
 ## Public interfaces and data
 
-Illustrative only. This shape has not been designed and should not be treated as decided.
-
-```jsonc
-// A job record, if jobs become records
-{
-  "id": "…15 lowercase alphanumerics…",
-  "ownerId": "…",
-  "kind": "image",                  // "image" | "audio"
-  "senseId": "…",                   // what it is for
-  "chain": ["local-mflux-klein"],   // catalogue rows, in order
-  "claimedBy": null,                // a device id while leased
-  "leaseUntil": null,               // reclaimable after this
-  "attempts": 0,
-  "lastError": null,
-  "revision": 12
-}
-```
-
-The awkward question this sketch does not answer, and which whoever builds it must: **a job record is
-owner-scoped domain data and would therefore replicate to every client**, which means a phone would
-carry a queue of work it can never do. Either jobs are non-replicated like `sync_state` and the
-owner's `model_selection` — in which case the claiming worker reads them through a route rather than a replica — or
-they are not records at all and the filesystem store the sweep already uses stays the queue, with the
-Mac reaching it over the network. **The second is simpler and is probably right.** Decide it
-deliberately.
+Not designed. The shape to start from is a row in the existing `jobs` table — kind, subject, the
+chain to use — plus the two fields a claim needs: who holds it and until when. The question this
+section used to leave open, whether a job record would replicate to every phone, is answered: jobs
+are server state and never replicate, so a claiming worker reads them through a route.
 
 ## Acceptance tests and verification
 
@@ -173,8 +153,7 @@ When it is, the verification that matters is not a unit test:
 
 ## Non-goals
 
-- **No broker, no message queue, no Celery, no Redis.** PocketBase or the filesystem store is the
-  state. Adding a broker to a two-machine household is not warranted.
+- **No broker, no message queue, no Celery, no Redis.** The `jobs` table is the state. Adding a broker to a two-machine household is not warranted.
 - **No queueing of vocabulary writes.** Writes are online-only and synchronous, by data rule.
 - **No priority, no scheduling policy, no retry state machine.** Oldest unclaimed job first. If that
   is ever not enough, it will be obvious.

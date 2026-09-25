@@ -1,8 +1,8 @@
 """`loop`: ask the generator for a track, follow it, and store what comes back.
 
 The work happens in the companion container — seventy-odd model calls, a procedural bed and a mix —
-which is what keeps `processing-flow.md` §4.14's *"anything heavy is out of scope for the runner"*
-true rather than merely restated. This job holds a lane and a poll timer.
+which is what keeps the runner's rule (`docs/server.md`, "Jobs") — *"anything heavy is out of
+scope for the runner"* — true rather than merely restated. This job holds a lane and a poll timer.
 
 It follows an operation exactly as `work/corpus.py` does, and deliberately: the generator answers the
 same `operation_id` / `status` / `successful` / `error` vocabulary the corpus does, so this is a

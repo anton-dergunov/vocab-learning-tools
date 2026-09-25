@@ -1,4 +1,4 @@
-"""The nightly run, its timer, and the corpus update it starts (processing-flow Step 9)."""
+"""The nightly run, its timer, and the corpus update it starts (`docs/server.md`, "Jobs")."""
 
 from __future__ import annotations
 

@@ -1997,12 +1997,12 @@ def test_the_launcher_passes_worker_arguments_through(tmp_path: Path) -> None:
     (root / "current-release").write_text(f"{release}\n", encoding="utf-8")
 
     result = subprocess.run(
-        [str(helper), "worker", "--root", str(root), "draw-pictures", "sweep", "--limit", "50"],
+        [str(helper), "worker", "--root", str(root), "backfill", "--limit", "50"],
         text=True, capture_output=True, check=False,
     )
 
     assert result.returncode == 0, result.stderr
-    assert recorded.read_text(encoding="utf-8").strip().endswith("draw-pictures sweep --limit 50")
+    assert recorded.read_text(encoding="utf-8").strip().endswith("backfill --limit 50")
 
 
 def test_the_launcher_refuses_a_worker_operation_that_is_not_a_bare_word(tmp_path: Path) -> None:

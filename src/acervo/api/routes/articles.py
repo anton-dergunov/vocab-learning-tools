@@ -1,4 +1,4 @@
-"""`POST /articles`: save one parsed document (`docs/plans/processing-flow.md` §4.9).
+"""`POST /articles`: save one parsed document (`docs/server.md`, "Jobs").
 
 The device sends the `ArticleDraft` its YAML parsed into, and the server works out what that means
 for the stored entry. `POST /graph` stays for raw record writes — study states, topics, vocabularies,
