@@ -634,7 +634,7 @@ export interface ScheduleSettings {
    What the generator can be asked for, as `GET /loops/schema` reports it. Its catalogues are its
    own and are never copied here: a family or a second pattern added in a later version of it
    appears in the dialog with nothing changing on this side. */
-/* The meaning map of one language, as the server draws it (docs/architecture/server.md). Positions,
+/* The meaning map of one language, as the server draws it (docs/features/meaning-map.md). Positions,
    ids and region labels — never vectors and never a sense's text, which the device joins from its
    own replica. */
 export interface ServerMapPoint {

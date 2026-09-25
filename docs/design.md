@@ -1113,23 +1113,8 @@ Consequences:
 
 ### Where the work runs
 
-> ### DECISION
-> **Everything runs in one server process on the NAS, against hosted providers.** A save queues its
-> enrichment in the same transaction as the word, and a runner inside the server does the work; the
-> interface shows it and never does it. The mechanism is `docs/architecture/server.md`, "Jobs".
-
-This replaced a two-machine design. Rev. C put image generation on an idle-gated Mac worker under a
-Prefect control plane, with the NAS doing everything else, and made every flow a sweep — *derive the
-work from a query, never from a queue* — as a hedge against an orchestrator that might be down and a
-laptop that might be away for a week. Once the chosen providers were hosted, nothing needed the Mac,
-and the sweeps' cost showed: the browser carried a pipeline, a word added by a script waited on a
-timer nobody could see, and there were four retry layers that did not know about each other. The
-half of the sweep rule that mattered survives — each step still asks the graph what a word lacks.
-
-**A second machine is still a possibility.** The always-on machine has no GPU and the machine with
-one is not always on; if a local model becomes worth running on the Mac, the sketch of how it would
-claim work is [`plans/nas-to-mac-job-queue.md`](plans/nas-to-mac-job-queue.md), and which models
-are worth it is the audit in [`plans/provider-management.md`](plans/provider-management.md).
+[`architecture/jobs.md`](architecture/jobs.md): one server process, a durable job per piece of work,
+and what the interface shows while it runs.
 
 ### Provider chain
 
@@ -1142,48 +1127,6 @@ on Google while a trial lasts, and nothing is designed as if that will continue.
 > enrichment safe to be lazy about: if images were required, the queue would be a critical path and
 > a provider's outage a hole in the vocabulary. The emoji already carries a visual anchor at zero
 > cost.
-
-### Prefect
-
-**Considered, and not used — deliberately kept in view.** Earlier revisions made Prefect the owner of
-everything asynchronous. The runner in `src/acervo/work/` does that job instead, because at this
-scale an orchestrator costs more than it returns: a Prefect server and its database are a few
-hundred megabytes resident on a shared Synology, one more service for every deploy to start and
-check, and one more thing a new user would have to run. One owner, one process and one lane need
-none of it.
-
-It stays on the table for two reasons. Orchestrating ML pipelines is a skill worth practising, and
-this project is a natural place to do it. And a second machine, or pipelines that outgrow one lane,
-would change the arithmetic. If it is adopted, the cautions written for it still hold:
-
-- **It wraps the same functions.** Stages are ordinary Python in `services/`, already idempotent by
-  derivation; Prefect would schedule them and never own their logic.
-- **The request path must not know it exists.** Capture, review and the sync API work with the
-  orchestrator down, as they work today with the runner stopped.
-- **Measure the footprint first**, on the NAS, beside everything else that runs there.
-
-### What the interface shows
-
-The rule is that the interface **shows** work and never **does** it.
-
-- **After Add or Save the word opens in page view**, whatever the device's default, because that is
-  where reserved slots keep the layout still.
-- **Cards are disabled while the word is enriching**, with the hint "Cards open when pictures and
-  clips are ready", and re-enable however the job ends. There is no held snapshot and nothing
-  re-flows under the reader.
-- **One quiet progress line** under the article header, driven by the word's open job. It collapses
-  when the job finishes; if a step failed it leaves one line — *2 of 3 pictures drawn · Try again* —
-  until dismissed.
-- **A clip has a reserved slot** while the search is pending, drawn as a quiet skeleton row. Found,
-  the clip takes its place; nothing found, it settles into *No recorded example* for as long as the
-  word stays open, so nothing jumps, and is absent next time, because for most words no clip is the
-  expected answer; failed, *Couldn't search recorded speech · Try again*.
-- **A picture keeps its reserved frame**; a failed draw shows its reason, Try again and
-  use-my-own-picture; a redraw shows over the old picture and survives leaving the word.
-- **Pronunciations get no slot.** They are a phase of the progress line, and press-to-record still
-  works when one fails.
-- **Settings ▸ Activity** lists open, queued and recently failed jobs with Cancel and Try again, and
-  the word list marks a word that is still filling in.
 
 ---
 

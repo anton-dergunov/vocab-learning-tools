@@ -88,7 +88,7 @@ client from it.
 
 **The corpus is kept fresh by asking it over HTTP.** The server's nightly `corpus.update` step, or
 Update now in Settings ▸ Clips, starts an update in the service and follows it
-([`server.md`](../architecture/server.md), "Jobs"). The service is designed for this — it builds into a temporary
+([`jobs.md`](../architecture/jobs.md)). The service is designed for this — it builds into a temporary
 file and swaps it in with an atomic rename, while readers open a fresh read-only connection per
 query — so an update adds videos without a restart, and a query that straddles the swap still sees
 a consistent snapshot.
@@ -303,7 +303,7 @@ Settings; that is a limitation to fix in the retrieval repository rather than to
 
 ### 11 · A step of the word's enrichment, not a second engine
 
-A clip search is the first step of the server's `enrich` job ([`server.md`](../architecture/server.md), "Jobs"):
+A clip search is the first step of the server's `enrich` job ([`jobs.md`](../architecture/jobs.md)):
 one job per word, its steps in one order, showing in one place. It comes before pictures because it
 is the faster of the two and the owner is looking at the page. **Its rests are its own.** A picture
 is one image call metered by an image provider at roughly one a minute; a clip search is one text

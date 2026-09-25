@@ -1,4 +1,4 @@
-"""Whether to ask again, and when. The one place a retry is decided (`docs/architecture/server.md`, "Jobs").
+"""Whether to ask again, and when. The one place a retry is decided (`docs/architecture/jobs.md`).
 
 The provider chain still decides *which* pair answers, with its fall-through, hedging and rests;
 this decides whether the runner tries the whole step again after the chain has given up. Only three

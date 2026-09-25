@@ -1,4 +1,4 @@
-"""A saved word is enriched by the server, with no client involved (`docs/architecture/server.md`, "Jobs").
+"""A saved word is enriched by the server, with no client involved (`docs/architecture/jobs.md`).
 
 A word goes in through `POST /graph` — the route every writer uses — and the runner is driven by
 hand. What is stubbed is the corpus at its HTTP boundary and the providers, exactly as in the route

@@ -1,4 +1,4 @@
-"""The meaning map: one language's senses laid out by what they mean (docs/architecture/server.md).
+"""The meaning map: one language's senses laid out by what they mean (docs/features/meaning-map.md).
 
 Senses in, a map out — embedded, laid out, cut into regions, labelled, traced. **The package stands
 alone**: it imports nothing of Acervo's (`test_layering.py`), so it knows no owner, no database and no

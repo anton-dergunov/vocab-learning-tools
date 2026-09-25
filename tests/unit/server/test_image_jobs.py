@@ -1,4 +1,4 @@
-"""Redraw, edit-and-draw and a new brief, as jobs a person asks for (`docs/architecture/server.md`, "Jobs").
+"""Redraw, edit-and-draw and a new brief, as jobs a person asks for (`docs/architecture/jobs.md`).
 
 The point of each is that it survives the owner leaving the word: a redraw asked for and then left
 is present on return.

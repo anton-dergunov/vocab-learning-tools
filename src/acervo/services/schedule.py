@@ -1,4 +1,4 @@
-"""When the nightly run happens: one hour, one switch per step (`docs/architecture/server.md`, "Jobs").
+"""When the nightly run happens: one hour, one switch per step (`docs/architecture/jobs.md`).
 
 One timer rather than one per job: steps in sequence can never start together or compete for the
 same allowance, so nothing needs an offset. The hour is read in `ACERVO_TIMEZONE`, or the server's

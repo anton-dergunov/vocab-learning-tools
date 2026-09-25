@@ -71,7 +71,7 @@ waits for a scrap of text to be brought to it.
 
 Today the vocabulary is a list, sortable and grouped into topics, and a **meaning map**: one
 language's senses laid out by what they mean, with named regions, built in September 2026
-([`server.md`](../architecture/server.md), "The meaning map"). Neither shows how words relate across languages, to
+([`meaning-map.md`](../features/meaning-map.md)). Neither shows how words relate across languages, to
 what the learner knows well and badly, or to what is missing.
 
 **Planned, as ideas rather than specifications.** The unifying idea is that **every view with slots

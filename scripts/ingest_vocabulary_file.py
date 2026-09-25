@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Walk a messy vocabulary notes file into Acervo's Inbox.
 
-A thin transport (`docs/architecture/server.md`, "Jobs"): it submits the file a chunk at a time to
+A thin transport (`docs/architecture/jobs.md`): it submits the file a chunk at a time to
 `POST /captures` and follows the job the server makes of it. The server works out where each entry
 ends, stops at words you already have, files the rest in the Inbox and enriches them — and waits out
 a busy provider itself. This script holds no prompt, no pacing and no retries; it only remembers how

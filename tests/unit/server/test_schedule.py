@@ -1,4 +1,4 @@
-"""The nightly run, its timer, and the corpus update it starts (`docs/architecture/server.md`, "Jobs")."""
+"""The nightly run, its timer, and the corpus update it starts (`docs/architecture/jobs.md`)."""
 
 from __future__ import annotations
 

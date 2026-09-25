@@ -1,4 +1,4 @@
-"""`nightly`: the one timed run, and the timer that queues it (`docs/architecture/server.md`, "Jobs").
+"""`nightly`: the one timed run, and the timer that queues it (`docs/architecture/jobs.md`).
 
 Steps in sequence — `corpus.update`, then `anki.pull` — each behind its own switch in
 Settings ▸ Schedule, and a failed step never stops the next. The timer is a tick of the runner's

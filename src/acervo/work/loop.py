@@ -1,7 +1,7 @@
 """`loop`: ask the generator for a track, follow it, and store what comes back.
 
 The work happens in the companion container — seventy-odd model calls, a procedural bed and a mix —
-which is what keeps the runner's rule (`docs/architecture/server.md`, "Jobs") — *"anything heavy is out of
+which is what keeps the runner's rule (`docs/architecture/jobs.md`) — *"anything heavy is out of
 scope for the runner"* — true rather than merely restated. This job holds a lane and a poll timer.
 
 It follows an operation exactly as `work/corpus.py` does, and deliberately: the generator answers the

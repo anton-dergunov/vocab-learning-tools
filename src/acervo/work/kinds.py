@@ -1,4 +1,4 @@
-"""What a job kind is, and the registry of them (`docs/architecture/server.md`, "Jobs").
+"""What a job kind is, and the registry of them (`docs/architecture/jobs.md`).
 
 A kind declares a name, its steps, and a handler. It gets queuing, retry, pacing, cancellation, the
 event stream and the progress strip without writing any of them — which is the whole contract a

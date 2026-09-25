@@ -1850,7 +1850,7 @@ function openStories() {
 }
 
 /* ── the map ──────────────────────────────────────────────────────────────
-   One language's senses, laid out by meaning (docs/architecture/server.md). `map.js` is the
+   One language's senses, laid out by meaning (docs/features/meaning-map.md). `map.js` is the
    component and knows nothing of this file; what is here is the host: which data, the header, the
    peek, find, and the way back from an article. The data is the owner's real map when
    `map-data.local.js` has been generated, and the committed sample otherwise (see README). */

@@ -452,7 +452,7 @@ build_release_archive() {
 create_account_command='docker exec -i acervo-server-1 python -m acervo.admin accounts create --email'
 
 # A deploy never pauses or serialises a job: it refuses while any are open, or cancels them when told
-# to (`docs/architecture/server.md`, "Jobs"). The count comes from the running server as one line of
+# to (`docs/architecture/jobs.md`). The count comes from the running server as one line of
 # JSON; no answer at all — no container yet, or a server from before jobs existed — means nothing is
 # open. `--reset-database` skips the question, because the table goes with the database.
 refuse_open_jobs() {

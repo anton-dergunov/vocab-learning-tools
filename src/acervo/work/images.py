@@ -1,6 +1,6 @@
 """`image.redraw` and `image.rebrief`: the picture actions a person asks for.
 
-See `docs/architecture/server.md`, "Synchronous and asynchronous".
+See `docs/architecture/jobs.md`.
 
 A redraw is a job even though somebody pressed the button, because the point of pressing it was to
 go on reading while the picture is made — and a request that dies when the article closes is not

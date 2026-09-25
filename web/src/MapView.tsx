@@ -1,4 +1,4 @@
-/* The Map surface: one language's senses laid out by meaning (docs/architecture/server.md).
+/* The Map surface: one language's senses laid out by meaning (docs/features/meaning-map.md).
 
    The picture is `meaningMap/`, which knows nothing of Acervo; this is the host around it — which map,
    the header, the peek, Find, and the way to an article and back. It is the prototype's `?map=1`

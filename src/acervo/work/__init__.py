@@ -1,4 +1,4 @@
-"""The server doing work nobody is waiting on (`docs/architecture/server.md`, "Jobs").
+"""The server doing work nobody is waiting on (`docs/architecture/jobs.md`).
 
 A job is a row in `jobs`; the runner here takes them one at a time and calls the same `services/`
 functions the routes call, so a job and a request are the same code and there is no second pipeline.

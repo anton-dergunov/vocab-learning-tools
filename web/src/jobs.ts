@@ -2,7 +2,7 @@ import { AcervoApiError, backendSession, type Job } from "./api";
 import { syncEngine } from "./sync";
 
 /**
- * What the server is doing, as this device last heard it (`docs/architecture/server.md`, "Jobs").
+ * What the server is doing, as this device last heard it (`docs/architecture/jobs.md`).
  *
  * The interface shows work and never does it. This module reads the server's event stream, keeps
  * the latest job for each subject, and asks for a pull whenever the server says its revision moved —

@@ -1,6 +1,6 @@
 """The job record: what the server has been asked to do, and how far it has got.
 
-Owner-scoped server state, never replicated (`docs/architecture/server.md`, "Jobs"). Every function
+Owner-scoped server state, never replicated (`docs/architecture/jobs.md`). Every function
 here is a transaction of its own, except `enqueue_enrich`, which takes the caller's connection on
 purpose: a word and the job that enriches it are written together or not at all.
 

@@ -337,7 +337,7 @@ operation id, and the job polls it, marking the step `waiting` and raising `Requ
 multi-minute blocking call inside the runner.
 
 The CPU work happens in the companion container, which is what keeps the runner's rule
-([`server.md`](../architecture/server.md), "Jobs") — *"anything heavy is out of scope for the runner"* — true rather
+([`jobs.md`](../architecture/jobs.md)) — *"anything heavy is out of scope for the runner"* — true rather
 than merely restated. The job holds the **`audio` lane**, because that is the allowance a render
 spends: every line is a call home to the take route. Nothing is held in memory between its two
 steps — `loop.render` writes the operation id down and `loop.store` reads it back — so a retried step

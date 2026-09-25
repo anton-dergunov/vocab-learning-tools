@@ -5,7 +5,7 @@ built until something concretely needs it — but local models are a real possib
 ([`provider-management.md`](provider-management.md)), and some of them only run well on the Mac.
 
 **The job record it asked for now exists**: a `jobs` table beside `sync_state`, owner-scoped and
-never replicated, with a runner inside the server ([`../architecture/server.md`](../architecture/server.md), "Jobs"). So the
+never replicated, with a runner inside the server ([`jobs.md`](../architecture/jobs.md)). So the
 question this plan once declined to answer — *where does the record of outstanding work live* — has
 an answer, and it is not a queue a phone would carry. What is still only a sketch is the rest: a
 second machine doing the work.
