@@ -1,6 +1,6 @@
 # Experiment · pronunciation encoding: what should a stored clip be?
 
-Spike for [`docs/plans/pronunciation-and-audio.md`](../../docs/plans/pronunciation-and-audio.md).
+Spike for the pronunciation design in [`docs/design.md`](../../docs/design.md) §04 "Media".
 The plan keeps the decision; this document holds the question, the method and every number.
 
 **Run:** 15 September 2026 · Spanish · four pieces of speech · blind listening.
@@ -106,7 +106,7 @@ Three things this establishes:
 ### What each would cost to store
 
 Per clip, scaled to the corpus twice: as it stands today (~1,500 words, ~3 examples each) and at the
-ceiling `docs/plans/pronunciation-research.md` uses (10,000 headwords, 30,000 sentences). Clips are
+ceiling `docs/design.md` §02 sizes for (10,000 headwords, 30,000 sentences). Clips are
 **replicated**, so each number is paid on the server *and* on every device that keeps them.
 
 | candidate | today | at the ceiling | vs today's mix |

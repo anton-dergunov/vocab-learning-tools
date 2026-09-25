@@ -72,7 +72,7 @@ Build this when one of these is true, and not before:
 1. **A local model becomes genuinely better for a job**, not merely cheaper. A voice for plain
    pronunciation is the likeliest candidate: it runs thousands of times, needs no quality ceiling,
    and Kokoro was small — though `src/acervo/tts/` has since been deleted, so a local voice is a
-   rebuild rather than a revival. [`pronunciation-and-audio.md`](pronunciation-and-audio.md) is
+   rebuild rather than a revival. [`provider-management.md`](provider-management.md) is
    where that question is asked: if a local voice runs on the NAS, no queue is needed; if it needs
    the Mac, this is the plan.
 2. **Hosted providers stop being acceptable** — a privacy requirement, a price change, or every free

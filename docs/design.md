@@ -200,7 +200,7 @@ reconstruct the sentence you were reading on your tablet when you hit `turmoil`.
   videoRef · videoTitle · videoChannel · videoStart · videoEnd · clipRef · imageRef · emotion ·
   note · matchedForm · matchedTranslationForm`. **`emotion`** is how a speaker would sound saying the
   sentence, a short direction in English that a voice which takes one follows when the example is read
-  aloud; a recording is its own record and not a field here (`docs/plans/pronunciation-and-audio.md`). `origin` plus `modelId` on every row is
+  aloud; a recording is its own record and not a field here (§04 "Media"). `origin` plus `modelId` on every row is
   what makes bulk regeneration safe; **`sourceAttestationId`** is what lets an example be cleaned up
   and still point at the messy original you actually captured. `videoTitle`, `videoChannel`,
   `videoStart` and `videoEnd` (seconds) are what turn a bare `videoRef` into the citable clip the
@@ -389,7 +389,6 @@ languages:
     reading: none
     tokenizer: whitespace
     lemmatizer: "spacy:es_core_news_sm"
-    tts: { provider: kokoro, lang_code: e, voice: ef_dora }
     anki_deck: "Spanish::Vocabulary"
 
   en:
@@ -597,6 +596,36 @@ so (`experiments/pronunciation-encoding/`) — and it travels on the ordinary cu
 lets a word recorded on one device be heard on another with no network at all. The text of your
 vocabulary works on a plane, and now so does hearing it; the illustrations still do not, and
 shouldn't pretend to.
+
+**Built.** How a clip is identified, when it is stale, how it is encoded and which voices read what
+is in `AGENTS.md` and `src/acervo/pronunciation/`; the measurements are
+`experiments/pronunciation-encoding/`. What those do not say is why the shape is this one:
+
+- **Two orders, because a reference and a reading are different things.** A headword's clip is a
+  *reference*: one per word, offline, correct, and read by one voice held stable per language so that
+  a deviation is audible. An example's clip is a *reading*, where prosody carries meaning and a voice
+  that takes a direction earns its cost. That, not "plain versus expressive", is why `audioPlain` and
+  `audioExpressive` are separate choices.
+- **Nothing synthesises on the device.** Every sentence that can be spoken arrived through a write,
+  and writes are online, so the server can record it the moment it exists and the clip reaches the
+  device on the same pull as the record. That removes the argument for a neural voice in the
+  browser, which would cost 60–180 MB per language to close a window that is already closed.
+- **The device's own voice is not a fallback.** `speechSynthesis` cannot be captured, so it can never
+  fill a cache; and a device with no voice for the language reads Spanish in an English voice, often
+  without the page being able to tell. A pronunciation reference that may teach the wrong sounds is
+  worse than none.
+- **Batching words into one call buys nothing.** Speech is metered by characters or by audio
+  duration, and neither shrinks when ten words share a request; only the request count does, and
+  splitting the result back into words needs alignment. A request-metered tier is answered by
+  choosing a character-metered provider, not by batching.
+- **A bad recording is replaced from the toast.** After a stored clip plays, the message offers
+  Record again: the moment you know a recording is bad is the moment you have just heard it, and a
+  control under every sentence would be a page of buttons.
+
+Deliberately not built: speech-to-text, pronunciation assessment (recording the owner and scoring
+it is a product of its own), a second media store or pipeline, and voices running on the
+device. Voices running on the NAS, other providers and human recordings are in
+[`plans/provider-management.md`](plans/provider-management.md).
 
 ---
 
@@ -876,7 +905,7 @@ This settles every worry you raised at once:
 | **Lemmatizer** | spaCy `es_core_news_sm` | spaCy `en_core_web_sm` | n/a — characters are stable |
 | **Reading field** | — | — | **required** (pinyin) |
 | **Dictionary** | kaikki `es`, Apertium, FreeDict | kaikki `en` | CC-CEDICT / ECDICT |
-| **TTS** | Kokoro `es` | Kokoro `en` | Kokoro `zh` |
+| **Voice** | WaveNet for words, a Gemini voice for sentences — chosen in Settings (§04 "Media") | same | same |
 | **Corpus channels** | Dreaming Spanish, Easy Spanish, DW Español, TED es, RTVE | TED, plus what you already read | deferred to v1.1 |
 | **Anki deck** | `Spanish::Vocabulary` | `English::Vocabulary` | `Chinese::Vocabulary` |
 
@@ -1316,9 +1345,14 @@ and where blandness hurts least because the point is repetition in context. High
 pound than comics.
 
 **03 · Audio-first review**
-Kokoro is already wired in. Generate a listening track of due words in sentences for walking or
-commuting. Converts dead time into study time — and listening is usually the weakest skill for
-someone who learns from written notes, which, judging by your Obsidian files, is you.
+Generate a listening track of due words in sentences for walking or commuting. Converts dead time
+into study time — and listening is usually the weakest skill for someone who learns from written
+notes, which, judging by your Obsidian files, is you.
+
+**Built, in two shapes.** A *loop* is a track of chosen words, each said and then glossed over a
+music bed, played like a record with the translation held back until it has been spoken; a *story*
+is a short illustrated text read aloud in one voice. Neither picks *due* words yet — both take the
+words on screen or the ones marked by hand.
 
 **04 · Clip review as a first-class session**
 "Ten clips of your due words" is a legitimate review mode, not a decoration on a card. It is the only

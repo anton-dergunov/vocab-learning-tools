@@ -778,7 +778,7 @@ Still open:
 2. **Do the abstract senses actually work as mnemonics?** The briefs read well and the pictures are
    beautiful; whether a glowing knot of woven threads recalls *abundar en un tema* specifically, or
    merely recalls "convergence", is a judgement only use answers.
-3. **Audio.** `docs/plans/pronunciation-and-audio.md` inherits all of this — the media directory, the
+3. **Audio.** Pronunciation (`docs/design.md` §04 "Media") inherits all of this — the media directory, the
    route, and the shape of the work, so that audio is a caller rather than a rewrite. It landed as
    a step of the `enrich` job.
 
