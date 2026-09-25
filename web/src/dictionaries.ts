@@ -8,7 +8,7 @@
  * **Resolution order is: this device, then the server, then an online source.** A dictionary the
  * device has not stored is still usable when the server holds it and is reachable. This is the one
  * place Acervo reads through the network on purpose, and it does not contradict the offline-first
- * rule of design §04: an external dictionary is not the replica, so a failure here degrades a
+ * rule of `docs/architecture/sync.md`: an external dictionary is not the replica, so a failure here degrades a
  * reference surface rather than losing anything the owner wrote.
  */
 

@@ -175,8 +175,8 @@ export default function App() {
   const [problems, setProblems] = useState<YamlProblem[]>([]);
   const [saving, setSaving] = useState(false);
 
-  /* The conversation, in memory and keyed by what is being discussed. Design §06 §3.3: §01's test
-     for whether something belongs in the core is whether losing it would hurt, and losing a
+  /* The conversation, in memory and keyed by what is being discussed. `docs/features/article-chat.md` §3.3:
+     the core's test for whether something belongs in it is whether losing it would hurt, and losing a
      transcript costs nothing — the *article* is where the value landed. So no collection, no sync
      state, nothing to tombstone, and it is gone on reload on purpose. A ref holds it across the
      dock unmounting; the state beside it is only what makes the dock re-render. */
@@ -876,8 +876,8 @@ export default function App() {
     notify("Added to your vocabulary");
   }
 
-  /* ── the article conversation (design §06) ────────────────────────────
-     Chat is a consumer of the core, exactly as §06 and §01 place it: no storage, no second writer,
+  /* ── the article conversation (`docs/features/article-chat.md`) ────────────────────────────
+     Chat is a consumer of the core: no storage, no second writer,
      no second serialiser, no offline anything. Every turn is a server round trip; reading the
      article never is. */
 

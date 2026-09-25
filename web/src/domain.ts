@@ -35,7 +35,7 @@ export interface Gloss {
 }
 
 /**
- * One language this owner studies, and how they want it presented (design §03).
+ * One language this owner studies, and how they want it presented (`docs/architecture/data-model.md`).
  *
  * A vocabulary exists independently of whether it holds any words yet — that is the whole point,
  * since a language has to be configured before its first word can be captured. `languages.ts`
@@ -865,7 +865,7 @@ function indexOf(graph: VocabularyGraph): GraphIndex {
 }
 
 function checkVocabularyLanguages(vocabularies: readonly Vocabulary[]): void {
-  // Not a storage constraint (§04 forbids those on replicated collections) — a graph-level one,
+  // Not a storage constraint (`docs/architecture/data-model.md` forbids those on replicated collections) — a graph-level one,
   // so two devices that each added the same language offline cannot both be believed at once.
   const claimed = new Set<string>();
   vocabularies.forEach((record) => {

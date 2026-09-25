@@ -69,7 +69,7 @@ question — *"Does the corpus service live in the same repo?"* — with **no**.
 
 ### 2 · A service beside Acervo, not a package inside it
 
-`design.md` §02 already forbids sharing: *the core and the corpus do not share a database, a
+The core's invariants ([`../README.md`](../README.md)) already forbid sharing: *the core and the corpus do not share a database, a
 container, or a backup policy.* The retrieval service holds gigabytes of disposable read-only text
 that must be full-text searched; the core holds tens of megabytes of precious relational data that
 must sync to a phone.
@@ -121,7 +121,7 @@ deletes nothing at all, and `install.sh` deletes three specific paths by name, n
 The greenfield rule that development databases are disposable stops at the cache. It is the only
 store in this deployment that is neither disposable nor reconstructible from something Acervo holds.
 The deploy-time backup copies named files and will not touch it, which is correct for something this
-size but means **the operator owns its backup** (`design.md` §17). Detecting videos deleted at the source, and pruning what they left behind, is the other
+size but means **the operator owns its backup** ([`../architecture/durability.md`](../architecture/durability.md)). Detecting videos deleted at the source, and pruning what they left behind, is the other
 repository's problem and is not in scope.
 
 ### 4 · A clip is an `Example`, not a new record

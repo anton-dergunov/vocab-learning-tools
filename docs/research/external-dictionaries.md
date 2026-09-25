@@ -291,7 +291,7 @@ Alternatives considered:
 | Approach | Why not |
 |---|---|
 | Raw JSONL plus a sidecar offset index | Works, but the index is hand-rolled, there is no prefix search, and every platform needs its own byte-range reader. SQLite provides all three. |
-| Yomitan zip imported into IndexedDB | Requires unpacking row-by-row before first use, and puts dictionary bulk in the same store as the replica, which §04 keeps precious. |
+| Yomitan zip imported into IndexedDB | Requires unpacking row-by-row before first use, and puts dictionary bulk in the same store as the replica, which sync keeps precious. |
 | Whole-file gzip of JSONL | No random access. Decompressing 2.69 GB to answer one lookup. |
 | `sql.js-httpvfs` over HTTP Range | Not an alternative — **keep it** for the online path, where it serves a server-side file without a lookup route. |
 
@@ -384,7 +384,7 @@ Consequences for Acervo:
    the Dictionaries settings pane before an install. Sources disagree about Safari's tab-origin
    percentage, and values are padded against fingerprinting.
 6. **Guard `QuotaExceededError`** and fail the install cleanly, leaving already-installed dictionaries
-   untouched — the "fail loudly, change nothing" discipline of §04.
+   untouched — the "fail loudly, change nothing" discipline of sync (`docs/architecture/sync.md`).
 
 Storage headroom is therefore *not* the binding constraint; **download size and install time are**.
 A 150 MB download over a phone connection is the thing a person actually notices, which is another

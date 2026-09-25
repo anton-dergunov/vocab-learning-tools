@@ -1,7 +1,7 @@
 /**
  * Presentation for the languages a replica happens to contain.
  *
- * Configuration now lives in the owner's `vocabularies` records (design §03), so this table is only
+ * Configuration now lives in the owner's `vocabularies` records (`docs/architecture/data-model.md`), so this table is only
  * the *defaults* a record falls back on: the flag and name to offer when someone adds a language,
  * and the gloss languages to assume for a lexeme whose language has no record at all. Tags absent
  * from both fall back to the platform's own display names, so nothing renders as a bare tag.

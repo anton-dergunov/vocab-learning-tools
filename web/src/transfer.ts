@@ -352,7 +352,7 @@ export function exportBundle(graph: VocabularyGraph, options: ExportOptions, exp
       files.push({
         path: `${language}/${names.get(lexeme.id)}.yaml`,
         // No study state: review history is irreplaceable but it is not vocabulary, and it is
-        // backed up with the Anki collection it belongs to (§17).
+        // backed up with the Anki collection it belongs to (`docs/plans/backups.md`).
         text: yamlForDraft(stripIds(draftFor(article)))
       });
     });

@@ -26,7 +26,7 @@ Every record uses a client-generated 15-character ID, belongs to one account, an
 replication-ready edit metadata. Markdown vocabulary files and extended-article JSON are not
 application storage formats.
 
-See [the design document](docs/design.md) for the product decisions,
+See [the design documents](docs/README.md) for the product decisions,
 [the server design](docs/architecture/server.md) for what runs on the always-on machine, and
 [the application guide](docs/operations/deployment.md) for deployment details.
 

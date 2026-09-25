@@ -1,6 +1,6 @@
 # Experiment · pronunciation encoding: what should a stored clip be?
 
-Spike for the pronunciation design in [`docs/design.md`](../../docs/design.md) §04 "Media".
+Spike for [`docs/features/pronunciation.md`](../../docs/features/pronunciation.md).
 The plan keeps the decision; this document holds the question, the method and every number.
 
 **Run:** 15 September 2026 · Spanish · four pieces of speech · blind listening.
@@ -106,7 +106,7 @@ Three things this establishes:
 ### What each would cost to store
 
 Per clip, scaled to the corpus twice: as it stands today (~1,500 words, ~3 examples each) and at the
-ceiling `docs/design.md` §02 sizes for (10,000 headwords, 30,000 sentences). Clips are
+ceiling `docs/README.md` sizes for (10,000 headwords, 30,000 sentences). Clips are
 **replicated**, so each number is paid on the server *and* on every device that keeps them.
 
 | candidate | today | at the ceiling | vs today's mix |
@@ -125,7 +125,7 @@ between four and eleven times as much:
 - `LINEAR16` and `MP3_128` both scored 5.0 — but so did `OPUS_32` on three of four pieces, and the
   fourth was a "not sure". There is no quality to buy back, only bytes to spend.
 - Audio is replicated **because it is cheap**. The whole argument for putting clips in the graph,
-  unlike pictures, was that they cost roughly what the text costs (`§04`, 20–50 MB). At `LINEAR16`
+  unlike pictures, was that they cost roughly what the text costs (the core, 20–50 MB). At `LINEAR16`
   the clips would be 7.7 GB — the same order as the ~9 GB of pictures that are deliberately *not*
   replicated, and on a phone. That does not qualify the rule; it repeals it.
 - Every first play is also a download over whatever connection is to hand: 237 KB for a sentence

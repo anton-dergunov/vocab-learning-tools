@@ -146,7 +146,7 @@ Against it, specifically here:
 > **In memory on the device, keyed by what is being discussed, resent whole on every turn, and lost
 > on reload.**
 >
-> **Because** `§01`'s test for whether something belongs in the core is whether losing it would
+> **Because** the core's test for whether something belongs in it is whether losing it would
 > hurt, and losing a transcript costs nothing — the *article* is where the value landed. This also
 > keeps the route stateless: no chat collection, no session store, nothing to synchronise, nothing
 > to tombstone. `§06` already committed to this and it survives contact with the design.
@@ -475,7 +475,7 @@ missed — but not first.)
 - **Saving** is `saveArticle(parseArticle(text'))`. Identical to saving a hand-edited document:
   same validation, same id diffing, same online-only synchronous round trip, same revision check.
   A chat-driven edit is indistinguishable downstream from a typed one, which is what `§06` asked
-  for and what keeps `§01`'s regeneration promise honest.
+  for and what keeps the core's regeneration promise honest.
 - **A stale entry is refused, not merged.** If sync moved the record while the conversation was
   open, the write is refused by the server exactly as any other stale write is. The message says the
   entry changed elsewhere and the proposal is dropped.
@@ -834,7 +834,7 @@ output shapes, and the shorter one shares none of the longer one's edit language
 
 ## §10 · Where the line falls
 
-Chat is a **consumer of the core**, exactly as `§06` and `§01` place it. Concretely, it does not get:
+Chat is a **consumer of the core** ([`../README.md`](../README.md). Concretely, it does not get:
 
 - **Storage.** No collection, no `sync_state` entry, no tombstones, nothing replicated. The
   transcript is in memory and is lost on reload, on purpose.

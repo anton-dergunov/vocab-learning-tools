@@ -6,7 +6,7 @@ import { topicOptions, vocabularies as configuredVocabularies } from "./selector
 
 /**
  * The two things capture cannot work without: which languages this owner keeps, and which topics a
- * word can be filed under (§03 — both are records, never a fixed enum).
+ * word can be filed under (`docs/architecture/data-model.md` — both are records, never a fixed enum).
  *
  * Every action here is an ordinary online-only write through the repository, so it fails loudly and
  * changes nothing locally when the server is unreachable, exactly like editing an article.

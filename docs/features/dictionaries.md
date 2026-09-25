@@ -47,7 +47,7 @@ link-out together — grouped by language and turned on per device.
   server that built it. The same dictionary can be on the phone and absent from the laptop.
 - **Resolution order for a lookup is: this device, then the server, then an online source.** A
   dictionary the device does not hold is still usable when the server has it and is reachable. This
-  is the one place Acervo reads through the network on purpose, and it does not contradict `§04` —
+  is the one place Acervo reads through the network on purpose, and it does not contradict online-only sync ([`../architecture/sync.md`](../architecture/sync.md)) —
   external dictionaries are not the replica, so a failure here degrades a reference surface rather
   than losing data.
 - Removing a dictionary frees its space and leaves every other one untouched.

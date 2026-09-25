@@ -269,7 +269,7 @@ def _scores() -> dict[str, tuple[str, str]]:
     return found
 
 
-# What a whole vocabulary would cost, at the ceiling `docs/design.md` §02 sizes for.
+# What a whole vocabulary would cost, at the ceiling `docs/README.md` sizes for.
 HEADWORDS, SENTENCES = 10_000, 30_000
 
 

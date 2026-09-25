@@ -74,7 +74,7 @@ services:
   # The spoken-usage-retrieval corpus: a foreign service deployed beside Acervo, like the Anki sync
   # server, and reached over HTTP only. Acervo's server never imports it and never opens its SQLite
   # file — the core and the corpus deliberately share no database, container or backup policy
-  # (design.md §02). The version it runs is deploy/acervo/speech/pin.json.
+  # (docs/README.md, "The invariants"). The version it runs is deploy/acervo/speech/pin.json.
   speech-retrieval:
     build:
       context: ../..
