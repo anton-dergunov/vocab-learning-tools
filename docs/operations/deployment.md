@@ -1,12 +1,14 @@
-# Acervo application shell
+# Deployment · running Acervo on a shared host
 
-Acervo includes one shared web interface, an installable PWA, a native macOS host, and one Python
-service. That service stores the owner-scoped vocabulary graph; each client keeps a complete
-IndexedDB replica.
+Acervo is one Python service, an installable PWA served by it, a native macOS host around the same web
+build, and three companion containers: the Anki sync server, the spoken-usage corpus and the loop
+generator. `./deploy.sh`, run from the laptop, builds a release archive, streams it to the server and
+runs `deploy/acervo/install.sh` there. The design behind the service is
+[`../architecture/server.md`](../architecture/server.md).
 
-It serves both the website and the Acervo API from one listener. Acervo always coexists with other
-applications on a shared host; it never assumes ownership of the host's default HTTP/HTTPS endpoints
-or unrelated proxy configuration. The default backend port is `27702`, deliberately separate from the
+The service serves both the website and the Acervo API from one listener. Acervo always coexists
+with other applications on a shared host; it never assumes ownership of the host's default HTTP/HTTPS
+endpoints or unrelated proxy configuration. The default backend port is `27702`, deliberately separate from the
 Anki sync listener on `27701`. Override it when either port is already assigned:
 
 ```bash
@@ -19,31 +21,20 @@ override, check the server's existing container port assignments. The app listen
 `127.0.0.1` by default so it can sit behind an HTTPS reverse proxy; use `--app-bind-address` only
 when the network design requires a different interface.
 
-`web/dist/` and `deploy/acervo/server/web/` are generated, ignored staging directories.
-The supported build and deployment commands repopulate them before packaging; their contents are
-disposable and should not be committed.
-
 ## Browser and PWA
 
 Point an HTTPS reverse proxy at the configured Acervo app port, then open the public address, for
-example `https://acervo.example.com`. The server answers:
-
-- `/` — the responsive Acervo interface and PWA;
-- `/api/acervo/v1/health` — the deployed application and schema version;
-- `/api/acervo/v1/session` — password authentication for administrator-created Acervo accounts;
-- `/api/acervo/v1/session/refresh` — authenticated token renewal;
-- `/api/acervo/v1/mac-release` — the current macOS release, when one is published;
-- `/api/acervo/v1/graph` — the cursor pull, the write and the reset;
-- `/api/acervo/v1/capture` — text in, an entry to review out;
-- `/api/acervo/v1/dictionaries` — what this server holds, and what it can look up.
+example `https://acervo.example.com`. `/` is the interface and PWA, `/api/acervo/v1/health` reports the
+deployed application and schema version, and every route is listed in
+[`../architecture/server.md`](../architecture/server.md), "The wire contract".
 
 There is no administration interface and no generic CRUD surface over the vocabulary: the graph
 routes are the only way in or out.
 
 HTTPS is required for service workers and PWA installation outside local development. Install the
 site through the browser's normal **Add to Home Screen** or **Install App** command. The cached shell
-and IndexedDB replica open offline. When a new build has downloaded, a dot appears on the gear; the new worker activates
-only after **Update Acervo** is selected. Browser Settings also offers **Download Acervo for macOS**
+and IndexedDB replica open offline. When a new build has downloaded, a dot appears on the gear; the
+new worker activates only after **Update Acervo** is selected. Browser Settings also offers **Download Acervo for macOS**
 when the server has a native release; a server packaged without one says that no release is
 currently published.
 
@@ -256,73 +247,152 @@ npm run build:mac
 npm run package:mac
 ```
 
-The application embeds the same `web/dist` interface used by the PWA. On first launch, its native
-Settings window asks for the same HTTPS Acervo address. That value remains in local macOS
-preferences and is never placed in source code, documentation, or release metadata.
+The application is a thin AppKit host around the same `web/dist` interface the PWA uses. Its native
+bridge stores session state; it holds no vocabulary model and no operations of its own. On first launch
+its Settings window asks for the HTTPS Acervo address, which stays in local macOS preferences and is
+never placed in source code, documentation or release metadata.
 
-The menu-bar icon remains available after the main window closes. Left-click opens Acervo;
-right-click shows only **Quit Acervo**. A small dot indicates a native update. Native Settings can
-check, download, verify, and install that update; automatic installation is off by default.
+Running `deploy.sh` on macOS packages the PWA, the server image and the matching native release under
+one version and build identity; a deploy from another machine updates the server and PWA and keeps the
+native archive already published.
 
-Running `deploy.sh` on macOS packages the PWA, the server image, and the matching native release with
-one version/build identity. Deployments from a non-macOS host update the server and PWA but keep the
-previously published native archive.
+### Updates never interrupt
 
-## Persistent layout
+**An update marks the menu bar; it never takes over the screen.** It never activates the application,
+opens a window or puts an alert up, and it never restarts without being asked.
 
-The application additions live beside the existing Anki data:
+- **Checking is automatic, every six hours**, and can be switched off in Settings. **Installing
+  automatically is off by default.**
+- **A new build shows as a mark beside the book** in the menu-bar icon, in space reserved for it so the
+  icon never shifts, and as one line in the right-click menu — **Check for Updates…** when a build is
+  available, **Restart to Update** once one is installed. The mark is deliberately the only thing that
+  announces it.
+- **A build installed in the background waits** and starts the next time Acervo opens: Settings says
+  *"Updates install quietly in the background and start the next time Acervo opens. Acervo never
+  restarts itself."*
+- **The only controls that restart say so in their own labels** — **Restart Now**, **Update and
+  Restart**, **Restart to Update** — so nothing has to confirm the restart afterwards.
+- Left-click on the icon opens Acervo; the window can close while the icon stays.
+
+The browser PWA updates the same way in spirit: when a new build has downloaded a dot appears on the
+gear, and the new worker activates only when **Update Acervo** is chosen.
+
+## What lives on the server
+
+Everything is under the deployment root, and a deploy replaces only the release it installs:
 
 ```text
-data/server
-downloads
-llm.env
+data/server            the vocabulary database, the take cache and the meaning maps beside it
+data/media             pictures and recordings (ACERVO_MEDIA_PATH)
+data/dictionaries      compiled dictionaries, merged in from each release
+data/speech-cache      the corpus's downloaded captions — not regenerable, never deleted
+data/speech-index      the corpus's index — rebuilt from the captions
+data/speech-catalogues the corpus's channel list, seeded once and then the owner's
+data/lexibeat-bundle   the loop generator's samples, installed once
+data/lexibeat-out      finished tracks waiting to be stored
+data/anki-server       the Anki sync server's collection
+data/acervo-worker     the headless Anki robot's collection
+downloads              the macOS release, outside the served directory so no service worker precaches it
+backups                a dated copy of the database and the Anki files from every deploy; ten are kept
+releases               the unpacked releases
+deployment.env, secrets.env, llm.env   the deployment's settings and credentials, mode 600
 ```
 
-Deployment preserves both directories, along with `data/anki-server`, `data/acervo-worker`, inputs,
-and backups. `downloads` is deliberately outside the directory the interface is served from, so a
-phone's service worker never precaches the macOS archive.
+`web/dist/` and `deploy/acervo/server/web/` on the laptop are generated staging directories that the
+build repopulates; they are never committed.
+
+## Deploying a change
+
+```bash
+./deploy.sh                 # build, ship and install the current checkout
+./deploy.sh --status        # what is running, and whether it is healthy
+```
+
+**A deploy refuses while the server has open jobs**, because it never carries a job across a version.
+`--cancel-jobs` cancels them first and then deploys; `--jobs open` and `--jobs cancel` ask or cancel
+without deploying — the way out when a database waiting for a transition cannot start, so the server
+that would cancel them is not up to be asked.
+
+**A schema change is deployed one of two ways.** The server refuses to start against a database stamped
+with a different schema, by name, rather than half-working.
+
+- **`--reset-database`** rebuilds it from scratch. It asks for `RESET ACERVO VOCABULARY` to be typed,
+  keeps a copy under `backups/`, and discards every account and word on the server; Anki data is left
+  alone (`--reset-data` is the separate flag for that). Recreate the account with `--create-account`.
+  Device replicas notice the new dataset identity and stop rather than overwrite themselves.
+- **`--transition`** carries the database across instead, when the release ships a one-off converter
+  for it. It takes no argument: it reads the revision the database is stamped with and runs the
+  converter written for exactly that revision, after stopping the server, backing the database up into
+  the dated `backups/` directory (the path is printed, twice) and a dry run. A database already current
+  is left alone; one no converter fits is refused and nothing deploys, and a refused conversion restarts
+  the previous server. `--cancel-jobs --transition` is the pair when a schema change waits behind an
+  open job. The converter is deleted from the repository once it has run.
 
 ### Accounts
 
-Registration is closed and there is no superuser. One account is made at a time, with the password
-read from the terminal and never placed on a command line:
+Registration is closed and there is no superuser. One account is made at a time, with the password read
+from the terminal and never placed on a command line:
 
 ```bash
 ./deploy.sh --create-account
 ```
 
-### Rebuilding the vocabulary database
+## Companion services
 
-There is one schema head and no upgrade path, so rebuilding is how a schema change is deployed.
-`./deploy.sh --reset-database` replaces `data/server` as part of the deployment, keeping a copy under
-`backups/`. It requires typing `RESET ACERVO VOCABULARY`, discards every account and word on the
-server, and leaves Anki data alone — `--reset-data` is the separate flag for that, and review history
-is not something a schema rebuild should take with it. Accounts must be recreated with
-`--create-account` afterwards; device replicas are untouched, and each will notice the new dataset
-identity and stop rather than overwrite itself.
+- **The spoken-usage corpus** runs one pinned version (`deploy/acervo/speech/pin.json`).
+  `./scripts/fetch_speech.sh` fetches and verifies the wheel and the npm tarball it names —
+  `--check` verifies without the network — and the release carries them. Upgrading is: edit the pin,
+  fetch, deploy. The corpus keeps itself fresh through the nightly run and Settings ▸ Clips.
+- **The loop generator** runs one pinned version (`deploy/acervo/lexibeat/pin.json`), whose wheel
+  `./scripts/fetch_lexibeat.sh` fetches. **Its ~3.1 GB sample bundle is installed once, on the server,
+  with `./deploy.sh --install-samples`**, which reads the URL and digest from the pin and puts the
+  bundle where the running service mounts it. Do not type the fetch by hand: a bare
+  `docker compose run` omits the deployment's env file, and the bundle unpacks, verifies and reports
+  success into a store nothing serves from. Without it no loop can be made.
 
-## Language-model provider
+## Model providers
 
-Capture can use either the Gemini Developer API or Vertex AI. Provider settings and both API keys
-live in the server's mode-600 `llm.env`, separately from the server and Anki credentials. Re-running
-the configuration retains the inactive provider's key, so switching routes does not require
-recreating credentials.
-
-Configure Vertex without putting the key in shell history:
+Which providers the server can call is deployment configuration, kept in `llm.env` separately from the
+server and Anki credentials; which of them answer, and in what order, is the owner's choice in
+Settings ▸ Models ([`../architecture/models.md`](../architecture/models.md)).
 
 ```bash
-gcloud services api-keys get-key-string acervo-vertex \
-  --project project-example \
-  --format='value(keyString)' |
-./deploy.sh --configure-llm \
-  --llm-provider vertex \
-  --llm-project project-example \
-  --llm-location global \
-  --llm-model gemini-3.7-flash \
-  --llm-api-key-stdin
+# The deployment's default order, as ids from models/catalogue.json. Empty means every provider this
+# server has credentials for, in catalogue order.
+./deploy.sh --configure-llm --llm-chain gemini-free,cloudflare
+
+# A non-secret variable, such as an account id or a Vertex project. Repeatable.
+./deploy.sh --configure-llm --llm-set CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef
+
+# A key, read from standard input so it never reaches a command line or shell history.
+./deploy.sh --configure-llm --llm-key CLOUDFLARE_API_TOKEN --llm-api-key-stdin
+
+# Vertex authenticates from a file, not a variable: a service-account key or the file
+# `gcloud auth application-default login` writes. Installed mode 600 and mounted read-only.
+./deploy.sh --configure-llm --google-credentials path/to/credentials.json
 ```
 
-The Vertex capture route uses JSON output and medium thinking. Authentication and configuration
-errors stop an ingestion run immediately; rate limits and provider 5xx responses are retried by the
-file importer. To switch back to a Gemini Developer API key, run the same command with
-`--llm-provider gemini`, omit `--llm-project`, and choose the Gemini model.
+The flags combine in one command. Configuring one provider retains every other provider's key, so
+switching back needs nothing re-entered. Setting Vertex up — both credential shapes, and the
+organisation policy that blocks creating a service-account key — is
+[`vertex-setup.md`](vertex-setup.md). `python -m acervo.admin providers` in the server container prints
+what the server can call and as whom, spending nothing.
+
+## Worker operations
+
+`acervo-worker` is one-shot work in its own container — Anki push and pull, compiling a dictionary, a
+backfill — started for one job and then gone. On Synology the Docker socket is root-owned, so reaching
+it means reaching root; the question is how narrow the path is, which the **launcher's fixed operation
+list** answers. Install it once with `./deploy.sh --install-helper` (it is also how the launcher is
+refreshed when its protocol changes), then run operations without a password:
+
+```bash
+./deploy.sh --worker pull-state
+./deploy.sh --worker backfill --owner-email learner@account.example.com --dry-run
+./deploy.sh --worker build-dictionary --id cc-cedict
+```
+
+On the server itself the same operations are `sudo -n /usr/local/sbin/deploy-acervo worker …`, which is
+what a cron line or DSM Task Scheduler runs. The operations are `bootstrap-upload`, `push`,
+`export-state`, `pull-state`, `adopt-server`, `build-dictionary` and `backfill`
+(`deploy/acervo/run-worker.sh`).

@@ -1,5 +1,8 @@
 # Acervo Anki synchronization
 
+Setting up and running the Anki side. The design — why Anki's own sync server and a robot client, the
+manifest, and what comes back — is [`../features/anki.md`](../features/anki.md).
+
 This deployment slice runs Anki's official sync server and a separate headless
 Acervo robot. Anki Desktop is not required. Server and robot use the same pinned
 `anki==26.8.1` image so their sync protocol versions stay aligned.
