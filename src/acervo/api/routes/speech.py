@@ -84,8 +84,8 @@ def channels(request: Request) -> Response:
 async def request_translation(segment_id: str, request: Request) -> Response:
     """Ask the corpus to translate a clip. A job, because it is two provider calls and it caches.
 
-    Acervo stores nothing this returns (§2.13). The article's own translation line came from the
-    clip-selection call and lives in the graph; this is the richer thing — a validated word
+    Acervo stores nothing this returns (spoken-clips §2.13). The article's own translation line came
+    from the clip-selection call and lives in the graph; this is the richer thing — a validated word
     alignment the player renders as an interactive relation — and it is the service's, fetched when
     the modal opens and gone when it closes.
 

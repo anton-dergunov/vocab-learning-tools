@@ -135,8 +135,8 @@ export async function clipFor(stored: StoredClip, signal?: AbortSignal): Promise
  *
  * So `targetText` is supplied and only the alignment stage runs: one provider call, the article's
  * own wording on screen, and the word graph computed for *that* — which is the thing the corpus can
- * do that Acervo cannot (§2.13, amended). A deployment with no translation provider at all still
- * gets its own sentence back.
+ * do that Acervo cannot (spoken-clips §2.13, amended). A deployment with no translation provider at
+ * all still gets its own sentence back.
  *
  * **`retryFailed` is the way out of a cached refusal.** The service remembers a stage that produced
  * unusable output and answers from that memory, `cache_hit` and all, on every later request — which

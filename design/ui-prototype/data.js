@@ -624,7 +624,7 @@ const EXTERNAL = [
 ];
 
 /* Loops — a rendered track over some of your words, and the words it says (design
-   `docs/plans/lexibeat-integration.md` §2.9). Two flat arrays, exactly the two collections
+   `docs/loops.md` §2.9). Two flat arrays, exactly the two collections
    `web/src/domain.ts` declares: there is no title column, no status column and no stored bed, so
    the prototype derives all three the way `selectors.ts` does.
 

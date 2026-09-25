@@ -85,7 +85,7 @@ export function ClipDialog({ stored, headword, glossLang, onClose, onRemove }: {
      article shows. What the corpus is asked for is the word graph **for that sentence**: one
      provider call instead of two, and nothing that can disagree with the page behind it. Asking it
      to translate afresh gave a second wording for the same passage and no way to say which was
-     right (§2.13, amended). */
+     right (spoken-clips §2.13, amended). */
   const stored_text = stored.translation;
   const target_lang = stored.translationLang ?? glossLang;
 

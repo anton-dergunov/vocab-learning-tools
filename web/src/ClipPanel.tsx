@@ -176,11 +176,11 @@ export default function ClipPanel({ onNotify }: { onNotify(message: string): voi
             The corpus is running but has not built an index yet, which is the normal state on a
             fresh deployment. Nothing can be searched until it has.
           </p>}
-      {/* The player's target text, which is the corpus's and not Acervo's (§2.13). Worth a line of
-          its own because it is the one part of this that goes quiet without complaining: with no
-          provider the player says the same grey sentence it says when a model answered badly, and
-          there was nowhere at all to read which. The chain is named, not the row that answered —
-          that is what this service caches on. */}
+      {/* The player's target text, which is the corpus's and not Acervo's (spoken-clips §2.13).
+          Worth a line of its own because it is the one part of this that goes quiet without
+          complaining: with no provider the player says the same grey sentence it says when a model
+          answered badly, and there was nowhere at all to read which. The chain is named, not the
+          row that answered — that is what this service caches on. */}
       {corpus.translation && <p className="config-help">
         {corpus.translation.available
           ? <>Clips are translated in the player by <code>{corpus.translation.model

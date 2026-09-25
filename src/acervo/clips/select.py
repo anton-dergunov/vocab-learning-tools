@@ -55,7 +55,7 @@ from .corpus import Candidate
 class Selection:
     """One sense's clip, and the article line that goes under it.
 
-    The translation comes from this same call (§2.13), in `glossLangs[0]`, exactly as
+    The translation comes from this same call (spoken-clips §2.13), in `glossLangs[0]`, exactly as
     `acervo_compose.md` produces one beside every generated example. No second call and no second
     provider configuration: the retrieval service can translate too, but what *it* produces is the
     player's interactive alignment, which Acervo stores none of.

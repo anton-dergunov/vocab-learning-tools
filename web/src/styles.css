@@ -96,8 +96,8 @@ input, textarea { font: inherit; color: inherit; }
   display: grid;
   grid-template-columns: var(--rail) minmax(0, 1fr);
   /* A third row for the loops bar, `auto` so it is nothing at all when the bar is not drawn —
-     which is whenever an article, an external entry or a composer is open (§2.13), and on every
-     window wide enough for the chip in the top bar. */
+     which is whenever an article, an external entry or a composer is open (loops §2.13), and on
+     every window wide enough for the chip in the top bar. */
   grid-template-rows: var(--topbar) minmax(0, 1fr) auto;
   grid-template-areas: "brand top" "rail main" "loopbar loopbar";
   height: 100%;
@@ -848,9 +848,9 @@ details.fold .fold-body { padding: 4px 0 18px; }
 .app.loops-open .loopbar { display: none; }
 
 /* ── the bar at the foot ──
-   Its own row of `.app`, over the list and nowhere else: §2.13 forbids a second dock in the article
-   column, which already carries the view segments, the delete control, the progress strip and the
-   ask dock. A wide window uses the chip in the top bar instead and never draws this. */
+   Its own row of `.app`, over the list and nowhere else: loops §2.13 forbids a second dock in the
+   article column, which already carries the view segments, the delete control, the progress strip
+   and the ask dock. A wide window uses the chip in the top bar instead and never draws this. */
 .loopbar {
   grid-area: loopbar; position: relative;
   display: flex; align-items: center; gap: 12px;
@@ -894,8 +894,8 @@ details.fold .fold-body { padding: 4px 0 18px; }
    for on the right. On a phone it takes the Made bar's place (`paintSelBar`); a loop that is playing
    keeps its bar, which sits under this one. Over an article only on a wide window, and only while
    the ask dock is resting: the owner reads words to gather them, so this one bar is an exception to
-   §2.13. On a phone the word has the whole screen, and the article's own Select says what the bar
-   would. */
+   loops §2.13. On a phone the word has the whole screen, and the article's own Select says what the
+   bar would. */
 .foot { grid-area: loopbar; min-width: 0; }
 .selbar {
   position: relative;

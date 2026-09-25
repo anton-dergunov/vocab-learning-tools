@@ -535,8 +535,8 @@ export interface CorpusReadout {
    * Whether the *player's* target text is configured, and on what.
    *
    * A different surface from the article's translation line, which is Acervo's own and came from
-   * the clip-selection call (§2.13). This one is the corpus's, and it is the piece of this
-   * deployment that can be switched off with nothing saying so — the player renders one grey
+   * the clip-selection call (spoken-clips §2.13). This one is the corpus's, and it is the piece of
+   * this deployment that can be switched off with nothing saying so — the player renders one grey
    * sentence whether no provider is credentialed, the chain names rows that container lacks, or a
    * model answered badly. `provider` is the *chain*, deliberately, because that is what the
    * service caches on.

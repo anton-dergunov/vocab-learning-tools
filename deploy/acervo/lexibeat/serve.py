@@ -4,7 +4,7 @@
 so the speech a loop is made of runs on the **owner's** chain without this container holding a
 provider credential, a model catalogue, a rate limiter or a cooldown store. It calls home instead,
 to `POST /pronunciations/take`, with a render-scoped token that arrives in the request and lives in
-the process and nowhere else (docs/plans/lexibeat-integration.md §2.3).
+the process and nowhere else (docs/loops.md §2.3).
 
 This file is the only place the two projects' vocabularies meet, and it is deliberately thin.
 LexiBeat sees a `Backend`; Acervo sees an authenticated HTTP client. If the balance ever changes —

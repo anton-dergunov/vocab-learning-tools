@@ -1,6 +1,6 @@
 """The narrow client against the LexiBeat loop service, and the only place its wire shape is read.
 
-LexiBeat is a **separate repository and a separate service** (`docs/plans/lexibeat-integration.md`
+LexiBeat is a **separate repository and a separate service** (`docs/loops.md`
 §2.1): Acervo does not hold the music engine, does not import `lexibeat`, and never opens its output
 directory. It talks to one pinned `/api/v1` contract over HTTP, and the version it talks to is
 `deploy/acervo/lexibeat/pin.json`.
