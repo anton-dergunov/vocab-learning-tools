@@ -75,9 +75,10 @@ in the peek marks every sense of the word.
 
 ## The map
 
-`?map=1` opens the meaning map (`docs/plans/meaning-space.md`): one language's senses, laid out
-by meaning, with regions named at two levels. It is entered from the rail and, on a phone, from the
-third segment of the foot bar, and it follows the language menu.
+`?map=1` opens the meaning map (`docs/server.md`): one language's senses, laid out by meaning,
+with regions named at two levels. It is entered from the rail and, on a phone, from the third
+segment of the foot bar, and it follows the language menu. The application draws the `atlas` style;
+the other two exist only behind the harness switch.
 
 It draws the owner's real map when `map-data.local.js` exists, and the committed sample (about 85
 words per language) otherwise. To generate the real one from an export bundle:

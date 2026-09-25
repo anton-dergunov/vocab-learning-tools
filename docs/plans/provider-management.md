@@ -63,6 +63,22 @@ answer this should produce for every kind.
 The output is a recommendation per kind — a default chain that does not depend on one company — and
 the catalogue rows to go with it.
 
+**Local models, as an opportunity.** Running a model on the owner's own machines is a real option,
+not a curiosity, and the likeliest place it pays is the voice. What the pronunciation research of
+15 Sep 2026 found, as a starting point:
+
+| Route | Languages | Quality for a reference | Where it runs |
+|---|---|---|---|
+| **Kokoro on the NAS** (CPU, Docker) | 8 | excellent for 82 M parameters | ~1.3 core-hours per audio hour: fine for recording in advance |
+| **Piper on the NAS** (CPU, Docker) | ~30, 100+ voices | good, not native | ~10× real time per core |
+| Kokoro in the browser (`kokoro-js`) | English only offline | very good | 92 MB q8 / 326 MB fp32 — ruled out, since other languages phonemise over the network |
+| Piper in the browser (WASM) | ~30, phonemised offline | good, not native | ~60 MB per voice — not needed, since writes are online |
+
+The server once had a Kokoro adapter (`src/acervo/tts/`, since deleted), so a local voice is a rebuild
+rather than a revival — but the shape it would take is already settled: a catalogue row whose
+transport is a local HTTP service, like `ollama-local` for text, recording into the same
+`pronunciations` rows as any other voice. Text on Ollama and images on the Mac fit the same way.
+
 **Candidates already known**, parked here rather than dropped:
 
 - **Cloudflare Aura-2** for Spanish — a second model id and a voice list in the existing row, no code.

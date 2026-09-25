@@ -16,7 +16,7 @@ personal, multilingual, sense-level graph that every kind of enrichment hangs of
 | **AI stories from your word list** | Storyling, LexiTale, Memfy, Miao AI, MeloLingua | Commercial polish, many languages, catalogues. **This is a crowded category.** | Stories drawn from the learner's own graph, narrated passage by passage with a direction each, with marks in both languages. A difference in quality, not in kind. |
 | **Music** | Lingotify (real songs plus spaced repetition), Soundverse (generic generated songs) | Real songs carry culture that a generated track does not. | LexiBeat loops: built from the learner's own words, timed per word, with a translation never shown before it has been spoken. Nothing close was found. |
 | **LLM vocabulary knowledge graphs** | DIY-MKG (EMNLP 2025 demo track): a personal graph grown by LLM-suggested related words, plus LLM-generated quizzes | The nearest research analogue to discovery by expansion. | Far deeper as a system — a durable store, sync, enrichment, media. DIY-MKG has almost no community around it, so the idea has a paper and the product space is still open. |
-| **Visual lexicon explorers** | Visual Thesaurus, Visuwords, word2vec-graph, word-galaxy | Beautiful exploration of a *general* lexicon. | None of these is personal or multilingual. That gap is what [the meaning space](plans/meaning-space.md) would fill. |
+| **Visual lexicon explorers** | Visual Thesaurus, Visuwords, word2vec-graph, word-galaxy | Beautiful exploration of a *general* lexicon. | None of these is personal or multilingual. Acervo's meaning map is both: one learner's senses, per language (built September 2026; see below). |
 
 ## How Acervo differs
 
@@ -66,6 +66,60 @@ waits for a scrap of text to be brought to it.
   learner does not know. Tapping one should show a short translation and, if the word looks worth
   having, add it without leaving the application. That makes Acervo's own generated material a
   source of new words, which none of the story apps above treat as a capture surface.
+
+### The vocabulary is seen one way at a time
+
+Today the vocabulary is a list, sortable and grouped into topics, and a **meaning map**: one
+language's senses laid out by what they mean, with named regions, built in September 2026
+([`server.md`](server.md), "The meaning map"). Neither shows how words relate across languages, to
+what the learner knows well and badly, or to what is missing.
+
+**Planned, as ideas rather than specifications.** The unifying idea is that **every view with slots
+is a recommender**. Most of the views below have places in them — a row per concept and a column per
+language, the rungs of an intensity scale, the members of a word family — and where a place is
+empty the view can draw a **ghost**: a proposed word, dashed, one tap from capture, already explained
+by where it sits. Which view's ghosts actually get added is then a question the sibling repository
+`interest-aligned-vocabulary-recommendation` can answer from the accept / dismiss / ignore log it
+already plans to keep.
+
+On the map, ghosts are its discovery half. The discovery repository decides which words to propose,
+interest-aligned rather than merely unknown; each is embedded with the same encoder and placed with
+the same layout's `transform`, so it lands where its meaning belongs; tapping one opens capture, so
+the entry is reviewed like every other word; a switch shows or hides them. They cannot be computed
+when the map opens, since the map opens instantly and a model call does not. The map's own test of
+success is that its regions read as the learner's own topics; the ghosts' is whether words proposed
+from a region are added more often than ones proposed without one.
+
+The views, by what they need — *graph* (records Acervo holds), *deterministic* (no model call),
+*lexicon* (Wiktextract, `wordfreq`, published norms) or *LLM* (a model call whose output needs
+checking):
+
+- **Meaning space** (built as the map): treemap of the region hierarchy; density holes beside the
+  learner's regions; *near in your vocabulary* on an article, which is where confusions live — the
+  map already ships each sense's nearest neighbours, so this one is cheap.
+- **Across languages:** a concept grid, one row per concept and one column per language, gaps
+  visible (graph; every empty cell a ghost); cognate and etymology chains (lexicon); false friends
+  (LLM or lexicon).
+- **Lexical relations:** word families (lexicon, LLM); the Chinese character network, 电 → 电脑,
+  电话, 电影 (deterministic); synonym and hypernym graphs (the compiled dictionaries); clines,
+  tibio < caliente < hirviendo (LLM); semantic-field grids, cooking verbs × heat, water, fat (LLM);
+  collocation wheels (clip corpus, or LLM checked against it); frames, a scene with roles filled by
+  the learner's words (LLM); contrast cards for near-synonyms (usage notes, LLM).
+- **Visual and situational:** a picture wall of sense images per topic (graph); a labelled scene,
+  one generated kitchen with the learner's kitchen words as hotspots; an emotion wheel from the
+  `emotion` a lexeme carries (graph); valence and concreteness scatters (NRC VAD, norms); a routine
+  as a timeline (LLM); a regional map of Spanish variants (usage notes, LLM).
+- **The learner:** any map coloured by recall strength, and by exposure once it is counted; a
+  frequency ladder with a coverage curve (`wordfreq`); an acquisition diary as a calendar heatmap;
+  the frontier, shaky words beside solid ones in the same region.
+- **Form and sound:** the Chinese tone-pair grid and syllable table (deterministic); Spanish gender
+  and conjugation classes; the measure-word grid, 张 → flat things; rhymes and minimal pairs, useful
+  for loops too; a register scatter.
+- **Generated:** an LLM outline of a topic as a titled hierarchy; crosswords and word searches; a
+  short topic dialogue, the small sibling of a story.
+
+The cheap ones, needing no model call, are the concept grid, the character network and the picture
+wall; the ones that show the most language work are clines and semantic-field grids.
 
 ### Heavy to maintain, and hard for anyone else to run
 

@@ -1,6 +1,7 @@
 # Meaning space: a real vocabulary, laid out by meaning
 
-Serves [`docs/plans/meaning-space.md`](../../docs/plans/meaning-space.md), step 2: the prototype.
+Serves the meaning map ([`docs/server.md`](../../docs/server.md), "The meaning map"): it built the
+prototype's data, and is where encoders and labels are compared before the server adopts one.
 
 ## The question
 

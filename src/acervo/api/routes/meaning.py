@@ -1,4 +1,4 @@
-"""The meaning map of one language (docs/plans/meaning-space.md).
+"""The meaning map of one language (docs/server.md).
 
 `?have=` is the `version` the device already holds — the fingerprint and whether the regions are
 named — and a map still current answers `{"current": true}` alone. A plain `def`, so the drawing — seconds of CPU when the vocabulary changed, nothing when it did not —

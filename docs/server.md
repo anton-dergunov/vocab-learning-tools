@@ -218,16 +218,120 @@ Two stores live beside the database file and in no table: the loop take cache (`
 meaning map's (`maps/`). Both are derived and server-local. Neither is replicated or served as a
 file, so neither needs a mount, an environment variable or a schema change.
 
-The meaning map ([`docs/plans/meaning-space.md`](plans/meaning-space.md)) keeps:
+The meaning map keeps:
 - `maps/embeddings/<model>/`: one `.npy` per sense text, named by the digest of the model and the
   text;
 - `maps/artifacts/<owner>/<language>.json`: the map as last drawn.
 
-A map is drawn by `GET /map/{language}` in the threadpool, when the fingerprint of its input has
-changed. It is not a job: it is seconds of local CPU with no model call, and the one-at-a-time runner
-would leave it behind an import's enrichment. Naming its regions *is* a model call, so that is the
-`map.name` job. The encoder is `models/encoder.json`'s pinned revision, downloaded into the image at
-build time and loaded offline on the first map anyone asks for.
+### The meaning map
+
+One language's senses laid out by what they mean, with named regions, drawn by
+`GET /map/{language}`. The package is `src/acervo/meaning/`; the look and the interaction are the
+prototype's (`design/ui-prototype/README.md`, "The map"); the measurements are
+[`experiments/meaning-space/`](../experiments/meaning-space/README.md).
+
+**One map per language, one point per sense.** A single multilingual space was the first idea and
+was dropped: a learner's languages serve different purposes, so the words held in each are a
+different set of interests, and pooled they would make regions that describe no single language's
+vocabulary. A point is a sense rather than a word because polysemy is exactly what a word-level map
+collapses. What is embedded is `{headword} ({pos}) — {definition} — {gloss terms}`, the template
+the discovery experiment (`interest-aligned-vocabulary-recommendation`) uses, so the two compute the
+same vectors.
+
+**The encoder is `intfloat/multilingual-e5-small`**, pinned in `models/encoder.json`, baked into
+the image and loaded offline on the first map anyone asks for: 118 M parameters, 384 dimensions,
+about half a gigabyte of the NAS's memory. It must be multilingual even with one map per language,
+because every embedded text mixes two — a Spanish definition with English glosses. The model id is part of the cache key, so trying a stronger one
+(bge-m3, EmbeddingGemma) is a setting and a recompute, and waits for the discovery experiment's
+held-out recall to say whether it would be better.
+
+**Computed on the server, not the device**: a phone pays for it in latency and battery, the server
+is idle, and every device then reads the same answer.
+
+**Where embeddings live** was a choice between four options:
+
+| Option | Why not, or why |
+|---|---|
+| A replicated collection | Megabytes of floats no device needs, a `LOCAL_SCHEMA_VERSION` bump, and a model change rewriting every row's revision |
+| Columns on `senses` | A derived value in an authored record, and a changed replicated shape |
+| A server-only table | A schema change, so a throwaway converter, and lost on every `--reset-database` |
+| **A content-addressed cache beside the database** | **Chosen**: no table, no schema, and it survives rebuilds and re-imports because it is keyed on text rather than on ids an import re-mints |
+
+Invalidation is the digest: a sense whose text changes gets a new key and only it is embedded
+again; a new picture or example costs nothing.
+
+**The artifact carries no vectors and no text** — ids, positions, regions, labels and each sense's
+five nearest senses of other words — and the device joins the ids to its replica, so an edited
+headword shows at once and a map already drawn reads offline. Its **version** is the fingerprint and
+the state of the names together, because naming changes the map without changing its layout: asked
+by fingerprint alone, a device holding the unnamed map would be told it was current and never see
+the names. A device sends its version as `?have=` and a current map answers `{"current": true}`.
+
+**Drawn on request, not by a job.** A map is redrawn when the set of `(senseId, text digest)` pairs
+has changed, under one lock per owner and language. It is seconds of local CPU with no model call,
+and the one-at-a-time runner would leave it an hour behind an import. The one cold cost is the first
+embedding of a language: on a laptop, 1,443 Spanish senses took 35 s cold and 3.4 s warm, and the
+NAS is several times slower. It is paid once, behind *Drawing your map*.
+
+**The map moves as little as it can, and is never pinned.** A fixed UMAP seed does not keep a
+picture in place: removing 2% of the English words returned the map mirrored. So each layout is
+aligned onto the previous one (Procrustes: rotation, reflection, scale and shift). That was not
+enough at the `min_dist` that gives the map islands — one edited Spanish sense still moved the median
+point 140 units of 1,000 — so a layout also *starts* from the previous one, with every held sense
+where it was and a new one beside its three nearest. One edited sense then moved the median point
+37 units, and 2% more words moved the rest 39, against 179 from a cold start.
+
+**Regions** are Ward clustering on the **2-D layout**, cut at about 8 regions and about 30
+neighbourhoods, with no noise class. On the layout rather than the vectors, because a label has to
+sit over its points and a cluster found in 384 dimensions can land in pieces across the plane; no
+HDBSCAN, because it marks much of a thousand-word vocabulary as noise, and that noise is the long
+tail of minor interests worth keeping. Below about 150 senses regions churn between layouts, so such
+a map shows only words. **Names are model-written** — one `map.name` job per new layout, on the
+owner's text chain, stale-checked by fingerprint — because on the real vocabulary the deterministic
+labels read as lists (nearest headwords) or as definition boilerplate (c-TF-IDF) where the model's
+read as places. Until the job lands a region shows its most central words; the map never waits for
+a name. The owner's standing rules are not appended, since the prompt only labels.
+
+**On the device** the last map per language is kept in `mapStore.ts`, a store separate from the
+replica, so the map opens at once and offline; the current one then arrives and new points fade in
+while moved ones glide. With no stored map and no server it says so rather than spinning. The
+component, `web/src/meaningMap/`, imports nothing of Acervo's (`boundary.test.ts`), and
+`src/acervo/meaning/` stands alone like `images/`, so the map can move to the discovery repository
+and come back as a package.
+
+What the map may become — ghosts, other layers — is in
+[`similar-projects.md`](similar-projects.md), "Exploring the vocabulary".
+
+### Write-path performance, measured
+
+Measured against a real replica of 1,719 words (10.8k records, 7.9 MB); device figures are from a
+laptop, and a tablet is several times slower.
+
+| | Before | After |
+|---|---|---|
+| Device work to merge one saved word | ~190 ms (six whole-replica clones and a full validation) | 0.18 ms |
+| Export panel, on every repaint beside a running import | ~1,020 ms | 12 ms |
+| Server, restoring one imported picture | 430–630 ms (re-encoded at WebP `method=6`) | 90–210 ms (stored byte for byte) |
+
+The rest was already cheap: an article save takes 22–30 ms and an empty pull 17 ms over Tailscale.
+Updates also stopped rewriting the primary key, which with foreign keys on made SQLite scan every
+child index on each edit.
+
+Four further options, each worth doing only once a measurement says so:
+
+- **Save only what changed.** `save_article` gives every record of an entry a new revision even when
+  it is unchanged. Skipping equal records means fewer writes and less for other devices to pull; the
+  `base` check is unaffected. *When* editing a large word feels slow, or a typo fix visibly re-pulls
+  whole entries elsewhere.
+- **Pipeline the import** — a word's pictures two or three at a time, or two words in flight. It
+  hides round trips rather than removing work. *When* a full-bundle import still takes more than a
+  few minutes; time one first.
+- **A cheaper WebP encode.** `method=6` costs about twice `method=4` (0.24 s against 0.12 s on the
+  laptop), inside a model call that takes seconds. *Only with* a blind size and quality comparison,
+  as audio had.
+- **A first-paint cache for cold start** — the last list's headwords and glosses in local storage,
+  or the heavy collections loaded after the list. Both are a second path to the same data. *When*
+  the tablet's figure in Settings ▸ Sync says the replica read dominates.
 
 ### Migrations
 
